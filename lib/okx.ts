@@ -73,3 +73,63 @@ export async function fetchAllFunding(
 ): Promise<FundingSnapshot[]> {
   return Promise.all(symbols.map(fetchFundingRate));
 }
+
+/**
+ * Simple rule-based crowding hint from funding sign + magnitude.
+ * Not a prediction — transparent thresholds only.
+ *
+ * |fundingRate| thresholds (per 8h settlement style rates as returned by OKX):
+ *   < 0.00005 (~0.005%) → neutral / quiet
+ *   < 0.0003  (~0.03%)  → mild
+ *   < 0.001   (~0.1%)   → elevated
+ *   >= 0.001            → extreme
+ * Sign: positive → longs paying (crowded long); negative → shorts paying (crowded short).
+ */
+export type CrowdingLevel = "quiet" | "mild" | "elevated" | "extreme";
+export type CrowdingSide = "neutral" | "longs" | "shorts";
+
+export type CrowdingHint = {
+  side: CrowdingSide;
+  level: CrowdingLevel;
+  absRate: number;
+  rule: string;
+};
+
+export function crowdingHintFromFunding(fundingRate: number): CrowdingHint {
+  const absRate = Math.abs(fundingRate);
+  let level: CrowdingLevel;
+  if (absRate < 0.00005) level = "quiet";
+  else if (absRate < 0.0003) level = "mild";
+  else if (absRate < 0.001) level = "elevated";
+  else level = "extreme";
+
+  let side: CrowdingSide = "neutral";
+  if (level !== "quiet") {
+    side = fundingRate > 0 ? "longs" : "shorts";
+  }
+
+  const rule =
+    level === "quiet"
+      ? "|rate|<0.00005 → quiet/neutral"
+      : fundingRate > 0
+        ? `rate>0 & |rate| ${level} → crowded longs (longs pay shorts)`
+        : `rate<0 & |rate| ${level} → crowded shorts (shorts pay longs)`;
+
+  return { side, level, absRate, rule };
+}
+
+export const FUNDING_METHODOLOGY = {
+  source: "OKX public /api/v5/public/funding-rate (BTC/ETH/SOL-USDT-SWAP)",
+  venue: "okx",
+  note: "Real OKX data only — not Binance/Bybit (often geo-blocked on Vercel egress).",
+  crowding:
+    "Optional rule-based hint from funding sign + |rate| thresholds (quiet/mild/elevated/extreme). Not a forecast.",
+  thresholds: {
+    quiet: "|rate| < 0.00005",
+    mild: "0.00005 <= |rate| < 0.0003",
+    elevated: "0.0003 <= |rate| < 0.001",
+    extreme: "|rate| >= 0.001",
+    side: "positive → longs; negative → shorts; quiet → neutral",
+  },
+} as const;
+

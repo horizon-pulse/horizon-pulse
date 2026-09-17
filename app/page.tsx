@@ -6,6 +6,8 @@ import {
   SIGNALS_PRICE_USD,
   YIELD_PRICE_USD,
   PORTFOLIO_PRICE_USD,
+  GAS_PRICE_USD,
+  FUNDING_PRICE_USD,
   USDC_BASE,
 } from "@/lib/config";
 
@@ -22,8 +24,8 @@ export default function HomePage() {
         Honest x402 micropayments on{" "}
         <strong>Base mainnet</strong> (USDC). Agents discover endpoints, pay
         exactly once per call, and receive live CoinGecko prices, technical
-        signals (OKX funding — not Binance/Bybit), DefiLlama yield rankings, and
-        on-chain portfolio risk snapshots.
+        signals, live OKX perpetual funding (not Binance/Bybit), DefiLlama yield
+        rankings, on-chain portfolio risk snapshots, and live Base/Ethereum gas.
       </p>
 
       <section
@@ -53,6 +55,14 @@ export default function HomePage() {
             <code>GET /api/portfolio?address=0x…</code> — {PORTFOLIO_PRICE_USD}{" "}
             USDC (40000 atomic) — Base + Ethereum balances, risk score,
             rebalance suggestions
+          </li>
+          <li>
+            <code>GET /api/gas</code> — {GAS_PRICE_USD} USDC (10000 atomic) —
+            Base + Ethereum baseFee / priority / suggested maxFee + timingHint
+          </li>
+          <li>
+            <code>GET /api/funding</code> — {FUNDING_PRICE_USD} USDC (10000
+            atomic) — OKX BTC/ETH/SOL perpetual funding + crowding hint
           </li>
           <li>
             <code>GET /status</code> — free public treasury dashboard

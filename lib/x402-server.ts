@@ -14,6 +14,8 @@ import {
   SIGNALS_PRICE_USD,
   YIELD_PRICE_USD,
   PORTFOLIO_PRICE_USD,
+  GAS_PRICE_USD,
+  FUNDING_PRICE_USD,
   USDC_BASE,
 } from "./config";
 
@@ -224,6 +226,69 @@ export function portfolioRouteConfig(): RoutesConfig {
           },
         }),
       },
+    },
+  };
+}
+
+export function gasRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/gas": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: GAS_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "Live Base + Ethereum gas fees via eth_feeHistory / eth_gasPrice: baseFee, priority, suggested maxFee, timingHint (cheap/normal/expensive), optional transfer USD cost",
+      mimeType: "application/json",
+      extensions: discoveryExt("Horizon Pulse gas snapshot", {
+        ethUsd: 0,
+        networks: [
+          {
+            network: "base",
+            baseFeeGwei: "0",
+            priorityFeeGwei: "0",
+            suggestedMaxFeeGwei: "0",
+            timingHint: "normal",
+          },
+        ],
+        methodology: "eth_feeHistory + optional CoinGecko ETH USD",
+      }),
+    },
+  };
+}
+
+export function fundingRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/funding": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: FUNDING_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "Live OKX perpetual funding rates for BTC/ETH/SOL with optional rule-based crowding hint (sign/magnitude)",
+      mimeType: "application/json",
+      extensions: discoveryExt("Horizon Pulse funding snapshot", {
+        assets: {
+          BTC: {
+            instId: "BTC-USDT-SWAP",
+            fundingRate: 0,
+            crowding: { side: "neutral", level: "quiet" },
+          },
+        },
+        methodology: "OKX public funding-rate; crowding = rules only",
+      }),
     },
   };
 }

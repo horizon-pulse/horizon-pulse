@@ -29,6 +29,12 @@ export const YIELD_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
 export const PORTFOLIO_PRICE_USD = "$0.04" as const;
 export const PORTFOLIO_PRICE_ATOMIC = "40000" as const; // USDC 6 decimals
 
+export const GAS_PRICE_USD = "$0.01" as const;
+export const GAS_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
+
+export const FUNDING_PRICE_USD = "$0.01" as const;
+export const FUNDING_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
+
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 
 export function getPayTo(): `0x${string}` {
@@ -66,3 +72,4 @@ export function hasCdpCredentials(): boolean {
     process.env.CDP_API_KEY_ID?.trim() && process.env.CDP_API_KEY_SECRET?.trim(),
   );
 }
+

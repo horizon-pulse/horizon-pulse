@@ -6,6 +6,8 @@ import {
   SIGNALS_PRICE_USD,
   YIELD_PRICE_USD,
   PORTFOLIO_PRICE_USD,
+  GAS_PRICE_USD,
+  FUNDING_PRICE_USD,
   USDC_BASE,
   CDP_FACILITATOR_URL,
 } from "@/lib/config";
@@ -114,6 +116,14 @@ export default async function StatusPage() {
             <code>/api/portfolio?address=0x…</code> — {PORTFOLIO_PRICE_USD} USDC
             / call — Base + Ethereum on-chain balances, rule-based risk +
             rebalance suggestions
+          </li>
+          <li>
+            <code>/api/gas</code> — {GAS_PRICE_USD} USDC / call — Base +
+            Ethereum gas (feeHistory) with timingHint + optional transfer USD
+          </li>
+          <li>
+            <code>/api/funding</code> — {FUNDING_PRICE_USD} USDC / call — OKX
+            BTC/ETH/SOL perpetual funding + rule-based crowding hint
           </li>
           <li>Network: base · Facilitator: {CDP_FACILITATOR_URL}</li>
         </ul>
