@@ -1,6 +1,6 @@
 # Horizon Pulse
 
-Pay-per-call crypto market **pulse**, **signals**, and **yield** rankings for AI agents, monetized with the [x402](https://www.x402.org/) protocol on **Base mainnet** (USDC).
+Pay-per-call crypto market **pulse**, **signals**, **yield** rankings, and **portfolio** risk for AI agents, monetized with the [x402](https://www.x402.org/) protocol on **Base mainnet** (USDC).
 
 This repo is a Next.js App Router service ready to deploy (e.g. Vercel) and push to:
 
@@ -11,7 +11,7 @@ This repo is a Next.js App Router service ready to deploy (e.g. Vercel) and push
 - Agents hit paid HTTP endpoints.
 - Unpaid requests receive **HTTP 402** with payment requirements (`payTo`, USDC asset, amount, network).
 - With a valid x402 payment signature, Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
-- No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools.
+- No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only).
 
 ## Treasury (payTo)
 
@@ -33,6 +33,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 | `GET /api/pulse` | **$0.005** USDC (`5000` atomic) | x402 |
 | `GET /api/signals` | **$0.015** USDC (`15000` atomic) | x402 |
 | `GET /api/yield` | **$0.02** USDC (`20000` atomic) | x402 |
+| `GET /api/portfolio?address=0x…` | **$0.04** USDC (`40000` atomic) | x402 |
 | `GET /status` | free | public HTML dashboard (on-chain USDC balance) |
 | `GET /` | free | landing page |
 
@@ -59,6 +60,18 @@ Ranked DeFi yield pools from the public DefiLlama yields API (`https://yields.ll
 - Transparent ranking: `preferenceTier` DESC (2 = stablecoin+single, 1 = either), then **APY** DESC, then **TVL** DESC
 - Every response includes a `methodology` object (also on error bodies)
 - Price: **$0.02** USDC (`20000` atomic)
+- `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
+- Unpaid GET → **402** with `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
+
+### `GET /api/portfolio`
+
+On-chain portfolio snapshot for **one EVM address** (`?address=0x…`, required).
+
+- Networks: **Base + Ethereum mainnet** (public RPCs; optional `BASE_RPC_URL` / `ETH_RPC_URL` with failover)
+- Tokens: native ETH; USDC, WETH, DAI on both chains; **WBTC** on Ethereum; **cbBTC** on Base (honest substitute — Base has no BitGo WBTC)
+- USD marks via CoinGecko; **real balances only** — if an RPC fails, that network is marked failed in `networks[]` / `warnings`
+- Rule-based **risk score** (0–100) and **rebalancing suggestions** with transparent formulas in `methodology`
+- Price: **$0.04** USDC (`40000` atomic)
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
 - Unpaid GET → **402** with `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
 
@@ -93,7 +106,8 @@ Copy from `.env.example`:
 | `PAY_TO` | optional | defaults to `0x5b32c973596078a967562ca652761404f19be0e9` |
 | `CDP_API_KEY_ID` | for settle | Coinbase Developer Platform |
 | `CDP_API_KEY_SECRET` | for settle | PKCS8 PEM (store safely; never commit) |
-| `BASE_RPC_URL` | optional | overrides default Base RPC for `/status` |
+| `BASE_RPC_URL` | optional | overrides default Base RPC for `/status` + `/api/portfolio` |
+| `ETH_RPC_URL` | optional | overrides default Ethereum RPC for `/api/portfolio` |
 
 Without CDP keys:
 - Unpaid **GET** and **OPTIONS** still return correct **402 / discovery** payment requirements (`payTo` + discoverable `outputSchema`) — no CDP required for discovery.
@@ -105,14 +119,14 @@ Without CDP keys:
 - Next.js 16 (App Router) + TypeScript
 - `@x402/next` + `@x402/core` + `@x402/evm` + `@x402/extensions`
 - `@coinbase/x402` for CDP facilitator auth headers
-- `viem` for treasury USDC `balanceOf` on Base
+- `viem` for treasury USDC `balanceOf` on Base and portfolio balances on Base + Ethereum
 
 ## Deploy notes
 
 1. Create the GitHub repo / remote `https://github.com/horizon-pulse/horizon-pulse.git`.
 2. Set Vercel env vars (above). Prefer PEM secret as a single line with `\n` escapes if the UI is single-line.
 3. Deploy from `main`. Ensure functions use **Node.js** runtime (routes already set `export const runtime = 'nodejs'`).
-4. Smoke-test: `curl -i https://YOUR_HOST/api/pulse` (or `/api/yield`) should return **402** with payment requirements pointing at the new `payTo`.
+4. Smoke-test: `curl -i https://YOUR_HOST/api/pulse` (or `/api/yield`, `/api/portfolio`) should return **402** with payment requirements pointing at the new `payTo`.
 5. Confirm `/status` shows the treasury balance for `0x5b32…e0e9`.
 
 ## Push (from this workspace)

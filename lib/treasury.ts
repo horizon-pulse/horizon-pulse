@@ -15,7 +15,7 @@ export type TreasuryBalance = {
 export async function fetchTreasuryUsdcBalance(): Promise<TreasuryBalance> {
   const payTo = getPayTo();
   const rpc =
-    process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";
+    process.env.BASE_RPC_URL?.trim() || "https://base.publicnode.com";
 
   const client = createPublicClient({
     chain: base,

@@ -13,6 +13,7 @@ import {
   PULSE_PRICE_USD,
   SIGNALS_PRICE_USD,
   YIELD_PRICE_USD,
+  PORTFOLIO_PRICE_USD,
   USDC_BASE,
 } from "./config";
 
@@ -176,6 +177,53 @@ export function yieldRouteConfig(): RoutesConfig {
         ],
         methodology: "DefiLlama yields; TVL>=$10M; prefer stablecoin/single",
       }),
+    },
+  };
+}
+
+export function portfolioRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/portfolio": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: PORTFOLIO_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "On-chain portfolio for one EVM address (?address=0x...) on Base + Ethereum: native ETH, USDC, WETH, WBTC/cbBTC, DAI; rule-based risk + rebalance suggestions",
+      mimeType: "application/json",
+      extensions: {
+        ...declareDiscoveryExtension({
+          input: { address: "0x..." },
+          inputSchema: {
+            properties: {
+              address: {
+                type: "string",
+                description: "EVM address (0x + 40 hex) required as query param",
+              },
+            },
+            required: ["address"],
+          },
+          output: {
+            example: {
+              address: "0x...",
+              totals: { valueUsd: 0, stablecoinShare: 0 },
+              risk: { score: 0, band: "moderate" },
+              suggestions: [],
+              methodology: {},
+            },
+            schema: {
+              type: "object",
+              description: "Horizon Pulse portfolio snapshot",
+            },
+          },
+        }),
+      },
     },
   };
 }

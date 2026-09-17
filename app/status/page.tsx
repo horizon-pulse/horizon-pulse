@@ -5,6 +5,7 @@ import {
   PULSE_PRICE_USD,
   SIGNALS_PRICE_USD,
   YIELD_PRICE_USD,
+  PORTFOLIO_PRICE_USD,
   USDC_BASE,
   CDP_FACILITATOR_URL,
 } from "@/lib/config";
@@ -108,6 +109,11 @@ export default async function StatusPage() {
           <li>
             <code>/api/yield</code> — {YIELD_PRICE_USD} USDC / call —
             DefiLlama yields (TVL ≥ $10M, prefer stablecoin/single-asset)
+          </li>
+          <li>
+            <code>/api/portfolio?address=0x…</code> — {PORTFOLIO_PRICE_USD} USDC
+            / call — Base + Ethereum on-chain balances, rule-based risk +
+            rebalance suggestions
           </li>
           <li>Network: base · Facilitator: {CDP_FACILITATOR_URL}</li>
         </ul>

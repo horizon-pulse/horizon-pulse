@@ -5,6 +5,7 @@ import {
   PULSE_PRICE_USD,
   SIGNALS_PRICE_USD,
   YIELD_PRICE_USD,
+  PORTFOLIO_PRICE_USD,
   USDC_BASE,
 } from "@/lib/config";
 
@@ -21,7 +22,8 @@ export default function HomePage() {
         Honest x402 micropayments on{" "}
         <strong>Base mainnet</strong> (USDC). Agents discover endpoints, pay
         exactly once per call, and receive live CoinGecko prices, technical
-        signals (OKX funding — not Binance/Bybit), and DefiLlama yield rankings.
+        signals (OKX funding — not Binance/Bybit), DefiLlama yield rankings, and
+        on-chain portfolio risk snapshots.
       </p>
 
       <section
@@ -46,6 +48,11 @@ export default function HomePage() {
           <li>
             <code>GET /api/yield</code> — {YIELD_PRICE_USD} USDC (20000 atomic)
             — DefiLlama yields (TVL ≥ $10M, prefer stablecoin/single-asset)
+          </li>
+          <li>
+            <code>GET /api/portfolio?address=0x…</code> — {PORTFOLIO_PRICE_USD}{" "}
+            USDC (40000 atomic) — Base + Ethereum balances, risk score,
+            rebalance suggestions
           </li>
           <li>
             <code>GET /status</code> — free public treasury dashboard
