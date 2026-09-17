@@ -1,0 +1,33 @@
+{
+  "name": "horizon-pulse",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pay-per-call crypto market pulse & signals for AI agents via x402 on Base",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@coinbase/x402": "^2.1.0",
+    "@x402/core": "^2.26.0",
+    "@x402/evm": "^2.26.0",
+    "@x402/extensions": "^2.26.0",
+    "@x402/next": "^2.26.0",
+    "next": "^16.2.6",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "viem": "^2.37.5",
+    "@x402/paywall": "^2.26.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.1",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
