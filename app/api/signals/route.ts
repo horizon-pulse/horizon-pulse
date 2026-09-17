@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withX402 } from "@x402/next";
 import { fetchOhlcCloses, type AssetSymbol } from "@/lib/coingecko";
 import { fetchAllFunding } from "@/lib/okx";
 import { bollinger, macd, rsi } from "@/lib/indicators";
 import {
-  getResourceServer,
+  createX402GetHandler,
+  discoveryOptionsResponse,
   signalsRouteConfig,
-  shouldSyncFacilitator,
-  buildPaymentRequirements,
 } from "@/lib/x402-server";
 import {
   SIGNALS_PRICE_ATOMIC,
@@ -20,6 +18,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const SYMBOLS: AssetSymbol[] = ["BTC", "ETH", "SOL"];
+
+const paymentOpts = {
+  maxAmountRequired: SIGNALS_PRICE_ATOMIC,
+  resource: "/api/signals",
+  description: "RSI/MACD/Bollinger + OKX funding",
+} as const;
 
 async function signalsHandler(_req: NextRequest): Promise<NextResponse> {
   try {
@@ -98,31 +102,17 @@ async function signalsHandler(_req: NextRequest): Promise<NextResponse> {
   }
 }
 
-export const GET = withX402(
+/**
+ * Unpaid GET → 402 with payment requirements (no CDP / facilitator needed).
+ * Paid GET with CDP → withX402 verify+settle (lazy-init).
+ * Paid GET without CDP → 503.
+ */
+export const GET = createX402GetHandler(
   signalsHandler,
   signalsRouteConfig(),
-  getResourceServer(),
-  undefined,
-  undefined,
-  shouldSyncFacilitator(),
+  paymentOpts,
 );
 
 export async function OPTIONS() {
-  return NextResponse.json(
-    buildPaymentRequirements({
-      maxAmountRequired: SIGNALS_PRICE_ATOMIC,
-      resource: "/api/signals",
-      description: "RSI/MACD/Bollinger + OKX funding",
-    }),
-    {
-      status: 200,
-      headers: {
-        Allow: "GET, OPTIONS",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers":
-          "PAYMENT-SIGNATURE, X-PAYMENT, Content-Type, Accept",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-      },
-    },
-  );
+  return discoveryOptionsResponse(paymentOpts);
 }

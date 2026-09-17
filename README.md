@@ -82,7 +82,10 @@ Copy from `.env.example`:
 | `CDP_API_KEY_SECRET` | for settle | PKCS8 PEM (store safely; never commit) |
 | `BASE_RPC_URL` | optional | overrides default Base RPC for `/status` |
 
-Without CDP keys, endpoints still emit correct **402 payment requirements** for discovery; settlement needs CDP credentials on mainnet.
+Without CDP keys:
+- Unpaid **GET** and **OPTIONS** still return correct **402 / discovery** payment requirements (`payTo` + discoverable `outputSchema`) — no CDP required for discovery.
+- Requests that include `PAYMENT-SIGNATURE` / `X-PAYMENT` receive **503** until `CDP_API_KEY_ID` + `CDP_API_KEY_SECRET` are set on Vercel (settlement path).
+- Do **not** expect live GET to 500 when CDP is missing; that was a prior bug fixed by gating `withX402` behind payment + CDP credentials.
 
 ## Stack
 

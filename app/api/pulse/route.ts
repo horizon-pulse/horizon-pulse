@@ -1,15 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { withX402 } from "@x402/next";
 import { fetchSpotPrices } from "@/lib/coingecko";
 import {
   aggregatePulse,
   momentumFromChange,
 } from "@/lib/indicators";
 import {
-  getResourceServer,
+  createX402GetHandler,
+  discoveryOptionsResponse,
   pulseRouteConfig,
-  shouldSyncFacilitator,
-  buildPaymentRequirements,
 } from "@/lib/x402-server";
 import {
   PULSE_PRICE_ATOMIC,
@@ -20,6 +18,12 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const paymentOpts = {
+  maxAmountRequired: PULSE_PRICE_ATOMIC,
+  resource: "/api/pulse",
+  description: "BTC/ETH/SOL pulse with momentum",
+} as const;
 
 async function pulseHandler(_req: NextRequest): Promise<NextResponse> {
   try {
@@ -67,35 +71,18 @@ async function pulseHandler(_req: NextRequest): Promise<NextResponse> {
 }
 
 /**
- * x402-protected pulse endpoint.
- * Settles only after a successful (<400) response when CDP keys are configured.
+ * Unpaid GET → 402 with payment requirements (no CDP / facilitator needed).
+ * Paid GET with CDP → withX402 verify+settle (lazy-init).
+ * Paid GET without CDP → 503.
  */
-export const GET = withX402(
+export const GET = createX402GetHandler(
   pulseHandler,
   pulseRouteConfig(),
-  getResourceServer(),
-  undefined,
-  undefined,
-  shouldSyncFacilitator(),
+  paymentOpts,
 );
 
 /** Free OPTIONS / discovery hint — some agents probe without payment first via GET 402 */
 export async function OPTIONS() {
-  return NextResponse.json(
-    buildPaymentRequirements({
-      maxAmountRequired: PULSE_PRICE_ATOMIC,
-      resource: "/api/pulse",
-      description: "BTC/ETH/SOL pulse with momentum",
-    }),
-    {
-      status: 200,
-      headers: {
-        Allow: "GET, OPTIONS",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers":
-          "PAYMENT-SIGNATURE, X-PAYMENT, Content-Type, Accept",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-      },
-    },
-  );
+  return discoveryOptionsResponse(paymentOpts);
 }
+

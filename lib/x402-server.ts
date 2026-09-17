@@ -3,6 +3,9 @@ import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import type { RoutesConfig } from "@x402/core/server";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { withX402 } from "@x402/next";
 import {
   getNetworkCaip2,
   getPayTo,
@@ -40,6 +43,30 @@ export function getResourceServer(): x402ResourceServer {
 export function shouldSyncFacilitator(): boolean {
   return hasCdpCredentials();
 }
+
+/**
+ * Detect x402 payment headers (case-insensitive via Headers API).
+ * Matches @x402/next NextAdapter: PAYMENT-SIGNATURE or X-PAYMENT.
+ */
+export function getPaymentHeader(req: NextRequest): string | undefined {
+  return (
+    req.headers.get("payment-signature") ||
+    req.headers.get("x-payment") ||
+    undefined
+  );
+}
+
+export function hasPaymentHeader(req: NextRequest): boolean {
+  const v = getPaymentHeader(req);
+  return Boolean(v && v.trim().length > 0);
+}
+
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "PAYMENT-SIGNATURE, X-PAYMENT, Content-Type, Accept",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+};
 
 function discoveryExt(
   description: string,
@@ -120,7 +147,7 @@ export function signalsRouteConfig(): RoutesConfig {
 
 /**
  * Explicit paymentRequirements JSON (incl. discoverable outputSchema) for
- * OPTIONS / agent discovery. Complements the x402 PAYMENT-REQUIRED header.
+ * OPTIONS / unpaid GET 402 / agent discovery.
  */
 export function buildPaymentRequirements(opts: {
   maxAmountRequired: string;
@@ -157,5 +184,95 @@ export function buildPaymentRequirements(opts: {
         },
       },
     ],
+  };
+}
+
+/** HTTP 402 with the same payment-requirements body as OPTIONS. */
+export function paymentRequiredResponse(opts: {
+  maxAmountRequired: string;
+  resource: string;
+  description: string;
+}): NextResponse {
+  return NextResponse.json(buildPaymentRequirements(opts), {
+    status: 402,
+    headers: {
+      ...CORS_HEADERS,
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+/** HTTP 503 when a payment header is present but CDP settle keys are missing. */
+export function settlementUnavailableResponse(): NextResponse {
+  return NextResponse.json(
+    {
+      error:
+        "Payment settlement requires CDP_API_KEY_ID and CDP_API_KEY_SECRET on the server (Vercel env). Unpaid discovery still works via 402 / OPTIONS.",
+      payTo: getPayTo(),
+    },
+    {
+      status: 503,
+      headers: {
+        ...CORS_HEADERS,
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
+
+export function discoveryOptionsResponse(opts: {
+  maxAmountRequired: string;
+  resource: string;
+  description: string;
+}): NextResponse {
+  return NextResponse.json(buildPaymentRequirements(opts), {
+    status: 200,
+    headers: {
+      Allow: "GET, OPTIONS",
+      ...CORS_HEADERS,
+    },
+  });
+}
+
+type AppRouteHandler = (req: NextRequest) => Promise<NextResponse>;
+
+/**
+ * Gate unpaid GETs to a local 402 (no facilitator sync). Only invoke withX402
+ * when a payment header is present AND CDP credentials exist — lazy-init so
+ * cold starts without keys never crash.
+ */
+export function createX402GetHandler(
+  routeHandler: AppRouteHandler,
+  routes: RoutesConfig,
+  paymentOpts: {
+    maxAmountRequired: string;
+    resource: string;
+    description: string;
+  },
+): AppRouteHandler {
+  let paidHandler: AppRouteHandler | null = null;
+
+  function getPaidHandler(): AppRouteHandler {
+    if (!paidHandler) {
+      paidHandler = withX402(
+        routeHandler,
+        routes,
+        getResourceServer(),
+        undefined,
+        undefined,
+        true, // sync facilitator — CDP keys are present in this path
+      );
+    }
+    return paidHandler;
+  }
+
+  return async (req: NextRequest) => {
+    if (!hasPaymentHeader(req)) {
+      return paymentRequiredResponse(paymentOpts);
+    }
+    if (!hasCdpCredentials()) {
+      return settlementUnavailableResponse();
+    }
+    return getPaidHandler()(req);
   };
 }
