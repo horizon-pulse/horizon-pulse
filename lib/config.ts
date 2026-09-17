@@ -20,8 +20,11 @@ export const BASE_CAIP2 = "eip155:8453" as const;
 export const PULSE_PRICE_USD = "$0.005" as const;
 export const PULSE_PRICE_ATOMIC = "5000" as const; // USDC 6 decimals
 
-export const SIGNALS_PRICE_USD = "$0.008" as const;
-export const SIGNALS_PRICE_ATOMIC = "8000" as const;
+export const SIGNALS_PRICE_USD = "$0.015" as const;
+export const SIGNALS_PRICE_ATOMIC = "15000" as const;
+
+export const YIELD_PRICE_USD = "$0.02" as const;
+export const YIELD_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
 
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 

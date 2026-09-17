@@ -4,6 +4,7 @@ import {
   GITHUB_REPO,
   PULSE_PRICE_USD,
   SIGNALS_PRICE_USD,
+  YIELD_PRICE_USD,
   USDC_BASE,
   CDP_FACILITATOR_URL,
 } from "@/lib/config";
@@ -103,6 +104,10 @@ export default async function StatusPage() {
           <li>
             <code>/api/signals</code> — {SIGNALS_PRICE_USD} USDC / call —
             RSI/MACD/Bollinger + OKX funding
+          </li>
+          <li>
+            <code>/api/yield</code> — {YIELD_PRICE_USD} USDC / call —
+            DefiLlama yields (TVL ≥ $10M, prefer stablecoin/single-asset)
           </li>
           <li>Network: base · Facilitator: {CDP_FACILITATOR_URL}</li>
         </ul>

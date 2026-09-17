@@ -1,6 +1,6 @@
 # Horizon Pulse
 
-Pay-per-call crypto market **pulse** and **signals** for AI agents, monetized with the [x402](https://www.x402.org/) protocol on **Base mainnet** (USDC).
+Pay-per-call crypto market **pulse**, **signals**, and **yield** rankings for AI agents, monetized with the [x402](https://www.x402.org/) protocol on **Base mainnet** (USDC).
 
 This repo is a Next.js App Router service ready to deploy (e.g. Vercel) and push to:
 
@@ -11,7 +11,7 @@ This repo is a Next.js App Router service ready to deploy (e.g. Vercel) and push
 - Agents hit paid HTTP endpoints.
 - Unpaid requests receive **HTTP 402** with payment requirements (`payTo`, USDC asset, amount, network).
 - With a valid x402 payment signature, Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
-- No stubbed prices: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel).
+- No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools.
 
 ## Treasury (payTo)
 
@@ -31,7 +31,8 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 | Route | Price | Auth |
 | --- | --- | --- |
 | `GET /api/pulse` | **$0.005** USDC (`5000` atomic) | x402 |
-| `GET /api/signals` | **$0.008** USDC (`8000` atomic) | x402 |
+| `GET /api/signals` | **$0.015** USDC (`15000` atomic) | x402 |
+| `GET /api/yield` | **$0.02** USDC (`20000` atomic) | x402 |
 | `GET /status` | free | public HTML dashboard (on-chain USDC balance) |
 | `GET /` | free | landing page |
 
@@ -48,6 +49,18 @@ RSI(14), MACD(12,26,9), Bollinger bands from CoinGecko OHLC closes, plus OKX fun
 
 - `runtime = 'nodejs'`
 - Discoverable for agents
+
+### `GET /api/yield`
+
+Ranked DeFi yield pools from the public DefiLlama yields API (`https://yields.llama.fi/pools`).
+
+- Hard filter: **TVL ≥ $10M**; exclude non-finite APY and DefiLlama `outlier` pools
+- Preference: keep **stablecoin** and/or **single-asset** (`exposure === "single"`) pools
+- Transparent ranking: `preferenceTier` DESC (2 = stablecoin+single, 1 = either), then **APY** DESC, then **TVL** DESC
+- Every response includes a `methodology` object (also on error bodies)
+- Price: **$0.02** USDC (`20000` atomic)
+- `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
+- Unpaid GET → **402** with `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
 
 ### `GET /status`
 
@@ -99,7 +112,7 @@ Without CDP keys:
 1. Create the GitHub repo / remote `https://github.com/horizon-pulse/horizon-pulse.git`.
 2. Set Vercel env vars (above). Prefer PEM secret as a single line with `\n` escapes if the UI is single-line.
 3. Deploy from `main`. Ensure functions use **Node.js** runtime (routes already set `export const runtime = 'nodejs'`).
-4. Smoke-test: `curl -i https://YOUR_HOST/api/pulse` should return **402** with payment requirements pointing at the new `payTo`.
+4. Smoke-test: `curl -i https://YOUR_HOST/api/pulse` (or `/api/yield`) should return **402** with payment requirements pointing at the new `payTo`.
 5. Confirm `/status` shows the treasury balance for `0x5b32…e0e9`.
 
 ## Push (from this workspace)
@@ -124,6 +137,27 @@ git fetch origin
 git pull origin main --rebase   # or merge, as appropriate
 git push -u origin main
 ```
+
+
+## Paid smoke test (`/api/pulse`)
+
+End-to-end check against production (or `SMOKE_BASE_URL`): unpaid **402** → sign EIP-3009 / x402 with a local key → paid **200** + on-chain USDC toward `payTo`.
+
+```bash
+cd horizon-pulse
+npm install   # if needed; uses existing @x402/* + viem
+SMOKE_PRIVATE_KEY=0x... node scripts/smoke-pulse.mjs
+# or: npm run smoke:pulse
+```
+
+Optional:
+
+```bash
+SMOKE_BASE_URL=https://horizon-pulse-seven.vercel.app
+BASE_RPC_URL=https://mainnet.base.org
+```
+
+**Never paste your private key in chat, commits, or screenshots.** Export it only in your local shell (e.g. Mac mini). Without `SMOKE_PRIVATE_KEY`, the script exits with usage help (safe dry-run).
 
 ## License
 

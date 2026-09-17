@@ -12,6 +12,7 @@ import {
   hasCdpCredentials,
   PULSE_PRICE_USD,
   SIGNALS_PRICE_USD,
+  YIELD_PRICE_USD,
   USDC_BASE,
 } from "./config";
 
@@ -140,6 +141,40 @@ export function signalsRouteConfig(): RoutesConfig {
           },
         },
         methodology: "CoinGecko OHLC + OKX funding",
+      }),
+    },
+  };
+}
+
+export function yieldRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/yield": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: YIELD_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "Ranked DeFi yield pools from DefiLlama (TVL >= $10M, prefer stablecoin/single-asset)",
+      mimeType: "application/json",
+      extensions: discoveryExt("Horizon Pulse yield rankings", {
+        pools: [
+          {
+            rank: 1,
+            project: "aave-v3",
+            symbol: "USDC",
+            chain: "Ethereum",
+            tvlUsd: 0,
+            apy: 0,
+            preferenceTier: 2,
+          },
+        ],
+        methodology: "DefiLlama yields; TVL>=$10M; prefer stablecoin/single",
       }),
     },
   };
