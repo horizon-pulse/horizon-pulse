@@ -2,32 +2,36 @@ import Link from "next/link";
 import {
   DEFAULT_PAY_TO,
   GITHUB_REPO,
-  PULSE_PRICE_USD,
-  SIGNALS_PRICE_USD,
-  YIELD_PRICE_USD,
-  PORTFOLIO_PRICE_USD,
-  GAS_PRICE_USD,
-  FUNDING_PRICE_USD,
   USDC_BASE,
   CDP_FACILITATOR_URL,
+  BASE_CAIP2,
 } from "@/lib/config";
 import { fetchTreasuryUsdcBalance } from "@/lib/treasury";
+import {
+  CATALOG_NOTE,
+  FIRST_SETTLE,
+  LIVE_PAID_ROUTES,
+} from "@/lib/live-catalog";
+import { LiveRoutesList } from "@/components/LiveRoutesList";
+import { AgentHowTo } from "@/components/AgentHowTo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export default async function StatusPage() {
-  let balanceBlock: {
-    ok: true;
-    balanceUsdc: string;
-    balanceAtomic: string;
-    payTo: string;
-    fetchedAt: string;
-  } | {
-    ok: false;
-    error: string;
-    payTo: string;
-  };
+  let balanceBlock:
+    | {
+        ok: true;
+        balanceUsdc: string;
+        balanceAtomic: string;
+        payTo: string;
+        fetchedAt: string;
+      }
+    | {
+        ok: false;
+        error: string;
+        payTo: string;
+      };
 
   try {
     const bal = await fetchTreasuryUsdcBalance();
@@ -53,8 +57,10 @@ export default async function StatusPage() {
       </p>
       <h1 style={{ fontSize: 28, margin: "8px 0 16px" }}>Horizon Pulse</h1>
       <p style={{ opacity: 0.9 }}>
-        Free public dashboard. Shows the on-chain USDC balance of the x402{" "}
-        <code>payTo</code> treasury on Base — not invented metrics.
+        Free public dashboard. Shows the <strong>live</strong> on-chain USDC
+        balance of the x402 <code>payTo</code> treasury on Base (RPC{" "}
+        <code>balanceOf</code>) — not invented metrics, not an old Safe
+        balance.
       </p>
 
       <section
@@ -82,51 +88,57 @@ export default async function StatusPage() {
               <br />
               asset: {USDC_BASE}
               <br />
-              as of: {balanceBlock.fetchedAt} (UTC)
+              network: {BASE_CAIP2}
+              <br />
+              as of: {balanceBlock.fetchedAt} (ISO-8601 UTC from RPC read)
             </p>
           </>
         ) : (
           <>
             <p style={{ color: "#ffb4b4" }}>
-              Could not load balance: {balanceBlock.error}
+              Could not load live balance (RPC error): {balanceBlock.error}
             </p>
             <p style={{ fontSize: 13, opacity: 0.75, wordBreak: "break-all" }}>
-              Expected payTo: {balanceBlock.payTo}
+              Expected payTo: {balanceBlock.payTo}. No cached or Safe balance is
+              shown when the RPC fails.
             </p>
           </>
         )}
       </section>
 
-      <section style={{ marginTop: 24, fontSize: 14 }}>
-        <h2 style={{ fontSize: 16 }}>Product</h2>
-        <ul style={{ paddingLeft: 18 }}>
-          <li>
-            <code>/api/pulse</code> — {PULSE_PRICE_USD} USDC / call — CoinGecko
-            BTC/ETH/SOL + momentum
-          </li>
-          <li>
-            <code>/api/signals</code> — {SIGNALS_PRICE_USD} USDC / call —
-            RSI/MACD/Bollinger + OKX funding
-          </li>
-          <li>
-            <code>/api/yield</code> — {YIELD_PRICE_USD} USDC / call —
-            DefiLlama yields (TVL ≥ $10M, prefer stablecoin/single-asset)
-          </li>
-          <li>
-            <code>/api/portfolio?address=0x…</code> — {PORTFOLIO_PRICE_USD} USDC
-            / call — Base + Ethereum on-chain balances, rule-based risk +
-            rebalance suggestions
-          </li>
-          <li>
-            <code>/api/gas</code> — {GAS_PRICE_USD} USDC / call — Base +
-            Ethereum gas (feeHistory) with timingHint + optional transfer USD
-          </li>
-          <li>
-            <code>/api/funding</code> — {FUNDING_PRICE_USD} USDC / call — OKX
-            BTC/ETH/SOL perpetual funding + rule-based crowding hint
-          </li>
-          <li>Network: base · Facilitator: {CDP_FACILITATOR_URL}</li>
-        </ul>
+      <section
+        style={{
+          marginTop: 24,
+          padding: 20,
+          borderRadius: 12,
+          background: "#121a33",
+          border: "1px solid #243056",
+        }}
+      >
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>
+          Live paid catalog ({LIVE_PAID_ROUTES.length})
+        </h2>
+        <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0 }}>
+          {CATALOG_NOTE} First settle: {FIRST_SETTLE.route}{" "}
+          {FIRST_SETTLE.amountUsd} — tx {FIRST_SETTLE.txTruncated}.
+        </p>
+        <LiveRoutesList perCall />
+        <p style={{ fontSize: 13, opacity: 0.75, marginBottom: 0 }}>
+          Network: {BASE_CAIP2} · Facilitator: {CDP_FACILITATOR_URL}
+        </p>
+      </section>
+
+      <section
+        style={{
+          marginTop: 24,
+          padding: 20,
+          borderRadius: 12,
+          background: "#121a33",
+          border: "1px solid #243056",
+        }}
+      >
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>Agent how-to (x402 v2)</h2>
+        <AgentHowTo />
       </section>
 
       <p style={{ marginTop: 28, display: "flex", gap: 16 }}>

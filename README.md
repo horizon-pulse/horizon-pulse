@@ -8,10 +8,30 @@ This repo is a Next.js App Router service ready to deploy (e.g. Vercel) and push
 
 ## What it is
 
-- Agents hit paid HTTP endpoints.
-- Unpaid requests receive **HTTP 402** with payment requirements (`payTo`, USDC asset, amount, network).
-- With a valid x402 payment signature, Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
+- Agents hit **six** live paid HTTP endpoints (catalog frozen — see below).
+- Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header; network is CAIP-2 **`eip155:8453`** (Base); asset is Base USDC; `payTo` is the treasury below.
+- Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
 - No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only).
+- Never invent metrics; never advertise routes that 404; never cite an old Safe balance — `/status` reads live USDC `balanceOf` on `payTo`.
+
+## Catalog status (post first settlement)
+
+| Fact | Value |
+| --- | --- |
+| **Live paid routes** | exactly **6** (table below) |
+| **First settle** | `/api/pulse` **$0.005** — tx `0xedbd1a51…` |
+| **Policy** | **Frozen** — no new endpoints, no price changes |
+
+Coming-soon / placeholder / 404 routes are **not** listed on `/`, `/status`, or this README.
+
+## Agent how-to (x402 v2)
+
+1. **`GET`** a paid route with no payment → **HTTP 402**.
+2. Read **`PAYMENT-REQUIRED`** (v2). Confirm `network` = `eip155:8453`, USDC on Base, exact atomic `amount`, and `payTo`.
+3. Sign and retry the same **`GET`** with **`PAYMENT-SIGNATURE`** (v2 primary; do not rely on legacy `X-PAYMENT` as the settle path).
+4. On success: facilitator settles on Base; response body is the live JSON for that route.
+
+Optional: `OPTIONS` on a paid route returns discovery + the same `PAYMENT-REQUIRED` challenge without charging.
 
 ## Treasury (payTo)
 
@@ -28,16 +48,23 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
 ## Endpoints
 
+**Paid (6 — frozen catalog):**
+
 | Route | Price | Auth |
 | --- | --- | --- |
-| `GET /api/pulse` | **$0.005** USDC (`5000` atomic) | x402 |
-| `GET /api/signals` | **$0.015** USDC (`15000` atomic) | x402 |
-| `GET /api/yield` | **$0.02** USDC (`20000` atomic) | x402 |
-| `GET /api/portfolio?address=0x…` | **$0.04** USDC (`40000` atomic) | x402 |
-| `GET /api/gas` | **$0.01** USDC (`10000` atomic) | x402 |
-| `GET /api/funding` | **$0.01** USDC (`10000` atomic) | x402 |
-| `GET /status` | free | public HTML dashboard (on-chain USDC balance) |
-| `GET /` | free | landing page |
+| `GET /api/pulse` | **$0.005** USDC (`5000` atomic) | x402 v2 |
+| `GET /api/signals` | **$0.015** USDC (`15000` atomic) | x402 v2 |
+| `GET /api/yield` | **$0.02** USDC (`20000` atomic) | x402 v2 |
+| `GET /api/portfolio?address=0x…` | **$0.04** USDC (`40000` atomic) | x402 v2 |
+| `GET /api/gas` | **$0.01** USDC (`10000` atomic) | x402 v2 |
+| `GET /api/funding` | **$0.01** USDC (`10000` atomic) | x402 v2 |
+
+**Free (not paid APIs):**
+
+| Route | Auth |
+| --- | --- |
+| `GET /status` | public HTML — **live** USDC `balanceOf` on `payTo` (honest RPC error if fetch fails) |
+| `GET /` | landing — same six routes + agent how-to |
 
 ### `GET /api/pulse`
 
@@ -63,7 +90,7 @@ Ranked DeFi yield pools from the public DefiLlama yields API (`https://yields.ll
 - Every response includes a `methodology` object (also on error bodies)
 - Price: **$0.02** USDC (`20000` atomic)
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
-- Unpaid GET → **402** with `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
+- Unpaid GET → **402** + **`PAYMENT-REQUIRED`** (v2, `eip155:8453`) · `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
 
 ### `GET /api/portfolio`
 
@@ -75,7 +102,7 @@ On-chain portfolio snapshot for **one EVM address** (`?address=0x…`, required)
 - Rule-based **risk score** (0–100) and **rebalancing suggestions** with transparent formulas in `methodology`
 - Price: **$0.04** USDC (`40000` atomic)
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
-- Unpaid GET → **402** with `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
+- Unpaid GET → **402** + **`PAYMENT-REQUIRED`** (v2, `eip155:8453`) · `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
 
 ### `GET /api/gas`
 
@@ -87,7 +114,7 @@ Live gas snapshot for **Base** and **Ethereum** from public RPCs.
 - Optional ETH USD via CoinGecko for a simple 21k-gas transfer cost estimate (`simpleTransfer.costUsd`)
 - Price: **$0.01** USDC (`10000` atomic)
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
-- Unpaid GET → **402** with `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
+- Unpaid GET → **402** + **`PAYMENT-REQUIRED`** (v2, `eip155:8453`) · `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
 
 ### `GET /api/funding`
 
@@ -99,11 +126,14 @@ Live perpetual **funding rates** for BTC / ETH / SOL from **OKX** (same source a
 - Honesty: **real OKX data only**
 - Price: **$0.01** USDC (`10000` atomic) — cheap poll product for agents
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
-- Unpaid GET → **402** with `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
+- Unpaid GET → **402** + **`PAYMENT-REQUIRED`** (v2, `eip155:8453`) · `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
 
 ### `GET /status`
 
-Public page showing the **current USDC balance** of the `payTo` address on Base (via public RPC / `BASE_RPC_URL`) and brief product info.
+Public page showing the **live USDC balance** of the `payTo` address on Base (via public RPC / `BASE_RPC_URL` `balanceOf`) plus the frozen six-route catalog and agent how-to.
+
+- On RPC failure the page shows an **honest error** — it does **not** fall back to a cached or old Safe balance.
+- First settle noted as `/api/pulse` $0.005 (`0xedbd1a51…`); catalog frozen.
 
 ## Local development
 
@@ -136,8 +166,8 @@ Copy from `.env.example`:
 | `ETH_RPC_URL` | optional | overrides default Ethereum RPC for `/api/portfolio` + `/api/gas` |
 
 Without CDP keys:
-- Unpaid **GET** and **OPTIONS** still return correct **402 / discovery** payment requirements (`payTo` + discoverable `outputSchema`) — no CDP required for discovery.
-- Requests that include `PAYMENT-SIGNATURE` / `X-PAYMENT` receive **503** until `CDP_API_KEY_ID` + `CDP_API_KEY_SECRET` are set on Vercel (settlement path).
+- Unpaid **GET** and **OPTIONS** still return correct **402 / discovery** with v2 **`PAYMENT-REQUIRED`** (`payTo`, `eip155:8453`, USDC amount) — no CDP required for discovery.
+- Requests that include **`PAYMENT-SIGNATURE`** (or legacy `X-PAYMENT`) receive **503** until `CDP_API_KEY_ID` + `CDP_API_KEY_SECRET` are set on Vercel (settlement path).
 - Do **not** expect live GET to 500 when CDP is missing; that was a prior bug fixed by gating `withX402` behind payment + CDP credentials.
 
 ## Stack

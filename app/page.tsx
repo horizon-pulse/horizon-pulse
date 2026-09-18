@@ -2,14 +2,16 @@ import Link from "next/link";
 import {
   DEFAULT_PAY_TO,
   GITHUB_REPO,
-  PULSE_PRICE_USD,
-  SIGNALS_PRICE_USD,
-  YIELD_PRICE_USD,
-  PORTFOLIO_PRICE_USD,
-  GAS_PRICE_USD,
-  FUNDING_PRICE_USD,
   USDC_BASE,
+  BASE_CAIP2,
 } from "@/lib/config";
+import {
+  CATALOG_NOTE,
+  FIRST_SETTLE,
+  LIVE_PAID_ROUTES,
+} from "@/lib/live-catalog";
+import { LiveRoutesList } from "@/components/LiveRoutesList";
+import { AgentHowTo } from "@/components/AgentHowTo";
 
 export default function HomePage() {
   return (
@@ -21,11 +23,11 @@ export default function HomePage() {
         Pay-per-call crypto data for AI agents
       </h1>
       <p style={{ opacity: 0.9, fontSize: 18 }}>
-        Honest x402 micropayments on{" "}
-        <strong>Base mainnet</strong> (USDC). Agents discover endpoints, pay
-        exactly once per call, and receive live CoinGecko prices, technical
-        signals, live OKX perpetual funding (not Binance/Bybit), DefiLlama yield
-        rankings, on-chain portfolio risk snapshots, and live Base/Ethereum gas.
+        Honest x402 micropayments on <strong>Base mainnet</strong> (USDC).{" "}
+        {LIVE_PAID_ROUTES.length} live paid routes only — CoinGecko prices,
+        technical signals, OKX perpetual funding (not Binance/Bybit), DefiLlama
+        yields, on-chain portfolio risk, and Base/Ethereum gas. No invented
+        metrics. No advertised 404s.
       </p>
 
       <section
@@ -37,37 +39,29 @@ export default function HomePage() {
           border: "1px solid #243056",
         }}
       >
-        <h2 style={{ marginTop: 0, fontSize: 18 }}>Endpoints</h2>
-        <ul style={{ paddingLeft: 18, marginBottom: 0 }}>
-          <li>
-            <code>GET /api/pulse</code> — {PULSE_PRICE_USD} USDC (5000 atomic) —
-            BTC/ETH/SOL spot + momentum
-          </li>
-          <li>
-            <code>GET /api/signals</code> — {SIGNALS_PRICE_USD} USDC (15000
-            atomic) — RSI/MACD/Bollinger + OKX funding
-          </li>
-          <li>
-            <code>GET /api/yield</code> — {YIELD_PRICE_USD} USDC (20000 atomic)
-            — DefiLlama yields (TVL ≥ $10M, prefer stablecoin/single-asset)
-          </li>
-          <li>
-            <code>GET /api/portfolio?address=0x…</code> — {PORTFOLIO_PRICE_USD}{" "}
-            USDC (40000 atomic) — Base + Ethereum balances, risk score,
-            rebalance suggestions
-          </li>
-          <li>
-            <code>GET /api/gas</code> — {GAS_PRICE_USD} USDC (10000 atomic) —
-            Base + Ethereum baseFee / priority / suggested maxFee + timingHint
-          </li>
-          <li>
-            <code>GET /api/funding</code> — {FUNDING_PRICE_USD} USDC (10000
-            atomic) — OKX BTC/ETH/SOL perpetual funding + crowding hint
-          </li>
-          <li>
-            <code>GET /status</code> — free public treasury dashboard
-          </li>
-        </ul>
+        <h2 style={{ marginTop: 0, fontSize: 18 }}>
+          Live paid catalog ({LIVE_PAID_ROUTES.length})
+        </h2>
+        <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0 }}>
+          {CATALOG_NOTE} First settle: {FIRST_SETTLE.route}{" "}
+          {FIRST_SETTLE.amountUsd} — tx {FIRST_SETTLE.txTruncated}.
+        </p>
+        <LiveRoutesList />
+      </section>
+
+      <section
+        style={{
+          marginTop: 24,
+          padding: 20,
+          borderRadius: 12,
+          background: "#121a33",
+          border: "1px solid #243056",
+        }}
+      >
+        <h2 style={{ marginTop: 0, fontSize: 18 }}>
+          Agent how-to (x402 v2)
+        </h2>
+        <AgentHowTo />
       </section>
 
       <section style={{ marginTop: 24, fontSize: 14, opacity: 0.85 }}>
@@ -80,8 +74,13 @@ export default function HomePage() {
           <code style={{ wordBreak: "break-all" }}>{USDC_BASE}</code>
         </p>
         <p>
-          <strong>Network</strong>: base (eip155:8453) ·{" "}
+          <strong>Network</strong>: base ({BASE_CAIP2}) ·{" "}
           <strong>Facilitator</strong>: Coinbase CDP x402
+        </p>
+        <p style={{ fontSize: 13, opacity: 0.75 }}>
+          Free pages: <code>GET /</code> (this landing) ·{" "}
+          <code>GET /status</code> (live on-chain USDC on payTo — not an old
+          Safe balance).
         </p>
       </section>
 
@@ -106,10 +105,11 @@ export default function HomePage() {
       </p>
 
       <p style={{ marginTop: 40, fontSize: 13, opacity: 0.55 }}>
-        No fake metrics. Paid routes return HTTP 402 with payment requirements
-        until a valid x402 payment signature is provided. Settlement uses CDP
-        when <code>CDP_API_KEY_ID</code> / <code>CDP_API_KEY_SECRET</code> are
-        set.
+        Unpaid paid-routes return HTTP 402 with <code>PAYMENT-REQUIRED</code>{" "}
+        until a valid x402 v2 <code>PAYMENT-SIGNATURE</code> is provided.
+        Settlement uses CDP when <code>CDP_API_KEY_ID</code> /{" "}
+        <code>CDP_API_KEY_SECRET</code> are set. Coming-soon routes are not
+        listed.
       </p>
     </main>
   );
