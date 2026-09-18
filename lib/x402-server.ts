@@ -75,12 +75,16 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
+/** @x402/extensions types omit `method` (enrichment-only); CDP Bazaar validate needs it statically. */
+type DiscoveryDecl = Parameters<typeof declareDiscoveryExtension>[0];
+
 function discoveryExt(
   description: string,
   outputExample: Record<string, unknown>,
 ) {
   return {
     ...declareDiscoveryExtension({
+      method: "GET",
       input: {},
       inputSchema: {
         properties: {},
@@ -93,7 +97,7 @@ function discoveryExt(
           description,
         },
       },
-    }),
+    } as DiscoveryDecl),
   };
 }
 
@@ -204,6 +208,7 @@ export function portfolioRouteConfig(): RoutesConfig {
       mimeType: "application/json",
       extensions: {
         ...declareDiscoveryExtension({
+          method: "GET",
           input: { address: "0x..." },
           inputSchema: {
             properties: {
@@ -227,7 +232,7 @@ export function portfolioRouteConfig(): RoutesConfig {
               description: "Horizon Pulse portfolio snapshot",
             },
           },
-        }),
+        } as DiscoveryDecl),
       },
     },
   };
