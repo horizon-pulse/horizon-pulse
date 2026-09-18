@@ -135,9 +135,30 @@ async function main() {
   }
   log("1/ unpaid", "402 received");
 
-  const accepts = unpaidBody?.accepts;
+  // Prefer canonical v2 PAYMENT-REQUIRED header; fall back to v1 JSON body.
+  const coreEarly = new x402Client();
+  registerExactEvmScheme(coreEarly, { signer: account });
+  const httpClientEarly = new x402HTTPClient(coreEarly);
+
+  let paymentRequired;
+  try {
+    paymentRequired = httpClientEarly.getPaymentRequiredResponse(
+      (name) => unpaid.headers.get(name),
+      unpaidBody,
+    );
+  } catch (e) {
+    fail(
+      `Could not decode payment requirements from PAYMENT-REQUIRED header or v1 body: ${e?.message || e}`,
+      {
+        body: unpaidBody,
+        paymentRequiredHeader: unpaid.headers.get("PAYMENT-REQUIRED")?.slice(0, 80),
+      },
+    );
+  }
+
+  const accepts = paymentRequired?.accepts;
   if (!Array.isArray(accepts) || accepts.length === 0) {
-    fail("402 body missing accepts[]", unpaidBody);
+    fail("payment requirements missing accepts[]", paymentRequired);
   }
   const req0 = accepts[0];
   const payTo = normalizeAddr(req0.payTo);
@@ -152,22 +173,36 @@ async function main() {
   console.log(`  network: ${req0.network}`);
   console.log(`  asset:   ${req0.asset}`);
   console.log(`  scheme:  ${req0.scheme}`);
-  console.log(`  x402:    v${unpaidBody.x402Version}`);
+  console.log(`  x402:    v${paymentRequired.x402Version}`);
+  console.log(
+    `  wire:    ${unpaid.headers.get("PAYMENT-REQUIRED") ? "PAYMENT-REQUIRED header" : "body (legacy)"}`,
+  );
 
   if (payTo !== EXPECTED_PAY_TO) {
     fail(
       `Unexpected payTo: got ${req0.payTo}, expected ${EXPECTED_PAY_TO}`,
-      unpaidBody,
+      paymentRequired,
     );
   }
   if (String(amount) !== EXPECTED_ATOMIC) {
     fail(
       `Unexpected amount: got ${amount}, expected ${EXPECTED_ATOMIC} atomic (${EXPECTED_PRICE_USD})`,
-      unpaidBody,
+      paymentRequired,
     );
   }
   if (normalizeAddr(req0.asset) !== normalizeAddr(USDC_BASE)) {
-    fail(`Unexpected asset: got ${req0.asset}, expected ${USDC_BASE}`, unpaidBody);
+    fail(
+      `Unexpected asset: got ${req0.asset}, expected ${USDC_BASE}`,
+      paymentRequired,
+    );
+  }
+  // v2 uses CAIP-2; v1 used "base"
+  const net = String(req0.network || "");
+  if (net !== "eip155:8453" && net !== "base") {
+    fail(
+      `Unexpected network: got ${req0.network}, expected eip155:8453 (or legacy base)`,
+      paymentRequired,
+    );
   }
   log("1/ unpaid", `OK — payTo and ${EXPECTED_PRICE_USD} match`);
 
@@ -186,16 +221,8 @@ async function main() {
   }
 
   // --- Step 3: sign EIP-3009 / x402 payment ---
-  log("3/ sign", "Building x402 client (Exact EVM V1+V2) and payment payload");
-  const core = new x402Client();
-  // registerExactEvmScheme wires ExactEvmScheme (eip155:*) + ExactEvmSchemeV1 (base, …)
-  registerExactEvmScheme(core, { signer: account });
-  const httpClient = new x402HTTPClient(core);
-
-  const paymentRequired = httpClient.getPaymentRequiredResponse(
-    (name) => unpaid.headers.get(name),
-    unpaidBody,
-  );
+  log("3/ sign", "Building payment payload from decoded requirements");
+  const httpClient = httpClientEarly;
 
   let paymentPayload;
   try {
@@ -208,7 +235,7 @@ async function main() {
   const paymentHeaders = httpClient.encodePaymentSignatureHeader(paymentPayload);
   log(
     "3/ sign",
-    `Payment header keys: ${Object.keys(paymentHeaders).join(", ") || "(none)"}`,
+    `Payment header keys: ${Object.keys(paymentHeaders).join(", ") || "(none)"} (x402 v${paymentPayload.x402Version})`,
   );
 
   // --- Step 4: paid retry ---

@@ -1,6 +1,7 @@
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import type { RoutesConfig } from "@x402/core/server";
+import { encodePaymentRequiredHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
 import type { NextRequest } from "next/server";
@@ -68,7 +69,9 @@ export function hasPaymentHeader(req: NextRequest): boolean {
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "PAYMENT-SIGNATURE, X-PAYMENT, Content-Type, Accept",
+    "PAYMENT-SIGNATURE, X-PAYMENT, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE, Content-Type, Accept",
+  "Access-Control-Expose-Headers":
+    "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
 
@@ -294,8 +297,12 @@ export function fundingRouteConfig(): RoutesConfig {
 }
 
 /**
- * Explicit paymentRequirements JSON (incl. discoverable outputSchema) for
- * OPTIONS / unpaid GET 402 / agent discovery.
+ * Explicit x402 v2 PaymentRequired (no facilitator sync) for OPTIONS /
+ * unpaid GET when CDP keys are absent. Must stay wire-compatible with
+ * @x402/next: PAYMENT-REQUIRED header + CAIP-2 network + `amount`.
+ *
+ * NOTE: when CDP is present, createX402GetHandler routes unpaid through
+ * withX402 so the challenge matches facilitator-enhanced accepts exactly.
  */
 export function buildPaymentRequirements(opts: {
   maxAmountRequired: string;
@@ -303,29 +310,23 @@ export function buildPaymentRequirements(opts: {
   description: string;
 }) {
   const payTo = getPayTo();
+  const network = getNetworkCaip2();
   return {
-    x402Version: 1,
+    x402Version: 2 as const,
+    resource: {
+      url: opts.resource,
+      description: opts.description,
+      mimeType: "application/json",
+    },
     accepts: [
       {
         scheme: "exact",
-        network: "base",
-        maxAmountRequired: opts.maxAmountRequired,
-        resource: opts.resource,
-        description: opts.description,
-        mimeType: "application/json",
-        payTo,
-        maxTimeoutSeconds: 60,
+        network,
+        amount: opts.maxAmountRequired,
         asset: USDC_BASE,
-        outputSchema: {
-          input: {
-            type: "http",
-            method: "GET",
-            discoverable: true,
-          },
-          output: {
-            type: "object",
-          },
-        },
+        payTo,
+        // Match @x402/core default when route omits maxTimeoutSeconds
+        maxTimeoutSeconds: 300,
         extra: {
           name: "USD Coin",
           version: "2",
@@ -335,17 +336,19 @@ export function buildPaymentRequirements(opts: {
   };
 }
 
-/** HTTP 402 with the same payment-requirements body as OPTIONS. */
+/** HTTP 402 with v2 body + PAYMENT-REQUIRED header (canonical wire location). */
 export function paymentRequiredResponse(opts: {
   maxAmountRequired: string;
   resource: string;
   description: string;
 }): NextResponse {
-  return NextResponse.json(buildPaymentRequirements(opts), {
+  const paymentRequired = buildPaymentRequirements(opts);
+  return NextResponse.json(paymentRequired, {
     status: 402,
     headers: {
       ...CORS_HEADERS,
       "Cache-Control": "no-store",
+      "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired),
     },
   });
 }
@@ -373,11 +376,13 @@ export function discoveryOptionsResponse(opts: {
   resource: string;
   description: string;
 }): NextResponse {
-  return NextResponse.json(buildPaymentRequirements(opts), {
+  const paymentRequired = buildPaymentRequirements(opts);
+  return NextResponse.json(paymentRequired, {
     status: 200,
     headers: {
       Allow: "GET, OPTIONS",
       ...CORS_HEADERS,
+      "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired),
     },
   });
 }
@@ -385,9 +390,14 @@ export function discoveryOptionsResponse(opts: {
 type AppRouteHandler = (req: NextRequest) => Promise<NextResponse>;
 
 /**
- * Gate unpaid GETs to a local 402 (no facilitator sync). Only invoke withX402
- * when a payment header is present AND CDP credentials exist — lazy-init so
- * cold starts without keys never crash.
+ * Unpaid + no CDP → local v2 402 (no facilitator sync).
+ * Unpaid + CDP → withX402 (same v2 PAYMENT-REQUIRED the settle path uses).
+ * Paid + no CDP → 503.
+ * Paid + CDP → withX402 verify+settle.
+ *
+ * Critical: @x402/core extractPayment only reads PAYMENT-SIGNATURE (v2), not
+ * X-PAYMENT (v1). Advertising a v1 body caused clients to retry with X-PAYMENT,
+ * which withX402 ignored → 402 {} + v2 PAYMENT-REQUIRED "Payment required".
  */
 export function createX402GetHandler(
   routeHandler: AppRouteHandler,
@@ -415,10 +425,15 @@ export function createX402GetHandler(
   }
 
   return async (req: NextRequest) => {
+    const cdpReady = hasCdpCredentials();
     if (!hasPaymentHeader(req)) {
+      // With CDP, return the identical v2 challenge withX402 will verify against.
+      if (cdpReady) {
+        return getPaidHandler()(req);
+      }
       return paymentRequiredResponse(paymentOpts);
     }
-    if (!hasCdpCredentials()) {
+    if (!cdpReady) {
       return settlementUnavailableResponse();
     }
     return getPaidHandler()(req);
