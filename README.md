@@ -6,6 +6,15 @@ This repo is a Next.js App Router service ready to deploy (e.g. Vercel) and push
 
 `https://github.com/horizon-pulse/horizon-pulse.git`
 
+## Public host
+
+| Role | URL |
+| --- | --- |
+| **Canonical** | `https://horizonpulse.dev` |
+| **Backup (Vercel)** | `https://horizon-pulse-seven.vercel.app` |
+
+Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.app` URL remains a working fallback.
+
 ## What it is
 
 - Agents hit **six** live paid HTTP endpoints (catalog frozen — see below).
@@ -182,7 +191,7 @@ Without CDP keys:
 1. Create the GitHub repo / remote `https://github.com/horizon-pulse/horizon-pulse.git`.
 2. Set Vercel env vars (above). Prefer PEM secret as a single line with `\n` escapes if the UI is single-line.
 3. Deploy from `main`. Ensure functions use **Node.js** runtime (routes already set `export const runtime = 'nodejs'`).
-4. Smoke-test: `curl -i https://YOUR_HOST/api/pulse` (or `/api/yield`, `/api/portfolio`, `/api/gas`, `/api/funding`) should return **402** with payment requirements pointing at the new `payTo`.
+4. Smoke-test: `curl -i https://horizonpulse.dev/api/pulse` (or `/api/yield`, `/api/portfolio`, `/api/gas`, `/api/funding`) should return **402** with payment requirements pointing at the new `payTo`.
 5. Confirm `/status` shows the treasury balance for `0x5b32…e0e9`.
 
 ## Push (from this workspace)
@@ -223,7 +232,8 @@ SMOKE_PRIVATE_KEY=0x... node scripts/smoke-pulse.mjs
 Optional:
 
 ```bash
-SMOKE_BASE_URL=https://horizon-pulse-seven.vercel.app
+SMOKE_BASE_URL=https://horizonpulse.dev
+# backup: https://horizon-pulse-seven.vercel.app
 BASE_RPC_URL=https://mainnet.base.org
 ```
 

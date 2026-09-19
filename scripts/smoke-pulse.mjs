@@ -7,7 +7,8 @@
  *   SMOKE_PRIVATE_KEY=0x... node scripts/smoke-pulse.mjs
  *
  * Optional:
- *   SMOKE_BASE_URL=https://horizon-pulse-seven.vercel.app
+ *   SMOKE_BASE_URL=https://horizonpulse.dev
+ *   # backup: https://horizon-pulse-seven.vercel.app
  *   BASE_RPC_URL=https://mainnet.base.org
  *
  * NEVER paste your private key into chat, commits, or screenshots.
@@ -27,7 +28,7 @@ const EXPECTED_PRICE_USD = "$0.005";
 
 const BASE_URL = (
   process.env.SMOKE_BASE_URL?.trim() ||
-  "https://horizon-pulse-seven.vercel.app"
+  "https://horizonpulse.dev"
 ).replace(/\/$/, "");
 const RPC_URL =
   process.env.BASE_RPC_URL?.trim() || "https://mainnet.base.org";

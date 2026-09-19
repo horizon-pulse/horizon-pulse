@@ -5,6 +5,8 @@ import {
   USDC_BASE,
   CDP_FACILITATOR_URL,
   BASE_CAIP2,
+  PUBLIC_BASE_URL,
+  PUBLIC_BASE_URL_BACKUP,
 } from "@/lib/config";
 import { fetchTreasuryUsdcBalance } from "@/lib/treasury";
 import {
@@ -125,6 +127,24 @@ export default async function StatusPage() {
         <LiveRoutesList perCall />
         <p style={{ fontSize: 13, opacity: 0.75, marginBottom: 0 }}>
           Network: {BASE_CAIP2} · Facilitator: {CDP_FACILITATOR_URL}
+        </p>
+        <p
+          style={{
+            fontSize: 13,
+            opacity: 0.75,
+            marginBottom: 0,
+            marginTop: 8,
+            wordBreak: "break-all",
+          }}
+        >
+          Host:{" "}
+          <a href={PUBLIC_BASE_URL} style={{ color: "#8ec5ff" }}>
+            {PUBLIC_BASE_URL}
+          </a>{" "}
+          (canonical) · backup{" "}
+          <a href={PUBLIC_BASE_URL_BACKUP} style={{ color: "#8ec5ff" }}>
+            {PUBLIC_BASE_URL_BACKUP}
+          </a>
         </p>
       </section>
 

@@ -2,6 +2,10 @@
  * Single source of truth for the live paid catalog.
  * Frozen after first settlement — do not add routes or change prices here
  * without an explicit product decision.
+ *
+ * Public host: https://horizonpulse.dev (canonical).
+ * Backup: https://horizon-pulse-seven.vercel.app (Vercel).
+ * Catalog paths, prices, and payTo are unchanged by host updates.
  */
 
 import {

@@ -37,6 +37,12 @@ export const FUNDING_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 
+/** Canonical public host (custom domain). Prefer this in agent docs and clients. */
+export const PUBLIC_BASE_URL = "https://horizonpulse.dev" as const;
+/** Vercel deployment URL — backup / fallback when the custom domain is unavailable. */
+export const PUBLIC_BASE_URL_BACKUP =
+  "https://horizon-pulse-seven.vercel.app" as const;
+
 export function getPayTo(): `0x${string}` {
   const fromEnv = process.env.PAY_TO?.trim();
   const addr = (fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_PAY_TO).toLowerCase();

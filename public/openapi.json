@@ -1,0 +1,116 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Horizon Pulse",
+    "description": "Pay-per-call crypto market APIs for AI agents via x402 v2 on Base USDC. Catalog frozen: six live paid routes only.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://horizonpulse.dev",
+      "description": "Canonical custom domain"
+    },
+    {
+      "url": "https://horizon-pulse-seven.vercel.app",
+      "description": "Vercel backup / fallback"
+    }
+  ],
+  "paths": {
+    "/api/pulse": {
+      "get": {
+        "summary": "BTC/ETH/SOL spot + momentum (CoinGecko)",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.005 USDC (5000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live pulse JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/signals": {
+      "get": {
+        "summary": "RSI/MACD/Bollinger + OKX funding",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live signals JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/yield": {
+      "get": {
+        "summary": "DefiLlama yields (TVL \u2265 $10M)",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live yield JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/portfolio": {
+      "get": {
+        "summary": "Base + Ethereum portfolio risk snapshot",
+        "description": "x402 v2 exact payment. Requires query param address=0x\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.04 USDC (40000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            },
+            "description": "EVM address (0x + 40 hex)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live portfolio JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/gas": {
+      "get": {
+        "summary": "Base + Ethereum gas fee snapshot",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live gas JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/funding": {
+      "get": {
+        "summary": "OKX BTC/ETH/SOL perpetual funding",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live funding JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    }
+  }
+}

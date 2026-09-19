@@ -4,6 +4,8 @@ import {
   GITHUB_REPO,
   USDC_BASE,
   BASE_CAIP2,
+  PUBLIC_BASE_URL,
+  PUBLIC_BASE_URL_BACKUP,
 } from "@/lib/config";
 import {
   CATALOG_NOTE,
@@ -81,6 +83,16 @@ export default function HomePage() {
           Free pages: <code>GET /</code> (this landing) ·{" "}
           <code>GET /status</code> (live on-chain USDC on payTo — not an old
           Safe balance).
+        </p>
+        <p style={{ fontSize: 13, opacity: 0.75, wordBreak: "break-all" }}>
+          <strong>Host</strong>:{" "}
+          <a href={PUBLIC_BASE_URL} style={{ color: "#8ec5ff" }}>
+            {PUBLIC_BASE_URL}
+          </a>{" "}
+          (canonical) · backup{" "}
+          <a href={PUBLIC_BASE_URL_BACKUP} style={{ color: "#8ec5ff" }}>
+            {PUBLIC_BASE_URL_BACKUP}
+          </a>
         </p>
       </section>
 

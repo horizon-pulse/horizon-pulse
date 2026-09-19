@@ -1,9 +1,14 @@
 /**
  * Agent-facing x402 v2 payment flow (honest wire protocol).
+ * Base URL: https://horizonpulse.dev (canonical); vercel.app remains a backup.
  */
 export function AgentHowTo() {
   return (
     <ol style={{ paddingLeft: 18, marginBottom: 0 }}>
+      <li>
+        Use base <code>https://horizonpulse.dev</code> (canonical). Backup:{" "}
+        <code>https://horizon-pulse-seven.vercel.app</code>.
+      </li>
       <li>
         <code>GET</code> a paid route without payment →{" "}
         <strong>HTTP 402</strong>. Requirements are in the{" "}

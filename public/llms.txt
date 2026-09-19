@@ -1,0 +1,47 @@
+# Horizon Pulse
+
+> Pay-per-call crypto market APIs for AI agents, monetized with x402 v2 on Base (USDC).
+
+Live base URL (canonical): https://horizonpulse.dev
+Backup (Vercel): https://horizon-pulse-seven.vercel.app
+
+## Payment (x402 v2)
+
+- Unpaid `GET` → HTTP 402 with `PAYMENT-REQUIRED` header (x402 v2)
+- Network: Base mainnet CAIP-2 `eip155:8453`
+- Asset: Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
+- payTo: `0x5b32c973596078a967562ca652761404f19be0e9`
+- Facilitator: Coinbase CDP `https://api.cdp.coinbase.com/platform/v2/x402`
+- Retry the same `GET` with `PAYMENT-SIGNATURE` (v2). Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.
+- Catalog frozen: exactly six live paid routes below. No other paid endpoints.
+
+## Live paid routes
+
+| Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |
+| --- | --- | --- | --- | --- |
+| GET | /api/pulse | $0.005 | 5000 | BTC/ETH/SOL spot + momentum (CoinGecko) |
+| GET | /api/signals | $0.015 | 15000 | RSI/MACD/Bollinger + OKX funding |
+| GET | /api/yield | $0.02 | 20000 | DefiLlama yields (TVL ≥ $10M) |
+| GET | /api/portfolio?address=0x… | $0.04 | 40000 | Base + Ethereum balances, risk, rebalance suggestions |
+| GET | /api/gas | $0.01 | 10000 | Base + Ethereum fee snapshot + timingHint |
+| GET | /api/funding | $0.01 | 10000 | OKX BTC/ETH/SOL perpetual funding + crowding hint |
+
+## Free (not paid)
+
+- GET `/` — landing (six routes + agent how-to)
+- GET `/status` — live USDC `balanceOf` on payTo + catalog
+- GET `/llms.txt` — this file
+- GET `/openapi.json` — OpenAPI snippet for the six paid routes
+
+## Agent how-to (short)
+
+1. Call routes on `https://horizonpulse.dev` (canonical; vercel.app is backup).
+2. `GET` a paid route with no payment → 402 + `PAYMENT-REQUIRED`.
+3. Confirm network `eip155:8453`, Base USDC, atomic `amount`, and `payTo`.
+4. Sign and retry with `PAYMENT-SIGNATURE`.
+5. On success, response body is live JSON for that route.
+
+## Honesty
+
+- Real upstream data only (CoinGecko, OKX, DefiLlama, public RPCs). No stubbed prices.
+- Do not invent routes, prices, or Bazaar index status.
