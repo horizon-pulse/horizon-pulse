@@ -21,7 +21,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 - Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header; network is CAIP-2 **`eip155:8453`** (Base); asset is Base USDC; `payTo` is the treasury below.
 - Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
 - No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only).
-- Never invent metrics; never advertise routes that 404; never cite an old Safe balance — `/status` reads live USDC `balanceOf` on `payTo`.
+- Never invent metrics; never advertise routes that 404; never cite a cached balance — `/status` reads live USDC `balanceOf` on `payTo`. Honest: current `payTo` is interim Coinbase-custodial (not Safe/multisig).
 
 ## Catalog status (post first settlement)
 
@@ -47,13 +47,15 @@ Optional: `OPTIONS` on a paid route returns discovery + the same `PAYMENT-REQUIR
 | Field | Value |
 | --- | --- |
 | **payTo** | `0x5b32c973596078a967562ca652761404f19be0e9` |
+| **Custody** | **Interim Coinbase-custodial** Base address (Michael-controlled). **Not** a Safe or multisig. |
+| **Upgrade path** | Move later to a non-custodial Safe / multisig when ready — same catalog and prices. |
 | **USDC (Base)** | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | **Network** | `base` (CAIP-2 `eip155:8453`) |
 | **Facilitator** | `https://api.cdp.coinbase.com/platform/v2/x402` |
 
 Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
-`PAY_TO` may be overridden via env, but defaults to the treasury above.
+`PAY_TO` may be overridden via env, but defaults to the address above. Agents should treat current `payTo` as the live settlement destination; custody shape may change later without changing route prices.
 
 ## Endpoints
 
@@ -141,7 +143,7 @@ Live perpetual **funding rates** for BTC / ETH / SOL from **OKX** (same source a
 
 Public page showing the **live USDC balance** of the `payTo` address on Base (via public RPC / `BASE_RPC_URL` `balanceOf`) plus the frozen six-route catalog and agent how-to.
 
-- On RPC failure the page shows an **honest error** — it does **not** fall back to a cached or old Safe balance.
+- On RPC failure the page shows an **honest error** — it does **not** fall back to a cached balance. Custody note: interim Coinbase-custodial `payTo` (not Safe/multisig); upgrade path later.
 - First settle noted as `/api/pulse` $0.005 (`0xedbd1a51…`); catalog frozen.
 
 ## Local development
@@ -217,6 +219,19 @@ git pull origin main --rebase   # or merge, as appropriate
 git push -u origin main
 ```
 
+
+## Reference agent (`examples/`)
+
+Unpaid 402 discovery for **all six** frozen routes, plus optional paid single-route when `SMOKE_PRIVATE_KEY` is set:
+
+```bash
+cd horizon-pulse
+node examples/reference-agent.mjs
+# optional paid:
+SMOKE_PRIVATE_KEY=0x... SMOKE_ROUTE=/api/pulse node examples/reference-agent.mjs
+```
+
+See `examples/README.md`. Uses `@x402/core` + `@x402/evm` from this package. **Never commit secrets.**
 
 ## Paid smoke test (`/api/pulse`)
 

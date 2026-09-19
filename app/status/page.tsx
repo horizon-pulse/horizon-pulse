@@ -60,9 +60,8 @@ export default async function StatusPage() {
       <h1 style={{ fontSize: 28, margin: "8px 0 16px" }}>Horizon Pulse</h1>
       <p style={{ opacity: 0.9 }}>
         Free public dashboard. Shows the <strong>live</strong> on-chain USDC
-        balance of the x402 <code>payTo</code> treasury on Base (RPC{" "}
-        <code>balanceOf</code>) — not invented metrics, not an old Safe
-        balance.
+        balance of the x402 <code>payTo</code> address on Base (RPC{" "}
+        <code>balanceOf</code>) — not invented metrics, not a cached figure.
       </p>
 
       <section
@@ -101,11 +100,30 @@ export default async function StatusPage() {
               Could not load live balance (RPC error): {balanceBlock.error}
             </p>
             <p style={{ fontSize: 13, opacity: 0.75, wordBreak: "break-all" }}>
-              Expected payTo: {balanceBlock.payTo}. No cached or Safe balance is
-              shown when the RPC fails.
+              Expected payTo: {balanceBlock.payTo}. No cached balance is shown when
+              the RPC fails.
             </p>
           </>
         )}
+      </section>
+
+      <section
+        style={{
+          marginTop: 24,
+          padding: 20,
+          borderRadius: 12,
+          background: "#121a33",
+          border: "1px solid #243056",
+        }}
+      >
+        <h2 style={{ marginTop: 0, fontSize: 16 }}>payTo custody (honest)</h2>
+        <p style={{ fontSize: 14, opacity: 0.9, marginTop: 0 }}>
+          <code>payTo</code> is an <strong>interim Coinbase-custodial</strong>{" "}
+          Base address controlled by Michael. It is <strong>not</strong> a Safe
+          or multisig. A non-custodial / Safe-or-multisig upgrade is planned
+          later; until then this address is the settlement destination agents
+          should use.
+        </p>
       </section>
 
       <section
