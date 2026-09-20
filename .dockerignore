@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+cdp-*.json
+.vercel
+coverage
+dist
+*.tsbuildinfo
+npm-debug.log*
+README.md

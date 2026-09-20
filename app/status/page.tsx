@@ -66,6 +66,27 @@ export default async function StatusPage() {
 
       <section
         style={{
+          marginTop: 24,
+          padding: 16,
+          borderRadius: 10,
+          background: "#211b12",
+          border: "1px solid #6b5428",
+        }}
+      >
+        <p style={{ margin: 0, fontSize: 14 }}>
+          <strong>Payment destination notice:</strong> Only pay via{" "}
+          <a href="https://horizonpulse.dev" style={{ color: "#8ec5ff" }}>
+            https://horizonpulse.dev
+          </a>{" "}
+          to <code>0x5b32c973596078a967562ca652761404f19be0e9</code>. Ignore{" "}
+          <code>horizon-pulse.vercel.app</code> and the old Safe{" "}
+          <code>0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E</code>; they are
+          stranded and abandoned.
+        </p>
+      </section>
+
+      <section
+        style={{
           marginTop: 28,
           padding: 20,
           borderRadius: 12,
