@@ -46,6 +46,14 @@ export const FETCH_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
 export const HTTP_PRICE_USD = "$0.01" as const;
 export const HTTP_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 
+/**
+ * /api/extract — URL or HTML → structured page fields for agents.
+ * Price: $0.015 USDC (15000 atomic) — between /api/http ($0.01) and
+ * /api/fetch ($0.02). Same payTo + Base USDC / x402 stack.
+ */
+export const EXTRACT_PRICE_USD = "$0.015" as const;
+export const EXTRACT_PRICE_ATOMIC = "15000" as const; // USDC 6 decimals
+
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 
 /** Canonical public host (custom domain). Prefer this in agent docs and clients. */

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402 v2 on Base USDC. Six crypto routes frozen; non-crypto LIVE: /api/fetch ($0.02 clean-text) and /api/http ($0.01 universal proxy).",
+    "description": "Pay-per-call APIs for AI agents via x402 v2 on Base USDC. Six crypto routes frozen; non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML).",
     "version": "1.0.0"
   },
   "servers": [
@@ -270,6 +270,91 @@
           },
           "413": {
             "description": "Body too large"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          }
+        }
+      }
+    },
+    "/api/extract": {
+      "get": {
+        "summary": "Extract structured fields from a public URL",
+        "description": "x402 v2 exact payment. Query param url=https://\u2026 (optional if html provided via POST). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~200KB / 8s caps. Response omits empty fields: ok, url?, title, description, canonical, language?, links, images, jsonLd, headings, textSample, elapsedMs.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL to fetch and extract (private/localhost blocked). Required on GET unless using POST with html."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 structured extract JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing input / bad HTML"
+          },
+          "413": {
+            "description": "HTML or body too large"
+          },
+          "415": {
+            "description": "Upstream Content-Type is not HTML"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          }
+        }
+      },
+      "post": {
+        "summary": "Extract structured fields from URL and/or HTML",
+        "description": "Same $0.015 USDC x402 price as GET. JSON body: { url?, html? } \u2014 at least one required. If html is provided it is parsed (url echoed); else url is fetched SSRF-safe. Same caps/payTo as GET. Network eip155:8453.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "html": {
+                    "type": "string",
+                    "description": "Raw HTML to parse (size-capped ~200KB)"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 structured extract JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing input / bad HTML"
+          },
+          "413": {
+            "description": "Body or HTML too large"
           },
           "502": {
             "description": "Upstream error"

@@ -27,6 +27,8 @@ import {
   FETCH_PRICE_ATOMIC,
   HTTP_PRICE_USD,
   HTTP_PRICE_ATOMIC,
+  EXTRACT_PRICE_USD,
+  EXTRACT_PRICE_ATOMIC,
 } from "./config";
 
 export type LiveRoute = {
@@ -39,7 +41,7 @@ export type LiveRoute = {
   summary: string;
 };
 
-/** Live paid routes. Crypto six frozen; fetch + http are non-crypto LIVE. */
+/** Live paid routes. Crypto six frozen; fetch + http + extract are non-crypto LIVE. */
 export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
   {
     path: "/api/pulse",
@@ -99,6 +101,14 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     summary:
       "Universal agent HTTP proxy (url/method/headers/body) → status + filtered headers + body (SSRF-safe; $0.01 volume price)",
   },
+  {
+    path: "/api/extract",
+    method: "GET|POST",
+    priceUsd: EXTRACT_PRICE_USD,
+    priceAtomic: EXTRACT_PRICE_ATOMIC,
+    summary:
+      "URL or HTML → structured fields (title, description, links, images, headings, json-ld, text sample); SSRF-safe; $0.015",
+  },
 ] as const;
 
 /** First on-chain settle (pulse $0.005). Crypto catalog frozen thereafter. */
@@ -110,4 +120,4 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text) and /api/http ($0.01 universal proxy, volume-priced)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML)." as const;

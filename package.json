@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "smoke:pulse": "node scripts/smoke-pulse.mjs",
-    "smoke:http:unpaid": "node scripts/smoke-http-unpaid.mjs"
+    "smoke:http:unpaid": "node scripts/smoke-http-unpaid.mjs",
+    "smoke:extract:unpaid": "node scripts/smoke-extract-unpaid.mjs"
   },
   "dependencies": {
     "@coinbase/x402": "^2.1.0",

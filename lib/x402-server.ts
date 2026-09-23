@@ -19,6 +19,7 @@ import {
   FUNDING_PRICE_USD,
   FETCH_PRICE_USD,
   HTTP_PRICE_USD,
+  EXTRACT_PRICE_USD,
   USDC_BASE,
 } from "./config";
 
@@ -416,6 +417,73 @@ export function httpRouteConfig(): RoutesConfig {
             schema: {
               type: "object",
               description: "Horizon Pulse universal HTTP proxy result",
+            },
+          },
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+
+
+export function extractRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  // Path without verb prefix → matches GET and POST (*). Same $0.015 price.
+  // Bazaar discovery advertises GET (CDP validate); POST is paid identically.
+  return {
+    "/api/extract": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: EXTRACT_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "Extract structured page fields from a public URL or provided HTML (title, description, canonical, links, images, headings, json-ld, text sample); SSRF-safe; $0.015 between http ($0.01) and fetch ($0.02)",
+      mimeType: "application/json",
+      extensions: {
+        ...declareDiscoveryExtension({
+          method: "GET",
+          input: {
+            url: "https://example.com",
+          },
+          inputSchema: {
+            properties: {
+              url: {
+                type: "string",
+                description:
+                  "Absolute http(s) URL to fetch and extract (optional if html provided). Private/localhost blocked.",
+              },
+              html: {
+                type: "string",
+                description:
+                  "Optional raw HTML to parse (size-capped). Prefer POST JSON when sending html. If both url and html are sent, html is parsed and url is echoed.",
+              },
+            },
+            required: [],
+          },
+          output: {
+            example: {
+              ok: true,
+              url: "https://example.com",
+              title: "Example Domain",
+              description: "Example description",
+              canonical: "https://example.com/",
+              language: "en",
+              links: [{ href: "https://example.com/", text: "More information" }],
+              images: [{ src: "https://example.com/og.png", alt: "Logo" }],
+              jsonLd: [],
+              headings: [{ level: 1, text: "Example Domain" }],
+              textSample: "Example Domain…",
+              elapsedMs: 42,
+            },
+            schema: {
+              type: "object",
+              description: "Horizon Pulse structured HTML extract result",
             },
           },
         } as DiscoveryDecl),
