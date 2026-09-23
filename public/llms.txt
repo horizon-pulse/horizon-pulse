@@ -13,7 +13,7 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 - payTo: `0x5b32c973596078a967562ca652761404f19be0e9`
 - Facilitator: Coinbase CDP `https://api.cdp.coinbase.com/platform/v2/x402`
 - Retry the same `GET` with `PAYMENT-SIGNATURE` (v2). Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.
-- Catalog frozen: exactly six live paid routes below. No other paid endpoints.
+- Six crypto routes frozen (prices unchanged). /api/fetch is LIVE as the first non-crypto paid route.
 
 ## Live paid routes
 
@@ -25,13 +25,14 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 | GET | /api/portfolio?address=0x… | $0.04 | 40000 | Base + Ethereum balances, risk, rebalance suggestions |
 | GET | /api/gas | $0.01 | 10000 | Base + Ethereum fee snapshot + timingHint |
 | GET | /api/funding | $0.01 | 10000 | OKX BTC/ETH/SOL perpetual funding + crowding hint |
+| GET | /api/fetch?url=https://… | $0.02 | 20000 | Fetch public URL → clean text/markdown (SSRF-safe, capped) |
 
 ## Free (not paid)
 
-- GET `/` — landing (six routes + agent how-to)
+- GET `/` — landing (live paid catalog + agent how-to)
 - GET `/status` — live USDC `balanceOf` on payTo + catalog
 - GET `/llms.txt` — this file
-- GET `/openapi.json` — OpenAPI snippet for the six paid routes
+- GET `/openapi.json` — OpenAPI snippet for live paid routes
 
 ## Agent how-to (short)
 
@@ -44,4 +45,5 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 ## Honesty
 
 - Real upstream data only (CoinGecko, OKX, DefiLlama, public RPCs). No stubbed prices.
+- `/api/fetch` returns best-effort cleaned text from the requested public URL; private/localhost blocked; size/time capped.
 - Do not invent routes, prices, or Bazaar index status.

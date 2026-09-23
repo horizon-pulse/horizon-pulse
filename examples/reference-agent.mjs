@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Horizon Pulse reference agent (x402 v2 / Base).
- * Default: unpaid 402 discovery for all six frozen routes on horizonpulse.dev.
+ * Default: unpaid 402 discovery for all seven live paid routes on horizonpulse.dev.
  * Optional paid one-route: SMOKE_PRIVATE_KEY=0x... [SMOKE_ROUTE=/api/pulse]
  * Never paste private keys into chat, commits, or screenshots.
  */
@@ -15,7 +15,7 @@ const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const BASE_URL = (process.env.SMOKE_BASE_URL?.trim() || "https://horizonpulse.dev").replace(/\/$/, "");
 const PORTFOLIO_DEMO = "0x5b32c973596078a967562ca652761404f19be0e9";
 
-/** Frozen catalog — six live paid routes only. */
+/** Live catalog — six crypto frozen + /api/fetch LIVE. */
 const ROUTES = [
   { path: "/api/pulse", priceUsd: "$0.005", atomic: "5000" },
   { path: "/api/signals", priceUsd: "$0.015", atomic: "15000" },
@@ -23,6 +23,7 @@ const ROUTES = [
   { path: `/api/portfolio?address=${PORTFOLIO_DEMO}`, priceUsd: "$0.04", atomic: "40000", label: "/api/portfolio" },
   { path: "/api/gas", priceUsd: "$0.01", atomic: "10000" },
   { path: "/api/funding", priceUsd: "$0.01", atomic: "10000" },
+  { path: "/api/fetch?url=https://example.com", priceUsd: "$0.02", atomic: "20000", label: "/api/fetch" },
 ];
 
 function norm(a) {
@@ -180,7 +181,7 @@ async function main() {
     );
   }
   const allOk = results.every((r) => r.ok);
-  console.log(allOk ? "\nDISCOVERY PASS — all six routes return matching 402" : "\nDISCOVERY FAIL — see probes above");
+  console.log(allOk ? "\nDISCOVERY PASS — all seven routes return matching 402" : "\nDISCOVERY FAIL — see probes above");
 
   const pk = process.env.SMOKE_PRIVATE_KEY?.trim();
   if (pk) {

@@ -1,7 +1,9 @@
 /**
  * Single source of truth for the live paid catalog.
- * Frozen after first settlement — do not add routes or change prices here
- * without an explicit product decision.
+ *
+ * Six crypto routes remain FROZEN (prices/behavior unchanged after first
+ * settlement). /api/fetch is a deliberate unfreeze: first non-crypto LIVE
+ * paid route.
  *
  * Public host: https://horizonpulse.dev (canonical).
  * Backup: https://horizon-pulse-seven.vercel.app (Vercel).
@@ -21,6 +23,8 @@ import {
   GAS_PRICE_ATOMIC,
   FUNDING_PRICE_USD,
   FUNDING_PRICE_ATOMIC,
+  FETCH_PRICE_USD,
+  FETCH_PRICE_ATOMIC,
 } from "./config";
 
 export type LiveRoute = {
@@ -32,7 +36,7 @@ export type LiveRoute = {
   summary: string;
 };
 
-/** Exactly six live paid routes. No coming-soon / 404 placeholders. */
+/** Live paid routes. Crypto six frozen; /api/fetch added as non-crypto LIVE. */
 export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
   {
     path: "/api/pulse",
@@ -76,9 +80,17 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceAtomic: FUNDING_PRICE_ATOMIC,
     summary: "OKX BTC/ETH/SOL perpetual funding + crowding hint",
   },
+  {
+    path: "/api/fetch?url=https://…",
+    method: "GET",
+    priceUsd: FETCH_PRICE_USD,
+    priceAtomic: FETCH_PRICE_ATOMIC,
+    summary:
+      "Fetch public http(s) URL → clean text/markdown (SSRF-safe, ~200KB / 8s caps)",
+  },
 ] as const;
 
-/** First on-chain settle (pulse $0.005). Catalog frozen thereafter. */
+/** First on-chain settle (pulse $0.005). Crypto catalog frozen thereafter. */
 export const FIRST_SETTLE = {
   /** Truncated Base tx hash — do not invent a full hash */
   txTruncated: "0xedbd1a51…",
@@ -87,4 +99,4 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Catalog frozen after first settlement — six live routes only; no new endpoints and no price changes." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). /api/fetch is LIVE as the first non-crypto paid route ($0.02 USDC)." as const;

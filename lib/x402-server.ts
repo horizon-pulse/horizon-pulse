@@ -17,6 +17,7 @@ import {
   PORTFOLIO_PRICE_USD,
   GAS_PRICE_USD,
   FUNDING_PRICE_USD,
+  FETCH_PRICE_USD,
   USDC_BASE,
 } from "./config";
 
@@ -297,6 +298,56 @@ export function fundingRouteConfig(): RoutesConfig {
         },
         methodology: "OKX public funding-rate; crowding = rules only",
       }),
+    },
+  };
+}
+
+
+export function fetchRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/fetch": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: FETCH_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "Fetch a public http(s) URL (?url=...) and return best-effort clean text/markdown; SSRF-safe with size/time caps",
+      mimeType: "application/json",
+      extensions: {
+        ...declareDiscoveryExtension({
+          method: "GET",
+          input: { url: "https://example.com" },
+          inputSchema: {
+            properties: {
+              url: {
+                type: "string",
+                description:
+                  "Absolute http(s) URL to fetch (required). Private/localhost blocked; ~200KB / 8s caps.",
+              },
+            },
+            required: ["url"],
+          },
+          output: {
+            example: {
+              ok: true,
+              finalUrl: "https://example.com",
+              format: "markdown",
+              truncated: false,
+              content: "# Example\n\nClean text…",
+            },
+            schema: {
+              type: "object",
+              description: "Horizon Pulse URL fetch (clean text)",
+            },
+          },
+        } as DiscoveryDecl),
+      },
     },
   };
 }

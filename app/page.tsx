@@ -26,9 +26,10 @@ export default function HomePage() {
       </h1>
       <p style={{ opacity: 0.9, fontSize: 18 }}>
         Honest x402 micropayments on <strong>Base mainnet</strong> (USDC).{" "}
-        {LIVE_PAID_ROUTES.length} live paid routes only — CoinGecko prices,
-        technical signals, OKX perpetual funding (not Binance/Bybit), DefiLlama
-        yields, on-chain portfolio risk, and Base/Ethereum gas. No invented
+        {LIVE_PAID_ROUTES.length} live paid routes — six crypto frozen
+        (CoinGecko prices, technical signals, OKX perpetual funding, DefiLlama
+        yields, on-chain portfolio risk, Base/Ethereum gas) plus{" "}
+        <code>/api/fetch</code> for public URL → clean text. No invented
         metrics. No advertised 404s.
       </p>
 

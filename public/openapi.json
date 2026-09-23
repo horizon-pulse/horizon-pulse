@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call crypto market APIs for AI agents via x402 v2 on Base USDC. Catalog frozen: six live paid routes only.",
+    "description": "Pay-per-call APIs for AI agents via x402 v2 on Base USDC. Six crypto routes frozen; /api/fetch is LIVE as the first non-crypto paid route.",
     "version": "1.0.0"
   },
   "servers": [
@@ -108,6 +108,47 @@
           },
           "402": {
             "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/fetch": {
+      "get": {
+        "summary": "Fetch public URL \u2192 clean text/markdown",
+        "description": "x402 v2 exact payment. Requires query param url=https://\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~200KB / 8s caps; preferred Content-Types: text/html, text/plain, application/json, text/markdown.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL to fetch (private/localhost blocked)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 cleaned text/markdown JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Bad or blocked URL"
+          },
+          "413": {
+            "description": "Upstream body too large"
+          },
+          "415": {
+            "description": "Unsupported Content-Type"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
           }
         }
       }

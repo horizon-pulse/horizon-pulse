@@ -1,6 +1,6 @@
 # Horizon Pulse
 
-Pay-per-call crypto market **pulse**, **signals**, **funding**, **yield** rankings, **portfolio** risk, and **gas** for AI agents, monetized with the [x402](https://www.x402.org/) protocol on **Base mainnet** (USDC).
+Pay-per-call crypto market **pulse**, **signals**, **funding**, **yield** rankings, **portfolio** risk, **gas**, plus public URL **fetch** → clean text for AI agents, monetized with the [x402](https://www.x402.org/) protocol on **Base mainnet** (USDC).
 
 This repo is a Next.js App Router service ready to deploy (e.g. Vercel) and push to:
 
@@ -17,19 +17,20 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 
 ## What it is
 
-- Agents hit **six** live paid HTTP endpoints (catalog frozen — see below).
+- Agents hit **seven** live paid HTTP endpoints (six crypto frozen; `/api/fetch` deliberately added — see below).
 - Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header; network is CAIP-2 **`eip155:8453`** (Base); asset is Base USDC; `payTo` is the treasury below.
 - Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
-- No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only).
+- No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only); `/api/fetch` returns best-effort cleaned text from a requested public URL (SSRF-safe, size/time capped).
 - Never invent metrics; never advertise routes that 404; never cite a cached balance — `/status` reads live USDC `balanceOf` on `payTo`. Honest: current `payTo` is interim Coinbase-custodial (not Safe/multisig).
 
 ## Catalog status (post first settlement)
 
 | Fact | Value |
 | --- | --- |
-| **Live paid routes** | exactly **6** (table below) |
+| **Live paid routes** | **7** (table below) — six crypto + `/api/fetch` |
 | **First settle** | `/api/pulse` **$0.005** — tx `0xedbd1a51…` |
-| **Policy** | **Frozen** — no new endpoints, no price changes |
+| **Crypto policy** | **Frozen** — six crypto routes: no price changes |
+| **Fetch** | Deliberately added: first non-crypto LIVE paid route (`$0.02`) |
 
 Coming-soon / placeholder / 404 routes are **not** listed on `/`, `/status`, or this README.
 
@@ -59,7 +60,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
 ## Endpoints
 
-**Paid (6 — frozen catalog):**
+**Paid (7 — six crypto frozen + fetch):**
 
 | Route | Price | Auth |
 | --- | --- | --- |
@@ -69,13 +70,14 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 | `GET /api/portfolio?address=0x…` | **$0.04** USDC (`40000` atomic) | x402 v2 |
 | `GET /api/gas` | **$0.01** USDC (`10000` atomic) | x402 v2 |
 | `GET /api/funding` | **$0.01** USDC (`10000` atomic) | x402 v2 |
+| `GET /api/fetch?url=https://…` | **$0.02** USDC (`20000` atomic) | x402 v2 |
 
 **Free (not paid APIs):**
 
 | Route | Auth |
 | --- | --- |
 | `GET /status` | public HTML — **live** USDC `balanceOf` on `payTo` (honest RPC error if fetch fails) |
-| `GET /` | landing — same six routes + agent how-to |
+| `GET /` | landing — live paid catalog + agent how-to |
 
 ### `GET /api/pulse`
 
@@ -139,12 +141,24 @@ Live perpetual **funding rates** for BTC / ETH / SOL from **OKX** (same source a
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
 - Unpaid GET → **402** + **`PAYMENT-REQUIRED`** (v2, `eip155:8453`) · `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
 
+### `GET /api/fetch`
+
+Fetch a public **http(s) URL** (`?url=https://…`, required) and return best-effort **clean text/markdown**.
+
+- SSRF-safe: blocks localhost, private, link-local, and metadata IPs; re-checks each redirect hop
+- Caps: ~**200KB** raw body, **8s** timeout, max **3** redirects
+- Preferred Content-Types: `text/html`, `text/plain`, `application/json`, `text/markdown`
+- Cleaning is best-effort (strip script/style/chrome, collapse whitespace) — not a full readability engine
+- Price: **$0.02** USDC (`20000` atomic)
+- `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
+- Unpaid GET → **402** + **`PAYMENT-REQUIRED`** (v2, `eip155:8453`) · `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`
+
 ### `GET /status`
 
-Public page showing the **live USDC balance** of the `payTo` address on Base (via public RPC / `BASE_RPC_URL` `balanceOf`) plus the frozen six-route catalog and agent how-to.
+Public page showing the **live USDC balance** of the `payTo` address on Base (via public RPC / `BASE_RPC_URL` `balanceOf`) plus the live paid catalog and agent how-to.
 
 - On RPC failure the page shows an **honest error** — it does **not** fall back to a cached balance. Custody note: interim Coinbase-custodial `payTo` (not Safe/multisig); upgrade path later.
-- First settle noted as `/api/pulse` $0.005 (`0xedbd1a51…`); catalog frozen.
+- First settle noted as `/api/pulse` $0.005 (`0xedbd1a51…`); six crypto routes frozen; `/api/fetch` deliberately LIVE.
 
 ## Local development
 
@@ -193,7 +207,7 @@ Without CDP keys:
 1. Create the GitHub repo / remote `https://github.com/horizon-pulse/horizon-pulse.git`.
 2. Set Vercel env vars (above). Prefer PEM secret as a single line with `\n` escapes if the UI is single-line.
 3. Deploy from `main`. Ensure functions use **Node.js** runtime (routes already set `export const runtime = 'nodejs'`).
-4. Smoke-test: `curl -i https://horizonpulse.dev/api/pulse` (or `/api/yield`, `/api/portfolio`, `/api/gas`, `/api/funding`) should return **402** with payment requirements pointing at the new `payTo`.
+4. Smoke-test: `curl -i https://horizonpulse.dev/api/pulse` (or `/api/yield`, `/api/portfolio`, `/api/gas`, `/api/funding`, `/api/fetch?url=https://example.com`) should return **402** with payment requirements pointing at the new `payTo`.
 5. Confirm `/status` shows the treasury balance for `0x5b32…e0e9`.
 
 ## Push (from this workspace)
@@ -222,7 +236,7 @@ git push -u origin main
 
 ## Reference agent (`examples/`)
 
-Unpaid 402 discovery for **all six** frozen routes, plus optional paid single-route when `SMOKE_PRIVATE_KEY` is set:
+Unpaid 402 discovery for **all seven** live paid routes, plus optional paid single-route when `SMOKE_PRIVATE_KEY` is set:
 
 ```bash
 cd horizon-pulse

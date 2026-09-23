@@ -5,7 +5,7 @@ type Props = {
   perCall?: boolean;
 };
 
-/** Renders only the six live paid routes — never invents or advertises 404s. */
+/** Renders live paid routes from LIVE_PAID_ROUTES — never invents or advertises 404s. */
 export function LiveRoutesList({ perCall = false }: Props) {
   return (
     <ul style={{ paddingLeft: 18, marginBottom: 0 }}>

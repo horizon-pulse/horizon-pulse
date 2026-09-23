@@ -35,6 +35,9 @@ export const GAS_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 export const FUNDING_PRICE_USD = "$0.01" as const;
 export const FUNDING_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 
+export const FETCH_PRICE_USD = "$0.02" as const;
+export const FETCH_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
+
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 
 /** Canonical public host (custom domain). Prefer this in agent docs and clients. */
