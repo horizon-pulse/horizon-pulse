@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402 v2 on Base USDC. Six crypto routes frozen; /api/fetch is LIVE as the first non-crypto paid route.",
+    "description": "Pay-per-call APIs for AI agents via x402 v2 on Base USDC. Six crypto routes frozen; non-crypto LIVE: /api/fetch ($0.02 clean-text) and /api/http ($0.01 universal proxy).",
     "version": "1.0.0"
   },
   "servers": [
@@ -143,6 +143,133 @@
           },
           "415": {
             "description": "Unsupported Content-Type"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          }
+        }
+      }
+    },
+    "/api/http": {
+      "get": {
+        "summary": "Universal HTTP proxy (query)",
+        "description": "x402 v2 exact payment. Requires query param url=https://\u2026. Optional method (GET default), headers (JSON string). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~384KB / 12s caps. Response: ok, status, headers, body, bodyEncoding, contentType, elapsedMs.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL (private/localhost blocked)"
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST",
+                "HEAD",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ],
+              "default": "GET"
+            }
+          },
+          {
+            "name": "headers",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional JSON object string of allowlisted outbound headers"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 proxied response JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Bad or blocked URL / method / headers"
+          },
+          "413": {
+            "description": "Request or upstream body too large"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          }
+        }
+      },
+      "post": {
+        "summary": "Universal HTTP proxy (JSON body)",
+        "description": "Same $0.01 USDC x402 price as GET. JSON body: { url, method?, headers?, body? }. body allowed for POST/PUT/PATCH upstream. Same SSRF/caps/payTo as GET.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "GET",
+                      "POST",
+                      "HEAD",
+                      "PUT",
+                      "PATCH",
+                      "DELETE"
+                    ]
+                  },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "body": {
+                    "description": "String or JSON value (stringified) for POST/PUT/PATCH"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 proxied response JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Bad input / blocked target"
+          },
+          "413": {
+            "description": "Body too large"
           },
           "502": {
             "description": "Upstream error"

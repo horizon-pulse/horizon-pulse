@@ -2,7 +2,7 @@
 
 ## `reference-agent.mjs`
 
-Minimal Node agent for the live paid catalog (six crypto frozen + `/api/fetch`) on **https://horizonpulse.dev**.
+Minimal Node agent for the live paid catalog (six crypto frozen + `/api/fetch` + `/api/http`) on **https://horizonpulse.dev**.
 
 ### Unpaid discovery (default — no wallet, no spend)
 
@@ -27,7 +27,7 @@ Spends real Base USDC. Export the key only in your local shell — **never** com
 ```bash
 SMOKE_PRIVATE_KEY=0x... node examples/reference-agent.mjs
 # optional:
-SMOKE_ROUTE=/api/pulse          # default; any live paid path (incl. /api/fetch?url=…)
+SMOKE_ROUTE=/api/pulse          # default; any live paid path (incl. /api/fetch?url=…, /api/http?url=…)
 SMOKE_BASE_URL=https://horizonpulse.dev
 ```
 

@@ -18,6 +18,7 @@ import {
   GAS_PRICE_USD,
   FUNDING_PRICE_USD,
   FETCH_PRICE_USD,
+  HTTP_PRICE_USD,
   USDC_BASE,
 } from "./config";
 
@@ -73,7 +74,7 @@ const CORS_HEADERS: Record<string, string> = {
     "PAYMENT-SIGNATURE, X-PAYMENT, PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE, Content-Type, Accept",
   "Access-Control-Expose-Headers":
     "PAYMENT-REQUIRED, PAYMENT-RESPONSE, X-PAYMENT-RESPONSE",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 /** @x402/extensions types omit `method` (enrichment-only); CDP Bazaar validate needs it statically. */
@@ -351,6 +352,78 @@ export function fetchRouteConfig(): RoutesConfig {
     },
   };
 }
+
+export function httpRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  // Path without verb prefix → matches GET and POST (*). Same $0.01 price.
+  // Bazaar discovery advertises GET (CDP validate); POST is paid identically.
+  return {
+    "/api/http": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: HTTP_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "Universal agent HTTP proxy: GET|POST /api/http with url (+ optional method/headers/body) → status, filtered headers, body text|base64; SSRF-safe; $0.01 for volume (fetch remains $0.02 clean-text)",
+      mimeType: "application/json",
+      extensions: {
+        ...declareDiscoveryExtension({
+          method: "GET",
+          input: {
+            url: "https://example.com",
+            method: "GET",
+          },
+          inputSchema: {
+            properties: {
+              url: {
+                type: "string",
+                description:
+                  "Absolute http(s) URL (required). Private/localhost blocked.",
+              },
+              method: {
+                type: "string",
+                description:
+                  "Upstream method: GET (default) | POST | HEAD | PUT | PATCH | DELETE",
+              },
+              headers: {
+                type: "object",
+                description:
+                  "Optional allowlisted outbound headers (no Cookie / hop-by-hop). On GET pass as JSON string query param.",
+              },
+              body: {
+                type: "string",
+                description:
+                  "Optional body for POST/PUT/PATCH (via POST /api/http JSON). Size-capped.",
+              },
+            },
+            required: ["url"],
+          },
+          output: {
+            example: {
+              ok: true,
+              status: 200,
+              headers: { "content-type": "text/plain" },
+              body: "hello",
+              bodyEncoding: "text",
+              contentType: "text/plain",
+              elapsedMs: 42,
+            },
+            schema: {
+              type: "object",
+              description: "Horizon Pulse universal HTTP proxy result",
+            },
+          },
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
 
 /**
  * Explicit x402 v2 PaymentRequired (no facilitator sync) for OPTIONS /

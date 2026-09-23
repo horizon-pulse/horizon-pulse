@@ -38,6 +38,14 @@ export const FUNDING_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 export const FETCH_PRICE_USD = "$0.02" as const;
 export const FETCH_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
 
+/**
+ * /api/http — universal agent HTTP proxy.
+ * Priced at $0.01 (10000 atomic) for volume; /api/fetch stays $0.02
+ * (specialized clean-text). Prefer http for raw proxy volume.
+ */
+export const HTTP_PRICE_USD = "$0.01" as const;
+export const HTTP_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
+
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 
 /** Canonical public host (custom domain). Prefer this in agent docs and clients. */

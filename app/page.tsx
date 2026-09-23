@@ -29,7 +29,8 @@ export default function HomePage() {
         {LIVE_PAID_ROUTES.length} live paid routes — six crypto frozen
         (CoinGecko prices, technical signals, OKX perpetual funding, DefiLlama
         yields, on-chain portfolio risk, Base/Ethereum gas) plus{" "}
-        <code>/api/fetch</code> for public URL → clean text. No invented
+        <code>/api/fetch</code> (URL → clean text) and{" "}
+        <code>/api/http</code> (universal HTTP proxy, $0.01). No invented
         metrics. No advertised 404s.
       </p>
 
