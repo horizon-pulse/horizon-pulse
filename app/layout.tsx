@@ -1,10 +1,25 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { PUBLIC_BASE_URL, SERVICE_DESCRIPTION } from "@/lib/config";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(PUBLIC_BASE_URL),
   title: "Horizon Pulse",
-  description:
-    "Pay-per-call crypto market pulse and signals for AI agents via x402 on Base",
+  description: SERVICE_DESCRIPTION,
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon.png", type: "image/png", sizes: "256x256" },
+    ],
+    apple: "/icon.png",
+  },
+  openGraph: {
+    title: "Horizon Pulse",
+    description: SERVICE_DESCRIPTION,
+    url: PUBLIC_BASE_URL,
+    siteName: "Horizon Pulse",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

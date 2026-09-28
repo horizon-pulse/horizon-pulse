@@ -1,6 +1,8 @@
 # Horizon Pulse
 
-> Pay-per-call crypto market APIs for AI agents, monetized with x402 v2 on Base (USDC).
+> Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data (x402 v2, USDC).
+
+Contact: horizonpulse.co@proton.me
 
 Live base URL (canonical): https://horizonpulse.dev
 Backup (Vercel): https://horizon-pulse-seven.vercel.app

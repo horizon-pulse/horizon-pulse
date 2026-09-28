@@ -54,6 +54,13 @@ export const HTTP_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 export const EXTRACT_PRICE_USD = "$0.015" as const;
 export const EXTRACT_PRICE_ATOMIC = "15000" as const; // USDC 6 decimals
 
+/** Public contact (shown on landing page + OpenAPI info.contact). */
+export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
+
+/** One-line service description (site metadata, OpenAPI, discovery). Facts only. */
+export const SERVICE_DESCRIPTION =
+  "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data." as const;
+
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 
 /** Canonical public host (custom domain). Prefer this in agent docs and clients. */

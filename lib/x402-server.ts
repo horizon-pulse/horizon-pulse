@@ -21,6 +21,7 @@ import {
   HTTP_PRICE_USD,
   EXTRACT_PRICE_USD,
   USDC_BASE,
+  PUBLIC_BASE_URL,
 } from "./config";
 
 /**
@@ -78,6 +79,18 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
+/**
+ * Bazaar service-level metadata on the top-level `resource` object
+ * (x402 specs/extensions/bazaar.md "Service Metadata on `resource`").
+ * Purely additive: no effect on accepts / price / payTo. serviceName and
+ * tags must be printable ASCII, <= 32 chars; max 5 tags.
+ */
+const SERVICE_METADATA = {
+  serviceName: "Horizon Pulse",
+  tags: ["web-fetch", "http-proxy", "html-extract", "crypto", "market-data"],
+  iconUrl: `${PUBLIC_BASE_URL}/icon.png`,
+};
+
 /** @x402/extensions types omit `method` (enrichment-only); CDP Bazaar validate needs it statically. */
 type DiscoveryDecl = Parameters<typeof declareDiscoveryExtension>[0];
 
@@ -120,6 +133,7 @@ export function pulseRouteConfig(): RoutesConfig {
       description:
         "BTC/ETH/SOL spot prices with momentum, overall sentiment, and signal from CoinGecko",
       mimeType: "application/json",
+      ...SERVICE_METADATA,
       extensions: discoveryExt("Horizon Pulse market snapshot", {
         assets: { BTC: { priceUsd: 0, change24hPct: 0, momentum: "neutral" } },
         overall: { momentum: "neutral", sentiment: "neutral", signal: "hold" },
@@ -144,6 +158,7 @@ export function signalsRouteConfig(): RoutesConfig {
       description:
         "RSI/MACD/Bollinger from CoinGecko OHLC plus OKX perpetual funding rates",
       mimeType: "application/json",
+      ...SERVICE_METADATA,
       extensions: discoveryExt("Horizon Pulse technical signals", {
         assets: {
           BTC: {
@@ -175,6 +190,7 @@ export function yieldRouteConfig(): RoutesConfig {
       description:
         "Ranked DeFi yield pools from DefiLlama (TVL >= $10M, prefer stablecoin/single-asset)",
       mimeType: "application/json",
+      ...SERVICE_METADATA,
       extensions: discoveryExt("Horizon Pulse yield rankings", {
         pools: [
           {
@@ -209,6 +225,7 @@ export function portfolioRouteConfig(): RoutesConfig {
       description:
         "On-chain portfolio for one EVM address (?address=0x...) on Base + Ethereum: native ETH, USDC, WETH, WBTC/cbBTC, DAI; rule-based risk + rebalance suggestions",
       mimeType: "application/json",
+      ...SERVICE_METADATA,
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
@@ -257,6 +274,7 @@ export function gasRouteConfig(): RoutesConfig {
       description:
         "Live Base + Ethereum gas fees via eth_feeHistory / eth_gasPrice: baseFee, priority, suggested maxFee, timingHint (cheap/normal/expensive), optional transfer USD cost",
       mimeType: "application/json",
+      ...SERVICE_METADATA,
       extensions: discoveryExt("Horizon Pulse gas snapshot", {
         ethUsd: 0,
         networks: [
@@ -290,6 +308,7 @@ export function fundingRouteConfig(): RoutesConfig {
       description:
         "Live OKX perpetual funding rates for BTC/ETH/SOL with optional rule-based crowding hint (sign/magnitude)",
       mimeType: "application/json",
+      ...SERVICE_METADATA,
       extensions: discoveryExt("Horizon Pulse funding snapshot", {
         assets: {
           BTC: {
@@ -321,6 +340,7 @@ export function fetchRouteConfig(): RoutesConfig {
       description:
         "Fetch a public http(s) URL (?url=...) and return best-effort clean text/markdown; SSRF-safe with size/time caps",
       mimeType: "application/json",
+      ...SERVICE_METADATA,
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
@@ -372,6 +392,7 @@ export function httpRouteConfig(): RoutesConfig {
       description:
         "Universal agent HTTP proxy: GET|POST /api/http with url (+ optional method/headers/body) → status, filtered headers, body text|base64; SSRF-safe; $0.01 for volume (fetch remains $0.02 clean-text)",
       mimeType: "application/json",
+      ...SERVICE_METADATA,
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
@@ -445,6 +466,7 @@ export function extractRouteConfig(): RoutesConfig {
       description:
         "Extract structured page fields from a public URL or provided HTML (title, description, canonical, links, images, headings, json-ld, text sample); SSRF-safe; $0.015 between http ($0.01) and fetch ($0.02)",
       mimeType: "application/json",
+      ...SERVICE_METADATA,
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
@@ -514,6 +536,7 @@ export function buildPaymentRequirements(opts: {
       url: opts.resource,
       description: opts.description,
       mimeType: "application/json",
+      ...SERVICE_METADATA,
     },
     accepts: [
       {

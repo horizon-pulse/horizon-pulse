@@ -2,7 +2,7 @@
   "name": "horizon-pulse",
   "version": "1.0.0",
   "private": true,
-  "description": "Pay-per-call crypto market pulse & signals for AI agents via x402 on Base",
+  "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data.",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

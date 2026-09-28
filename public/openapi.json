@@ -2,8 +2,13 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402 v2 on Base USDC. Six crypto routes frozen; non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML).",
-    "version": "1.0.0"
+    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Nine x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Horizon Pulse",
+      "email": "horizonpulse.co@proton.me",
+      "url": "https://horizonpulse.dev"
+    }
   },
   "servers": [
     {

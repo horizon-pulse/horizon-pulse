@@ -6,6 +6,7 @@ import {
   BASE_CAIP2,
   PUBLIC_BASE_URL,
   PUBLIC_BASE_URL_BACKUP,
+  CONTACT_EMAIL,
 } from "@/lib/config";
 import {
   CATALOG_NOTE,
@@ -22,7 +23,7 @@ export default function HomePage() {
         HORIZON PULSE
       </p>
       <h1 style={{ fontSize: 36, margin: "8px 0 16px", fontWeight: 700 }}>
-        Pay-per-call crypto data for AI agents
+        Pay-per-call APIs for AI agents
       </h1>
       <p style={{ opacity: 0.9, fontSize: 18 }}>
         Honest x402 micropayments on <strong>Base mainnet</strong> (USDC).{" "}
@@ -116,6 +117,12 @@ export default function HomePage() {
           (canonical) · backup{" "}
           <a href={PUBLIC_BASE_URL_BACKUP} style={{ color: "#8ec5ff" }}>
             {PUBLIC_BASE_URL_BACKUP}
+          </a>
+        </p>
+        <p style={{ fontSize: 13, opacity: 0.75 }}>
+          <strong>Contact</strong>:{" "}
+          <a href={`mailto:${CONTACT_EMAIL}`} style={{ color: "#8ec5ff" }}>
+            {CONTACT_EMAIL}
           </a>
         </p>
       </section>
