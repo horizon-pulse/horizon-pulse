@@ -15,6 +15,7 @@ import {
 } from "@/lib/live-catalog";
 import { LiveRoutesList } from "@/components/LiveRoutesList";
 import { AgentHowTo } from "@/components/AgentHowTo";
+import { DEMO_ROUTES } from "@/lib/demo-catalog";
 
 export default function HomePage() {
   return (
@@ -85,6 +86,45 @@ export default function HomePage() {
           border: "1px solid #243056",
         }}
       >
+        <h2 style={{ marginTop: 0, fontSize: 18 }}>Try it free</h2>
+        <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0 }}>
+          Every route has a free sample at <code>/api/demo/&lt;route&gt;</code>:
+          real output on a fixed input, no payment. The paid route takes your own
+          input.
+        </p>
+        <ul style={{ fontSize: 13, paddingLeft: 18, margin: 0 }}>
+          {DEMO_ROUTES.map((d) => (
+            <li key={d.route} style={{ marginBottom: 6 }}>
+              <a href={`/api/demo/${d.route}`} style={{ color: "#8ec5ff" }}>
+                <code>/api/demo/{d.route}</code>
+              </a>{" "}
+              — sample input: {d.input}. Paid: <code>/api/{d.route}</code>{" "}
+              ({d.priceUsd})
+            </li>
+          ))}
+        </ul>
+        <pre
+          style={{
+            fontSize: 12,
+            marginTop: 12,
+            marginBottom: 0,
+            overflowX: "auto",
+            opacity: 0.9,
+          }}
+        >
+          curl https://horizonpulse.dev/api/demo/extract
+        </pre>
+      </section>
+
+      <section
+        style={{
+          marginTop: 24,
+          padding: 20,
+          borderRadius: 12,
+          background: "#121a33",
+          border: "1px solid #243056",
+        }}
+      >
         <h2 style={{ marginTop: 0, fontSize: 18 }}>
           Agent how-to (x402 v2)
         </h2>
@@ -107,7 +147,7 @@ export default function HomePage() {
         <p style={{ fontSize: 13, opacity: 0.75 }}>
           Free pages: <code>GET /</code> (this landing) ·{" "}
           <code>GET /status</code> (live on-chain USDC on payTo — not an old
-          Safe balance).
+          Safe balance) · <code>GET /api/demo/&lt;route&gt;</code> (fixed-input samples).
         </p>
         <p style={{ fontSize: 13, opacity: 0.75, wordBreak: "break-all" }}>
           <strong>Host</strong>:{" "}
