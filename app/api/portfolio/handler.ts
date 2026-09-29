@@ -40,7 +40,7 @@ export async function portfolioHandler(req: NextRequest): Promise<NextResponse> 
     return NextResponse.json(
       {
         ok: anyNetworkOk,
-        source: "rpc+coinbase+coingecko",
+        source: ["rpc", ...(result.priceSources ?? [])].join("+"),
         priced: {
           amountUsd: PORTFOLIO_PRICE_USD,
           amountAtomic: PORTFOLIO_PRICE_ATOMIC,

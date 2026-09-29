@@ -213,6 +213,8 @@ export type Suggestion = {
 
 export type PortfolioResult = {
   address: `0x${string}`;
+  /** Price providers that actually supplied at least one USD mark (additive). */
+  priceSources?: string[];
   asOf: string;
   networks: NetworkStatus[];
   holdings: HoldingRow[];
@@ -287,15 +289,17 @@ async function withRpcFailover<T>(
 
 async function fetchUsdPrices(
   ids: string[],
-): Promise<{ prices: Record<string, number>; error?: string }> {
+): Promise<{ prices: Record<string, number>; sources: string[]; error?: string }> {
   const unique = [...new Set(ids)];
   const cb = await fetchCoinbaseUsdMarks(unique);
+  const sources: string[] = Object.keys(cb.prices).length > 0 ? ["coinbase"] : [];
   const remaining = unique.filter((id) => cb.prices[id] === undefined);
-  if (remaining.length === 0) return { prices: cb.prices };
+  if (remaining.length === 0) return { prices: cb.prices, sources, error: cb.error };
   const cg = await fetchCoinGeckoUsdPrices(remaining);
+  if (Object.keys(cg.prices).length > 0) sources.push("coingecko");
   const prices = { ...cg.prices, ...cb.prices };
   const errs = [cb.error, cg.error].filter(Boolean);
-  return { prices, error: errs.length ? errs.join(" | ") : undefined };
+  return { prices, sources, error: errs.length ? errs.join(" | ") : undefined };
 }
 
 async function fetchCoinGeckoUsdPrices(
@@ -704,5 +708,6 @@ export async function buildPortfolio(
     suggestions,
     methodology: PORTFOLIO_METHODOLOGY,
     warnings,
+    priceSources: priceResult.sources,
   };
 }
