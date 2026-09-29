@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchSpotPrices } from "@/lib/coingecko";
+import { fetchSpotPricesWithFallback } from "@/lib/spot-prices";
 import {
   aggregatePulse,
   momentumFromChange,
@@ -19,7 +19,7 @@ export const paymentOpts = {
 
 export async function pulseHandler(_req: NextRequest): Promise<NextResponse> {
   try {
-    const spots = await fetchSpotPrices(["BTC", "ETH", "SOL"]);
+    const { spots, source, warnings } = await fetchSpotPricesWithFallback(["BTC", "ETH", "SOL"]);
     const assets = Object.fromEntries(
       spots.map((s) => [
         s.symbol,
@@ -36,7 +36,8 @@ export async function pulseHandler(_req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({
       ok: true,
-      source: "coingecko",
+      source,
+      ...(warnings.length ? { priceWarnings: warnings } : {}),
       priced: {
         amountUsd: PULSE_PRICE_USD,
         amountAtomic: PULSE_PRICE_ATOMIC,

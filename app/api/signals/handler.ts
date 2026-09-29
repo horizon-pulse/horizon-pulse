@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchOhlcCloses, type AssetSymbol } from "@/lib/coingecko";
+import { type AssetSymbol } from "@/lib/coingecko";
+import { fetchClosesWithFallback } from "@/lib/spot-prices";
 import { fetchAllFunding } from "@/lib/okx";
 import { bollinger, macd, rsi } from "@/lib/indicators";
 import {
@@ -19,10 +20,12 @@ export const paymentOpts = {
 
 export async function signalsHandler(_req: NextRequest): Promise<NextResponse> {
   try {
-    const [fundingList, ...ohlcCloses] = await Promise.all([
+    const [fundingList, ...ohlcResults] = await Promise.all([
       fetchAllFunding(["BTC", "ETH", "SOL"]),
-      ...SYMBOLS.map((s) => fetchOhlcCloses(s, 90)),
+      ...SYMBOLS.map((s) => fetchClosesWithFallback(s, 90)),
     ]);
+    const ohlcCloses = ohlcResults.map((r) => r.closes);
+    const priceSources = [...new Set(ohlcResults.map((r) => r.source))];
 
     const fundingBySymbol = Object.fromEntries(
       fundingList.map((f) => [f.symbol, f]),
@@ -79,7 +82,9 @@ export async function signalsHandler(_req: NextRequest): Promise<NextResponse> {
       asOf: new Date().toISOString(),
       assets,
       methodology: {
-        prices: "CoinGecko public API OHLC closes (USD)",
+        prices: priceSources.length === 1 && priceSources[0] === "coingecko"
+          ? "CoinGecko public API OHLC closes (USD)"
+          : `OHLC closes (USD) from ${priceSources.join("+")}; Coinbase = Exchange daily closes sampled every 4 days (CoinGecko fallback)`,
         indicators: "RSI(14) Wilder, MACD(12,26,9), Bollinger(period≤20, 2σ)",
         funding: "OKX public perpetual funding-rate endpoint (not Binance/Bybit)",
         note: "Indicators are derived from real OHLC; null means insufficient candles for that window.",

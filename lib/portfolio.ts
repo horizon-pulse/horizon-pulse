@@ -1,7 +1,8 @@
 /**
- * On-chain portfolio snapshot (Base + Ethereum) via public RPCs + CoinGecko USD marks.
+ * On-chain portfolio snapshot (Base + Ethereum) via public RPCs + Coinbase/CoinGecko USD marks.
  * Honest: real balanceOf / getBalance only; RPC or price failures are surfaced.
  */
+import { fetchCoinbaseUsdMarks } from "./spot-prices";
 
 import {
   createPublicClient,
@@ -36,7 +37,7 @@ export const PORTFOLIO_METHODOLOGY = {
     ],
   },
   prices:
-    "CoinGecko /simple/price USD marks (ethereum, usd-coin, weth, wrapped-bitcoin, dai, coinbase-wrapped-btc). Stables priced via CoinGecko, not hard-coded to $1.",
+    "USD marks from Coinbase public exchange-rates (ETH, USDC, WBTC, DAI), with CoinGecko /simple/price for the rest (weth, coinbase-wrapped-btc) or on Coinbase failure. Stables are priced from a live source, not hard-coded to $1; unpriced tokens stay null.",
   riskScore:
     "0–100 (higher = riskier). riskScore = round( clamp0_100( 50*maxAssetWeight + 30*(1-stablecoinShare) + 20*maxChainWeight ) ). Empty / unpriced portfolio → null.",
   suggestions:
@@ -285,6 +286,19 @@ async function withRpcFailover<T>(
 }
 
 async function fetchUsdPrices(
+  ids: string[],
+): Promise<{ prices: Record<string, number>; error?: string }> {
+  const unique = [...new Set(ids)];
+  const cb = await fetchCoinbaseUsdMarks(unique);
+  const remaining = unique.filter((id) => cb.prices[id] === undefined);
+  if (remaining.length === 0) return { prices: cb.prices };
+  const cg = await fetchCoinGeckoUsdPrices(remaining);
+  const prices = { ...cg.prices, ...cb.prices };
+  const errs = [cb.error, cg.error].filter(Boolean);
+  return { prices, error: errs.length ? errs.join(" | ") : undefined };
+}
+
+async function fetchCoinGeckoUsdPrices(
   ids: string[],
 ): Promise<{ prices: Record<string, number>; error?: string }> {
   const unique = [...new Set(ids)];

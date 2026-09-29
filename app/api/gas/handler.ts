@@ -23,7 +23,7 @@ export async function gasHandler(_req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(
       {
         ok: anyOk,
-        source: "rpc+coingecko",
+        source: result.priceSource ? `rpc+${result.priceSource}` : "rpc",
         priced: {
           amountUsd: GAS_PRICE_USD,
           amountAtomic: GAS_PRICE_ATOMIC,

@@ -12,7 +12,7 @@ import {
   type PublicClient,
 } from "viem";
 import { base, mainnet } from "viem/chains";
-import { fetchSpotPrices } from "./coingecko";
+import { fetchSpotPricesWithFallback } from "./spot-prices";
 
 /** Simple ETH transfer gas limit (no calldata). */
 export const SIMPLE_TRANSFER_GAS = 21_000n;
@@ -25,7 +25,7 @@ export const REWARD_PERCENTILES = [10, 50, 90] as const;
 
 export const GAS_METHODOLOGY = {
   sources:
-    "JSON-RPC eth_feeHistory (preferred) with rewardPercentiles [10,50,90] over the last 20 blocks; falls back to eth_gasPrice if feeHistory is unavailable. Optional ETH/USD from CoinGecko /simple/price for transfer cost estimate.",
+    "JSON-RPC eth_feeHistory (preferred) with rewardPercentiles [10,50,90] over the last 20 blocks; falls back to eth_gasPrice if feeHistory is unavailable. Optional ETH/USD for transfer cost estimate from Coinbase Exchange public ETH-USD stats, falling back to CoinGecko /simple/price.",
   networks:
     "Base (eip155:8453) and Ethereum mainnet (eip155:1). Optional BASE_RPC_URL / ETH_RPC_URL; otherwise public endpoints with failover (same defaults as /api/portfolio).",
   fields: {
@@ -36,12 +36,12 @@ export const GAS_METHODOLOGY = {
     suggestedMaxFeeGwei:
       "2 * baseFee + priorityFee (common wallet heuristic for inclusion). If only eth_gasPrice is available, that value is used as suggestedMaxFee and labeled gasPrice fallback.",
     simpleTransfer:
-      "Cost = suggestedMaxFee * 21000 gas. ETH amount via formatEther; USD = ETH * CoinGecko ethereum USD when price fetch succeeds.",
+      "Cost = suggestedMaxFee * 21000 gas. ETH amount via formatEther; USD = ETH * ETH/USD (Coinbase, CoinGecko fallback) when a price fetch succeeds.",
   },
   timingHint:
     "Within the same feeHistory baseFee sample (excluding the pending next-block fee when length > blockCount): compute the percentile rank of the current (latest confirmed) baseFee among those samples. cheap = rank < 33rd percentile; expensive = rank > 67th; otherwise normal. If only a single sample or gasPrice fallback, timingHint is normal with note. Not a forecast — descriptive of the recent window only.",
   honesty:
-    "No fake predictions, no smoothed invented curves. RPC or CoinGecko failures are surfaced per network / in warnings.",
+    "No fake predictions, no smoothed invented curves. RPC or price-source failures are surfaced per network / in warnings.",
 } as const;
 
 export type TimingHint = "cheap" | "normal" | "expensive";
@@ -85,6 +85,8 @@ export type GasResult = {
   ethUsd: number | null;
   networks: NetworkGasSnapshot[];
   warnings: string[];
+  /** Which keyless source supplied ETH/USD (additive). */
+  priceSource?: "coinbase" | "coingecko" | null;
   methodology: typeof GAS_METHODOLOGY;
 };
 
@@ -359,14 +361,17 @@ function buildSnapshot(
 export async function fetchGasSnapshot(): Promise<GasResult> {
   const warnings: string[] = [];
   let ethUsd: number | null = null;
+  let priceSource: "coinbase" | "coingecko" | null = null;
 
   try {
-    const spots = await fetchSpotPrices(["ETH"]);
-    ethUsd = spots[0]?.priceUsd ?? null;
-    if (ethUsd == null) warnings.push("CoinGecko ETH USD price missing");
+    const r = await fetchSpotPricesWithFallback(["ETH"]);
+    ethUsd = r.spots[0]?.priceUsd ?? null;
+    priceSource = r.source;
+    warnings.push(...r.warnings);
+    if (ethUsd == null) warnings.push(`${r.source} ETH USD price missing`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    warnings.push(`CoinGecko ETH USD unavailable: ${msg.slice(0, 160)}`);
+    warnings.push(`ETH USD unavailable: ${msg.slice(0, 300)}`);
   }
 
   const networks: NetworkGasSnapshot[] = [];
@@ -413,6 +418,7 @@ export async function fetchGasSnapshot(): Promise<GasResult> {
     ethUsd,
     networks,
     warnings,
+    priceSource,
     methodology: GAS_METHODOLOGY,
   };
 }
