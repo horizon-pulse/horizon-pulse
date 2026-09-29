@@ -14,15 +14,18 @@
   },
   "dependencies": {
     "@coinbase/x402": "^2.1.0",
-    "@x402/core": "^2.26.0",
-    "@x402/evm": "^2.26.0",
-    "@x402/extensions": "^2.26.0",
-    "@x402/next": "^2.26.0",
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "@x402/core": "2.27.0",
+    "@x402/evm": "2.27.0",
+    "@x402/extensions": "2.27.0",
+    "@x402/mcp": "2.27.0",
+    "@x402/next": "2.27.0",
+    "@x402/paywall": "2.27.0",
     "next": "^16.2.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "viem": "^2.37.5",
-    "@x402/paywall": "^2.26.0"
+    "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.18.1",
