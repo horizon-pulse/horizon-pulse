@@ -60,6 +60,8 @@ const COINBASE_RATE_SYMBOL: Record<string, string> = {
   ethereum: "ETH",
   "usd-coin": "USDC",
   "wrapped-bitcoin": "WBTC",
+  // WETH is 1:1 redeemable for ETH via the WETH9 contract; marked at the Coinbase ETH/USD rate (method stated in portfolio methodology).
+  weth: "ETH",
   dai: "DAI",
 };
 

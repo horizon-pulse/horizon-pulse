@@ -37,7 +37,7 @@ export const PORTFOLIO_METHODOLOGY = {
     ],
   },
   prices:
-    "USD marks from Coinbase public exchange-rates (ETH, USDC, WBTC, DAI), with CoinGecko /simple/price for the rest (weth, coinbase-wrapped-btc) or on Coinbase failure. Stables are priced from a live source, not hard-coded to $1; unpriced tokens stay null.",
+    "USD marks from Coinbase public exchange-rates (ETH, USDC, WBTC, DAI; WETH marked at the ETH rate because it is 1:1 redeemable for ETH), with CoinGecko /simple/price for the rest (coinbase-wrapped-btc) or on Coinbase failure. Stables are priced from a live source, not hard-coded to $1; unpriced tokens stay null.",
   riskScore:
     "0–100 (higher = riskier). riskScore = round( clamp0_100( 50*maxAssetWeight + 30*(1-stablecoinShare) + 20*maxChainWeight ) ). Empty / unpriced portfolio → null.",
   suggestions:
