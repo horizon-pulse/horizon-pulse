@@ -75,7 +75,7 @@ print(r.status_code, r.json()["assets"]["BTC"]["priceUsd"])  # 200, $0.005 USDC 
 
 // Streamable HTTP, stateless, POST. No API key, no extra headers.
 // initialize and tools/list are free. tools/call returns the same
-// x402 challenge as REST; pay it with an x402-aware MCP client (@x402/mcp).`,
+// x402 challenge as REST; pay it with any x402-aware MCP client.`,
   },
 };
 
