@@ -42,6 +42,8 @@ export const PORTFOLIO_METHODOLOGY = {
     "0–100 (higher = riskier). riskScore = round( clamp0_100( 50*maxAssetWeight + 30*(1-stablecoinShare) + 20*maxChainWeight ) ). Empty / unpriced portfolio → null.",
   suggestions:
     "Deterministic rules only (no LLM): concentration, stablecoin share, chain concentration, dust gas buffer. Empty portfolio → fund wallet.",
+  notAdvice:
+    "Not financial advice. Risk score and suggestions are mechanical rule outputs over the balances returned, not a recommendation to buy, sell, or hold any asset.",
 } as const;
 
 type TokenKind = "native" | "erc20";

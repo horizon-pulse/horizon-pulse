@@ -89,7 +89,7 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceAtomic: PORTFOLIO_PRICE_ATOMIC,
     summary: "Base + Ethereum balances, risk score, rebalance suggestions",
     category: "crypto",
-    blurb: "Base and Ethereum balances, risk score and rebalance ideas (public RPC)",
+    blurb: "Base and Ethereum balances, rule-based risk score and rebalance flags (not financial advice)",
   },
   {
     path: "/api/gas",
