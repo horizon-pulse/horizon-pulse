@@ -10,6 +10,7 @@ import {
   getPayTo,
   USDC_BASE,
 } from "@/lib/config";
+import { isMissing, NULL_BY_DESIGN, upstreamUnavailable } from "@/lib/upstream-guard";
 
 export const paymentOpts = {
   maxAmountRequired: PORTFOLIO_PRICE_ATOMIC,
@@ -36,6 +37,20 @@ export async function portfolioHandler(req: NextRequest): Promise<NextResponse> 
     const result = await buildPortfolio(address);
     const anyNetworkOk = result.networks.some((n) => n.ok);
     const status = anyNetworkOk ? 200 : 502;
+    if (anyNetworkOk) {
+      const missing = [
+        ...new Set(
+          result.holdings
+            .filter((h) => !NULL_BY_DESIGN.has(h.symbol) && isMissing(h.priceUsd))
+            .map((h) => h.symbol),
+        ),
+      ];
+      if (missing.length > 0) {
+        return upstreamUnavailable("/api/portfolio", missing, {
+          methodology: PORTFOLIO_METHODOLOGY,
+        });
+      }
+    }
 
     return NextResponse.json(
       {

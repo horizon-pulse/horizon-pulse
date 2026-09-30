@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchGasSnapshot, GAS_METHODOLOGY } from "@/lib/gas";
+import { isMissing, upstreamUnavailable } from "@/lib/upstream-guard";
 import {
   GAS_PRICE_ATOMIC,
   GAS_PRICE_USD,
@@ -19,6 +20,12 @@ export async function gasHandler(_req: NextRequest): Promise<NextResponse> {
     const result = await fetchGasSnapshot();
     const anyOk = result.networks.some((n) => n.ok);
     const status = anyOk ? 200 : 502;
+    if (anyOk && isMissing(result.ethUsd)) {
+      return upstreamUnavailable("/api/gas", ["ETH/USD"], {
+        warnings: (result as { warnings?: unknown }).warnings,
+        methodology: GAS_METHODOLOGY,
+      });
+    }
 
     return NextResponse.json(
       {

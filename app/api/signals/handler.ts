@@ -9,6 +9,7 @@ import {
   getPayTo,
   USDC_BASE,
 } from "@/lib/config";
+import { isMissing, upstreamUnavailable } from "@/lib/upstream-guard";
 
 const SYMBOLS: AssetSymbol[] = ["BTC", "ETH", "SOL"];
 
@@ -26,6 +27,15 @@ export async function signalsHandler(_req: NextRequest): Promise<NextResponse> {
     ]);
     const ohlcCloses = ohlcResults.map((r) => r.closes);
     const priceSources = [...new Set(ohlcResults.map((r) => r.source))];
+    const missingCloses = SYMBOLS.filter(
+      (_, i) => isMissing(ohlcCloses[i]?.[ohlcCloses[i]!.length - 1]),
+    );
+    if (missingCloses.length > 0) {
+      return upstreamUnavailable(
+        "/api/signals",
+        missingCloses.map((s) => `${s}/USD closes`),
+      );
+    }
 
     const fundingBySymbol = Object.fromEntries(
       fundingList.map((f) => [f.symbol, f]),
