@@ -18,6 +18,10 @@ export const maxDuration = 30;
 
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
+const HEAVY_DEMOS = new Set(["screenshot"]);
+const HEAVY_TTL_MS = 10 * 60 * 1000;
+const demoMemo = new Map<string, { at: number; status: number; sample: unknown }>();
+
 const HANDLERS: Record<string, Handler> = {
   pulse: pulseHandler,
   signals: signalsHandler,
@@ -59,8 +63,21 @@ export async function GET(
     `${origin}/api/${route}${demo.query ? `?${demo.query}` : ""}`,
     { method: "GET" },
   );
-  const res = await handler(inner);
-  const sample = (await res.json()) as unknown;
+  // Expensive renders (headless Chromium) reuse one successful sample per
+  // instance for 10 min, on top of the CDN s-maxage, so the free demo can't be
+  // used to run up compute. Paid routes are never cached.
+  const heavy = HEAVY_DEMOS.has(route);
+  const cached = heavy ? demoMemo.get(route) : undefined;
+  let status: number;
+  let sample: unknown;
+  if (cached && Date.now() - cached.at < HEAVY_TTL_MS) {
+    ({ status, sample } = cached);
+  } else {
+    const res = await handler(inner);
+    status = res.status;
+    sample = (await res.json()) as unknown;
+    if (heavy && status === 200) demoMemo.set(route, { at: Date.now(), status, sample });
+  }
 
   return NextResponse.json(
     {
@@ -69,13 +86,15 @@ export async function GET(
       paid_endpoint: `${origin}/api/${route}`,
       price: demo.priceUsd,
       fixed_input: demo.input,
-      sample_status: res.status,
+      sample_status: status,
       sample,
     },
     {
       status: 200,
       headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
+        "Cache-Control": heavy
+          ? "public, max-age=300, s-maxage=600, stale-while-revalidate=1200"
+          : "public, max-age=60, s-maxage=300, stale-while-revalidate=600",
         "Access-Control-Allow-Origin": "*",
       },
     },
