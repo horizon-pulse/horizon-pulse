@@ -35,7 +35,7 @@ export type DemoRoute = {
 export const DEMO_ROUTES: DemoRoute[] = [
   { route: "fetch", priceUsd: FETCH_PRICE_USD, query: "url=https://example.com", input: "url=https://example.com (fixed)" },
   { route: "http", priceUsd: HTTP_PRICE_USD, query: "url=https://example.com&method=GET", input: "GET https://example.com (fixed)" },
-  { route: "extract", priceUsd: EXTRACT_PRICE_USD, query: "url=https://horizonpulse.dev", input: "url=https://horizonpulse.dev (fixed)" },
+  { route: "extract", priceUsd: EXTRACT_PRICE_USD, query: "url=https://horizonpulse.dev&fields=%7B%22heading%22%3A%22h1%22%2C%22links%22%3A%7B%22selector%22%3A%22a%22%2C%22attr%22%3A%22href%22%2C%22all%22%3Atrue%2C%22limit%22%3A5%7D%7D", input: 'url=https://horizonpulse.dev, fields={"heading":"h1","links":{"selector":"a","attr":"href","all":true,"limit":5}} (fixed)' },
   { route: "x402-check", priceUsd: X402_CHECK_PRICE_USD, query: "url=https://horizonpulse.dev/api/pulse", input: "url=https://horizonpulse.dev/api/pulse (fixed)" },
   { route: "screenshot", priceUsd: SCREENSHOT_PRICE_USD, query: "url=https://horizonpulse.dev", input: "url=https://horizonpulse.dev (fixed, 1280x800 png)" },
   { route: "search", priceUsd: SEARCH_PRICE_USD, query: "q=x402%20payment%20protocol&n=2", input: "q=x402 payment protocol, n=2 (fixed; recorded sample, refreshed at most daily)" },

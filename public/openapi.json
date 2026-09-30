@@ -299,6 +299,15 @@
               "format": "uri"
             },
             "description": "Absolute http(s) URL to fetch and extract (private/localhost blocked). Required on GET unless using POST with html."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "URL-encoded JSON object of CSS-selector fields (max 20, <=16K chars). See POST body `fields`."
           }
         ],
         "responses": {
@@ -309,7 +318,7 @@
             "description": "Payment Required (x402 v2)"
           },
           "400": {
-            "description": "Missing input / bad HTML"
+            "description": "Missing input / bad HTML Includes bad_fields for an invalid fields spec."
           },
           "413": {
             "description": "HTML or body too large"
@@ -322,6 +331,9 @@
           },
           "504": {
             "description": "Upstream timeout"
+          },
+          "422": {
+            "description": "No requested field matched (no_fields_matched); body includes fieldErrors. Not charged."
           }
         }
       },
@@ -342,6 +354,40 @@
                   "html": {
                     "type": "string",
                     "description": "Raw HTML to parse (size-capped ~200KB)"
+                  },
+                  "fields": {
+                    "type": "object",
+                    "description": "Optional CSS-selector fields (max 20): name -> selector string or {selector, attr: text|html|<attribute>, all, limit 1-50}. Unmatched fields are null with fieldErrors; if none match, 422 no_fields_matched (not charged).",
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "selector"
+                          ],
+                          "properties": {
+                            "selector": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "attr": {
+                              "type": "string"
+                            },
+                            "all": {
+                              "type": "boolean"
+                            },
+                            "limit": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 50
+                            }
+                          }
+                        }
+                      ]
+                    }
                   }
                 }
               }
@@ -356,7 +402,7 @@
             "description": "Payment Required (x402 v2)"
           },
           "400": {
-            "description": "Missing input / bad HTML"
+            "description": "Missing input / bad HTML Includes bad_fields for an invalid fields spec."
           },
           "413": {
             "description": "Body or HTML too large"
@@ -366,6 +412,9 @@
           },
           "504": {
             "description": "Upstream timeout"
+          },
+          "422": {
+            "description": "No requested field matched (no_fields_matched); body includes fieldErrors. Not charged."
           }
         }
       }

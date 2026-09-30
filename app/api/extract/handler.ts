@@ -4,6 +4,7 @@ import {
   EXTRACT_MAX_REQUEST_JSON_BYTES,
   extractPage,
 } from "@/lib/extract";
+import { parseFieldSpecs } from "@/lib/extract-fields";
 import {
   EXTRACT_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
@@ -83,7 +84,15 @@ export async function extractHandler(req: NextRequest): Promise<NextResponse> {
   const html =
     typeof bodyJson.html === "string" ? bodyJson.html : undefined;
 
-  const result = await extractPage({ url, html });
+  const parsedFields = parseFieldSpecs(bodyJson.fields !== undefined ? bodyJson.fields : q.get("fields"));
+  if (!parsedFields.ok) {
+    return NextResponse.json(
+      { ok: false, error: parsedFields.error, code: "bad_fields", methodology: EXTRACT_METHODOLOGY },
+      { status: 400 },
+    );
+  }
+
+  const result = await extractPage({ url, html, fields: parsedFields.specs });
 
   if (!result.ok) {
     return NextResponse.json(
@@ -92,6 +101,7 @@ export async function extractHandler(req: NextRequest): Promise<NextResponse> {
         error: result.error,
         code: result.code,
         elapsedMs: result.elapsedMs,
+        ...(result.fieldErrors ? { fieldErrors: result.fieldErrors, charged: false } : {}),
         methodology: EXTRACT_METHODOLOGY,
       },
       { status: result.status },

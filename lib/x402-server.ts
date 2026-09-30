@@ -490,6 +490,11 @@ export function extractRouteConfig(): RoutesConfig {
                 description:
                   "Optional raw HTML to parse (size-capped). Prefer POST JSON when sending html. If both url and html are sent, html is parsed and url is echoed.",
               },
+              fields: {
+                type: "object",
+                description:
+                  'Optional CSS-selector fields (max 20). Map of name to selector string or {selector, attr?: "text"|"html"|<attribute>, all?: boolean, limit?: 1-50}. GET: URL-encoded JSON. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.',
+              },
             },
             required: [],
           },
@@ -506,6 +511,9 @@ export function extractRouteConfig(): RoutesConfig {
               jsonLd: [],
               headings: [{ level: 1, text: "Example Domain" }],
               textSample: "Example Domain…",
+              fields: { heading: "Example Domain", more: "https://www.iana.org/domains/example" },
+              matchedFields: 2,
+              requestedFields: 2,
               elapsedMs: 42,
             },
             schema: {

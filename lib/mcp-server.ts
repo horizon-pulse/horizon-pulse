@@ -101,8 +101,25 @@ export const TOOLS: ToolDef[] = [
     schema: {
       url: z.string().optional().describe("Public http(s) URL to extract from"),
       html: z.string().optional().describe("Raw HTML to extract from (instead of url)"),
+      fields: z
+        .record(
+          z.union([
+            z.string(),
+            z.object({
+              selector: z.string(),
+              attr: z.string().optional(),
+              all: z.boolean().optional(),
+              limit: z.number().int().optional(),
+            }),
+          ]),
+        )
+        .optional()
+        .describe(
+          'Optional CSS-selector fields (max 20): name -> selector or {selector, attr ("text" default, "html", or an attribute name), all, limit 1-50}. Unmatched fields are null with fieldErrors; if none match, no charge.',
+        ),
     },
-    call: (a) => runHandler(extract.extractHandler, makeRequest("/api/extract", {}, { url: a.url, html: a.html })),
+    call: (a) =>
+      runHandler(extract.extractHandler, makeRequest("/api/extract", {}, { url: a.url, html: a.html, fields: a.fields })),
   },
   {
     name: "x402_check",

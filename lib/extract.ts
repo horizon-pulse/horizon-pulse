@@ -16,6 +16,7 @@ import {
   FETCH_MAX_REDIRECTS,
   type FetchUrlError,
 } from "./fetch-url";
+import { evaluateFields, type FieldSpecs, type FieldsResult } from "./extract-fields";
 
 /** Same raw body band as /api/fetch. */
 export const EXTRACT_MAX_HTML_BYTES = FETCH_MAX_BYTES; // ~200KB
@@ -44,6 +45,8 @@ export const EXTRACT_METHODOLOGY = {
     "When fetching url: blocks localhost, private, link-local, and metadata IPs; re-checks each redirect hop (shared assertSafePublicUrl with /api/fetch)",
   parsing:
     "Lightweight regex extraction (no cheerio). Best-effort; omit empty fields. Not a full browser DOM.",
+  fields:
+    "Optional fields = {name: \"css selector\" | {selector, attr?: text|html|<attribute>, all?, limit?: 1-50}}, max 20, parsed with htmlparser2 + css-select on the served HTML (no JavaScript). Each field returns a value or null with fieldErrors[name] (bad_selector, no_match, attr_missing, time_budget, document_too_deep, eval_failed). Hard 2s selector budget; :has() at most once per selector; pages nested deeper than 256 levels are refused for fields. href/src are made absolute. Billed only when at least one field matches; zero matches return 422 no_fields_matched, not charged.",
   cookies: "No cookie jar; outbound fetch never sends Cookie.",
 } as const;
 
@@ -67,7 +70,7 @@ export type ExtractSuccess = {
   truncated?: boolean;
   bytesRead?: number;
   finalUrl?: string;
-};
+} & Partial<FieldsResult>;
 
 export type ExtractError = {
   ok: false;
@@ -83,9 +86,11 @@ export type ExtractError = {
     | "upstream"
     | "redirects"
     | "html_too_large"
-    | "bad_html";
+    | "bad_html"
+    | "no_fields_matched";
   status: number;
   elapsedMs: number;
+  fieldErrors?: FieldsResult["fieldErrors"];
 };
 
 function decodeEntities(s: string): string {
@@ -513,6 +518,8 @@ export async function fetchHtmlForExtract(
 export type ExtractInput = {
   url?: string;
   html?: string;
+  /** Pre-validated selector specs (parseFieldSpecs). */
+  fields?: FieldSpecs | null;
 };
 
 /**
@@ -578,9 +585,25 @@ export async function extractPage(
 
   const fields = extractFromHtml(html, { baseUrl });
 
+  let selected: FieldsResult | undefined;
+  if (input.fields) {
+    selected = evaluateFields(html, input.fields, baseUrl);
+    if (selected.matchedFields === 0) {
+      return {
+        ok: false,
+        error: `None of the ${selected.requestedFields} requested fields matched (not charged)`,
+        code: "no_fields_matched",
+        status: 422,
+        elapsedMs: elapsed(),
+        fieldErrors: selected.fieldErrors,
+      };
+    }
+  }
+
   const result: ExtractSuccess = {
     ok: true,
     ...fields,
+    ...(selected ?? {}),
     elapsedMs: elapsed(),
   };
   if (truncated) result.truncated = true;

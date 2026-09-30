@@ -181,7 +181,8 @@ URL or HTML → **structured page fields** for agents (title, description, canon
 
 - **Price choice:** **$0.015** USDC (`15000` atomic) — between `/api/http` ($0.01) and `/api/fetch` ($0.02). Same payTo + Base USDC stack.
 - Inputs: `url` (optional if `html` provided) and/or `html` (size-capped). Prefer fetching `url` with the same SSRF-safe `assertSafePublicUrl` as fetch/http.
-- GET query: `?url=`; POST JSON `{ url?, html? }` for html payloads
+- GET query: `?url=&fields=<url-encoded json>`; POST JSON `{ url?, html?, fields? }` for html payloads
+- Optional **`fields`**: up to 20 named CSS selectors, e.g. `{"title":"h1","links":{"selector":"a.story","attr":"href","all":true,"limit":5}}`. `attr` is `text` (default), `html`, or any attribute (href/src resolved to absolute URLs). Unmatched fields return `null` plus `fieldErrors[name]` (`no_match`, `bad_selector`, `attr_missing`, `time_budget`, `document_too_deep`, `eval_failed`). If none match: **422 `no_fields_matched`, not charged**. Hard 2s selector budget; `:has()` at most once per selector; pages nested >256 levels are refused for fields. Deterministic selectors, no AI.
 - Lightweight regex parse (no cheerio). Empty fields omitted. Not a full browser DOM.
 - Caps: ~**200KB** HTML, **8s** timeout, max **3** redirects (same band as `/api/fetch`)
 - No cookie jar. Private/localhost/link-local/metadata blocked.
