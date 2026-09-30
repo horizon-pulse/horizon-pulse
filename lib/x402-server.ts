@@ -7,6 +7,7 @@ import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { withX402 } from "@x402/next";
+import { asJsonRequest, browser402, isBrowserNavigation, withVary } from "@/lib/browser-402";
 import {
   getNetworkCaip2,
   getPayTo,
@@ -776,11 +777,20 @@ export function createX402GetHandler(
   return async (req: NextRequest) => {
     const cdpReady = hasCdpCredentials();
     if (!hasPaymentHeader(req)) {
-      // With CDP, return the identical v2 challenge withX402 will verify against.
-      if (cdpReady) {
-        return getPaidHandler()(req);
+      // Library's JSON path always (it would otherwise serve its own HTML to
+      // any Mozilla + text/html request); our HTML only for real navigations.
+      const challenge = cdpReady
+        ? await getPaidHandler()(asJsonRequest(req))
+        : paymentRequiredResponse(paymentOpts);
+      if (challenge.status === 402 && isBrowserNavigation(req)) {
+        const accepts = Object.values(routes)[0]?.accepts;
+        const first = Array.isArray(accepts) ? accepts[0] : accepts;
+        const priceUsd = typeof first?.price === "string" ? first.price : "";
+        return withVary(
+          browser402(challenge, { resource: paymentOpts.resource, description: paymentOpts.description, priceUsd }),
+        ) as NextResponse;
       }
-      return paymentRequiredResponse(paymentOpts);
+      return withVary(challenge) as NextResponse;
     }
     if (!cdpReady) {
       return settlementUnavailableResponse();
