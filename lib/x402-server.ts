@@ -549,7 +549,11 @@ export function x402CheckRouteConfig(): RoutesConfig {
               },
               method: {
                 type: "string",
-                description: "HTTP method for the unpaid probe: GET (default) or POST.",
+                description: "HTTP method for the unpaid probe: GET (default; one POST retry on 405) or POST.",
+              },
+              body: {
+                type: "string",
+                description: "Optional JSON body (<=8KB, URL-encoded) sent with a POST probe, for endpoints that validate input before returning 402. Implies POST.",
               },
             },
             required: ["url"],

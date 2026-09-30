@@ -1,7 +1,9 @@
 /**
  * /api/x402-check — audit any public x402 endpoint from an unpaid request.
  *
- * Sends ONE unpaid request (no payment header, no body beyond "{}" for POST),
+ * Sends ONE unpaid request (no payment header; POST sends the caller's JSON
+ * body if given, else "{}"). If the method was not specified and GET answers
+ * 405, it retries once with POST (reported as a check),
  * follows up to 3 redirects with SSRF re-checks at every hop, and reports:
  * status, x402 version, decoded accepts (price, network, asset, payTo),
  * payTo type via eth_getCode (EOA vs contract) on Base / Ethereum, and
@@ -16,17 +18,18 @@ import { assertSafePublicUrl } from "@/lib/fetch-url";
 export const CHECK_TIMEOUT_MS = 8_000;
 export const CHECK_MAX_REDIRECTS = 3;
 const MAX_BODY_BYTES = 64_000;
+export const MAX_PROBE_BODY_BYTES = 8_000;
 
 export const X402_CHECK_METHODOLOGY = {
   request:
-    "One unpaid request with the given method (GET default; POST sends '{}' as JSON). No payment header is ever sent; nothing is signed or paid.",
+    `One unpaid request with the given method (GET default; POST sends the caller's JSON body, up to ${MAX_PROBE_BODY_BYTES / 1000}KB, or '{}' if none). A body implies POST. If no method was given and GET returns 405, one retry with POST is made and reported. No payment header is ever sent; nothing is signed or paid.`,
   parsing:
     "x402 v2: base64 JSON in the PAYMENT-REQUIRED header (falls back to JSON body). x402 v1: JSON body with x402Version 1 and accepts[].maxAmountRequired.",
   payToType:
     "eth_getCode on Base (eip155:8453 / 'base') and Ethereum (eip155:1 / 'ethereum') via public RPCs. Empty code = EOA (a single private key controls funds). Other networks: not checked.",
   limits: `SSRF-safe (private/local targets blocked at every redirect hop), ${CHECK_MAX_REDIRECTS} redirects, ${CHECK_TIMEOUT_MS / 1000}s timeout, ${MAX_BODY_BYTES / 1000}KB body cap.`,
   billing:
-    "Any HTTP answer from the target is a completed report and is billed, including 4xx/5xx answers (e.g. 'returned HTTP 500, not 402' is the finding). Not billed: missing/bad url, bad method, blocked private/local host, DNS failure, connection failure, timeout, or too many redirects; those return 400/502/504 and settlement is skipped.",
+    "Any HTTP answer from the target is a completed report and is billed, including 4xx/5xx answers (e.g. 'returned HTTP 500, not 402' is the finding). Not billed: missing/bad url, bad method, invalid or oversized body, blocked private/local host, DNS failure, connection failure, timeout, or too many redirects; those return 400/502/504 and settlement is skipped.",
   notAdvice:
     "Checks describe the challenge as served. Indexing hints are based on Horizon Pulse's own experience with CDP discovery, not a CDP guarantee.",
 } as const;
@@ -153,13 +156,28 @@ const obj = (v: unknown): Record<string, unknown> | null =>
 export async function checkX402Endpoint(input: {
   url?: string;
   method?: string;
+  body?: string;
 }): Promise<X402CheckResult | X402CheckError> {
   const started = Date.now();
   const raw = input.url?.trim();
   if (!raw) return { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url", status: 400 };
-  const m = (input.method ?? "GET").trim().toUpperCase();
+  const rawBody = input.body && input.body.trim() !== "" ? input.body : undefined;
+  if (rawBody !== undefined) {
+    if (Buffer.byteLength(rawBody, "utf8") > MAX_PROBE_BODY_BYTES)
+      return { ok: false, error: `body exceeds ${MAX_PROBE_BODY_BYTES} bytes`, code: "body_too_large", status: 400 };
+    try {
+      JSON.parse(rawBody);
+    } catch {
+      return { ok: false, error: "body must be valid JSON", code: "bad_body", status: 400 };
+    }
+  }
+  const explicitMethod = input.method !== undefined && input.method.trim() !== "";
+  const m = explicitMethod ? input.method!.trim().toUpperCase() : rawBody !== undefined ? "POST" : "GET";
   if (m !== "GET" && m !== "POST") return { ok: false, error: "method must be GET or POST", code: "bad_method", status: 400 };
-  const method = m as "GET" | "POST";
+  if (m === "GET" && rawBody !== undefined)
+    return { ok: false, error: "body is only sent with method POST", code: "bad_method", status: 400 };
+  let method = m as "GET" | "POST";
+  let retriedFrom405 = false;
 
   let current = raw;
   let redirects = 0;
@@ -167,7 +185,7 @@ export async function checkX402Endpoint(input: {
   let res: Response | null = null;
   let finalUrl = raw;
 
-  while (true) {
+  probe: while (true) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) return { ok: false, error: `Target timed out after ${CHECK_TIMEOUT_MS}ms`, code: "timeout", status: 504 };
     const checked = await assertSafePublicUrl(current);
@@ -183,7 +201,7 @@ export async function checkX402Endpoint(input: {
           "User-Agent": "HorizonPulseX402Check/1.0 (+https://horizonpulse.dev)",
           ...(method === "POST" ? { "content-type": "application/json" } : {}),
         },
-        ...(method === "POST" ? { body: "{}" } : {}),
+        ...(method === "POST" ? { body: rawBody ?? "{}" } : {}),
       });
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
@@ -199,6 +217,12 @@ export async function checkX402Endpoint(input: {
       current = new URL(res.headers.get("location")!, url).toString();
       continue;
     }
+    if (res.status === 405 && method === "GET" && !explicitMethod && !retriedFrom405) {
+      await res.body?.cancel().catch(() => {});
+      retriedFrom405 = true;
+      method = "POST";
+      continue probe;
+    }
     break;
   }
 
@@ -208,6 +232,9 @@ export async function checkX402Endpoint(input: {
   bodyText = await readCapped(res, MAX_BODY_BYTES);
 
   if (!finalUrl.startsWith("https://")) checks.push({ id: "https", level: "warn", message: "Endpoint is plain http; agents and wallets should see https." });
+  if (retriedFrom405)
+    checks.push({ id: "method_retry", level: "info", message: "GET returned 405, so the probe was retried once with POST. Pass method explicitly to skip the retry." });
+  if (rawBody !== undefined) checks.push({ id: "probe_body", level: "info", message: "Probe sent your JSON body with POST." });
   if (redirects > 0) checks.push({ id: "redirects", level: "info", message: `Followed ${redirects} redirect(s) to ${finalUrl}. Some clients do not follow redirects on paid retries; list the final URL.` });
 
   let parsed: Record<string, unknown> | null = null;
@@ -234,7 +261,7 @@ export async function checkX402Endpoint(input: {
     checks.push({
       id: "status_402",
       level: "fail",
-      message: `Unpaid ${method} returned HTTP ${status}, not 402. x402 clients only start payment on a 402.${status === 405 ? " Try the other method." : ""}`,
+      message: `Unpaid ${method} returned HTTP ${status}, not 402. x402 clients only start payment on a 402.${status === 405 ? " Try the other method." : ""}${method === "POST" && rawBody === undefined && (status === 400 || status === 422) ? " The endpoint may validate the body before returning 402; pass a representative JSON body." : ""}`,
     });
   } else {
     checks.push({ id: "status_402", level: "pass", message: "Unpaid request returned HTTP 402." });

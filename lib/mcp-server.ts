@@ -107,9 +107,11 @@ export const TOOLS: ToolDef[] = [
     opts: x402check.paymentOpts,
     schema: {
       url: z.string().describe("Public http(s) URL of the x402 endpoint to audit"),
-      method: z.string().optional().describe("Probe method: GET (default) or POST"),
+      method: z.string().optional().describe("Probe method: GET (default; retries POST on 405) or POST"),
+      body: z.string().optional().describe("Optional JSON body (string, <=8KB) for a POST probe; implies POST"),
     },
-    call: (a) => runHandler(x402check.x402CheckHandler, makeRequest("/api/x402-check", { url: s(a.url), method: s(a.method) })),
+    call: (a) =>
+      runHandler(x402check.x402CheckHandler, makeRequest("/api/x402-check", { url: s(a.url), method: s(a.method), body: s(a.body) })),
   },
   {
     name: "screenshot",

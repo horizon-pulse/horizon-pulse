@@ -30,7 +30,7 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 | GET/POST | /api/http | $0.01 | 10000 | Universal HTTP proxy (url/method/headers/body) → status + body (SSRF-safe; volume price) |
 | GET/POST | /api/extract | $0.015 | 15000 | URL or HTML → structured fields (title, links, images, headings, json-ld, text sample) |
 | GET | /api/screenshot?url=https://… | $0.02 | 20000 | Headless Chromium render → PNG/JPEG (base64 JSON), viewport/fullPage options |
-| GET | /api/x402-check?url=https://… | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays) |
+| GET | /api/x402-check?url=https://…[&method=POST][&body=<json>] | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays; optional JSON body for POST probes, auto POST retry on 405) |
 
 ## Which route to call
 
