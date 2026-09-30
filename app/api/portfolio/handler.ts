@@ -41,7 +41,14 @@ export async function portfolioHandler(req: NextRequest): Promise<NextResponse> 
       const missing = [
         ...new Set(
           result.holdings
-            .filter((h) => !NULL_BY_DESIGN.has(h.symbol) && isMissing(h.priceUsd))
+            .filter(
+              (h) =>
+                !NULL_BY_DESIGN.has(h.symbol) &&
+                // A zero balance contributes $0 regardless of price; RPC-failed rows are already flagged.
+                h.balanceAtomic !== "0" &&
+                !("error" in h && h.error) &&
+                isMissing(h.priceUsd),
+            )
             .map((h) => h.symbol),
         ),
       ];
