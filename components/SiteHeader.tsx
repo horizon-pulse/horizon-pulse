@@ -15,13 +15,14 @@ export function SiteHeader() {
         <nav className="hp-nav">
           <a href="/#catalog">Catalog</a>
           <a href="/#how">How it works</a>
-          <a href="/#try">Try free</a>
+          <a href="/#agents">For agents</a>
           <Link href="/status">Status</Link>
           <a href="/openapi.json">OpenAPI</a>
         </nav>
         <div className="hp-header-cta">
+          <a className="hp-btn ghost sm" href="/llms.txt">llms.txt</a>
           <a className="hp-btn ghost sm" href={GITHUB_REPO} target="_blank" rel="noreferrer">GitHub</a>
-          <a className="hp-btn primary sm" href="/llms.txt">llms.txt →</a>
+          <a className="hp-btn primary sm" href="/api/demo/pulse">Try free</a>
         </div>
       </div>
     </header>
