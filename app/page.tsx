@@ -35,7 +35,8 @@ export default function HomePage() {
         <code>/api/http</code> (universal HTTP proxy, $0.01),{" "}
         <code>/api/extract</code> (URL/HTML → structured fields, $0.015),{" "}
         <code>/api/screenshot</code> (headless browser render, $0.02),{" "}
-        <code>/api/search</code> (web search → pages as clean text with sources, $0.03), and{" "}
+        <code>/api/search</code> (web search → pages as clean text with sources, $0.03),{" "}
+        <code>/api/pdf</code> (PDF URL → text per page, $0.02), and{" "}
         <code>/api/x402-check</code> (audit any x402 endpoint, $0.01). No invented
         metrics. No advertised 404s.
       </p>

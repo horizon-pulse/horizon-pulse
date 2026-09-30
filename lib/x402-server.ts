@@ -22,6 +22,7 @@ import {
   SCREENSHOT_PRICE_USD,
   X402_CHECK_PRICE_USD,
   SEARCH_PRICE_USD,
+  PDF_PRICE_USD,
   HTTP_PRICE_USD,
   EXTRACT_PRICE_USD,
   USDC_BASE,
@@ -785,7 +786,10 @@ export function createX402GetHandler(
       if (challenge.status === 402 && isBrowserNavigation(req)) {
         const accepts = Object.values(routes)[0]?.accepts;
         const first = Array.isArray(accepts) ? accepts[0] : accepts;
-        const priceUsd = typeof first?.price === "string" ? first.price : "";
+        const priceUsd =
+          typeof first?.price === "string" && first.price
+            ? first.price
+            : `$${Number(paymentOpts.maxAmountRequired) / 1e6}`;
         return withVary(
           browser402(challenge, { resource: paymentOpts.resource, description: paymentOpts.description, priceUsd }),
         ) as NextResponse;
@@ -840,6 +844,52 @@ export function searchRouteConfig(): RoutesConfig {
               ],
             },
             schema: { type: "object", description: "Horizon Pulse search-then-fetch result with sources" },
+          },
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+export function pdfRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/pdf": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: PDF_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "PDF to text: public PDF URL → clean text per page plus title/author metadata (pdf.js text layer, no OCR); SSRF-safe download up to 10MB, first 50 pages, 100K chars; unbilled on non-PDF, encrypted or image-only files; $0.02",
+      mimeType: "application/json",
+      ...SERVICE_METADATA,
+      extensions: {
+        ...declareDiscoveryExtension({
+          method: "GET",
+          input: { url: "https://horizonpulse.dev/sample.pdf" },
+          inputSchema: {
+            properties: {
+              url: { type: "string", description: "Absolute http(s) URL of a public PDF (required, max 10MB)." },
+              pages: { type: "string", description: "Max pages to return, integer 1-50 (default 50)." },
+            },
+            required: ["url"],
+          },
+          output: {
+            example: {
+              ok: true,
+              finalUrl: "https://horizonpulse.dev/sample.pdf",
+              totalPages: 1,
+              pagesReturned: 1,
+              truncated: false,
+              meta: { title: "Horizon Pulse sample PDF", author: "Horizon Pulse" },
+              pages: [{ page: 1, text: "Horizon Pulse sample PDF …" }],
+            },
+            schema: { type: "object", description: "Horizon Pulse PDF text extraction result" },
           },
         } as DiscoveryDecl),
       },

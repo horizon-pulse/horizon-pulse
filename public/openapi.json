@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Twelve x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
+    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Thirteen x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), /api/pdf ($0.02 PDF URL to text per page), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
     "version": "1.0.0",
     "contact": {
       "name": "Horizon Pulse",
@@ -554,6 +554,62 @@
           },
           "503": {
             "description": "Search provider unavailable (not charged)"
+          }
+        }
+      }
+    },
+    "/api/pdf": {
+      "get": {
+        "summary": "PDF URL to text per page",
+        "description": "$0.02 USDC x402. Downloads a public PDF through the same SSRF checks as /api/fetch (private/localhost blocked at every redirect hop, 3 redirects, 10MB cap; larger files are rejected, not truncated, 12s download budget) and returns the pdf.js text layer per page (first 50 pages, 100K characters total) plus title/author metadata. No OCR. Billed only when text is returned. Bad input, blocked hosts, non-PDFs, oversize, encrypted or corrupt files, image-only PDFs, and download failures are not charged.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL of a public PDF"
+          },
+          {
+            "name": "pages",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 50
+            },
+            "description": "Max pages to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: text per page with metadata"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing/bad url, blocked host, or bad pages (not charged)"
+          },
+          "413": {
+            "description": "File larger than 10MB (not charged)"
+          },
+          "415": {
+            "description": "Not a PDF (not charged)"
+          },
+          "422": {
+            "description": "Encrypted, corrupt, or image-only PDF with no text layer (not charged)"
+          },
+          "502": {
+            "description": "Upstream download failed (not charged)"
+          },
+          "504": {
+            "description": "Download timed out (not charged)"
           }
         }
       }

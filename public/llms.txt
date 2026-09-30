@@ -31,12 +31,14 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 | GET/POST | /api/extract | $0.015 | 15000 | URL or HTML → structured fields (title, links, images, headings, json-ld, text sample) |
 | GET | /api/screenshot?url=https://… | $0.02 | 20000 | Headless Chromium render → PNG/JPEG (base64 JSON), viewport/fullPage options |
 | GET | /api/search?q=…[&n=1-5] | $0.03 | 30000 | Web search → top 1-5 pages as clean markdown with URL, title, rank and per-source status (Google results via Serper) |
+| GET | /api/pdf?url=https://…[&pages=1-50] | $0.02 | 20000 | PDF URL → clean text per page + title/author metadata (text layer, no OCR; up to 10MB, 50 pages) |
 | GET | /api/x402-check?url=https://…[&method=POST][&body=<json>] | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays; optional JSON body for POST probes, auto POST retry on 405) |
 
 ## Which route to call
 
 - Need a web page as clean text for an LLM: `/api/fetch`
 - Need to research a question on the web, with sources: `/api/search?q=…&n=3`
+- Need the text of a PDF (paper, filing, manual, invoice): `/api/pdf?url=…`
 - Need to call any public HTTP endpoint (custom method/headers/body): `/api/http`
 - Need structured fields from a page (title, links, headings, JSON-LD): `/api/extract`
 - Need to see what a page looks like (visual check, OG preview, UI verification): `/api/screenshot?url=…`
@@ -49,7 +51,7 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 
 `GET /api/demo/<route>` runs the real handler on a fixed input and returns `demo: true`. Use it to check the response shape before paying. Inputs cannot be changed.
 
-- /api/demo/fetch, /api/demo/http, /api/demo/extract, /api/demo/x402-check, /api/demo/screenshot, /api/demo/search
+- /api/demo/fetch, /api/demo/http, /api/demo/extract, /api/demo/x402-check, /api/demo/screenshot, /api/demo/search, /api/demo/pdf
 - /api/demo/pulse, /api/demo/signals, /api/demo/yield, /api/demo/gas, /api/demo/funding, /api/demo/portfolio
 
 ## Free (not paid)
@@ -77,4 +79,5 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 - `/api/x402-check` sends one unpaid request and never pays or signs; it reports the challenge as served. Any HTTP answer from the target (including 5xx) is a billed report; bad input, blocked hosts, DNS/connection failures and timeouts return 400/502/504 and are not charged. Priced $0.01.
 - `/api/screenshot` renders in a fresh headless Chromium with no cookies; every HTTP(S) sub-request is SSRF-checked, the top-level host is pinned to its checked IP, and WebSocket/WebTransport/WebRTC are disabled in page scripts; billed only when an image is returned. Priced $0.02.
 - `/api/search` sends the query to a third-party search API (Serper, Google results) and fetches each result through the same SSRF-safe pipeline as `/api/fetch`; pages that fail carry their own error. Billed when at least one result is returned; bad input, zero results, or a search-provider failure return 400/404/503 and are not charged. Priced $0.03.
+- `/api/pdf` downloads the file through the same SSRF checks (every redirect hop, 10MB cap; larger files are rejected, not truncated) and reads the PDF text layer with pdf.js; no OCR. Billed only when text is returned; bad input, blocked hosts, non-PDFs, oversize, encrypted or corrupt files, image-only PDFs (`no_text_layer`), and download failures return 400/413/415/422/502/504 and are not charged. Priced $0.02.
 - Do not invent routes, prices, or Bazaar index status.

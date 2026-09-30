@@ -30,6 +30,7 @@ import * as extract from "@/app/api/extract/handler";
 import * as x402check from "@/app/api/x402-check/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
+import * as pdf from "@/app/api/pdf/handler";
 
 type PaymentOpts = { maxAmountRequired: string; resource: string; description: string };
 type Handler = (req: NextRequest) => Promise<NextResponse>;
@@ -145,6 +146,16 @@ export const TOOLS: ToolDef[] = [
     },
     call: (a) =>
       runHandler(search.searchHandler, makeRequest("/api/search", { q: s(a.q), n: a.n != null ? String(a.n) : undefined })),
+  },
+  {
+    name: "pdf",
+    opts: pdf.paymentOpts,
+    schema: {
+      url: z.string().describe("Absolute http(s) URL of a public PDF (max 10MB)"),
+      pages: z.number().int().optional().describe("Max pages to return, 1-50 (default 50)"),
+    },
+    call: (a) =>
+      runHandler(pdf.pdfHandler, makeRequest("/api/pdf", { url: s(a.url), pages: a.pages != null ? String(a.pages) : undefined })),
   },
 ];
 

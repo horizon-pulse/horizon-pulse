@@ -77,6 +77,13 @@ export const SCREENSHOT_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
 export const SEARCH_PRICE_USD = "$0.03" as const;
 export const SEARCH_PRICE_ATOMIC = "30000" as const; // USDC 6 decimals
 
+/**
+ * /api/pdf — public PDF URL → text per page + metadata (pdf.js text layer,
+ * no OCR). $0.02 (20000 atomic): up to 10MB download + parse of 50 pages.
+ */
+export const PDF_PRICE_USD = "$0.02" as const;
+export const PDF_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

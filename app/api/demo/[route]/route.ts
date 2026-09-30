@@ -12,6 +12,7 @@ import { extractHandler } from "@/app/api/extract/handler";
 import { x402CheckHandler } from "@/app/api/x402-check/handler";
 import { screenshotHandler } from "@/app/api/screenshot/handler";
 import { searchHandler } from "@/app/api/search/handler";
+import { pdfHandler } from "@/app/api/pdf/handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export const maxDuration = 30;
 
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
-const HEAVY_DEMOS = new Set(["screenshot", "search"]);
+const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf"]);
 const HEAVY_TTL_MS = 10 * 60 * 1000;
 /** search spends paid provider quota: one sample per instance per day. */
 const TTL_MS: Record<string, number> = { search: 24 * 60 * 60 * 1000 };
@@ -41,6 +42,7 @@ const HANDLERS: Record<string, Handler> = {
   "x402-check": x402CheckHandler,
   screenshot: screenshotHandler,
   search: searchHandler,
+  pdf: pdfHandler,
 };
 
 /**
