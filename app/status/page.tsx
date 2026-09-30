@@ -16,6 +16,7 @@ import {
 } from "@/lib/live-catalog";
 import { LiveRoutesList } from "@/components/LiveRoutesList";
 import { AgentHowTo } from "@/components/AgentHowTo";
+import { SiteHeader } from "@/components/SiteHeader";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,6 +54,8 @@ export default async function StatusPage() {
   }
 
   return (
+    <>
+    <SiteHeader />
     <main style={{ maxWidth: 720, margin: "0 auto", padding: "48px 20px" }}>
       <p style={{ opacity: 0.7, letterSpacing: "0.08em", fontSize: 12 }}>
         STATUS
@@ -214,5 +217,6 @@ export default async function StatusPage() {
         </a>
       </p>
     </main>
+    </>
   );
 }

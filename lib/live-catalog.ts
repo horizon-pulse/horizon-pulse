@@ -47,6 +47,10 @@ export type LiveRoute = {
   priceAtomic: string;
   /** Short agent-facing summary */
   summary: string;
+  /** Landing-page grouping */
+  category: "crypto" | "web" | "agent";
+  /** One-line landing-page description */
+  blurb: string;
 };
 
 /** Live paid routes. Crypto six frozen; fetch + http + extract are non-crypto LIVE. */
@@ -57,6 +61,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: PULSE_PRICE_USD,
     priceAtomic: PULSE_PRICE_ATOMIC,
     summary: "BTC/ETH/SOL spot + momentum (CoinGecko)",
+    category: "crypto",
+    blurb: "BTC, ETH and SOL spot prices with 24h momentum (CoinGecko)",
   },
   {
     path: "/api/signals",
@@ -64,6 +70,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: SIGNALS_PRICE_USD,
     priceAtomic: SIGNALS_PRICE_ATOMIC,
     summary: "RSI/MACD/Bollinger + OKX funding",
+    category: "crypto",
+    blurb: "RSI, MACD and Bollinger bands plus perpetual funding (CoinGecko, OKX)",
   },
   {
     path: "/api/yield",
@@ -71,6 +79,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: YIELD_PRICE_USD,
     priceAtomic: YIELD_PRICE_ATOMIC,
     summary: "DefiLlama yields (TVL ≥ $10M, prefer stablecoin/single-asset)",
+    category: "crypto",
+    blurb: "Ranked DeFi yields, pools with TVL of $10M or more (DefiLlama)",
   },
   {
     path: "/api/portfolio?address=0x…",
@@ -78,6 +88,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: PORTFOLIO_PRICE_USD,
     priceAtomic: PORTFOLIO_PRICE_ATOMIC,
     summary: "Base + Ethereum balances, risk score, rebalance suggestions",
+    category: "crypto",
+    blurb: "Base and Ethereum balances, risk score and rebalance ideas (public RPC)",
   },
   {
     path: "/api/gas",
@@ -85,6 +97,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: GAS_PRICE_USD,
     priceAtomic: GAS_PRICE_ATOMIC,
     summary: "Base + Ethereum baseFee / priority / suggested maxFee + timingHint",
+    category: "crypto",
+    blurb: "Base and Ethereum fees with a suggested max fee (public RPC)",
   },
   {
     path: "/api/funding",
@@ -92,6 +106,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: FUNDING_PRICE_USD,
     priceAtomic: FUNDING_PRICE_ATOMIC,
     summary: "OKX BTC/ETH/SOL perpetual funding + crowding hint",
+    category: "crypto",
+    blurb: "BTC, ETH and SOL perpetual funding with a crowding hint (OKX)",
   },
   {
     path: "/api/fetch?url=https://…",
@@ -100,6 +116,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceAtomic: FETCH_PRICE_ATOMIC,
     summary:
       "Fetch public http(s) URL → clean text/markdown (SSRF-safe, ~200KB / 8s caps)",
+    category: "web",
+    blurb: "Any public URL as clean text or markdown",
   },
   {
     path: "/api/http",
@@ -108,6 +126,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceAtomic: HTTP_PRICE_ATOMIC,
     summary:
       "Universal agent HTTP proxy (url/method/headers/body) → status + filtered headers + body (SSRF-safe; $0.01 volume price)",
+    category: "web",
+    blurb: "Universal HTTP proxy: your method, headers and body",
   },
   {
     path: "/api/extract",
@@ -116,6 +136,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceAtomic: EXTRACT_PRICE_ATOMIC,
     summary:
       "URL or HTML → structured fields (title, description, links, images, headings, json-ld, text sample); SSRF-safe; $0.015",
+    category: "web",
+    blurb: "Page to structured fields, or your own CSS selectors",
   },
   {
     path: "/api/x402-check?url=https://…",
@@ -124,6 +146,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceAtomic: X402_CHECK_PRICE_ATOMIC,
     summary:
       "Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays)",
+    category: "agent",
+    blurb: "Audit any x402 endpoint without paying it",
   },
   {
     path: "/api/screenshot?url=https://…",
@@ -132,6 +156,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceAtomic: SCREENSHOT_PRICE_ATOMIC,
     summary:
       "Headless Chromium render → PNG/JPEG (base64 JSON), viewport/fullPage options; SSRF-safe on every sub-request",
+    category: "web",
+    blurb: "Headless Chromium render to PNG or JPEG",
   },
   {
     path: "/api/search?q=…&n=3",
@@ -140,6 +166,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceAtomic: SEARCH_PRICE_ATOMIC,
     summary:
       "Web search → top 1-5 pages as clean markdown with sources (Google results via Serper; SSRF-safe fetch; partial results on page errors)",
+    category: "web",
+    blurb: "Web search with the top pages as clean text and sources",
   },
   {
     path: "/api/pdf?url=…",
@@ -148,6 +176,8 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceAtomic: PDF_PRICE_ATOMIC,
     summary:
       "PDF URL → clean text per page + title/author metadata (text layer, no OCR; 10MB / 50 pages; unbilled on non-PDF, encrypted or image-only)",
+    category: "web",
+    blurb: "PDF URL to text per page plus metadata",
   },
 ] as const;
 
@@ -161,3 +191,30 @@ export const FIRST_SETTLE = {
 
 export const CATALOG_NOTE =
   "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text)." as const;
+
+export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
+  crypto: "Crypto market data",
+  web: "Web and documents",
+  agent: "Agent utilities",
+};
+
+/** Route name used by /api/demo/<name>, derived from the display path. */
+export const routeName = (r: LiveRoute) => r.path.replace(/^\/api\//, "").replace(/\?.*$/, "");
+
+const usd = (p: string) => Number(p.replace(/[^0-9.]/g, ""));
+/** Catalog-derived stats (never hardcoded). */
+export function catalogStats() {
+  const prices = LIVE_PAID_ROUTES.map((r) => usd(r.priceUsd));
+  const fmt = (n: number) => `$${n}`;
+  return {
+    routes: LIVE_PAID_ROUTES.length,
+    endpoints: LIVE_PAID_ROUTES.reduce((n, r) => n + (r.method === "GET|POST" ? 2 : 1), 0),
+    minPrice: fmt(Math.min(...prices)),
+    maxPrice: fmt(Math.max(...prices)),
+    byCategory: (Object.keys(CATEGORY_LABELS) as LiveRoute["category"][]).map((c) => ({
+      category: c,
+      label: CATEGORY_LABELS[c],
+      routes: LIVE_PAID_ROUTES.filter((r) => r.category === c),
+    })),
+  };
+}
