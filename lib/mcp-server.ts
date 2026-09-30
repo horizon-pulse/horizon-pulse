@@ -29,6 +29,7 @@ import * as http from "@/app/api/http/handler";
 import * as extract from "@/app/api/extract/handler";
 import * as x402check from "@/app/api/x402-check/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
+import * as search from "@/app/api/search/handler";
 
 type PaymentOpts = { maxAmountRequired: string; resource: string; description: string };
 type Handler = (req: NextRequest) => Promise<NextResponse>;
@@ -134,6 +135,16 @@ export const TOOLS: ToolDef[] = [
           format: s(a.format),
         }),
       ),
+  },
+  {
+    name: "search",
+    opts: search.paymentOpts,
+    schema: {
+      q: z.string().describe("Web search query (<=300 chars)"),
+      n: z.number().int().optional().describe("Result pages to fetch as clean text, 1-5 (default 3)"),
+    },
+    call: (a) =>
+      runHandler(search.searchHandler, makeRequest("/api/search", { q: s(a.q), n: a.n != null ? String(a.n) : undefined })),
   },
 ];
 

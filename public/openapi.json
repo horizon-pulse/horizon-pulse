@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Eleven x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless Chromium render), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
+    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Twelve x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
     "version": "1.0.0",
     "contact": {
       "name": "Horizon Pulse",
@@ -507,6 +507,53 @@
           },
           "504": {
             "description": "Navigation timeout (not charged)"
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "summary": "Search the web and fetch top results",
+        "description": "$0.03 USDC x402. Sends the query to a third-party search API (Serper, Google results), then fetches the top n result pages (1-5, default 3) in parallel through the same SSRF-safe pipeline as /api/fetch (private/localhost blocked at every redirect hop, 200KB / 8s per page, 12K characters per page) and returns clean markdown/text with URL, title, rank and per-source ok/error. Billed when at least one result is returned, even if some pages fail. Bad input, zero results, or a search-provider failure are not charged.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "description": "Search query"
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5,
+              "default": 3
+            },
+            "description": "Number of result pages to fetch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: results with sources"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing/too-long query or bad n (not charged)"
+          },
+          "404": {
+            "description": "No search results (not charged)"
+          },
+          "503": {
+            "description": "Search provider unavailable (not charged)"
           }
         }
       }

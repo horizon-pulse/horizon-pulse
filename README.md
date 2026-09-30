@@ -17,7 +17,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 
 ## What it is
 
-- Agents hit **eleven** live paid HTTP endpoints (six crypto frozen; `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/screenshot` non-crypto LIVE — see below).
+- Agents hit **twelve** live paid HTTP endpoints (six crypto frozen; `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/screenshot` + `/api/search` non-crypto LIVE — see below).
 - Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header; network is CAIP-2 **`eip155:8453`** (Base); asset is Base USDC; `payTo` is the treasury below.
 - Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
 - No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only); `/api/fetch` returns best-effort cleaned text from a requested public URL (SSRF-safe, size/time capped); `/api/http` is a raw universal proxy (filtered headers, text|base64 body, SSRF-safe) priced **$0.01** for volume; `/api/extract` returns best-effort structured page fields from a URL or HTML (SSRF-safe, size/time capped) priced **$0.015**.
@@ -27,7 +27,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 
 | Fact | Value |
 | --- | --- |
-| **Live paid routes** | **11** (table below) — six crypto + `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/screenshot` |
+| **Live paid routes** | **12** (table below) — six crypto + `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/screenshot` + `/api/search` |
 | **First settle** | `/api/pulse` **$0.005** — tx `0xedbd1a51…` |
 | **Crypto policy** | **Frozen** — six crypto routes: no price changes |
 | **Fetch** | Non-crypto LIVE: clean-text (`$0.02`) |
@@ -62,7 +62,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
 ## Endpoints
 
-**Paid (11 — six crypto frozen + fetch + http + extract + x402-check + screenshot):**
+**Paid (12 — six crypto frozen + fetch + http + extract + x402-check + screenshot + search):**
 
 | Route | Price | Auth |
 | --- | --- | --- |
@@ -77,6 +77,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 | `GET` / `POST` `/api/extract` | **$0.015** USDC (`15000` atomic) | x402 v2 |
 | `GET /api/x402-check?url=https://…` | **$0.01** USDC (`10000` atomic) | x402 v2 |
 | `GET /api/screenshot?url=https://…` | **$0.02** USDC (`20000` atomic) | x402 v2 |
+| `GET /api/search?q=…&n=3` | **$0.03** USDC (`30000` atomic) | x402 v2 |
 
 **Free (not paid APIs):**
 

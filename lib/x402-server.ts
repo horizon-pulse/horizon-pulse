@@ -20,6 +20,7 @@ import {
   FETCH_PRICE_USD,
   SCREENSHOT_PRICE_USD,
   X402_CHECK_PRICE_USD,
+  SEARCH_PRICE_USD,
   HTTP_PRICE_USD,
   EXTRACT_PRICE_USD,
   USDC_BASE,
@@ -785,5 +786,53 @@ export function createX402GetHandler(
       return settlementUnavailableResponse();
     }
     return getPaidHandler()(req);
+  };
+}
+
+export function searchRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/search": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: SEARCH_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "Web search → top 1-5 result pages fetched as clean markdown/text with URL, title, rank and per-source status (Google results via Serper); SSRF-safe fetch; partial results on page errors; $0.03",
+      mimeType: "application/json",
+      ...SERVICE_METADATA,
+      extensions: {
+        ...declareDiscoveryExtension({
+          method: "GET",
+          input: { q: "x402 payment protocol", n: "3" },
+          inputSchema: {
+            properties: {
+              q: { type: "string", description: "Search query (required, <=300 chars)." },
+              n: { type: "string", description: "Number of result pages to fetch, integer 1-5 (default 3)." },
+            },
+            required: ["q"],
+          },
+          output: {
+            example: {
+              ok: true,
+              query: "x402 payment protocol",
+              provider: "serper (Google results)",
+              n: 3,
+              resultCount: 3,
+              fetchedOk: 3,
+              results: [
+                { rank: 1, url: "https://www.x402.org/", title: "x402", ok: true, format: "markdown", content: "…" },
+              ],
+            },
+            schema: { type: "object", description: "Horizon Pulse search-then-fetch result with sources" },
+          },
+        } as DiscoveryDecl),
+      },
+    },
   };
 }

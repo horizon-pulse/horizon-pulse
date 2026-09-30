@@ -29,6 +29,8 @@ import {
   SCREENSHOT_PRICE_ATOMIC,
   X402_CHECK_PRICE_USD,
   X402_CHECK_PRICE_ATOMIC,
+  SEARCH_PRICE_USD,
+  SEARCH_PRICE_ATOMIC,
   HTTP_PRICE_USD,
   HTTP_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
@@ -129,6 +131,14 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     summary:
       "Headless Chromium render → PNG/JPEG (base64 JSON), viewport/fullPage options; SSRF-safe on every sub-request",
   },
+  {
+    path: "/api/search?q=…&n=3",
+    method: "GET",
+    priceUsd: SEARCH_PRICE_USD,
+    priceAtomic: SEARCH_PRICE_ATOMIC,
+    summary:
+      "Web search → top 1-5 pages as clean markdown with sources (Google results via Serper; SSRF-safe fetch; partial results on page errors)",
+  },
 ] as const;
 
 /** First on-chain settle (pulse $0.005). Crypto catalog frozen thereafter. */
@@ -140,4 +150,4 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless render)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch)." as const;

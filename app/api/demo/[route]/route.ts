@@ -11,6 +11,7 @@ import { httpHandler } from "@/app/api/http/handler";
 import { extractHandler } from "@/app/api/extract/handler";
 import { x402CheckHandler } from "@/app/api/x402-check/handler";
 import { screenshotHandler } from "@/app/api/screenshot/handler";
+import { searchHandler } from "@/app/api/search/handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,9 +19,14 @@ export const maxDuration = 30;
 
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
-const HEAVY_DEMOS = new Set(["screenshot"]);
+const HEAVY_DEMOS = new Set(["screenshot", "search"]);
 const HEAVY_TTL_MS = 10 * 60 * 1000;
+/** search spends paid provider quota: one sample per instance per day. */
+const TTL_MS: Record<string, number> = { search: 24 * 60 * 60 * 1000 };
+/** After a failed heavy sample, don't retry the handler for 10 min. */
+const FAIL_TTL_MS = 10 * 60 * 1000;
 const demoMemo = new Map<string, { at: number; status: number; sample: unknown }>();
+const inflight = new Map<string, Promise<{ status: number; sample: unknown }>>();
 
 const HANDLERS: Record<string, Handler> = {
   pulse: pulseHandler,
@@ -34,6 +40,7 @@ const HANDLERS: Record<string, Handler> = {
   extract: extractHandler,
   "x402-check": x402CheckHandler,
   screenshot: screenshotHandler,
+  search: searchHandler,
 };
 
 /**
@@ -63,20 +70,31 @@ export async function GET(
     `${origin}/api/${route}${demo.query ? `?${demo.query}` : ""}`,
     { method: "GET" },
   );
-  // Expensive renders (headless Chromium) reuse one successful sample per
-  // instance for 10 min, on top of the CDN s-maxage, so the free demo can't be
+  // Expensive demos (headless Chromium; paid search quota) reuse one sample per
+  // instance (10 min; search 24h; failures 10 min), on top of the CDN s-maxage, so the free demo can't be
   // used to run up compute. Paid routes are never cached.
   const heavy = HEAVY_DEMOS.has(route);
   const cached = heavy ? demoMemo.get(route) : undefined;
   let status: number;
   let sample: unknown;
-  if (cached && Date.now() - cached.at < HEAVY_TTL_MS) {
+  const ttl = cached && cached.status !== 200 ? FAIL_TTL_MS : (TTL_MS[route] ?? HEAVY_TTL_MS);
+  if (cached && Date.now() - cached.at < ttl) {
     ({ status, sample } = cached);
   } else {
-    const res = await handler(inner);
-    status = res.status;
-    sample = (await res.json()) as unknown;
-    if (heavy && status === 200) demoMemo.set(route, { at: Date.now(), status, sample });
+    // Concurrent cold requests share one in-flight handler run.
+    let p = heavy ? inflight.get(route) : undefined;
+    if (!p) {
+      p = (async () => {
+        const res = await handler(inner);
+        return { status: res.status, sample: (await res.json()) as unknown };
+      })();
+      if (heavy) {
+        inflight.set(route, p);
+        p.finally(() => inflight.delete(route)).catch(() => {});
+      }
+    }
+    ({ status, sample } = await p);
+    if (heavy) demoMemo.set(route, { at: Date.now(), status, sample });
   }
 
   return NextResponse.json(
