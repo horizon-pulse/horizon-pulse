@@ -22,7 +22,7 @@ export const MAX_PROBE_BODY_BYTES = 8_000;
 
 export const X402_CHECK_METHODOLOGY = {
   request:
-    `One unpaid request with the given method (GET default; POST sends the caller's JSON body, up to ${MAX_PROBE_BODY_BYTES / 1000}KB, or '{}' if none). A body implies POST. If no method was given and GET returns 405, one retry with POST is made and reported. No payment header is ever sent; nothing is signed or paid.`,
+    `One unpaid request with the given method (GET default; POST sends the caller's JSON body, up to ${MAX_PROBE_BODY_BYTES / 1000}KB, or '{}' if none). A body implies POST. Redirects follow browser rules: 301/302/303 turn a POST into a GET without the body; 307/308 re-send the POST and body to the new target, which is SSRF-checked like every hop. If no method was given and GET returns 405, one retry with POST is made and reported. No payment header is ever sent; nothing is signed or paid.`,
   parsing:
     "x402 v2: base64 JSON in the PAYMENT-REQUIRED header (falls back to JSON body). x402 v1: JSON body with x402Version 1 and accepts[].maxAmountRequired.",
   payToType:
@@ -178,6 +178,7 @@ export async function checkX402Endpoint(input: {
     return { ok: false, error: "body is only sent with method POST", code: "bad_method", status: 400 };
   let method = m as "GET" | "POST";
   let retriedFrom405 = false;
+  let redirectDowngrade = false;
 
   let current = raw;
   let redirects = 0;
@@ -201,7 +202,7 @@ export async function checkX402Endpoint(input: {
           "User-Agent": "HorizonPulseX402Check/1.0 (+https://horizonpulse.dev)",
           ...(method === "POST" ? { "content-type": "application/json" } : {}),
         },
-        ...(method === "POST" ? { body: rawBody ?? "{}" } : {}),
+        ...(method === "POST" ? { body: (redirectDowngrade ? undefined : rawBody) ?? "{}" } : {}),
       });
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
@@ -215,6 +216,10 @@ export async function checkX402Endpoint(input: {
       if (redirects > CHECK_MAX_REDIRECTS)
         return { ok: false, error: `Too many redirects (max ${CHECK_MAX_REDIRECTS})`, code: "redirects", status: 502 };
       current = new URL(res.headers.get("location")!, url).toString();
+      if (method === "POST" && (res.status === 301 || res.status === 302 || res.status === 303)) {
+        method = "GET";
+        redirectDowngrade = true;
+      }
       continue;
     }
     if (res.status === 405 && method === "GET" && !explicitMethod && !retriedFrom405) {
@@ -234,6 +239,8 @@ export async function checkX402Endpoint(input: {
   if (!finalUrl.startsWith("https://")) checks.push({ id: "https", level: "warn", message: "Endpoint is plain http; agents and wallets should see https." });
   if (retriedFrom405)
     checks.push({ id: "method_retry", level: "info", message: "GET returned 405, so the probe was retried once with POST. Pass method explicitly to skip the retry." });
+  if (redirectDowngrade)
+    checks.push({ id: "redirect_method", level: "warn", message: "A 301/302/303 redirect turned the POST probe into a GET (browser rules). Paid POST clients may hit the same downgrade; list the final URL or use 307/308." });
   if (rawBody !== undefined) checks.push({ id: "probe_body", level: "info", message: "Probe sent your JSON body with POST." });
   if (redirects > 0) checks.push({ id: "redirects", level: "info", message: `Followed ${redirects} redirect(s) to ${finalUrl}. Some clients do not follow redirects on paid retries; list the final URL.` });
 
