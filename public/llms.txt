@@ -70,5 +70,5 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 - `/api/fetch` returns best-effort cleaned text from the requested public URL; private/localhost blocked; size/time capped.
 - `/api/http` is a raw universal proxy (filtered headers, text|base64 body); same SSRF guards; priced $0.01 for volume.
 - `/api/extract` returns best-effort structured fields from a public URL or provided HTML; private/localhost blocked; size/time capped; priced $0.015.
-- `/api/x402-check` sends one unpaid request and never pays or signs; it reports the challenge as served. Unreachable targets return 502/504 and are not charged. Priced $0.01.
+- `/api/x402-check` sends one unpaid request and never pays or signs; it reports the challenge as served. Any HTTP answer from the target (including 5xx) is a billed report; bad input, blocked hosts, DNS/connection failures and timeouts return 400/502/504 and are not charged. Priced $0.01.
 - Do not invent routes, prices, or Bazaar index status.

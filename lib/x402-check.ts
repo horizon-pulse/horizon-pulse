@@ -8,7 +8,8 @@
  * discovery-extension hints. Never pays, never signs.
  *
  * Unreachable target (DNS/timeout/connection) → 502/504 so the caller is
- * NOT charged. Any HTTP answer (including "not a 402") is a valid report.
+ * NOT charged. Any HTTP answer from the target, including 5xx, is a billed
+ * report (see methodology.billing). Body is streamed and capped at 64KB.
  */
 import { assertSafePublicUrl } from "@/lib/fetch-url";
 
@@ -24,6 +25,8 @@ export const X402_CHECK_METHODOLOGY = {
   payToType:
     "eth_getCode on Base (eip155:8453 / 'base') and Ethereum (eip155:1 / 'ethereum') via public RPCs. Empty code = EOA (a single private key controls funds). Other networks: not checked.",
   limits: `SSRF-safe (private/local targets blocked at every redirect hop), ${CHECK_MAX_REDIRECTS} redirects, ${CHECK_TIMEOUT_MS / 1000}s timeout, ${MAX_BODY_BYTES / 1000}KB body cap.`,
+  billing:
+    "Any HTTP answer from the target is a completed report and is billed, including 4xx/5xx answers (e.g. 'returned HTTP 500, not 402' is the finding). Not billed: missing/bad url, bad method, blocked private/local host, DNS failure, connection failure, timeout, or too many redirects; those return 400/502/504 and settlement is skipped.",
   notAdvice:
     "Checks describe the challenge as served. Indexing hints are based on Horizon Pulse's own experience with CDP discovery, not a CDP guarantee.",
 } as const;
@@ -109,6 +112,28 @@ function formatUnits(atomic: string, decimals: number): string | null {
   return frac ? `${whole}.${frac}` : whole;
 }
 
+/** Stream the body and stop after `cap` bytes (cancels the rest). Never buffers the full response. */
+async function readCapped(res: Response, cap: number): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (total < cap) {
+      const { done, value } = await reader.read();
+      if (done || !value) break;
+      const take = value.subarray(0, cap - total);
+      chunks.push(take);
+      total += take.length;
+    }
+  } catch {
+    /* body unreadable or timed out; header may still carry the challenge */
+  } finally {
+    reader.cancel().catch(() => {});
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 function decodeHeader(v: string): unknown {
   try {
     return JSON.parse(Buffer.from(v, "base64").toString("utf8"));
@@ -180,12 +205,7 @@ export async function checkX402Endpoint(input: {
   const checks: Check[] = [];
   const status = res.status;
   let bodyText = "";
-  try {
-    const buf = Buffer.from(await res.arrayBuffer());
-    bodyText = buf.subarray(0, MAX_BODY_BYTES).toString("utf8");
-  } catch {
-    /* body unreadable; header may still carry the challenge */
-  }
+  bodyText = await readCapped(res, MAX_BODY_BYTES);
 
   if (!finalUrl.startsWith("https://")) checks.push({ id: "https", level: "warn", message: "Endpoint is plain http; agents and wallets should see https." });
   if (redirects > 0) checks.push({ id: "redirects", level: "info", message: `Followed ${redirects} redirect(s) to ${finalUrl}. Some clients do not follow redirects on paid retries; list the final URL.` });

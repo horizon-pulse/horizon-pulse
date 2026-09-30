@@ -373,7 +373,7 @@
     "/api/x402-check": {
       "get": {
         "summary": "Audit an x402 endpoint",
-        "description": "$0.01 USDC x402. Sends one unpaid probe (never pays or signs) to a public x402 endpoint and reports: HTTP status, whether it is a valid x402 challenge, x402 version (v1/v2), decoded accepts (network, asset, price, payTo), payTo type via eth_getCode on Base/Ethereum (EOA vs contract), discovery-metadata hints, and pass/warn/fail checks. SSRF-safe (private/localhost blocked at every redirect hop), 3 redirects, 8s timeout. Unreachable targets return 502/504 and are not charged.",
+        "description": "$0.01 USDC x402. Sends one unpaid probe (never pays or signs) to a public x402 endpoint and reports: HTTP status, whether it is a valid x402 challenge, x402 version (v1/v2), decoded accepts (network, asset, price, payTo), payTo type via eth_getCode on Base/Ethereum (EOA vs contract), discovery-metadata hints, and pass/warn/fail checks. SSRF-safe (private/localhost blocked at every redirect hop), 3 redirects, 8s timeout. Any HTTP answer from the target, including 5xx, is a billed report. Bad input, blocked hosts, DNS/connection failures and timeouts return 400/502/504 and are not charged.",
         "parameters": [
           {
             "name": "url",
