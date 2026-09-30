@@ -27,6 +27,7 @@ import * as portfolio from "@/app/api/portfolio/handler";
 import * as fetchR from "@/app/api/fetch/handler";
 import * as http from "@/app/api/http/handler";
 import * as extract from "@/app/api/extract/handler";
+import * as x402check from "@/app/api/x402-check/handler";
 
 type PaymentOpts = { maxAmountRequired: string; resource: string; description: string };
 type Handler = (req: NextRequest) => Promise<NextResponse>;
@@ -99,6 +100,15 @@ export const TOOLS: ToolDef[] = [
       html: z.string().optional().describe("Raw HTML to extract from (instead of url)"),
     },
     call: (a) => runHandler(extract.extractHandler, makeRequest("/api/extract", {}, { url: a.url, html: a.html })),
+  },
+  {
+    name: "x402_check",
+    opts: x402check.paymentOpts,
+    schema: {
+      url: z.string().describe("Public http(s) URL of the x402 endpoint to audit"),
+      method: z.string().optional().describe("Probe method: GET (default) or POST"),
+    },
+    call: (a) => runHandler(x402check.x402CheckHandler, makeRequest("/api/x402-check", { url: s(a.url), method: s(a.method) })),
   },
 ];
 

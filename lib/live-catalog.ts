@@ -25,6 +25,8 @@ import {
   FUNDING_PRICE_ATOMIC,
   FETCH_PRICE_USD,
   FETCH_PRICE_ATOMIC,
+  X402_CHECK_PRICE_USD,
+  X402_CHECK_PRICE_ATOMIC,
   HTTP_PRICE_USD,
   HTTP_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
@@ -109,6 +111,14 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     summary:
       "URL or HTML → structured fields (title, description, links, images, headings, json-ld, text sample); SSRF-safe; $0.015",
   },
+  {
+    path: "/api/x402-check?url=https://…",
+    method: "GET",
+    priceUsd: X402_CHECK_PRICE_USD,
+    priceAtomic: X402_CHECK_PRICE_ATOMIC,
+    summary:
+      "Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays)",
+  },
 ] as const;
 
 /** First on-chain settle (pulse $0.005). Crypto catalog frozen thereafter. */
@@ -120,4 +130,4 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit)." as const;

@@ -54,6 +54,13 @@ export const HTTP_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 export const EXTRACT_PRICE_USD = "$0.015" as const;
 export const EXTRACT_PRICE_ATOMIC = "15000" as const; // USDC 6 decimals
 
+/**
+ * /api/x402-check — audit any public x402 endpoint (unpaid probe → report).
+ * $0.01 (10000 atomic): same volume tier as /api/http.
+ */
+export const X402_CHECK_PRICE_USD = "$0.01" as const;
+export const X402_CHECK_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

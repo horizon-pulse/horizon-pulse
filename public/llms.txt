@@ -29,12 +29,14 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 | GET | /api/fetch?url=https://… | $0.02 | 20000 | Fetch public URL → clean text/markdown (SSRF-safe, capped) |
 | GET/POST | /api/http | $0.01 | 10000 | Universal HTTP proxy (url/method/headers/body) → status + body (SSRF-safe; volume price) |
 | GET/POST | /api/extract | $0.015 | 15000 | URL or HTML → structured fields (title, links, images, headings, json-ld, text sample) |
+| GET | /api/x402-check?url=https://… | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays) |
 
 ## Which route to call
 
 - Need a web page as clean text for an LLM: `/api/fetch`
 - Need to call any public HTTP endpoint (custom method/headers/body): `/api/http`
 - Need structured fields from a page (title, links, headings, JSON-LD): `/api/extract`
+- Need to check an x402 endpoint before paying it, or audit your own: `/api/x402-check?url=…`
 - Need a quick crypto market read: `/api/pulse` (spot + momentum), `/api/signals` (indicators + funding)
 - Need DeFi yields, gas timing, or perp funding: `/api/yield`, `/api/gas`, `/api/funding`
 - Need a wallet risk snapshot: `/api/portfolio?address=0x…`
@@ -43,7 +45,7 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 
 `GET /api/demo/<route>` runs the real handler on a fixed input and returns `demo: true`. Use it to check the response shape before paying. Inputs cannot be changed.
 
-- /api/demo/fetch, /api/demo/http, /api/demo/extract
+- /api/demo/fetch, /api/demo/http, /api/demo/extract, /api/demo/x402-check
 - /api/demo/pulse, /api/demo/signals, /api/demo/yield, /api/demo/gas, /api/demo/funding, /api/demo/portfolio
 
 ## Free (not paid)
@@ -68,4 +70,5 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 - `/api/fetch` returns best-effort cleaned text from the requested public URL; private/localhost blocked; size/time capped.
 - `/api/http` is a raw universal proxy (filtered headers, text|base64 body); same SSRF guards; priced $0.01 for volume.
 - `/api/extract` returns best-effort structured fields from a public URL or provided HTML; private/localhost blocked; size/time capped; priced $0.015.
+- `/api/x402-check` sends one unpaid request and never pays or signs; it reports the challenge as served. Unreachable targets return 502/504 and are not charged. Priced $0.01.
 - Do not invent routes, prices, or Bazaar index status.

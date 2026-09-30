@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Nine x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
+    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Ten x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
     "version": "1.0.0",
     "contact": {
       "name": "Horizon Pulse",
@@ -366,6 +366,55 @@
           },
           "504": {
             "description": "Upstream timeout"
+          }
+        }
+      }
+    },
+    "/api/x402-check": {
+      "get": {
+        "summary": "Audit an x402 endpoint",
+        "description": "$0.01 USDC x402. Sends one unpaid probe (never pays or signs) to a public x402 endpoint and reports: HTTP status, whether it is a valid x402 challenge, x402 version (v1/v2), decoded accepts (network, asset, price, payTo), payTo type via eth_getCode on Base/Ethereum (EOA vs contract), discovery-metadata hints, and pass/warn/fail checks. SSRF-safe (private/localhost blocked at every redirect hop), 3 redirects, 8s timeout. Unreachable targets return 502/504 and are not charged.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL of the x402 endpoint to audit"
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST"
+              ],
+              "default": "GET"
+            },
+            "description": "Method for the unpaid probe"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: audit report JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing, bad, or blocked URL / method (not charged)"
+          },
+          "502": {
+            "description": "Target unreachable or too many redirects (not charged)"
+          },
+          "504": {
+            "description": "Target timeout (not charged)"
           }
         }
       }

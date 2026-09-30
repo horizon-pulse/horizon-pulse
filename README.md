@@ -17,7 +17,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 
 ## What it is
 
-- Agents hit **nine** live paid HTTP endpoints (six crypto frozen; `/api/fetch` + `/api/http` + `/api/extract` non-crypto LIVE — see below).
+- Agents hit **ten** live paid HTTP endpoints (six crypto frozen; `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` non-crypto LIVE — see below).
 - Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header; network is CAIP-2 **`eip155:8453`** (Base); asset is Base USDC; `payTo` is the treasury below.
 - Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
 - No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only); `/api/fetch` returns best-effort cleaned text from a requested public URL (SSRF-safe, size/time capped); `/api/http` is a raw universal proxy (filtered headers, text|base64 body, SSRF-safe) priced **$0.01** for volume; `/api/extract` returns best-effort structured page fields from a URL or HTML (SSRF-safe, size/time capped) priced **$0.015**.
@@ -27,7 +27,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 
 | Fact | Value |
 | --- | --- |
-| **Live paid routes** | **9** (table below) — six crypto + `/api/fetch` + `/api/http` + `/api/extract` |
+| **Live paid routes** | **10** (table below) — six crypto + `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` |
 | **First settle** | `/api/pulse` **$0.005** — tx `0xedbd1a51…` |
 | **Crypto policy** | **Frozen** — six crypto routes: no price changes |
 | **Fetch** | Non-crypto LIVE: clean-text (`$0.02`) |
@@ -62,7 +62,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
 ## Endpoints
 
-**Paid (9 — six crypto frozen + fetch + http + extract):**
+**Paid (10 — six crypto frozen + fetch + http + extract + x402-check):**
 
 | Route | Price | Auth |
 | --- | --- | --- |
@@ -75,6 +75,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 | `GET /api/fetch?url=https://…` | **$0.02** USDC (`20000` atomic) | x402 v2 |
 | `GET` / `POST` `/api/http` | **$0.01** USDC (`10000` atomic) | x402 v2 |
 | `GET` / `POST` `/api/extract` | **$0.015** USDC (`15000` atomic) | x402 v2 |
+| `GET /api/x402-check?url=https://…` | **$0.01** USDC (`10000` atomic) | x402 v2 |
 
 **Free (not paid APIs):**
 
@@ -268,7 +269,7 @@ git push -u origin main
 
 ## Reference agent (`examples/`)
 
-Unpaid 402 discovery for **all nine** live paid routes, plus optional paid single-route when `SMOKE_PRIVATE_KEY` is set:
+Unpaid 402 discovery for **all ten** live paid routes, plus optional paid single-route when `SMOKE_PRIVATE_KEY` is set:
 
 ```bash
 cd horizon-pulse

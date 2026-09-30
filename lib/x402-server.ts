@@ -18,6 +18,7 @@ import {
   GAS_PRICE_USD,
   FUNDING_PRICE_USD,
   FETCH_PRICE_USD,
+  X402_CHECK_PRICE_USD,
   HTTP_PRICE_USD,
   EXTRACT_PRICE_USD,
   USDC_BASE,
@@ -514,6 +515,73 @@ export function extractRouteConfig(): RoutesConfig {
   };
 }
 
+
+export function x402CheckRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/x402-check": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: X402_CHECK_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "Audit any public x402 endpoint: one unpaid probe → 402 validity, x402 version, decoded price/network/asset, payTo type (EOA vs contract), discovery-metadata hints, pass/warn/fail checks; SSRF-safe; never pays",
+      mimeType: "application/json",
+      ...SERVICE_METADATA,
+      extensions: {
+        ...declareDiscoveryExtension({
+          method: "GET",
+          input: {
+            url: "https://horizonpulse.dev/api/pulse",
+            method: "GET",
+          },
+          inputSchema: {
+            properties: {
+              url: {
+                type: "string",
+                description: "Absolute http(s) URL of the x402 endpoint to audit (required). Private/localhost blocked.",
+              },
+              method: {
+                type: "string",
+                description: "HTTP method for the unpaid probe: GET (default) or POST.",
+              },
+            },
+            required: ["url"],
+          },
+          output: {
+            example: {
+              ok: true,
+              target: "https://horizonpulse.dev/api/pulse",
+              httpStatus: 402,
+              isX402: true,
+              x402Version: 2,
+              accepts: [
+                {
+                  network: "eip155:8453",
+                  assetLabel: "USDC (Base)",
+                  amountUsd: "$0.005",
+                  payTo: "0x5b32c973596078a967562ca652761404f19be0e9",
+                  payToType: "eoa",
+                },
+              ],
+              discovery: { present: true, method: "GET" },
+              summary: { pass: 5, warn: 0, fail: 0 },
+            },
+            schema: {
+              type: "object",
+              description: "Horizon Pulse x402 endpoint audit report",
+            },
+          },
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
 
 /**
  * Explicit x402 v2 PaymentRequired (no facilitator sync) for OPTIONS /

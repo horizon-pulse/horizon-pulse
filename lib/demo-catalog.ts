@@ -6,6 +6,7 @@
  */
 import {
   EXTRACT_PRICE_USD,
+  X402_CHECK_PRICE_USD,
   FETCH_PRICE_USD,
   FUNDING_PRICE_USD,
   GAS_PRICE_USD,
@@ -32,6 +33,7 @@ export const DEMO_ROUTES: DemoRoute[] = [
   { route: "fetch", priceUsd: FETCH_PRICE_USD, query: "url=https://example.com", input: "url=https://example.com (fixed)" },
   { route: "http", priceUsd: HTTP_PRICE_USD, query: "url=https://example.com&method=GET", input: "GET https://example.com (fixed)" },
   { route: "extract", priceUsd: EXTRACT_PRICE_USD, query: "url=https://horizonpulse.dev", input: "url=https://horizonpulse.dev (fixed)" },
+  { route: "x402-check", priceUsd: X402_CHECK_PRICE_USD, query: "url=https://horizonpulse.dev/api/pulse", input: "url=https://horizonpulse.dev/api/pulse (fixed)" },
   { route: "pulse", priceUsd: PULSE_PRICE_USD, query: "", input: "none" },
   { route: "signals", priceUsd: SIGNALS_PRICE_USD, query: "", input: "none" },
   { route: "yield", priceUsd: YIELD_PRICE_USD, query: "", input: "none" },

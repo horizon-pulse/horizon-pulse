@@ -9,6 +9,7 @@ import { fundingHandler } from "@/app/api/funding/handler";
 import { fetchHandler } from "@/app/api/fetch/handler";
 import { httpHandler } from "@/app/api/http/handler";
 import { extractHandler } from "@/app/api/extract/handler";
+import { x402CheckHandler } from "@/app/api/x402-check/handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ const HANDLERS: Record<string, Handler> = {
   fetch: fetchHandler,
   http: httpHandler,
   extract: extractHandler,
+  "x402-check": x402CheckHandler,
 };
 
 /**
