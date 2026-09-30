@@ -20,8 +20,9 @@ const ARGS = {
   http: { url: "https://example.com" },
   extract: { url: "https://example.com" },
   x402_check: { url: "https://horizonpulse.dev/api/pulse" },
+  screenshot: { url: "https://example.com" },
 };
-const Q = { portfolio: "?address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", fetch: "?url=https://example.com", http: "?url=https://example.com", extract: "?url=https://example.com", x402_check: "?url=https://horizonpulse.dev/api/pulse" };
+const Q = { portfolio: "?address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", fetch: "?url=https://example.com", http: "?url=https://example.com", extract: "?url=https://example.com", x402_check: "?url=https://horizonpulse.dev/api/pulse", screenshot: "?url=https://example.com" };
 let fail = 0;
 const ok = (c, msg) => { console.log(`${c ? "PASS" : "FAIL"} ${msg}`); if (!c) fail++; };
 
@@ -29,7 +30,7 @@ const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabiliti
 ok(init.status === 200 && init.json.result?.serverInfo?.name === "horizon-pulse", "initialize is free");
 const list = await rpc("tools/list", {});
 const names = (list.json.result?.tools || []).map((t) => t.name).sort();
-ok(JSON.stringify(names) === JSON.stringify(["extract","fetch","funding","gas","http","portfolio","pulse","signals","x402_check","yield"]), `tools/list free, 10 tools: ${names.join(",")}`);
+ok(JSON.stringify(names) === JSON.stringify(["extract","fetch","funding","gas","http","portfolio","pulse","screenshot","signals","x402_check","yield"]), `tools/list free, 11 tools: ${names.join(",")}`);
 
 for (const name of names) {
   const r = await rpc("tools/call", { name, arguments: ARGS[name] || {} });

@@ -28,6 +28,7 @@ import * as fetchR from "@/app/api/fetch/handler";
 import * as http from "@/app/api/http/handler";
 import * as extract from "@/app/api/extract/handler";
 import * as x402check from "@/app/api/x402-check/handler";
+import * as screenshot from "@/app/api/screenshot/handler";
 
 type PaymentOpts = { maxAmountRequired: string; resource: string; description: string };
 type Handler = (req: NextRequest) => Promise<NextResponse>;
@@ -109,6 +110,28 @@ export const TOOLS: ToolDef[] = [
       method: z.string().optional().describe("Probe method: GET (default) or POST"),
     },
     call: (a) => runHandler(x402check.x402CheckHandler, makeRequest("/api/x402-check", { url: s(a.url), method: s(a.method) })),
+  },
+  {
+    name: "screenshot",
+    opts: screenshot.paymentOpts,
+    schema: {
+      url: z.string().describe("Public http(s) URL to render"),
+      width: z.number().int().optional().describe("Viewport width 320-1920 (default 1280)"),
+      height: z.number().int().optional().describe("Viewport height 240-2000 (default 800)"),
+      fullPage: z.boolean().optional().describe("Capture full page (clipped at 4000px)"),
+      format: z.enum(["png", "jpeg"]).optional().describe("Image format (default png)"),
+    },
+    call: (a) =>
+      runHandler(
+        screenshot.screenshotHandler,
+        makeRequest("/api/screenshot", {
+          url: s(a.url),
+          width: a.width != null ? String(a.width) : undefined,
+          height: a.height != null ? String(a.height) : undefined,
+          fullPage: a.fullPage ? "true" : undefined,
+          format: s(a.format),
+        }),
+      ),
   },
 ];
 

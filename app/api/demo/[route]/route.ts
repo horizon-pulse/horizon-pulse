@@ -10,9 +10,11 @@ import { fetchHandler } from "@/app/api/fetch/handler";
 import { httpHandler } from "@/app/api/http/handler";
 import { extractHandler } from "@/app/api/extract/handler";
 import { x402CheckHandler } from "@/app/api/x402-check/handler";
+import { screenshotHandler } from "@/app/api/screenshot/handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
@@ -27,6 +29,7 @@ const HANDLERS: Record<string, Handler> = {
   http: httpHandler,
   extract: extractHandler,
   "x402-check": x402CheckHandler,
+  screenshot: screenshotHandler,
 };
 
 /**

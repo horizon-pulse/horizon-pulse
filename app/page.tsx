@@ -33,7 +33,8 @@ export default function HomePage() {
         yields, on-chain portfolio risk, Base/Ethereum gas) plus{" "}
         <code>/api/fetch</code> (URL → clean text),{" "}
         <code>/api/http</code> (universal HTTP proxy, $0.01),{" "}
-        <code>/api/extract</code> (URL/HTML → structured fields, $0.015), and{" "}
+        <code>/api/extract</code> (URL/HTML → structured fields, $0.015),{" "}
+        <code>/api/screenshot</code> (headless browser render, $0.02), and{" "}
         <code>/api/x402-check</code> (audit any x402 endpoint, $0.01). No invented
         metrics. No advertised 404s.
       </p>

@@ -61,6 +61,14 @@ export const EXTRACT_PRICE_ATOMIC = "15000" as const; // USDC 6 decimals
 export const X402_CHECK_PRICE_USD = "$0.01" as const;
 export const X402_CHECK_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 
+/**
+ * /api/screenshot — headless Chromium render → PNG/JPEG (base64 JSON).
+ * $0.02 (20000 atomic): same tier as /api/fetch; a browser render costs more
+ * compute than a plain fetch.
+ */
+export const SCREENSHOT_PRICE_USD = "$0.02" as const;
+export const SCREENSHOT_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

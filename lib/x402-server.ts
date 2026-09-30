@@ -18,6 +18,7 @@ import {
   GAS_PRICE_USD,
   FUNDING_PRICE_USD,
   FETCH_PRICE_USD,
+  SCREENSHOT_PRICE_USD,
   X402_CHECK_PRICE_USD,
   HTTP_PRICE_USD,
   EXTRACT_PRICE_USD,
@@ -576,6 +577,61 @@ export function x402CheckRouteConfig(): RoutesConfig {
               type: "object",
               description: "Horizon Pulse x402 endpoint audit report",
             },
+          },
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+export function screenshotRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/screenshot": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: SCREENSHOT_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description:
+        "Render a public URL in headless Chromium → PNG/JPEG screenshot (base64 JSON) with final URL, page status and title; viewport/fullPage/format options; SSRF-safe on every sub-request; $0.02",
+      mimeType: "application/json",
+      ...SERVICE_METADATA,
+      extensions: {
+        ...declareDiscoveryExtension({
+          method: "GET",
+          input: {
+            url: "https://example.com",
+          },
+          inputSchema: {
+            properties: {
+              url: { type: "string", description: "Absolute http(s) URL to render (required). Private/localhost blocked." },
+              width: { type: "string", description: "Viewport width 320-1920 (default 1280)." },
+              height: { type: "string", description: "Viewport height 240-2000 (default 800)." },
+              fullPage: { type: "string", description: "true to capture the full page (clipped at 4000px)." },
+              format: { type: "string", description: "png (default) or jpeg." },
+              delayMs: { type: "string", description: "Extra wait after load, 0-3000 ms." },
+            },
+            required: ["url"],
+          },
+          output: {
+            example: {
+              ok: true,
+              requestedUrl: "https://example.com",
+              finalUrl: "https://example.com/",
+              pageStatus: 200,
+              title: "Example Domain",
+              mimeType: "image/png",
+              width: 1280,
+              height: 800,
+              bytes: 20763,
+              imageBase64: "iVBORw0KGgo…",
+            },
+            schema: { type: "object", description: "Horizon Pulse screenshot result (image as base64)" },
           },
         } as DiscoveryDecl),
       },

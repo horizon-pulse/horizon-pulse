@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Ten x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
+    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Eleven x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless Chromium render), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
     "version": "1.0.0",
     "contact": {
       "name": "Horizon Pulse",
@@ -415,6 +415,98 @@
           },
           "504": {
             "description": "Target timeout (not charged)"
+          }
+        }
+      }
+    },
+    "/api/screenshot": {
+      "get": {
+        "summary": "Screenshot a public URL",
+        "description": "$0.02 USDC x402. Renders the URL in headless Chromium (fresh browser, no cookies) and returns JSON with the image as base64 (imageBase64) plus mimeType, bytes, width, height, finalUrl, pageStatus, title. SSRF-safe: the URL and every sub-request are checked; private/local targets blocked. fullPage clipped at 4000px; image capped at 3MB (PNG falls back to JPEG). Billed when an image is returned; failures return 400/413/502/504 and are not charged.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 320,
+              "maximum": 1920,
+              "default": 1280
+            }
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 240,
+              "maximum": 2000,
+              "default": 800
+            }
+          },
+          {
+            "name": "fullPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "png",
+                "jpeg"
+              ],
+              "default": "png"
+            }
+          },
+          {
+            "name": "delayMs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: image as base64 JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing/bad/blocked URL or params (not charged)"
+          },
+          "413": {
+            "description": "Image over cap (not charged)"
+          },
+          "502": {
+            "description": "Navigation or render failed (not charged)"
+          },
+          "504": {
+            "description": "Navigation timeout (not charged)"
           }
         }
       }
