@@ -5,10 +5,12 @@ import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
 import { HeroTerminal } from "@/components/HeroTerminal";
 import { Reveal } from "@/components/Reveal";
+import { CopyLine } from "@/components/CopyLine";
 
 const X_URL = "https://x.com/HorizonPulseAPI";
 const demoSet = new Set(DEMO_ROUTES.map((d) => d.route));
 const FEATURED = ["pulse", "fetch", "extract"];
+const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/merchant?payTo=${DEFAULT_PAY_TO.toLowerCase()}`;
 const WORDS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen", "Twenty"];
 
 const Ico = ({ d }: { d: string }) => (
@@ -52,6 +54,12 @@ export default function HomePage() {
               <a className="hp-btn primary" href="/api/demo/pulse">Try a free sample</a>
               <a className="hp-btn ghost" href="#catalog">See all {s.routes} routes</a>
             </div>
+            <CopyLine text="curl https://horizonpulse.dev/api/demo/pulse" />
+            <p className="hp-proof">
+              <a href={BAZAAR_LOOKUP} target="_blank" rel="noreferrer">Listed in Coinbase&apos;s x402 Bazaar ↗</a>
+              <span>·</span>
+              <a href="/.well-known/x402">/.well-known/x402</a>
+            </p>
             <HeroTerminal />
             <div className="hp-stats">
               <div className="hp-stat">
@@ -90,13 +98,14 @@ export default function HomePage() {
                 <code>/api/demo/&lt;route&gt;</code> with real output on a fixed input.
               </p>
             </div>
+            <div className="hp-label" style={{ marginTop: 8 }}>Start here</div>
             <div className="hp-grid">
               {featured.map((r) => {
                 const name = routeName(r);
                 return (
                   <div className="hp-tile" key={r.path} data-reveal>
                     <Ico d={ICONS[name] ?? ICONS.call} />
-                    <h3>/api/{name}</h3>
+                    <h3>{`/api/${name}`}</h3>
                     <p>{r.blurb}</p>
                     <div className="hp-tile-foot">
                       <b>{r.priceUsd}</b>
@@ -126,7 +135,7 @@ export default function HomePage() {
                     const name = routeName(r);
                     return (
                       <tr key={r.path}>
-                        <td className="r">/api/{name}</td>
+                        <td className="r">{`/api/${name}`}</td>
                         <td className="m">{r.method === "GET|POST" ? "GET · POST" : "GET"}</td>
                         <td className="b">{r.blurb}</td>
                         <td className="p">{r.priceUsd}</td>

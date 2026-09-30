@@ -31,7 +31,8 @@ curl https://horizonpulse.dev/.well-known/x402`,
   },
   node: {
     title: "agent.mjs",
-    code: `import { x402Client, x402HTTPClient } from "@x402/core/client";
+    code: `// npm i @x402/core@2.27.0 @x402/evm@2.27.0 viem@2.37.5
+import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount } from "viem/accounts";
 
@@ -41,11 +42,28 @@ const http = new x402HTTPClient(
 );
 
 const url = "https://horizonpulse.dev/api/pulse";
-const r1 = await fetch(url);                       // 402 + PAYMENT-REQUIRED
+const r1 = await fetch(url); // 402 + PAYMENT-REQUIRED
 const req = http.getPaymentRequiredResponse((h) => r1.headers.get(h), await r1.json());
 const payload = await http.createPaymentPayload(req);
 const r2 = await fetch(url, { headers: http.encodePaymentSignatureHeader(payload) });
-console.log(await r2.json());                      // JSON, $0.005 USDC on Base`,
+console.log(r2.status, (await r2.json()).assets.BTC.priceUsd); // 200, $0.005 USDC on Base`,
+  },
+  python: {
+    title: "agent.py",
+    code: `# pip install "x402[requests,evm]==2.25.0"
+import os
+from eth_account import Account
+from x402 import x402ClientSync
+from x402.http.clients import x402_requests
+from x402.mechanisms.evm.exact.register import register_exact_evm_client
+from x402.mechanisms.evm.signers import EthAccountSigner
+
+client = x402ClientSync()
+register_exact_evm_client(client, EthAccountSigner(Account.from_key(os.environ["PRIVATE_KEY"])))
+
+session = x402_requests(client)  # pays the 402 and retries automatically
+r = session.get("https://horizonpulse.dev/api/pulse")
+print(r.status_code, r.json()["assets"]["BTC"]["priceUsd"])  # 200, $0.005 USDC on Base`,
   },
   mcp: {
     title: "mcp config",
@@ -65,6 +83,7 @@ const TABS = [
   { id: "replay", label: "Recorded call" },
   { id: "curl", label: "curl" },
   { id: "node", label: "Node" },
+  { id: "python", label: "Python" },
   { id: "mcp", label: "MCP" },
 ];
 
