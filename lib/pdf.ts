@@ -22,9 +22,9 @@ const PARSE_BUDGET_MS = 10_000;
 
 export const PDF_METHODOLOGY = {
   download: `SSRF-safe GET (private/localhost blocked at every redirect hop, ${PDF_MAX_REDIRECTS} redirects), ${PDF_MAX_BYTES / 1024 / 1024}MB cap (larger files are rejected, not truncated), ${PDF_TIMEOUT_MS / 1000}s download budget. The file must start with %PDF-.`,
-  parse: `Text layer via pdf.js, pages 1-${PDF_MAX_PAGES} at most (use pages=N to limit), ${PDF_MAX_CHARS / 1000}K characters total. No OCR: scanned image-only PDFs return no_text_layer.`,
+  parse: `Text layer via pdf.js, pages 1-${PDF_MAX_PAGES} at most (use pages=N to limit), ${PDF_MAX_CHARS / 1000}K characters total. No OCR: scanned image-only PDFs return no_text_layer. ${PARSE_BUDGET_MS / 1000}s parse budget: partial text is returned as truncated; no text by then returns parse_timeout (504, not billed).`,
   billing:
-    "Billed only when text is returned. Not billed: missing/bad URL, blocked host, not a PDF, too large, download failure or timeout, encrypted or corrupt PDF, or no text layer; those return 400/413/415/422/502/504 and settlement is skipped.",
+    "Billed only when text is returned. Not billed: missing/bad URL, blocked host, not a PDF, too large, download failure or timeout, encrypted or corrupt PDF, no text layer, or parse timeout with no text; those return 400/413/415/422/502/504 and settlement is skipped.",
 } as const;
 
 export type PdfResult = {
@@ -133,26 +133,64 @@ export async function pdfToText(input: { url?: string; pages?: string }): Promis
   }
   const dl = await download(raw);
   if ("ok" in dl) return dl;
+  const parsed = await parsePdfBytes(dl.bytes, maxPages);
+  if (!parsed.ok) return parsed;
+  return { ok: true, requestedUrl: raw, finalUrl: dl.finalUrl, bytes: dl.bytes.byteLength, ...parsed.value, methodology: PDF_METHODOLOGY };
+}
 
-  let doc: Awaited<ReturnType<typeof getDocumentProxy>>;
+const TIMEOUT = Symbol("timeout");
+/** Resolve p, or TIMEOUT once ms elapse (the underlying work is abandoned). */
+function withBudget<T>(p: Promise<T>, ms: number): Promise<T | typeof TIMEOUT> {
+  let t: ReturnType<typeof setTimeout> | undefined;
+  const timer = new Promise<typeof TIMEOUT>((r) => { t = setTimeout(() => r(TIMEOUT), Math.max(0, ms)); });
+  return Promise.race([p, timer]).finally(() => clearTimeout(t));
+}
+
+type Parsed = Pick<PdfResult, "totalPages" | "pagesReturned" | "truncated" | "meta" | "pages">;
+
+/**
+ * Parse PDF bytes under a hard wall-clock budget: document open, every
+ * getPage/getTextContent and metadata are each raced against the time left.
+ * Budget hit with some text → partial result (truncated). With none → 504.
+ */
+export async function parsePdfBytes(
+  bytes: Uint8Array,
+  maxPages: number,
+  budgetMs: number = PARSE_BUDGET_MS,
+): Promise<{ ok: true; value: Parsed } | PdfError> {
+  const started = Date.now();
+  const left = () => budgetMs - (Date.now() - started);
+  const timedOut: PdfError = { ok: false, error: `PDF parse exceeded ${budgetMs}ms with no text extracted`, code: "parse_timeout", status: 504 };
+  const task = getDocumentProxy(new Uint8Array(bytes), { isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0 } as never);
+  let doc: Awaited<typeof task>;
   try {
-    doc = await getDocumentProxy(new Uint8Array(dl.bytes), { isEvalSupported: false, disableFontFace: true, useSystemFonts: false, verbosity: 0 } as never);
+    const r = await withBudget(task, left());
+    if (r === TIMEOUT) {
+      task.then((d) => cleanup(d)).catch(() => {});
+      return timedOut;
+    }
+    doc = r;
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
     if (/password/i.test(msg)) return { ok: false, error: "PDF is encrypted / password-protected", code: "encrypted", status: 422 };
     return { ok: false, error: "PDF could not be parsed (corrupt or unsupported)", code: "parse_failed", status: 422 };
   }
   try {
-    const started = Date.now();
     const total = doc.numPages;
     const n = Math.min(total, maxPages);
     const pages: { page: number; text: string }[] = [];
     let chars = 0;
     let truncated = n < total;
     for (let i = 1; i <= n; i++) {
-      if (Date.now() - started > PARSE_BUDGET_MS) { truncated = true; break; }
-      const page = await doc.getPage(i);
-      const tc = await page.getTextContent();
+      if (left() <= 0) { truncated = true; break; }
+      let tc: { items: unknown[] } | typeof TIMEOUT;
+      try {
+        tc = await withBudget(doc.getPage(i).then((pg) => pg.getTextContent()), left());
+      } catch {
+        if (chars > 0) { truncated = true; break; }
+        return { ok: false, error: "PDF could not be parsed (corrupt or unsupported)", code: "parse_failed", status: 422 };
+      }
+      if (tc === TIMEOUT) { truncated = true; break; }
       let text = "";
       for (const it of tc.items as { str?: string; hasEOL?: boolean }[]) {
         if (typeof it.str === "string") text += it.str + (it.hasEOL ? "\n" : "");
@@ -166,24 +204,31 @@ export async function pdfToText(input: { url?: string; pages?: string }): Promis
       pages.push({ page: i, text });
       if (chars >= PDF_MAX_CHARS) { truncated = true; break; }
     }
-    if (chars === 0)
+    if (chars === 0) {
+      if (left() <= 0) return timedOut;
       return { ok: false, error: "No text layer found (scanned/image-only PDF; OCR not supported)", code: "no_text_layer", status: 422 };
+    }
     let info: Record<string, unknown> = {};
-    try { info = ((await doc.getMetadata()).info ?? {}) as Record<string, unknown>; } catch {}
+    try {
+      const m = await withBudget(doc.getMetadata(), Math.max(left(), 500));
+      if (m !== TIMEOUT) info = (m.info ?? {}) as Record<string, unknown>;
+    } catch {}
     return {
       ok: true,
-      requestedUrl: raw,
-      finalUrl: dl.finalUrl,
-      bytes: dl.bytes.byteLength,
-      totalPages: total,
-      pagesReturned: pages.length,
-      truncated,
-      meta: { title: s(info.Title), author: s(info.Author), subject: s(info.Subject), creator: s(info.Creator), producer: s(info.Producer), creationDate: s(info.CreationDate) },
-      pages,
-      methodology: PDF_METHODOLOGY,
+      value: {
+        totalPages: total,
+        pagesReturned: pages.length,
+        truncated,
+        meta: { title: s(info.Title), author: s(info.Author), subject: s(info.Subject), creator: s(info.Creator), producer: s(info.Producer), creationDate: s(info.CreationDate) },
+        pages,
+      },
     };
   } finally {
-    const d = doc as unknown as { destroy?: () => Promise<void>; cleanup?: () => Promise<void>; loadingTask?: { destroy?: () => Promise<void> } };
-    await (d.loadingTask?.destroy?.() ?? d.destroy?.() ?? d.cleanup?.())?.catch?.(() => {});
+    cleanup(doc);
   }
+}
+
+function cleanup(doc: unknown): void {
+  const d = doc as { destroy?: () => Promise<void>; cleanup?: () => Promise<void>; loadingTask?: { destroy?: () => Promise<void> } };
+  void (d.loadingTask?.destroy?.() ?? d.destroy?.() ?? d.cleanup?.())?.catch?.(() => {});
 }

@@ -561,7 +561,7 @@
     "/api/pdf": {
       "get": {
         "summary": "PDF URL to text per page",
-        "description": "$0.02 USDC x402. Downloads a public PDF through the same SSRF checks as /api/fetch (private/localhost blocked at every redirect hop, 3 redirects, 10MB cap; larger files are rejected, not truncated, 12s download budget) and returns the pdf.js text layer per page (first 50 pages, 100K characters total) plus title/author metadata. No OCR. Billed only when text is returned. Bad input, blocked hosts, non-PDFs, oversize, encrypted or corrupt files, image-only PDFs, and download failures are not charged.",
+        "description": "$0.02 USDC x402. Downloads a public PDF through the same SSRF checks as /api/fetch (private/localhost blocked at every redirect hop, 3 redirects, 10MB cap; larger files are rejected, not truncated, 12s download budget) and returns the pdf.js text layer per page (first 50 pages, 100K characters total) plus title/author metadata. No OCR. Billed only when text is returned. Bad input, blocked hosts, non-PDFs, oversize, encrypted or corrupt files, image-only PDFs, download failures, and a 10s parse budget running out before any text are not charged; partial text past the budget is returned as truncated.",
         "parameters": [
           {
             "name": "url",
@@ -609,7 +609,7 @@
             "description": "Upstream download failed (not charged)"
           },
           "504": {
-            "description": "Download timed out (not charged)"
+            "description": "Download or parse timed out before any text (not charged)"
           }
         }
       }
