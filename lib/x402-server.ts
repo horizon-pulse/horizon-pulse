@@ -1,6 +1,6 @@
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
-import type { RoutesConfig } from "@x402/core/server";
+import type { RouteConfig, RoutesConfig } from "@x402/core/server";
 import { encodePaymentRequiredHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
@@ -325,13 +325,86 @@ export function fetchRouteConfig(): RoutesConfig {
   };
 }
 
+/**
+ * GET and POST get separate route keys so each method's Bazaar declaration
+ * names its own method (CDP validate rejects a POST probe of a GET-declared
+ * route). The accepts are the same object for every key, so the price, payTo,
+ * network and asset are identical per method.
+ *
+ * Order matters: @x402/core matches the first compiled route. The trailing
+ * bare-path key keeps every other verb (e.g. HEAD, which Next serves from the
+ * GET handler) paid exactly as before the split, when the only key was the
+ * bare path. Without it an unmatched verb would run the handler unpaid.
+ */
+function methodSplitRoutes(
+  path: string,
+  shared: Omit<RouteConfig, "extensions">,
+  getExtension: Record<string, unknown>,
+  postExtension: Record<string, unknown>,
+): RoutesConfig {
+  return {
+    [`GET ${path}`]: { ...shared, extensions: getExtension },
+    [`POST ${path}`]: { ...shared, extensions: postExtension },
+    [path]: { ...shared, extensions: getExtension },
+  };
+}
+
+const HTTP_GET_INPUT_SCHEMA = {
+  properties: {
+    url: {
+      type: "string",
+      description:
+        "Absolute http(s) URL (required). Private/localhost blocked.",
+    },
+    method: {
+      type: "string",
+      description:
+        "Upstream method: GET (default) | POST | HEAD | PUT | PATCH | DELETE",
+    },
+    headers: {
+      type: "object",
+      description:
+        "Optional allowlisted outbound headers (no Cookie / hop-by-hop). On GET pass as JSON string query param.",
+    },
+    body: {
+      type: "string",
+      description:
+        "Optional body for POST/PUT/PATCH (via POST /api/http JSON). Size-capped.",
+    },
+  },
+  required: ["url"],
+};
+
+const HTTP_POST_BODY_SCHEMA = {
+  properties: {
+    url: {
+      type: "string",
+      description: "Absolute http(s) URL (required). Private/localhost blocked.",
+    },
+    method: {
+      type: "string",
+      description: "Upstream method: GET (default) | POST | HEAD | PUT | PATCH | DELETE",
+    },
+    headers: {
+      type: "object",
+      description:
+        "Optional allowlisted outbound headers as a JSON object of string values (no Cookie / Host / hop-by-hop).",
+    },
+    body: {
+      description:
+        "Optional upstream request body for POST/PUT/PATCH: a string, or a JSON value (sent JSON-encoded). Size-capped (64KB).",
+    },
+  },
+  required: ["url"],
+};
+
 export function httpRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  // Path without verb prefix → matches GET and POST (*). Same $0.01 price.
-  // Bazaar discovery advertises GET (CDP validate); POST is paid identically.
-  return {
-    "/api/http": {
+  const output = outputOf("/api/http", "Horizon Pulse universal HTTP proxy result");
+  return methodSplitRoutes(
+    "/api/http",
+    {
       accepts: [
         {
           scheme: "exact",
@@ -343,54 +416,43 @@ export function httpRouteConfig(): RoutesConfig {
       description: routeDescription("/api/http"),
       mimeType: "application/json",
       ...serviceMetadata("/api/http"),
-      extensions: {
-        ...declareDiscoveryExtension({
-          method: "GET",
-          input: {
-            url: "https://example.com",
-            method: "GET",
-          },
-          inputSchema: {
-            properties: {
-              url: {
-                type: "string",
-                description:
-                  "Absolute http(s) URL (required). Private/localhost blocked.",
-              },
-              method: {
-                type: "string",
-                description:
-                  "Upstream method: GET (default) | POST | HEAD | PUT | PATCH | DELETE",
-              },
-              headers: {
-                type: "object",
-                description:
-                  "Optional allowlisted outbound headers (no Cookie / hop-by-hop). On GET pass as JSON string query param.",
-              },
-              body: {
-                type: "string",
-                description:
-                  "Optional body for POST/PUT/PATCH (via POST /api/http JSON). Size-capped.",
-              },
-            },
-            required: ["url"],
-          },
-          output: outputOf("/api/http", "Horizon Pulse universal HTTP proxy result"),
-        } as DiscoveryDecl),
-      },
     },
-  };
+    {
+      ...declareDiscoveryExtension({
+        method: "GET",
+        input: {
+          url: "https://example.com",
+          method: "GET",
+        },
+        inputSchema: HTTP_GET_INPUT_SCHEMA,
+        output,
+      } as DiscoveryDecl),
+    },
+    {
+      ...declareDiscoveryExtension({
+        method: "POST",
+        bodyType: "json",
+        input: {
+          url: "https://example.com",
+          method: "GET",
+        },
+        inputSchema: HTTP_POST_BODY_SCHEMA,
+        output,
+      } as DiscoveryDecl),
+    },
+  );
 }
 
-
+const EXTRACT_FIELDS_DESCRIPTION =
+  'Optional CSS-selector fields (max 20). Map of name to selector string or {selector, attr?: "text"|"html"|<attribute>, all?: boolean, limit?: 1-50}. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.';
 
 export function extractRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  // Path without verb prefix → matches GET and POST (*). Same $0.015 price.
-  // Bazaar discovery advertises GET (CDP validate); POST is paid identically.
-  return {
-    "/api/extract": {
+  const output = outputOf("/api/extract", "Horizon Pulse structured HTML extract result");
+  return methodSplitRoutes(
+    "/api/extract",
+    {
       accepts: [
         {
           scheme: "exact",
@@ -402,37 +464,70 @@ export function extractRouteConfig(): RoutesConfig {
       description: routeDescription("/api/extract"),
       mimeType: "application/json",
       ...serviceMetadata("/api/extract"),
-      extensions: {
-        ...declareDiscoveryExtension({
-          method: "GET",
-          input: {
-            url: "https://horizonpulse.dev",
-          },
-          inputSchema: {
-            properties: {
-              url: {
-                type: "string",
-                description:
-                  "Absolute http(s) URL to fetch and extract (required on GET; on POST send url or html in the JSON body). Private/localhost blocked.",
-              },
-              html: {
-                type: "string",
-                description:
-                  "POST /api/extract JSON body only (ignored on GET): raw HTML to parse instead of fetching (size-capped). If both url and html are sent, html is parsed and url is echoed.",
-              },
-              fields: {
-                type: "object",
-                description:
-                  'Optional CSS-selector fields (max 20). Map of name to selector string or {selector, attr?: "text"|"html"|<attribute>, all?: boolean, limit?: 1-50}. GET: URL-encoded JSON. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.',
-              },
-            },
-            required: ["url"],
-          },
-          output: outputOf("/api/extract", "Horizon Pulse structured HTML extract result"),
-        } as DiscoveryDecl),
-      },
     },
-  };
+    {
+      ...declareDiscoveryExtension({
+        method: "GET",
+        input: {
+          url: "https://horizonpulse.dev",
+        },
+        inputSchema: {
+          properties: {
+            url: {
+              type: "string",
+              description:
+                "Absolute http(s) URL to fetch and extract (required on GET; on POST send url or html in the JSON body). Private/localhost blocked.",
+            },
+            html: {
+              type: "string",
+              description:
+                "POST /api/extract JSON body only (ignored on GET): raw HTML to parse instead of fetching (size-capped). If both url and html are sent, html is parsed and url is echoed.",
+            },
+            fields: {
+              type: "object",
+              description:
+                'Optional CSS-selector fields (max 20). Map of name to selector string or {selector, attr?: "text"|"html"|<attribute>, all?: boolean, limit?: 1-50}. GET: URL-encoded JSON. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.',
+            },
+          },
+          required: ["url"],
+        },
+        output,
+      } as DiscoveryDecl),
+    },
+    {
+      ...declareDiscoveryExtension({
+        method: "POST",
+        bodyType: "json",
+        input: {
+          url: "https://horizonpulse.dev",
+          fields: {
+            heading: "h1",
+            links: { selector: "a", attr: "href", all: true, limit: 5 },
+          },
+        },
+        inputSchema: {
+          properties: {
+            url: {
+              type: "string",
+              description:
+                "Absolute http(s) URL to fetch and extract. Send url or html (at least one). Private/localhost blocked.",
+            },
+            html: {
+              type: "string",
+              description:
+                "Raw HTML to parse instead of fetching (size-capped, 200KB). Send url or html (at least one); if both are sent, html is parsed and url is echoed.",
+            },
+            fields: {
+              type: "object",
+              description: `${EXTRACT_FIELDS_DESCRIPTION} POST: a JSON object.`,
+            },
+          },
+          required: [],
+        },
+        output,
+      } as DiscoveryDecl),
+    },
+  );
 }
 
 
