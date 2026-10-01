@@ -10,12 +10,12 @@ import {
   getPayTo,
   USDC_BASE,
 } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: FUNDING_PRICE_ATOMIC,
   resource: "/api/funding",
-  description:
-    "Live OKX perpetual funding rates for BTC/ETH/SOL + optional crowding hint (rules only)",
+  description: ROUTE_METADATA["/api/funding"].description,
 } as const;
 
 export async function fundingHandler(_req: NextRequest): Promise<NextResponse> {

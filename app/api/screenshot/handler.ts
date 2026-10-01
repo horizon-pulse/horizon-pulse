@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SCREENSHOT_METHODOLOGY, takeScreenshot } from "@/lib/screenshot";
 import { getPayTo, SCREENSHOT_PRICE_ATOMIC, SCREENSHOT_PRICE_USD, USDC_BASE } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: SCREENSHOT_PRICE_ATOMIC,
   resource: "/api/screenshot",
-  description:
-    "Render a public URL in headless Chromium (?url=...&width&height&fullPage&format) → PNG/JPEG as base64 JSON + final URL, page status, title (SSRF-safe, capped)",
+  description: ROUTE_METADATA["/api/screenshot"].description,
 } as const;
 
 /** Failures return >=400 so settlement is skipped (caller not charged). */

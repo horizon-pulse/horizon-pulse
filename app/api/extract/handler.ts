@@ -11,6 +11,7 @@ import {
   getPayTo,
   USDC_BASE,
 } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 /**
  * Price: $0.015 USDC (15000 atomic) — between /api/http ($0.01 volume proxy)
@@ -21,8 +22,7 @@ import {
 export const paymentOpts = {
   maxAmountRequired: EXTRACT_PRICE_ATOMIC,
   resource: "/api/extract",
-  description:
-    "Extract structured page fields from url and/or html → title, description, links, images, headings, json-ld, text sample (SSRF-safe, size/time capped)",
+  description: ROUTE_METADATA["/api/extract"].description,
 } as const;
 
 async function readJsonBody(

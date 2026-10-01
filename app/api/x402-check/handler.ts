@@ -6,12 +6,12 @@ import {
   X402_CHECK_PRICE_ATOMIC,
   X402_CHECK_PRICE_USD,
 } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: X402_CHECK_PRICE_ATOMIC,
   resource: "/api/x402-check",
-  description:
-    "Audit a public x402 endpoint (?url=...&method=GET|POST&body=<json>) → 402 validity, version, price, payTo type, discovery hints, pass/warn/fail checks (never pays)",
+  description: ROUTE_METADATA["/api/x402-check"].description,
 } as const;
 
 /**

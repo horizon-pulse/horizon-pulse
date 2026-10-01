@@ -11,6 +11,7 @@ import {
   getPayTo,
   USDC_BASE,
 } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 /**
  * Price: $0.01 USDC (10000 atomic) — volume-friendly universal proxy.
@@ -19,8 +20,7 @@ import {
 export const paymentOpts = {
   maxAmountRequired: HTTP_PRICE_ATOMIC,
   resource: "/api/http",
-  description:
-    "Universal agent HTTP proxy (url + method/headers/body) → status + filtered headers + body (SSRF-safe, size/time capped)",
+  description: ROUTE_METADATA["/api/http"].description,
 } as const;
 
 function parseHeadersParam(

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PDF_METHODOLOGY, pdfToText } from "@/lib/pdf";
 import { getPayTo, PDF_PRICE_ATOMIC, PDF_PRICE_USD, USDC_BASE } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: PDF_PRICE_ATOMIC,
   resource: "/api/pdf",
-  description:
-    "PDF to text (?url=...&pages=1-50) → clean text per page plus title/author metadata; SSRF-safe download up to 10MB; text-layer PDFs only (no OCR)",
+  description: ROUTE_METADATA["/api/pdf"].description,
 } as const;
 
 /** Failures return >=400 so settlement is skipped (caller not charged). */

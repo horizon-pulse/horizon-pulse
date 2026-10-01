@@ -7,12 +7,12 @@ import {
   getPayTo,
   USDC_BASE,
 } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: GAS_PRICE_ATOMIC,
   resource: "/api/gas",
-  description:
-    "Live Base + Ethereum gas (baseFee / priority / suggested maxFee) with timingHint + optional transfer USD cost",
+  description: ROUTE_METADATA["/api/gas"].description,
 } as const;
 
 export async function gasHandler(_req: NextRequest): Promise<NextResponse> {

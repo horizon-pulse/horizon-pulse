@@ -201,7 +201,7 @@ export function buildMcpServer(): McpServer {
     });
     server.tool(
       t.name,
-      `${t.opts.description}. Paid per call via x402 (USDC on Base).`,
+      `${t.opts.description.replace(/\.$/, "")}. Paid per call via x402 (USDC on Base).`,
       t.schema,
       paid(async (args) => t.call(args as Record<string, unknown>)),
     );

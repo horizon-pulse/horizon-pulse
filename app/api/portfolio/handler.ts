@@ -11,12 +11,12 @@ import {
   USDC_BASE,
 } from "@/lib/config";
 import { isMissing, NULL_BY_DESIGN, upstreamUnavailable } from "@/lib/upstream-guard";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: PORTFOLIO_PRICE_ATOMIC,
   resource: "/api/portfolio",
-  description:
-    "On-chain portfolio (?address=0x...) Base+Ethereum: balances, risk score, rebalance suggestions",
+  description: ROUTE_METADATA["/api/portfolio"].description,
 } as const;
 
 export async function portfolioHandler(req: NextRequest): Promise<NextResponse> {

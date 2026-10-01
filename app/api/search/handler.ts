@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SEARCH_METHODOLOGY, searchAndFetch } from "@/lib/search";
 import { getPayTo, SEARCH_PRICE_ATOMIC, SEARCH_PRICE_USD, USDC_BASE } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: SEARCH_PRICE_ATOMIC,
   resource: "/api/search",
-  description:
-    "Web search (?q=...&n=1-5) → top results fetched as clean markdown/text with URL, title, rank and per-source status (Google results via Serper; SSRF-safe fetch)",
+  description: ROUTE_METADATA["/api/search"].description,
 } as const;
 
 /** Failures return >=400 so settlement is skipped (caller not charged). */

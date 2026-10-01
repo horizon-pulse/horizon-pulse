@@ -6,12 +6,12 @@ import {
   getPayTo,
   USDC_BASE,
 } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: YIELD_PRICE_ATOMIC,
   resource: "/api/yield",
-  description:
-    "Ranked DefiLlama yields (TVL >= $10M, prefer stablecoin/single-asset)",
+  description: ROUTE_METADATA["/api/yield"].description,
 } as const;
 
 export async function yieldHandler(_req: NextRequest): Promise<NextResponse> {

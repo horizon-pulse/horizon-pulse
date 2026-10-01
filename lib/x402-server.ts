@@ -28,6 +28,8 @@ import {
   USDC_BASE,
   PUBLIC_BASE_URL,
 } from "./config";
+import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
+import { EXAMPLES_RECORDED_AT, OUTPUT_EXAMPLES } from "./route-examples";
 
 /**
  * Coinbase CDP facilitator via @coinbase/x402.
@@ -88,21 +90,48 @@ const CORS_HEADERS: Record<string, string> = {
  * Bazaar service-level metadata on the top-level `resource` object
  * (x402 specs/extensions/bazaar.md "Service Metadata on `resource`").
  * Purely additive: no effect on accepts / price / payTo. serviceName and
- * tags must be printable ASCII, <= 32 chars; max 5 tags.
+ * tags must be printable ASCII, <= 32 chars; max 5 tags. Tags are per route
+ * (lib/route-metadata.ts); the first tag is the route's category.
  */
-const SERVICE_METADATA = {
-  serviceName: "Horizon Pulse",
-  tags: ["web-fetch", "http-proxy", "html-extract", "crypto", "market-data"],
-  iconUrl: `${PUBLIC_BASE_URL}/icon.png`,
-};
+const SERVICE_NAME = "Horizon Pulse";
+
+export function serviceMetadata(path: string) {
+  const meta = routeMetadata(path);
+  if (!meta) throw new Error(`No discovery metadata for ${path} (add it to lib/route-metadata.ts)`);
+  return {
+    serviceName: SERVICE_NAME,
+    tags: [...meta.tags],
+    iconUrl: `${PUBLIC_BASE_URL}/icon.png`,
+  };
+}
+
+/** Route description (agent instruction, <= 500 chars) from lib/route-metadata.ts. */
+function routeDescription(path: string): string {
+  const meta = routeMetadata(path);
+  if (!meta) throw new Error(`No discovery metadata for ${path}`);
+  if (meta.description.length > MAX_DESCRIPTION_CHARS) {
+    throw new Error(`${path} description is ${meta.description.length} chars (> ${MAX_DESCRIPTION_CHARS})`);
+  }
+  return meta.description;
+}
+
+/** Recorded example (see lib/route-examples.ts) + a label saying it is an example. */
+function outputOf(path: string, what: string) {
+  const example = OUTPUT_EXAMPLES[path];
+  if (!example) throw new Error(`No output example for ${path}`);
+  return {
+    example,
+    schema: {
+      type: "object",
+      description: `${what}. The example is a trimmed real response recorded from GET /api/demo/${path.slice(5)} at ${EXAMPLES_RECORDED_AT} UTC; live values differ on every call.`,
+    },
+  };
+}
 
 /** @x402/extensions types omit `method` (enrichment-only); CDP Bazaar validate needs it statically. */
 type DiscoveryDecl = Parameters<typeof declareDiscoveryExtension>[0];
 
-function discoveryExt(
-  description: string,
-  outputExample: Record<string, unknown>,
-) {
+function discoveryExt(path: string, what: string) {
   return {
     ...declareDiscoveryExtension({
       method: "GET",
@@ -111,13 +140,7 @@ function discoveryExt(
         properties: {},
         required: [],
       },
-      output: {
-        example: outputExample,
-        schema: {
-          type: "object",
-          description,
-        },
-      },
+      output: outputOf(path, what),
     } as DiscoveryDecl),
   };
 }
@@ -135,14 +158,10 @@ export function pulseRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "BTC/ETH/SOL spot prices with momentum, overall sentiment, and signal from CoinGecko",
+      description: routeDescription("/api/pulse"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
-      extensions: discoveryExt("Horizon Pulse market snapshot", {
-        assets: { BTC: { priceUsd: 0, change24hPct: 0, momentum: "neutral" } },
-        overall: { momentum: "neutral", sentiment: "neutral", signal: "hold" },
-      }),
+      ...serviceMetadata("/api/pulse"),
+      extensions: discoveryExt("/api/pulse", "Horizon Pulse market snapshot"),
     },
   };
 }
@@ -160,21 +179,10 @@ export function signalsRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "RSI/MACD/Bollinger from CoinGecko OHLC plus OKX perpetual funding rates",
+      description: routeDescription("/api/signals"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
-      extensions: discoveryExt("Horizon Pulse technical signals", {
-        assets: {
-          BTC: {
-            rsi14: 50,
-            macd: { macd: 0, signal: 0, histogram: 0 },
-            bollinger: { upper: 0, middle: 0, lower: 0 },
-            fundingRate: 0,
-          },
-        },
-        methodology: "CoinGecko OHLC + OKX funding",
-      }),
+      ...serviceMetadata("/api/signals"),
+      extensions: discoveryExt("/api/signals", "Horizon Pulse technical signals"),
     },
   };
 }
@@ -192,24 +200,10 @@ export function yieldRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "Ranked DeFi yield pools from DefiLlama (TVL >= $10M, prefer stablecoin/single-asset)",
+      description: routeDescription("/api/yield"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
-      extensions: discoveryExt("Horizon Pulse yield rankings", {
-        pools: [
-          {
-            rank: 1,
-            project: "aave-v3",
-            symbol: "USDC",
-            chain: "Ethereum",
-            tvlUsd: 0,
-            apy: 0,
-            preferenceTier: 2,
-          },
-        ],
-        methodology: "DefiLlama yields; TVL>=$10M; prefer stablecoin/single",
-      }),
+      ...serviceMetadata("/api/yield"),
+      extensions: discoveryExt("/api/yield", "Horizon Pulse yield rankings"),
     },
   };
 }
@@ -227,36 +221,24 @@ export function portfolioRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "On-chain portfolio for one EVM address (?address=0x...) on Base + Ethereum: native ETH, USDC, WETH, WBTC/cbBTC, DAI; rule-based risk + rebalance suggestions",
+      description: routeDescription("/api/portfolio"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
+      ...serviceMetadata("/api/portfolio"),
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
-          input: { address: "0x..." },
+          input: { address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
           inputSchema: {
             properties: {
               address: {
                 type: "string",
-                description: "EVM address (0x + 40 hex) required as query param",
+                pattern: "^0x[0-9a-fA-F]{40}$",
+                description: "EVM address to read on Base + Ethereum (required): 0x followed by 40 hex characters.",
               },
             },
             required: ["address"],
           },
-          output: {
-            example: {
-              address: "0x...",
-              totals: { valueUsd: 0, stablecoinShare: 0 },
-              risk: { score: 0, band: "moderate" },
-              suggestions: [],
-              methodology: {},
-            },
-            schema: {
-              type: "object",
-              description: "Horizon Pulse portfolio snapshot",
-            },
-          },
+          output: outputOf("/api/portfolio", "Horizon Pulse portfolio snapshot"),
         } as DiscoveryDecl),
       },
     },
@@ -276,23 +258,10 @@ export function gasRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "Live Base + Ethereum gas fees via eth_feeHistory / eth_gasPrice: baseFee, priority, suggested maxFee, timingHint (cheap/normal/expensive), optional transfer USD cost",
+      description: routeDescription("/api/gas"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
-      extensions: discoveryExt("Horizon Pulse gas snapshot", {
-        ethUsd: 0,
-        networks: [
-          {
-            network: "base",
-            baseFeeGwei: "0",
-            priorityFeeGwei: "0",
-            suggestedMaxFeeGwei: "0",
-            timingHint: "normal",
-          },
-        ],
-        methodology: "eth_feeHistory + optional CoinGecko ETH USD",
-      }),
+      ...serviceMetadata("/api/gas"),
+      extensions: discoveryExt("/api/gas", "Horizon Pulse gas snapshot"),
     },
   };
 }
@@ -310,20 +279,10 @@ export function fundingRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "Live OKX perpetual funding rates for BTC/ETH/SOL with optional rule-based crowding hint (sign/magnitude)",
+      description: routeDescription("/api/funding"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
-      extensions: discoveryExt("Horizon Pulse funding snapshot", {
-        assets: {
-          BTC: {
-            instId: "BTC-USDT-SWAP",
-            fundingRate: 0,
-            crowding: { side: "neutral", level: "quiet" },
-          },
-        },
-        methodology: "OKX public funding-rate; crowding = rules only",
-      }),
+      ...serviceMetadata("/api/funding"),
+      extensions: discoveryExt("/api/funding", "Horizon Pulse funding snapshot"),
     },
   };
 }
@@ -342,10 +301,9 @@ export function fetchRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "Fetch a public http(s) URL (?url=...) and return best-effort clean text/markdown; SSRF-safe with size/time caps",
+      description: routeDescription("/api/fetch"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
+      ...serviceMetadata("/api/fetch"),
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
@@ -360,19 +318,7 @@ export function fetchRouteConfig(): RoutesConfig {
             },
             required: ["url"],
           },
-          output: {
-            example: {
-              ok: true,
-              finalUrl: "https://example.com",
-              format: "markdown",
-              truncated: false,
-              content: "# Example\n\nClean text…",
-            },
-            schema: {
-              type: "object",
-              description: "Horizon Pulse URL fetch (clean text)",
-            },
-          },
+          output: outputOf("/api/fetch", "Horizon Pulse URL fetch (clean text)"),
         } as DiscoveryDecl),
       },
     },
@@ -394,10 +340,9 @@ export function httpRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "Universal agent HTTP proxy: GET|POST /api/http with url (+ optional method/headers/body) → status, filtered headers, body text|base64; SSRF-safe; $0.01 for volume (fetch remains $0.02 clean-text)",
+      description: routeDescription("/api/http"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
+      ...serviceMetadata("/api/http"),
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
@@ -430,21 +375,7 @@ export function httpRouteConfig(): RoutesConfig {
             },
             required: ["url"],
           },
-          output: {
-            example: {
-              ok: true,
-              status: 200,
-              headers: { "content-type": "text/plain" },
-              body: "hello",
-              bodyEncoding: "text",
-              contentType: "text/plain",
-              elapsedMs: 42,
-            },
-            schema: {
-              type: "object",
-              description: "Horizon Pulse universal HTTP proxy result",
-            },
-          },
+          output: outputOf("/api/http", "Horizon Pulse universal HTTP proxy result"),
         } as DiscoveryDecl),
       },
     },
@@ -468,27 +399,26 @@ export function extractRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "Extract structured page fields from a public URL or provided HTML (title, description, canonical, links, images, headings, json-ld, text sample); SSRF-safe; $0.015 between http ($0.01) and fetch ($0.02)",
+      description: routeDescription("/api/extract"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
+      ...serviceMetadata("/api/extract"),
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
           input: {
-            url: "https://example.com",
+            url: "https://horizonpulse.dev",
           },
           inputSchema: {
             properties: {
               url: {
                 type: "string",
                 description:
-                  "Absolute http(s) URL to fetch and extract (optional if html provided). Private/localhost blocked.",
+                  "Absolute http(s) URL to fetch and extract (required on GET; on POST send url or html in the JSON body). Private/localhost blocked.",
               },
               html: {
                 type: "string",
                 description:
-                  "Optional raw HTML to parse (size-capped). Prefer POST JSON when sending html. If both url and html are sent, html is parsed and url is echoed.",
+                  "POST /api/extract JSON body only (ignored on GET): raw HTML to parse instead of fetching (size-capped). If both url and html are sent, html is parsed and url is echoed.",
               },
               fields: {
                 type: "object",
@@ -496,31 +426,9 @@ export function extractRouteConfig(): RoutesConfig {
                   'Optional CSS-selector fields (max 20). Map of name to selector string or {selector, attr?: "text"|"html"|<attribute>, all?: boolean, limit?: 1-50}. GET: URL-encoded JSON. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.',
               },
             },
-            required: [],
+            required: ["url"],
           },
-          output: {
-            example: {
-              ok: true,
-              url: "https://example.com",
-              title: "Example Domain",
-              description: "Example description",
-              canonical: "https://example.com/",
-              language: "en",
-              links: [{ href: "https://example.com/", text: "More information" }],
-              images: [{ src: "https://example.com/og.png", alt: "Logo" }],
-              jsonLd: [],
-              headings: [{ level: 1, text: "Example Domain" }],
-              textSample: "Example Domain…",
-              fields: { heading: "Example Domain", more: "https://www.iana.org/domains/example" },
-              matchedFields: 2,
-              requestedFields: 2,
-              elapsedMs: 42,
-            },
-            schema: {
-              type: "object",
-              description: "Horizon Pulse structured HTML extract result",
-            },
-          },
+          output: outputOf("/api/extract", "Horizon Pulse structured HTML extract result"),
         } as DiscoveryDecl),
       },
     },
@@ -541,10 +449,9 @@ export function x402CheckRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "Audit any public x402 endpoint: one unpaid probe → 402 validity, x402 version, decoded price/network/asset, payTo type (EOA vs contract), discovery-metadata hints, pass/warn/fail checks; SSRF-safe; never pays",
+      description: routeDescription("/api/x402-check"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
+      ...serviceMetadata("/api/x402-check"),
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
@@ -569,30 +476,7 @@ export function x402CheckRouteConfig(): RoutesConfig {
             },
             required: ["url"],
           },
-          output: {
-            example: {
-              ok: true,
-              target: "https://horizonpulse.dev/api/pulse",
-              httpStatus: 402,
-              isX402: true,
-              x402Version: 2,
-              accepts: [
-                {
-                  network: "eip155:8453",
-                  assetLabel: "USDC (Base)",
-                  amountUsd: "$0.005",
-                  payTo: "0x5b32c973596078a967562ca652761404f19be0e9",
-                  payToType: "eoa",
-                },
-              ],
-              discovery: { present: true, method: "GET" },
-              summary: { pass: 5, warn: 0, fail: 0 },
-            },
-            schema: {
-              type: "object",
-              description: "Horizon Pulse x402 endpoint audit report",
-            },
-          },
+          output: outputOf("/api/x402-check", "Horizon Pulse x402 endpoint audit report"),
         } as DiscoveryDecl),
       },
     },
@@ -612,15 +496,14 @@ export function screenshotRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "Render a public URL in headless Chromium → PNG/JPEG screenshot (base64 JSON) with final URL, page status and title; viewport/fullPage/format options; SSRF-safe on every sub-request; $0.02",
+      description: routeDescription("/api/screenshot"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
+      ...serviceMetadata("/api/screenshot"),
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
           input: {
-            url: "https://example.com",
+            url: "https://horizonpulse.dev",
           },
           inputSchema: {
             properties: {
@@ -633,21 +516,7 @@ export function screenshotRouteConfig(): RoutesConfig {
             },
             required: ["url"],
           },
-          output: {
-            example: {
-              ok: true,
-              requestedUrl: "https://example.com",
-              finalUrl: "https://example.com/",
-              pageStatus: 200,
-              title: "Example Domain",
-              mimeType: "image/png",
-              width: 1280,
-              height: 800,
-              bytes: 20763,
-              imageBase64: "iVBORw0KGgo…",
-            },
-            schema: { type: "object", description: "Horizon Pulse screenshot result (image as base64)" },
-          },
+          output: outputOf("/api/screenshot", "Horizon Pulse screenshot result (image as base64, truncated in the example)"),
         } as DiscoveryDecl),
       },
     },
@@ -675,7 +544,7 @@ export function buildPaymentRequirements(opts: {
       url: opts.resource,
       description: opts.description,
       mimeType: "application/json",
-      ...SERVICE_METADATA,
+      ...serviceMetadata(opts.resource),
     },
     accepts: [
       {
@@ -824,14 +693,13 @@ export function searchRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "Web search → top 1-5 result pages fetched as clean markdown/text with URL, title, rank and per-source status (Google results via Serper); SSRF-safe fetch; partial results on page errors; $0.03",
+      description: routeDescription("/api/search"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
+      ...serviceMetadata("/api/search"),
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
-          input: { q: "x402 payment protocol", n: "3" },
+          input: { q: "x402 payment protocol", n: "2" },
           inputSchema: {
             properties: {
               q: { type: "string", description: "Search query (required, <=300 chars)." },
@@ -839,20 +707,7 @@ export function searchRouteConfig(): RoutesConfig {
             },
             required: ["q"],
           },
-          output: {
-            example: {
-              ok: true,
-              query: "x402 payment protocol",
-              provider: "serper (Google results)",
-              n: 3,
-              resultCount: 3,
-              fetchedOk: 3,
-              results: [
-                { rank: 1, url: "https://www.x402.org/", title: "x402", ok: true, format: "markdown", content: "…" },
-              ],
-            },
-            schema: { type: "object", description: "Horizon Pulse search-then-fetch result with sources" },
-          },
+          output: outputOf("/api/search", "Horizon Pulse search-then-fetch result with sources"),
         } as DiscoveryDecl),
       },
     },
@@ -872,10 +727,9 @@ export function pdfRouteConfig(): RoutesConfig {
           payTo,
         },
       ],
-      description:
-        "PDF to text: public PDF URL → clean text per page plus title/author metadata (pdf.js text layer, no OCR); SSRF-safe download up to 10MB, first 50 pages, 100K chars; unbilled on non-PDF, encrypted or image-only files; $0.02",
+      description: routeDescription("/api/pdf"),
       mimeType: "application/json",
-      ...SERVICE_METADATA,
+      ...serviceMetadata("/api/pdf"),
       extensions: {
         ...declareDiscoveryExtension({
           method: "GET",
@@ -887,18 +741,7 @@ export function pdfRouteConfig(): RoutesConfig {
             },
             required: ["url"],
           },
-          output: {
-            example: {
-              ok: true,
-              finalUrl: "https://horizonpulse.dev/sample.pdf",
-              totalPages: 1,
-              pagesReturned: 1,
-              truncated: false,
-              meta: { title: "Horizon Pulse sample PDF", author: "Horizon Pulse" },
-              pages: [{ page: 1, text: "Horizon Pulse sample PDF …" }],
-            },
-            schema: { type: "object", description: "Horizon Pulse PDF text extraction result" },
-          },
+          output: outputOf("/api/pdf", "Horizon Pulse PDF text extraction result"),
         } as DiscoveryDecl),
       },
     },

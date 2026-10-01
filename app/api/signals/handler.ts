@@ -10,13 +10,14 @@ import {
   USDC_BASE,
 } from "@/lib/config";
 import { isMissing, upstreamUnavailable } from "@/lib/upstream-guard";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 const SYMBOLS: AssetSymbol[] = ["BTC", "ETH", "SOL"];
 
 export const paymentOpts = {
   maxAmountRequired: SIGNALS_PRICE_ATOMIC,
   resource: "/api/signals",
-  description: "RSI/MACD/Bollinger + OKX funding",
+  description: ROUTE_METADATA["/api/signals"].description,
 } as const;
 
 export async function signalsHandler(_req: NextRequest): Promise<NextResponse> {

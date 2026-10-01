@@ -91,6 +91,13 @@ export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 export const SERVICE_DESCRIPTION =
   "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data." as const;
 
+/**
+ * Service-level description for /.well-known/x402 (covers all 13 routes).
+ * Facts only: no uptime, volume or popularity claims.
+ */
+export const DISCOVERY_DESCRIPTION =
+  "Pay-per-call APIs for AI agents via x402 on Base (USDC, no API key): web search with page contents, web fetch to markdown, HTTP proxy, structured page extract, page screenshots, PDF to text, x402 endpoint checks, and crypto data (spot prices, technical signals, perp funding, gas fees, DeFi yields, wallet portfolios)." as const;
+
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 
 /** Canonical public host (custom domain). Prefer this in agent docs and clients. */

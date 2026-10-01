@@ -3,7 +3,7 @@ import { LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import {
   CONTACT_EMAIL,
   PUBLIC_BASE_URL,
-  SERVICE_DESCRIPTION,
+  DISCOVERY_DESCRIPTION,
 } from "@/lib/config";
 
 /**
@@ -35,7 +35,7 @@ export function GET(): NextResponse {
     {
       version: 1,
       resources: buildResources(),
-      description: SERVICE_DESCRIPTION,
+      description: DISCOVERY_DESCRIPTION,
       instructions: `x402 v2 on Base mainnet (eip155:8453), USDC, Coinbase CDP facilitator. Unpaid requests return HTTP 402 with a PAYMENT-REQUIRED header; retry with PAYMENT-SIGNATURE. Full schemas: ${PUBLIC_BASE_URL}/openapi.json and ${PUBLIC_BASE_URL}/llms.txt. Contact: ${CONTACT_EMAIL}.`,
     },
     {

@@ -9,12 +9,12 @@ import {
   getPayTo,
   USDC_BASE,
 } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: FETCH_PRICE_ATOMIC,
   resource: "/api/fetch",
-  description:
-    "Fetch a public http(s) URL (?url=...) → clean text/markdown (SSRF-safe, size/time capped)",
+  description: ROUTE_METADATA["/api/fetch"].description,
 } as const;
 
 export async function fetchHandler(req: NextRequest): Promise<NextResponse> {

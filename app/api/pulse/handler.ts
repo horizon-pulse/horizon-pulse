@@ -10,11 +10,12 @@ import {
   getPayTo,
   USDC_BASE,
 } from "@/lib/config";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
   maxAmountRequired: PULSE_PRICE_ATOMIC,
   resource: "/api/pulse",
-  description: "BTC/ETH/SOL pulse with momentum",
+  description: ROUTE_METADATA["/api/pulse"].description,
 } as const;
 
 export async function pulseHandler(_req: NextRequest): Promise<NextResponse> {
