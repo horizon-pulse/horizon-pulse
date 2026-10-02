@@ -1,13 +1,13 @@
 import Link from "next/link";
-import { DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE, BASE_CAIP2, CONTACT_EMAIL } from "@/lib/config";
+import { DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE, BASE_CAIP2 } from "@/lib/config";
 import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
+import { SiteFooter } from "@/components/SiteFooter";
 import { HeroTerminal } from "@/components/HeroTerminal";
 import { Reveal } from "@/components/Reveal";
 import { CopyLine } from "@/components/CopyLine";
 
-const X_URL = "https://x.com/HorizonPulseAPI";
 const demoSet = new Set(DEMO_ROUTES.map((d) => d.route));
 const FEATURED = ["pulse", "fetch", "extract"];
 const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/merchant?payTo=${DEFAULT_PAY_TO.toLowerCase()}`;
@@ -243,40 +243,7 @@ export default function HomePage() {
         </section>
       </main>
 
-      <footer className="hp-footer">
-        <div className="hp-wrap">
-          <div className="hp-foot-grid">
-            <div>
-              <h4>Horizon Pulse</h4>
-              <p style={{ color: "var(--text-2)", margin: 0, maxWidth: 300 }}>Pay-per-call APIs for AI agents, settled in USDC on Base with x402.</p>
-            </div>
-            <div>
-              <h4>For agents</h4>
-              <a href="/llms.txt">/llms.txt</a>
-              <a href="/openapi.json">/openapi.json</a>
-              <a href="/.well-known/x402">/.well-known/x402</a>
-              <a href="#catalog">Free samples</a>
-            </div>
-            <div>
-              <h4>Project</h4>
-              <a href={GITHUB_REPO} target="_blank" rel="noreferrer">Source on GitHub</a>
-              <a href={X_URL} target="_blank" rel="noreferrer">@HorizonPulseAPI on X</a>
-              <Link href="/status">Status</Link>
-              <Link href="/listing-fix">Bazaar listing fix</Link>
-              <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
-            </div>
-            <div>
-              <h4>Network</h4>
-              <a href="https://www.x402.org/" target="_blank" rel="noreferrer">x402 protocol</a>
-              <a href="https://base.org" target="_blank" rel="noreferrer">Base</a>
-              <a href={`https://basescan.org/address/${DEFAULT_PAY_TO}`} target="_blank" rel="noreferrer">payTo on Basescan</a>
-            </div>
-          </div>
-          <p className="hp-fine">
-            Unpaid requests to paid routes return HTTP 402 with <code>PAYMENT-REQUIRED</code> until a valid x402 v2 <code>PAYMENT-SIGNATURE</code> is sent. Only live routes are listed.
-          </p>
-        </div>
-      </footer>
+      <SiteFooter />
     </div>
   );
 }

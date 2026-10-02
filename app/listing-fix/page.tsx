@@ -1,80 +1,222 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import { CONTACT_EMAIL } from "@/lib/config";
+import { CONTACT_EMAIL, DEFAULT_PAY_TO, USDC_BASE } from "@/lib/config";
 import { SiteHeader } from "@/components/SiteHeader";
+import { SiteFooter } from "@/components/SiteFooter";
+import { Reveal } from "@/components/Reveal";
+
+/** Listing-fix fees go to the owner's Ledger, not the API payTo. Never counted as API revenue. */
+const FEE_ADDRESS = "0x330055d2b9B509079992Bb5712f1C9DcE32eb547";
+const MAIL = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Free listing check")}`;
+const TROUBLESHOOT = "https://docs.cdp.coinbase.com/x402/support/troubleshooting#my-endpoint-is-missing-from-the-bazaar";
+const VALIDATOR_DOCS = "https://docs.cdp.coinbase.com/x402/bazaar";
+const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/merchant?payTo=${DEFAULT_PAY_TO.toLowerCase()}`;
 
 export const metadata: Metadata = {
-  title: "x402 Bazaar listing fix | Horizon Pulse",
+  title: "Bazaar listing fix | Horizon Pulse",
   description:
-    "Your x402 endpoint returns 402 but isn't in Coinbase's x402 Bazaar? Free diagnosis, then a $99 per host hands-on fix (intro rate).",
+    "Your x402 endpoint returns a 402 but isn't in Coinbase's x402 Bazaar? Free outside diagnosis, then a $99 per host hands-on fix with a clear refund rule.",
 };
 
-const box = {
-  marginTop: 20,
-  padding: 18,
-  borderRadius: 10,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(255,255,255,0.03)",
-} as const;
+const Ico = ({ d }: { d: string }) => (
+  <svg className="hp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d={d} />
+  </svg>
+);
+const I = {
+  search: "M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4",
+  wrench: "M14 6a4 4 0 005 5l-8 8a2 2 0 01-3-3l8-8a4 4 0 01-2-2zM15 5l4 4",
+  check: "M5 12l4 4 10-10",
+  scheme: "M4 12h16M12 4c3 3 3 13 0 16M12 4c-3 3-3 13 0 16",
+  json: "M8 4c-2 0-3 1-3 3v2c0 1-1 3-2 3 1 0 2 2 2 3v2c0 2 1 3 3 3M16 4c2 0 3 1 3 3v2c0 1 1 3 2 3-1 0-2 2-2 3v2c0 2-1 3-3 3",
+  settle: "M3 7h15a2 2 0 012 2v8a2 2 0 01-2 2H3zM3 7l12-3v3M16 13h.01",
+  wallet: "M3 7h15a2 2 0 012 2v8a2 2 0 01-2 2H3zM3 7l12-3v3M16 13h.01",
+  refund: "M4 10h11a5 5 0 010 10H9M4 10l4-4M4 10l4 4",
+  lock: "M6 11h12v9H6zM8 11V8a4 4 0 018 0v3",
+};
 
 export default function ListingFixPage() {
   return (
-    <>
+    <div className="hp">
       <SiteHeader />
-      <main className="hp-listing-fix" style={{ maxWidth: 720, margin: "0 auto", padding: "48px 20px" }}>
-        <style>{`.hp-listing-fix a{color:#8ec5ff;text-decoration:underline;text-underline-offset:2px}`}</style>
-        <p style={{ opacity: 0.7, letterSpacing: "0.08em", fontSize: 12 }}>LISTING FIX</p>
-        <h1 style={{ fontSize: 28, margin: "8px 0 12px" }}>Missing from Coinbase&apos;s x402 Bazaar?</h1>
-        <p style={{ opacity: 0.9 }}>
-          Your endpoint returns a 402, but agents searching the CDP Bazaar can&apos;t find it. The usual
-          blockers are small: a resource URL scheme, a metadata shape the validator rejects, or a settle
-          path that never reaches the CDP Facilitator. We check from the outside and tell you which one it is.
-        </p>
-
-        <section style={box}>
-          <h2 style={{ fontSize: 18, margin: "0 0 8px" }}>1. Free diagnosis</h2>
-          <p style={{ margin: 0, opacity: 0.9 }}>
-            Send us your host. We run unpaid probes only: your 402, Coinbase&apos;s public x402 validator, and
-            CDP&apos;s discovery and merchant lookups. You get the exact check that fails and why. No payment,
-            no keys, nothing sent to your wallet.
-          </p>
+      <Reveal />
+      <main>
+        <section className="hp-hero">
+          <div className="hp-wrap">
+            <span className="hp-chip">Bazaar listing fix</span>
+            <h1>
+              Your 402 works.
+              <br />
+              <span>Agents still can&apos;t find it.</span>
+            </h1>
+            <p className="hp-sub">
+              If your x402 endpoint is missing from Coinbase&apos;s Bazaar, the blocker is usually small. We find it from the outside
+              for free, then fix it with you for <strong>$99 per host</strong>.
+            </p>
+            <div className="hp-ctas">
+              <a className="hp-btn primary" href={MAIL}>Get a free listing check</a>
+              <a className="hp-btn ghost" href="#terms">See terms and refunds</a>
+            </div>
+            <p className="hp-proof">
+              <a href={BAZAAR_LOOKUP} target="_blank" rel="noreferrer">Our own routes in Coinbase&apos;s Bazaar ↗</a>
+              <span>·</span>
+              <a href={TROUBLESHOOT} target="_blank" rel="noreferrer">Coinbase&apos;s troubleshooting guide ↗</a>
+            </p>
+          </div>
         </section>
 
-        <section style={box}>
-          <h2 style={{ fontSize: 18, margin: "0 0 8px" }}>
-            2. Hands-on fix: $99 per host <span style={{ fontSize: 13, opacity: 0.7 }}>(intro rate)</span>
-          </h2>
-          <ul style={{ margin: 0, paddingLeft: 18, opacity: 0.9, lineHeight: 1.6 }}>
-            <li>The specific change for your stack, worked through with you until CDP&apos;s validator returns <code>valid: true</code>.</li>
-            <li>Guidance on the CDP-facilitated verify or settle that triggers indexing (verify moves no funds).</li>
-            <li>A recheck of discovery and the merchant lookup afterwards.</li>
-            <li>You make the changes in your own code. We never ask for keys, deploy access, or wallet control.</li>
-          </ul>
+        <section className="hp-section" id="blockers">
+          <div className="hp-wrap">
+            <div data-reveal>
+              <div className="hp-label">What we usually find</div>
+              <h2>
+                Three common blockers. <span>All checkable from outside.</span>
+              </h2>
+              <p className="hp-lead">
+                Coinbase only lists routes that pass its validator and have settled a payment through the CDP Facilitator. These
+                are the failures we&apos;ve found on live x402 endpoints.
+              </p>
+            </div>
+            <div className="hp-grid">
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.scheme} />
+                <h3>Resource URL scheme</h3>
+                <p>The 402 advertises an <code>http://</code> resource behind an HTTPS proxy, and the validator rejects it.</p>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.json} />
+                <h3>Bazaar metadata shape</h3>
+                <p>The discovery extension is present but missing required fields, so the validator returns <code>valid: false</code>.</p>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.settle} />
+                <h3>Settle path</h3>
+                <p>Everything validates, but no settle has gone through the CDP Facilitator yet, so nothing gets indexed.</p>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <section style={box}>
-          <h2 style={{ fontSize: 18, margin: "0 0 8px" }}>What we don&apos;t promise</h2>
-          <p style={{ margin: 0, opacity: 0.9 }}>
-            Indexing is done by Coinbase, not us, so we can&apos;t guarantee a listing or a timeline. What we work toward
-            with you is an endpoint that passes the public checks Coinbase documents.
-          </p>
-          <p style={{ margin: "10px 0 0", opacity: 0.9 }}>
-            Payment: [TBD] · Refunds: [TBD]
-          </p>
+        <section className="hp-section" id="how">
+          <div className="hp-wrap">
+            <div data-reveal>
+              <div className="hp-label">How it works</div>
+              <h2>
+                Diagnosis is free. <span>The fix is $99.</span>
+              </h2>
+              <p className="hp-lead">Intro rate, per host. You keep full control of your code, keys and wallet the whole time.</p>
+            </div>
+            <div className="hp-grid">
+              <div className="hp-tile" data-reveal>
+                <span className="hp-step-n">01</span>
+                <Ico d={I.search} />
+                <h3>Free diagnosis</h3>
+                <p>
+                  Send us your host. We run unpaid probes only: your 402, Coinbase&apos;s public validator, and CDP&apos;s discovery and
+                  merchant lookups. You get the exact check that fails.
+                </p>
+                <div className="hp-tile-foot"><b>Free</b><a href={MAIL}>Request →</a></div>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <span className="hp-step-n">02</span>
+                <Ico d={I.wrench} />
+                <h3>Hands-on fix</h3>
+                <p>
+                  The specific change for your stack, worked through with you until the validator returns <code>valid: true</code>,
+                  plus guidance on the CDP-facilitated settle that triggers indexing.
+                </p>
+                <div className="hp-tile-foot"><b>$99 per host</b><span style={{ color: "var(--text-3)", fontSize: 13 }}>intro rate</span></div>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <span className="hp-step-n">03</span>
+                <Ico d={I.check} />
+                <h3>Recheck</h3>
+                <p>We re-run the validator and CDP discovery after your settle and send you the results, so you can see where things stand.</p>
+                <div className="hp-tile-foot"><b>Included</b></div>
+              </div>
+            </div>
+          </div>
         </section>
 
-        <p style={{ marginTop: 28 }}>
-          Start with the free diagnosis:{" "}
-          <a href={`mailto:${CONTACT_EMAIL}?subject=Listing%20check`}>{CONTACT_EMAIL}</a>
-        </p>
-        <p style={{ opacity: 0.7, fontSize: 13 }}>
-          Background: Coinbase&apos;s{" "}
-          <a href="https://docs.cdp.coinbase.com/x402/support/troubleshooting#my-endpoint-is-missing-from-the-bazaar" target="_blank" rel="noreferrer">
-            Bazaar troubleshooting guide
-          </a>
-          . Horizon Pulse&apos;s own routes are <Link href="/#catalog">here</Link>.
-        </p>
+        <section className="hp-section" id="terms">
+          <div className="hp-wrap">
+            <div data-reveal>
+              <div className="hp-label">Terms</div>
+              <h2>
+                Clear terms. <span>A written refund rule.</span>
+              </h2>
+              <p className="hp-lead">
+                Indexing is done by Coinbase, not us, so we can&apos;t promise a listing or a timeline. That&apos;s why the refund rule is
+                written down here.
+              </p>
+            </div>
+            <div className="hp-grid two">
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.wallet} />
+                <h3>Payment</h3>
+                <div className="hp-kv">
+                  <span className="k">Price</span>
+                  <span>$99 per host, intro rate. The diagnosis is free.</span>
+                  <span className="k">Asset</span>
+                  <span>USDC on Base <code>{USDC_BASE}</code></span>
+                  <span className="k">Pay to</span>
+                  <code>{FEE_ADDRESS}</code>
+                  <span className="k">How</span>
+                  <span>Pay from a wallet you control, not straight from an exchange, then email us the transaction hash.</span>
+                </div>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.refund} />
+                <h3>Refunds</h3>
+                <div className="hp-kv">
+                  <span className="k">Full refund if</span>
+                  <span>
+                    CDP&apos;s validator still returns <code>valid: false</code> on the fixed routes 7 days after we deliver the fix.
+                  </span>
+                  <span className="k">Or if</span>
+                  <span>
+                    The validator passes, you do your own paid settle through the CDP Facilitator within 14 days of delivery, and the
+                    route still isn&apos;t in CDP discovery 7 days after that settle.
+                  </span>
+                  <span className="k">No refund if</span>
+                  <span>The fix isn&apos;t applied, no CDP settle is done, or settles go through another facilitator.</span>
+                  <span className="k">How</span>
+                  <span>Claim within 30 days of payment. The full $99 is sent back manually in USDC on Base to the paying address.</span>
+                </div>
+              </div>
+            </div>
+            <div className="hp-grid" style={{ marginTop: 1 }}>
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.lock} />
+                <h3>No access needed</h3>
+                <p>We never ask for API keys, deploy access, private keys or wallet control. You make every change in your own code.</p>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.search} />
+                <h3>Public checks only</h3>
+                <p>
+                  Every result we send is reproducible with Coinbase&apos;s public tools. See their{" "}
+                  <a href={VALIDATOR_DOCS} target="_blank" rel="noreferrer">Bazaar docs ↗</a>.
+                </p>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.check} />
+                <h3>Verify moves no funds</h3>
+                <p>Where a check can use a verify instead of a settle, we&apos;ll say so. A verify doesn&apos;t move any money.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="hp-cta-band" data-reveal>
+          <h2>Start with a free listing check.</h2>
+          <p>Send your host. We&apos;ll tell you exactly what&apos;s blocking it.</p>
+          <div className="hp-ctas">
+            <a className="hp-btn primary" href={MAIL}>Email {CONTACT_EMAIL}</a>
+            <a className="hp-btn ghost" href="/#catalog">See our own routes</a>
+          </div>
+        </section>
       </main>
-    </>
+      <SiteFooter />
+    </div>
   );
 }
