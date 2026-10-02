@@ -1,20 +1,19 @@
 # Horizon Pulse
 
-> Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data (x402 v2, USDC).
+> Pay-per-call APIs for AI agents, paid in USDC on Base with x402 v2: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key.
 
 Contact: horizonpulse.co@proton.me
 
-Live base URL (canonical): https://horizonpulse.dev
-Backup (Vercel): https://horizon-pulse-seven.vercel.app
+Base URL: https://horizonpulse.dev (the only host; do not pay any other host)
 
 ## Payment (x402 v2)
 
-- Unpaid `GET` → HTTP 402 with `PAYMENT-REQUIRED` header (x402 v2)
+- Unpaid request → HTTP 402 with `PAYMENT-REQUIRED` header (base64 JSON, x402 v2); the body carries the same challenge as JSON
 - Network: Base mainnet CAIP-2 `eip155:8453`
 - Asset: Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 - payTo: `0x5b32c973596078a967562ca652761404f19be0e9`
 - Facilitator: Coinbase CDP `https://api.cdp.coinbase.com/platform/v2/x402`
-- Retry the same `GET` with `PAYMENT-SIGNATURE` (v2). Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.
+- Retry the same request with `PAYMENT-SIGNATURE` (v2). On success the settlement receipt is in the `PAYMENT-RESPONSE` header. Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.
 
 ## Live paid routes
 
@@ -33,6 +32,24 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 | GET | /api/search?q=…[&n=1-5] | $0.03 | 30000 | Web search → top 1-5 pages as clean markdown with URL, title, rank and per-source status (Google results via Serper) |
 | GET | /api/pdf?url=https://…[&pages=1-50] | $0.02 | 20000 | PDF URL → clean text per page + title/author metadata (text layer, no OCR; up to 10MB, 50 pages) |
 | GET | /api/x402-check?url=https://…[&method=POST][&body=<json>] | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays; optional JSON body for POST probes, auto POST retry on 405) |
+
+## Input bounds
+
+- `/api/portfolio`: `address` required, `0x` + 40 hex.
+- `/api/fetch`: `url` required (http/https). Caps 200KB, 8s, 3 redirects.
+- `/api/http`: `url` required; `method` GET|POST|HEAD|PUT|PATCH|DELETE; `headers` JSON object of strings (GET: as a JSON string); `body` on POST/PUT/PATCH only. Caps 384KB response, 64KB body, 12s, 3 redirects.
+- `/api/extract`: `url` (GET) or `url`/`html` (POST JSON); `fields` up to 20 CSS selectors. Caps 200KB HTML, 8s.
+- `/api/screenshot`: `url` required; `width` 320-1920, `height` 240-2000, `fullPage=true` (clipped at 4000px), `format` png|jpeg, `delayMs` 0-3000. 25s budget.
+- `/api/search`: `q` required, max 300 chars; `n` 1-5 (default 3).
+- `/api/pdf`: `url` required, max 10MB; `pages` 1-50 (default 50). Max 100K chars.
+- `/api/x402-check`: `url` required; `method` GET|POST; `body` JSON (POST probes only).
+
+## Billing and errors
+
+- You pay only for a successful response. The payment is verified first and settled after the handler succeeds.
+- Errors return JSON `{ "ok": false, "error": "...", "code": "..." }` and are not charged: 400 bad input, 413 too large, 415 wrong content type, 422 nothing usable (e.g. `no_fields_matched`, `no_text_layer`), 404 no search results, 502 upstream failure, 503 search provider unavailable, 504 timeout.
+- Exceptions: `/api/http` returns upstream 4xx/5xx as data (charged), and `/api/x402-check` bills any HTTP answer from the target.
+- Response schemas and examples for every operation are in `/openapi.json`; free samples are at `/api/demo/<route>`.
 
 ## Which route to call
 
@@ -57,22 +74,22 @@ Backup (Vercel): https://horizon-pulse-seven.vercel.app
 ## Free (not paid)
 
 - GET `/` — landing (live paid catalog + agent how-to)
-- GET `/status` — live USDC `balanceOf` on payTo + catalog
+- GET `/status` — live USDC `balanceOf` on payTo (not revenue) + catalog
 - GET `/llms.txt` — this file
-- GET `/openapi.json` — OpenAPI snippet for live paid routes
+- GET `/openapi.json` — OpenAPI 3.1 for every paid operation: typed parameters and bodies, 200/400/402 schemas and examples, and per-operation `x-payment-info` (price, asset, network, payTo)
 - GET `/.well-known/x402` — machine-readable x402 resource list
 
 ## Agent how-to (short)
 
-1. Call routes on `https://horizonpulse.dev` (canonical; vercel.app is backup).
-2. `GET` a paid route with no payment → 402 + `PAYMENT-REQUIRED`.
+1. Call routes on `https://horizonpulse.dev` only.
+2. Call a paid route with no payment → 402 + `PAYMENT-REQUIRED`.
 3. Confirm network `eip155:8453`, Base USDC, atomic `amount`, and `payTo`.
 4. Sign and retry with `PAYMENT-SIGNATURE`.
 5. On success, response body is live JSON for that route.
 
 ## Honesty
 
-- Real upstream data only (CoinGecko, OKX, DefiLlama, public RPCs). No stubbed prices.
+- Real upstream data only (Coinbase Exchange, CoinGecko, OKX, DefiLlama, public RPCs). No stubbed prices.
 - `/api/fetch` returns best-effort cleaned text from the requested public URL; private/localhost blocked; size/time capped.
 - `/api/http` is a raw universal proxy (filtered headers, text|base64 body); same SSRF guards; priced $0.01 for volume.
 - `/api/extract` returns best-effort structured fields from a public URL or provided HTML; private/localhost blocked; size/time capped; priced $0.015. Optional `fields` (up to 20 CSS selectors, deterministic, no AI): each unmatched field is null with a `fieldErrors` entry; if no field matches, 422 `no_fields_matched` and no charge. Selector work has a hard 2s budget; pages nested deeper than 256 levels are refused for fields.

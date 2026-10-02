@@ -89,7 +89,7 @@ export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 
 /** One-line service description (site metadata, OpenAPI, discovery). Facts only. */
 export const SERVICE_DESCRIPTION =
-  "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data." as const;
+  "Pay-per-call APIs for AI agents, paid in USDC on Base with x402: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key." as const;
 
 /**
  * Service-level description for /.well-known/x402 (covers all 13 routes).
@@ -102,9 +102,6 @@ export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as c
 
 /** Canonical public host (custom domain). Prefer this in agent docs and clients. */
 export const PUBLIC_BASE_URL = "https://horizonpulse.dev" as const;
-/** Vercel deployment URL — backup / fallback when the custom domain is unavailable. */
-export const PUBLIC_BASE_URL_BACKUP =
-  "https://horizon-pulse-seven.vercel.app" as const;
 
 export function getPayTo(): `0x${string}` {
   const fromEnv = process.env.PAY_TO?.trim();

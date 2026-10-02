@@ -8,7 +8,6 @@
  *
  * Optional:
  *   SMOKE_BASE_URL=https://horizonpulse.dev
- *   # backup: https://horizon-pulse-seven.vercel.app
  *   BASE_RPC_URL=https://mainnet.base.org
  *
  * NEVER paste your private key into chat, commits, or screenshots.

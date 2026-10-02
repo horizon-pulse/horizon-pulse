@@ -10,7 +10,8 @@
     "lint": "next lint",
     "smoke:pulse": "node scripts/smoke-pulse.mjs",
     "smoke:http:unpaid": "node scripts/smoke-http-unpaid.mjs",
-    "smoke:extract:unpaid": "node scripts/smoke-extract-unpaid.mjs"
+    "smoke:extract:unpaid": "node scripts/smoke-extract-unpaid.mjs",
+    "gen:openapi": "npx -y tsx --tsconfig tsconfig.json scripts/gen-openapi.ts"
   },
   "dependencies": {
     "@coinbase/x402": "^2.1.0",

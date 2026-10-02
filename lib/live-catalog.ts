@@ -6,7 +6,6 @@
  * /api/http ($0.01 universal proxy, volume-priced).
  *
  * Public host: https://horizonpulse.dev (canonical).
- * Backup: https://horizon-pulse-seven.vercel.app (Vercel).
  * Catalog paths, prices, and payTo are unchanged by host updates.
  */
 

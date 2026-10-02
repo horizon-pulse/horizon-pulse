@@ -1,0 +1,657 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Horizon Pulse",
+    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Thirteen x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), /api/pdf ($0.02 PDF URL to text per page), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Horizon Pulse",
+      "email": "horizonpulse.co@proton.me",
+      "url": "https://horizonpulse.dev"
+    }
+  },
+  "paths": {
+    "/api/pulse": {
+      "get": {
+        "summary": "BTC/ETH/SOL spot + momentum (CoinGecko)",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.005 USDC (5000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live pulse JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/signals": {
+      "get": {
+        "summary": "RSI/MACD/Bollinger + OKX funding",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live signals JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/yield": {
+      "get": {
+        "summary": "DefiLlama yields (TVL \u2265 $10M)",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live yield JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/portfolio": {
+      "get": {
+        "summary": "Base + Ethereum portfolio risk snapshot",
+        "description": "x402 v2 exact payment. Requires query param address=0x\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.04 USDC (40000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^0x[a-fA-F0-9]{40}$"
+            },
+            "description": "EVM address (0x + 40 hex)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live portfolio JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/gas": {
+      "get": {
+        "summary": "Base + Ethereum gas fee snapshot",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live gas JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/funding": {
+      "get": {
+        "summary": "OKX BTC/ETH/SOL perpetual funding",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 live funding JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          }
+        }
+      }
+    },
+    "/api/fetch": {
+      "get": {
+        "summary": "Fetch public URL \u2192 clean text/markdown",
+        "description": "x402 v2 exact payment. Requires query param url=https://\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~200KB / 8s caps; preferred Content-Types: text/html, text/plain, application/json, text/markdown.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL to fetch (private/localhost blocked)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 cleaned text/markdown JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Bad or blocked URL"
+          },
+          "413": {
+            "description": "Upstream body too large"
+          },
+          "415": {
+            "description": "Unsupported Content-Type"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          }
+        }
+      }
+    },
+    "/api/http": {
+      "get": {
+        "summary": "Universal HTTP proxy (query)",
+        "description": "x402 v2 exact payment. Requires query param url=https://\u2026. Optional method (GET default), headers (JSON string). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~384KB / 12s caps. Response: ok, status, headers, body, bodyEncoding, contentType, elapsedMs.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL (private/localhost blocked)"
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST",
+                "HEAD",
+                "PUT",
+                "PATCH",
+                "DELETE"
+              ],
+              "default": "GET"
+            }
+          },
+          {
+            "name": "headers",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional JSON object string of allowlisted outbound headers"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 proxied response JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Bad or blocked URL / method / headers"
+          },
+          "413": {
+            "description": "Request or upstream body too large"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          }
+        }
+      },
+      "post": {
+        "summary": "Universal HTTP proxy (JSON body)",
+        "description": "Same $0.01 USDC x402 price as GET. JSON body: { url, method?, headers?, body? }. body allowed for POST/PUT/PATCH upstream. Same SSRF/caps/payTo as GET.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "url"
+                ],
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "method": {
+                    "type": "string",
+                    "enum": [
+                      "GET",
+                      "POST",
+                      "HEAD",
+                      "PUT",
+                      "PATCH",
+                      "DELETE"
+                    ]
+                  },
+                  "headers": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "body": {
+                    "description": "String or JSON value (stringified) for POST/PUT/PATCH"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 proxied response JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Bad input / blocked target"
+          },
+          "413": {
+            "description": "Body too large"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          }
+        }
+      }
+    },
+    "/api/extract": {
+      "get": {
+        "summary": "Extract structured fields from a public URL",
+        "description": "x402 v2 exact payment. Query param url=https://\u2026 (optional if html provided via POST). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~200KB / 8s caps. Response omits empty fields: ok, url?, title, description, canonical, language?, links, images, jsonLd, headings, textSample, elapsedMs.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL to fetch and extract (private/localhost blocked). Required on GET unless using POST with html."
+          },
+          {
+            "name": "fields",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "URL-encoded JSON object of CSS-selector fields (max 20, <=16K chars). See POST body `fields`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 structured extract JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing input / bad HTML Includes bad_fields for an invalid fields spec."
+          },
+          "413": {
+            "description": "HTML or body too large"
+          },
+          "415": {
+            "description": "Upstream Content-Type is not HTML"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          },
+          "422": {
+            "description": "No requested field matched (no_fields_matched); body includes fieldErrors. Not charged."
+          }
+        }
+      },
+      "post": {
+        "summary": "Extract structured fields from URL and/or HTML",
+        "description": "Same $0.015 USDC x402 price as GET. JSON body: { url?, html? } \u2014 at least one required. If html is provided it is parsed (url echoed); else url is fetched SSRF-safe. Same caps/payTo as GET. Network eip155:8453.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "html": {
+                    "type": "string",
+                    "description": "Raw HTML to parse (size-capped ~200KB)"
+                  },
+                  "fields": {
+                    "type": "object",
+                    "description": "Optional CSS-selector fields (max 20): name -> selector string or {selector, attr: text|html|<attribute>, all, limit 1-50}. Unmatched fields are null with fieldErrors; if none match, 422 no_fields_matched (not charged).",
+                    "additionalProperties": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "object",
+                          "required": [
+                            "selector"
+                          ],
+                          "properties": {
+                            "selector": {
+                              "type": "string",
+                              "maxLength": 300
+                            },
+                            "attr": {
+                              "type": "string"
+                            },
+                            "all": {
+                              "type": "boolean"
+                            },
+                            "limit": {
+                              "type": "integer",
+                              "minimum": 1,
+                              "maximum": 50
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success \u2014 structured extract JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing input / bad HTML Includes bad_fields for an invalid fields spec."
+          },
+          "413": {
+            "description": "Body or HTML too large"
+          },
+          "502": {
+            "description": "Upstream error"
+          },
+          "504": {
+            "description": "Upstream timeout"
+          },
+          "422": {
+            "description": "No requested field matched (no_fields_matched); body includes fieldErrors. Not charged."
+          }
+        }
+      }
+    },
+    "/api/x402-check": {
+      "get": {
+        "summary": "Audit an x402 endpoint",
+        "description": "$0.01 USDC x402. Sends one unpaid probe (never pays or signs) to a public x402 endpoint and reports: HTTP status, whether it is a valid x402 challenge, x402 version (v1/v2), decoded accepts (network, asset, price, payTo), payTo type via eth_getCode on Base/Ethereum (EOA vs contract), discovery-metadata hints, and pass/warn/fail checks. SSRF-safe (private/localhost blocked at every redirect hop), 3 redirects, 8s timeout. Any HTTP answer from the target, including 5xx, is a billed report. Bad input, blocked hosts, DNS/connection failures and timeouts return 400/502/504 and are not charged.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL of the x402 endpoint to audit"
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST"
+              ],
+              "default": "GET"
+            },
+            "description": "Method for the unpaid probe"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: audit report JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing, bad, or blocked URL / method (not charged)"
+          },
+          "502": {
+            "description": "Target unreachable or too many redirects (not charged)"
+          },
+          "504": {
+            "description": "Target timeout (not charged)"
+          }
+        }
+      }
+    },
+    "/api/screenshot": {
+      "get": {
+        "summary": "Screenshot a public URL",
+        "description": "$0.02 USDC x402. Renders the URL in headless Chromium (fresh browser, no cookies) and returns JSON with the image as base64 (imageBase64) plus mimeType, bytes, width, height, finalUrl, pageStatus, title. SSRF-safe: the URL and every sub-request are checked; private/local targets blocked. fullPage clipped at 4000px; image capped at 3MB (PNG falls back to JPEG). Billed when an image is returned; failures return 400/413/502/504 and are not charged.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "width",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 320,
+              "maximum": 1920,
+              "default": 1280
+            }
+          },
+          {
+            "name": "height",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 240,
+              "maximum": 2000,
+              "default": 800
+            }
+          },
+          {
+            "name": "fullPage",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "png",
+                "jpeg"
+              ],
+              "default": "png"
+            }
+          },
+          {
+            "name": "delayMs",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: image as base64 JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing/bad/blocked URL or params (not charged)"
+          },
+          "413": {
+            "description": "Image over cap (not charged)"
+          },
+          "502": {
+            "description": "Navigation or render failed (not charged)"
+          },
+          "504": {
+            "description": "Navigation timeout (not charged)"
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "summary": "Search the web and fetch top results",
+        "description": "$0.03 USDC x402. Sends the query to a third-party search API (Serper, Google results), then fetches the top n result pages (1-5, default 3) in parallel through the same SSRF-safe pipeline as /api/fetch (private/localhost blocked at every redirect hop, 200KB / 8s per page, 12K characters per page) and returns clean markdown/text with URL, title, rank and per-source ok/error. Billed when at least one result is returned, even if some pages fail. Bad input, zero results, or a search-provider failure are not charged.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "description": "Search query"
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5,
+              "default": 3
+            },
+            "description": "Number of result pages to fetch"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: results with sources"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing/too-long query or bad n (not charged)"
+          },
+          "404": {
+            "description": "No search results (not charged)"
+          },
+          "503": {
+            "description": "Search provider unavailable (not charged)"
+          }
+        }
+      }
+    },
+    "/api/pdf": {
+      "get": {
+        "summary": "PDF URL to text per page",
+        "description": "$0.02 USDC x402. Downloads a public PDF through the same SSRF checks as /api/fetch (private/localhost blocked at every redirect hop, 3 redirects, 10MB cap; larger files are rejected, not truncated, 12s download budget) and returns the pdf.js text layer per page (first 50 pages, 100K characters total) plus title/author metadata. No OCR. Billed only when text is returned. Bad input, blocked hosts, non-PDFs, oversize, encrypted or corrupt files, image-only PDFs, download failures, and a 10s parse budget running out before any text are not charged; partial text past the budget is returned as truncated.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL of a public PDF"
+          },
+          {
+            "name": "pages",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 50
+            },
+            "description": "Max pages to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: text per page with metadata"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing/bad url, blocked host, or bad pages (not charged)"
+          },
+          "413": {
+            "description": "File larger than 10MB (not charged)"
+          },
+          "415": {
+            "description": "Not a PDF (not charged)"
+          },
+          "422": {
+            "description": "Encrypted, corrupt, or image-only PDF with no text layer (not charged)"
+          },
+          "502": {
+            "description": "Upstream download failed (not charged)"
+          },
+          "504": {
+            "description": "Download or parse timed out before any text (not charged)"
+          }
+        }
+      }
+    }
+  }
+}
