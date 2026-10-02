@@ -21,7 +21,8 @@ export default function ListingFixPage() {
   return (
     <>
       <SiteHeader />
-      <main style={{ maxWidth: 720, margin: "0 auto", padding: "48px 20px" }}>
+      <main className="hp-listing-fix" style={{ maxWidth: 720, margin: "0 auto", padding: "48px 20px" }}>
+        <style>{`.hp-listing-fix a{color:#8ec5ff;text-decoration:underline;text-underline-offset:2px}`}</style>
         <p style={{ opacity: 0.7, letterSpacing: "0.08em", fontSize: 12 }}>LISTING FIX</p>
         <h1 style={{ fontSize: 28, margin: "8px 0 12px" }}>Missing from Coinbase&apos;s x402 Bazaar?</h1>
         <p style={{ opacity: 0.9 }}>
@@ -54,8 +55,8 @@ export default function ListingFixPage() {
         <section style={box}>
           <h2 style={{ fontSize: 18, margin: "0 0 8px" }}>What we don&apos;t promise</h2>
           <p style={{ margin: 0, opacity: 0.9 }}>
-            Indexing is done by Coinbase, not us, so we can&apos;t guarantee a listing or a timeline. We can
-            get your endpoint passing the public checks Coinbase documents.
+            Indexing is done by Coinbase, not us, so we can&apos;t guarantee a listing or a timeline. What we work toward
+            with you is an endpoint that passes the public checks Coinbase documents.
           </p>
           <p style={{ margin: "10px 0 0", opacity: 0.9 }}>
             Payment: [TBD] · Refunds: [TBD]
