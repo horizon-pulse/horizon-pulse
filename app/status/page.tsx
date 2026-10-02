@@ -71,6 +71,7 @@ export default async function StatusPage() {
                 <div className="k">payTo balance</div>
                 <div className="v">{usdc}{bal.ok && <span style={{ fontSize: 14, color: "var(--text-2)" }}> USDC</span>}</div>
                 <div className="d">{bal.ok ? `Read ${fmtUtc(bal.at)}` : "RPC read failed. No cached figure is shown."}</div>
+                <div className="d">Not revenue. Can include the operator&apos;s own test payments.</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Paid routes</div>
@@ -124,7 +125,7 @@ export default async function StatusPage() {
                 <h3>Custody</h3>
                 <p>
                   The payTo is an interim Coinbase-custodial address on Base, controlled by the operator. It is not a Safe or multisig. A
-                  non-custodial upgrade is planned. Until then, this is the only settlement address.
+                  non-custodial upgrade is planned. Until then, this is the only settlement address for API calls.
                 </p>
               </div>
             </div>
