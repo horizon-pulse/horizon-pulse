@@ -209,7 +209,7 @@
 .hp-try-tabs button:hover { color: #fff; border-color: rgba(255,255,255,.22); }
 .hp-try-tabs button.on { color: #0a0b0d; background: #fff; border-color: #fff; }
 .hp-try-tabs button.on em { opacity: .7; }
-.hp-try-meta { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; overflow: hidden; }
+.hp-try-meta { display: grid; grid-template-columns: 1fr 1.4fr 1fr; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; overflow: hidden; }
 .hp-try-meta > div { padding: 14px 16px; font-size: 13px; color: var(--hp-muted, #9aa0a6); overflow-wrap: anywhere; }
 .hp-try-meta > div + div { border-left: 1px solid rgba(255,255,255,.1); }
 .hp-try-meta span { display: block; color: #fff; font-weight: 600; margin-bottom: 6px; }

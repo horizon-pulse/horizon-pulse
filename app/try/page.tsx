@@ -25,7 +25,7 @@ export default function TryPage() {
               <span>Then pay per call.</span>
             </h1>
             <p className="hp-sub">
-              Each sample runs the real route on a fixed input, free. The paid route takes your own input and costs a fraction of a
+              Each free sample is real output from the route on a fixed input, cached for a few minutes. The paid route takes your own input and costs a fraction of a
               cent to a few cents in USDC on Base.
             </p>
           </div>

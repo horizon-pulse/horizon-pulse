@@ -4,6 +4,11 @@ import { CopyBlock } from "@/components/CopyBlock";
 
 type R = { route: string; priceUsd: string; input: string };
 const BASE = "https://horizonpulse.dev";
+const REFRESH: Record<string, string> = {
+  screenshot: "Cached sample, refreshed at most every 10 minutes",
+  pdf: "Cached sample, refreshed at most every 10 minutes",
+  search: "Recorded sample, refreshed at most once a day",
+};
 
 function trim(v: unknown, depth = 0): unknown {
   if (typeof v === "string") return v.length > 160 ? v.slice(0, 160) + `… (${v.length} chars)` : v;
@@ -14,7 +19,7 @@ function trim(v: unknown, depth = 0): unknown {
 
 export function TryPlayground({ routes }: { routes: R[] }) {
   const [sel, setSel] = useState(routes[0]?.route ?? "pulse");
-  const [state, setState] = useState<{ loading: boolean; status?: number; ms?: number; body?: string; err?: string }>({ loading: false });
+  const [state, setState] = useState<{ loading: boolean; status?: number; at?: string; body?: string; err?: string }>({ loading: false });
   const cur = routes.find((r) => r.route === sel)!;
 
   useEffect(() => {
@@ -24,11 +29,15 @@ export function TryPlayground({ routes }: { routes: R[] }) {
 
   async function run(route: string) {
     setState({ loading: true });
-    const t = performance.now();
     try {
       const res = await fetch(`/api/demo/${route}`);
       const json = await res.json();
-      setState({ loading: false, status: res.status, ms: Math.round(performance.now() - t), body: JSON.stringify(trim(json.sample ?? json), null, 2) });
+      const sample = json.sample ?? json;
+      const age = Number(res.headers.get("age") ?? 0);
+      const served = res.headers.get("date") ? new Date(res.headers.get("date")!).getTime() : Date.now();
+      const atIso = typeof sample?.asOf === "string" ? sample.asOf : new Date(served - age * 1000).toISOString();
+      const at = new Date(atIso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+      setState({ loading: false, status: json.sample_status ?? res.status, at, body: JSON.stringify(trim(sample), null, 2) });
     } catch (e) {
       setState({ loading: false, err: e instanceof Error ? e.message : "Request failed" });
     }
@@ -51,15 +60,16 @@ export function TryPlayground({ routes }: { routes: R[] }) {
       </div>
       <div className="hp-try-meta">
         <div><span>Sample input</span>{cur.input}</div>
+        <div><span>Freshness</span>{REFRESH[cur.route] ?? "Cached sample, refreshed at most every 5 minutes"}. The paid route always runs live on your input.</div>
         <div><span>Paid route</span><code>/api/{cur.route}</code> at {cur.priceUsd} per call</div>
       </div>
       <div className="hp-code tall">
         <div className="hp-code-h">
           <span>
-            {state.loading ? "Running the real route…" : state.err ? "Request failed" : `Live sample output · HTTP ${state.status} · ${state.ms} ms`}
+            {state.loading ? "Running the free sample…" : state.err ? "Request failed" : `Recorded sample · ${state.at} · HTTP ${state.status}`}
           </span>
           <span className="hp-try-acts">
-            <button type="button" className="hp-code-copy" onClick={() => run(sel)} disabled={state.loading}>Run again</button>
+            <button type="button" className="hp-code-copy" onClick={() => run(sel)} disabled={state.loading}>Reload</button>
             <a className="hp-code-copy" href={`/api/demo/${sel}`} target="_blank" rel="noreferrer">Raw JSON</a>
           </span>
         </div>
