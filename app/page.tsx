@@ -51,7 +51,7 @@ export default function HomePage() {
               {s.minPrice}–{s.maxPrice} in USDC per call and gets JSON back.
             </p>
             <div className="hp-ctas">
-              <a className="hp-btn primary" href="/api/demo/pulse">Try a free sample</a>
+              <a className="hp-btn primary" href="/try">Try a free sample</a>
               <a className="hp-btn ghost" href="#catalog">See all {s.routes} routes</a>
             </div>
             <CopyLine text="curl https://horizonpulse.dev/api/demo/pulse" />
@@ -109,7 +109,7 @@ export default function HomePage() {
                     <p>{r.blurb}</p>
                     <div className="hp-tile-foot">
                       <b>{r.priceUsd}</b>
-                      <a href={`/api/demo/${name}`}>Free sample →</a>
+                      <a href={`/try#${name}`}>Free sample →</a>
                     </div>
                   </div>
                 );
@@ -139,7 +139,7 @@ export default function HomePage() {
                         <td className="m">{r.method === "GET|POST" ? "GET · POST" : "GET"}</td>
                         <td className="b">{r.blurb}</td>
                         <td className="p">{r.priceUsd}</td>
-                        <td className="s">{demoSet.has(name) && <a href={`/api/demo/${name}`}>Sample →</a>}</td>
+                        <td className="s">{demoSet.has(name) && <a href={`/try#${name}`}>Sample →</a>}</td>
                       </tr>
                     );
                   }),
@@ -237,7 +237,7 @@ export default function HomePage() {
           <h2>Start with a free sample.</h2>
           <p>Real output, no wallet needed. Pay only when your agent needs a live input.</p>
           <div className="hp-ctas">
-            <a className="hp-btn primary" href="/api/demo/pulse">Try /api/demo/pulse</a>
+            <a className="hp-btn primary" href="/try">Try it free</a>
             <a className="hp-btn ghost" href="/docs">Read the docs</a>
           </div>
         </section>

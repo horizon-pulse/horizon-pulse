@@ -16,7 +16,7 @@ export function SiteFooter() {
               <h4>Developers</h4>
               <Link href="/docs">API docs</Link>
               <Link href="/docs#quickstart">Quickstart</Link>
-              <a href="/#catalog">Free samples</a>
+              <a href="/try">Free samples</a>
               <h4 style={{ marginTop: 18 }}>For agents (raw)</h4>
               <a href="/openapi.json">openapi.json</a>
               <a href="/llms.txt">llms.txt</a>

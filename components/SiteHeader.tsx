@@ -21,7 +21,7 @@ export function SiteHeader() {
         </nav>
         <div className="hp-header-cta">
           <a className="hp-btn ghost sm" href={GITHUB_REPO} target="_blank" rel="noreferrer">GitHub</a>
-          <a className="hp-btn primary sm" href="/api/demo/pulse">Try free</a>
+          <a className="hp-btn primary sm" href="/try">Try free</a>
         </div>
       </div>
     </header>

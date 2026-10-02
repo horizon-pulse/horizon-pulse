@@ -174,7 +174,7 @@ export default async function StatusPage() {
                         <td className="m">{r.method === "GET|POST" ? "GET · POST" : "GET"}</td>
                         <td className="b">{r.blurb}</td>
                         <td className="p">{r.priceUsd}</td>
-                        <td className="s">{demoSet.has(name) && <a href={`/api/demo/${name}`}>Sample →</a>}</td>
+                        <td className="s">{demoSet.has(name) && <a href={`/try#${name}`}>Sample →</a>}</td>
                       </tr>
                     );
                   }),
