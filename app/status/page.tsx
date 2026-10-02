@@ -1,222 +1,190 @@
-import Link from "next/link";
-import {
-  DEFAULT_PAY_TO,
-  GITHUB_REPO,
-  USDC_BASE,
-  CDP_FACILITATOR_URL,
-  BASE_CAIP2,
-  PUBLIC_BASE_URL,
-  PUBLIC_BASE_URL_BACKUP,
-} from "@/lib/config";
+import type { Metadata } from "next";
+import { DEFAULT_PAY_TO, USDC_BASE, CDP_FACILITATOR_URL, BASE_CAIP2, PUBLIC_BASE_URL } from "@/lib/config";
 import { fetchTreasuryUsdcBalance } from "@/lib/treasury";
-import {
-  CATALOG_NOTE,
-  FIRST_SETTLE,
-  LIVE_PAID_ROUTES,
-} from "@/lib/live-catalog";
-import { LiveRoutesList } from "@/components/LiveRoutesList";
-import { AgentHowTo } from "@/components/AgentHowTo";
+import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
+import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
+import { SiteFooter } from "@/components/SiteFooter";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export default async function StatusPage() {
-  let balanceBlock:
-    | {
-        ok: true;
-        balanceUsdc: string;
-        balanceAtomic: string;
-        payTo: string;
-        fetchedAt: string;
-      }
-    | {
-        ok: false;
-        error: string;
-        payTo: string;
-      };
+export const metadata: Metadata = {
+  title: "Status | Horizon Pulse",
+  description: "Live on-chain USDC balance of the Horizon Pulse payTo on Base, the paid route catalog, and where to pay.",
+};
 
+const OLD_HOST = "horizon-pulse.vercel.app";
+const OLD_SAFE = "0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E";
+const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/merchant?payTo=${DEFAULT_PAY_TO.toLowerCase()}`;
+const demoSet = new Set(DEMO_ROUTES.map((d) => d.route));
+
+const Ico = ({ d }: { d: string }) => (
+  <svg className="hp-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <path d={d} />
+  </svg>
+);
+const I = {
+  wallet: "M3 7h15a2 2 0 012 2v8a2 2 0 01-2 2H3zM3 7l12-3v3M16 13h.01",
+  shield: "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z",
+  warn: "M12 3l9 16H3zM12 10v4M12 17h.01",
+};
+
+function fmtUtc(iso: string) {
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? iso : d.toISOString().replace("T", " ").replace(/\.\d+Z$/, " UTC");
+}
+
+export default async function StatusPage() {
+  const s = catalogStats();
+  let bal: { ok: true; usdc: string; atomic: string; at: string } | { ok: false; error: string };
   try {
-    const bal = await fetchTreasuryUsdcBalance();
-    balanceBlock = {
-      ok: true,
-      balanceUsdc: bal.balanceUsdc,
-      balanceAtomic: bal.balanceAtomic,
-      payTo: bal.payTo,
-      fetchedAt: bal.fetchedAt,
-    };
+    const b = await fetchTreasuryUsdcBalance();
+    bal = { ok: true, usdc: b.balanceUsdc, atomic: b.balanceAtomic, at: b.fetchedAt };
   } catch (err) {
-    balanceBlock = {
-      ok: false,
-      error: err instanceof Error ? err.message : "balance fetch failed",
-      payTo: DEFAULT_PAY_TO,
-    };
+    bal = { ok: false, error: err instanceof Error ? err.message : "balance read failed" };
   }
+  const usdc = bal.ok ? Number(bal.usdc).toLocaleString("en-US", { maximumFractionDigits: 6 }) : "Unavailable";
 
   return (
-    <>
-    <SiteHeader />
-    <main style={{ maxWidth: 720, margin: "0 auto", padding: "48px 20px" }}>
-      <p style={{ opacity: 0.7, letterSpacing: "0.08em", fontSize: 12 }}>
-        STATUS
-      </p>
-      <h1 style={{ fontSize: 28, margin: "8px 0 16px" }}>Horizon Pulse</h1>
-      <p style={{ opacity: 0.9 }}>
-        Free public dashboard. Shows the <strong>live</strong> on-chain USDC
-        balance of the x402 <code>payTo</code> address on Base (RPC{" "}
-        <code>balanceOf</code>) — not invented metrics, not a cached figure.
-      </p>
-
-      <section
-        style={{
-          marginTop: 24,
-          padding: 16,
-          borderRadius: 10,
-          background: "#211b12",
-          border: "1px solid #6b5428",
-        }}
-      >
-        <p style={{ margin: 0, fontSize: 14 }}>
-          <strong>Payment destination notice:</strong> Only pay via{" "}
-          <a href="https://horizonpulse.dev" style={{ color: "#8ec5ff" }}>
-            https://horizonpulse.dev
-          </a>{" "}
-          to <code>0x5b32c973596078a967562ca652761404f19be0e9</code>. Ignore{" "}
-          <code>horizon-pulse.vercel.app</code> and the old Safe{" "}
-          <code>0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E</code>; they are
-          stranded and abandoned.
-        </p>
-      </section>
-
-      <section
-        style={{
-          marginTop: 28,
-          padding: 20,
-          borderRadius: 12,
-          background: "#121a33",
-          border: "1px solid #243056",
-        }}
-      >
-        <h2 style={{ marginTop: 0, fontSize: 16 }}>Treasury (USDC on Base)</h2>
-        {balanceBlock.ok ? (
-          <>
-            <p style={{ fontSize: 32, margin: "8px 0", fontWeight: 700 }}>
-              {Number(balanceBlock.balanceUsdc).toLocaleString(undefined, {
-                maximumFractionDigits: 6,
-              })}{" "}
-              <span style={{ fontSize: 16, opacity: 0.7 }}>USDC</span>
-            </p>
-            <p style={{ fontSize: 13, opacity: 0.75, wordBreak: "break-all" }}>
-              payTo: {balanceBlock.payTo}
+    <div className="hp">
+      <SiteHeader />
+      <main>
+        <section className="hp-hero">
+          <div className="hp-wrap">
+            <span className="hp-chip">Status</span>
+            <h1>
+              Live status.
               <br />
-              atomic: {balanceBlock.balanceAtomic}
-              <br />
-              asset: {USDC_BASE}
-              <br />
-              network: {BASE_CAIP2}
-              <br />
-              as of: {balanceBlock.fetchedAt} (ISO-8601 UTC from RPC read)
+              <span>Read from the chain.</span>
+            </h1>
+            <p className="hp-sub">
+              The payTo balance below is a live <code>balanceOf</code> read on Base each time this page loads. Nothing is cached or estimated.
             </p>
-          </>
-        ) : (
-          <>
-            <p style={{ color: "#ffb4b4" }}>
-              Could not load live balance (RPC error): {balanceBlock.error}
+            <p className="hp-proof">
+              <a href={`https://basescan.org/address/${DEFAULT_PAY_TO}`} target="_blank" rel="noreferrer">payTo on Basescan ↗</a>
+              <span>·</span>
+              <a href={BAZAAR_LOOKUP} target="_blank" rel="noreferrer">Coinbase Bazaar merchant lookup ↗</a>
             </p>
-            <p style={{ fontSize: 13, opacity: 0.75, wordBreak: "break-all" }}>
-              Expected payTo: {balanceBlock.payTo}. No cached balance is shown when
-              the RPC fails.
-            </p>
-          </>
-        )}
-      </section>
+            <div className="hp-stats">
+              <div className="hp-stat">
+                <div className="k">payTo balance</div>
+                <div className="v">{usdc}{bal.ok && <span style={{ fontSize: 14, color: "var(--text-2)" }}> USDC</span>}</div>
+                <div className="d">{bal.ok ? `Read ${fmtUtc(bal.at)}` : "RPC read failed. No cached figure is shown."}</div>
+              </div>
+              <div className="hp-stat">
+                <div className="k">Paid routes</div>
+                <div className="v">{s.routes}</div>
+                <div className="d">{s.endpoints} endpoints in /.well-known/x402</div>
+              </div>
+              <div className="hp-stat">
+                <div className="k">Price per call</div>
+                <div className="v">{s.minPrice}–{s.maxPrice}</div>
+                <div className="d">USDC, exact amount in the 402</div>
+              </div>
+              <div className="hp-stat">
+                <div className="k">Network</div>
+                <div className="v">Base</div>
+                <div className="d"><code>{BASE_CAIP2}</code></div>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <section
-        style={{
-          marginTop: 24,
-          padding: 20,
-          borderRadius: 12,
-          background: "#121a33",
-          border: "1px solid #243056",
-        }}
-      >
-        <h2 style={{ marginTop: 0, fontSize: 16 }}>payTo custody (honest)</h2>
-        <p style={{ fontSize: 14, opacity: 0.9, marginTop: 0 }}>
-          <code>payTo</code> is an <strong>interim Coinbase-custodial</strong>{" "}
-          Base address controlled by Michael. It is <strong>not</strong> a Safe
-          or multisig. A non-custodial / Safe-or-multisig upgrade is planned
-          later; until then this address is the settlement destination agents
-          should use.
-        </p>
-      </section>
+        <section className="hp-section" id="pay">
+          <div className="hp-wrap">
+            <div>
+              <div className="hp-label">Payments</div>
+              <h2>
+                One address. <span>One host.</span>
+              </h2>
+              <p className="hp-lead">Agents should only pay through {PUBLIC_BASE_URL.replace("https://", "")} to the payTo below.</p>
+            </div>
+            <div className="hp-grid two">
+              <div className="hp-tile">
+                <Ico d={I.wallet} />
+                <h3>Where to pay</h3>
+                <div className="hp-kv">
+                  <span className="k">payTo</span>
+                  <code>{DEFAULT_PAY_TO}</code>
+                  <span className="k">Asset</span>
+                  <span>USDC <code>{USDC_BASE}</code></span>
+                  <span className="k">Facilitator</span>
+                  <span>Coinbase CDP <code>{CDP_FACILITATOR_URL}</code></span>
+                  {bal.ok && (
+                    <>
+                      <span className="k">Atomic</span>
+                      <span><code>{bal.atomic}</code></span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="hp-tile">
+                <Ico d={I.shield} />
+                <h3>Custody</h3>
+                <p>
+                  The payTo is an interim Coinbase-custodial address on Base, controlled by the operator. It is not a Safe or multisig. A
+                  non-custodial upgrade is planned. Until then, this is the only settlement address.
+                </p>
+              </div>
+            </div>
+            <div className="hp-grid" style={{ gridTemplateColumns: "1fr", marginTop: 1 }}>
+              <div className="hp-tile">
+                <Ico d={I.warn} />
+                <h3>Old host and wallet: do not use</h3>
+                <p>
+                  <code>{OLD_HOST}</code> and the old Safe <code style={{ wordBreak: "break-all" }}>{OLD_SAFE}</code> are no longer used. Don&apos;t
+                  send payments there.
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <section
-        style={{
-          marginTop: 24,
-          padding: 20,
-          borderRadius: 12,
-          background: "#121a33",
-          border: "1px solid #243056",
-        }}
-      >
-        <h2 style={{ marginTop: 0, fontSize: 16 }}>
-          Live paid catalog ({LIVE_PAID_ROUTES.length})
-        </h2>
-        <p style={{ fontSize: 13, opacity: 0.8, marginTop: 0 }}>
-          {CATALOG_NOTE} First settle: {FIRST_SETTLE.route}{" "}
-          {FIRST_SETTLE.amountUsd} — tx {FIRST_SETTLE.txTruncated}.
-        </p>
-        <LiveRoutesList perCall />
-        <p style={{ fontSize: 13, opacity: 0.75, marginBottom: 0 }}>
-          Network: {BASE_CAIP2} · Facilitator: {CDP_FACILITATOR_URL}
-        </p>
-        <p
-          style={{
-            fontSize: 13,
-            opacity: 0.75,
-            marginBottom: 0,
-            marginTop: 8,
-            wordBreak: "break-all",
-          }}
-        >
-          Host:{" "}
-          <a href={PUBLIC_BASE_URL} style={{ color: "#8ec5ff" }}>
-            {PUBLIC_BASE_URL}
-          </a>{" "}
-          (canonical) · backup{" "}
-          <a href={PUBLIC_BASE_URL_BACKUP} style={{ color: "#8ec5ff" }}>
-            {PUBLIC_BASE_URL_BACKUP}
-          </a>
-        </p>
-      </section>
-
-      <section
-        style={{
-          marginTop: 24,
-          padding: 20,
-          borderRadius: 12,
-          background: "#121a33",
-          border: "1px solid #243056",
-        }}
-      >
-        <h2 style={{ marginTop: 0, fontSize: 16 }}>Agent how-to (x402 v2)</h2>
-        <AgentHowTo />
-      </section>
-
-      <p style={{ marginTop: 28, display: "flex", gap: 16 }}>
-        <Link href="/" style={{ color: "#8ec5ff" }}>
-          Home
-        </Link>
-        <a
-          href={GITHUB_REPO}
-          style={{ color: "#8ec5ff" }}
-          target="_blank"
-          rel="noreferrer"
-        >
-          GitHub
-        </a>
-      </p>
-    </main>
-    </>
+        <section className="hp-section" id="routes">
+          <div className="hp-wrap">
+            <div>
+              <div className="hp-label">Catalog</div>
+              <h2>
+                Live paid routes. <span>Nothing else listed.</span>
+              </h2>
+              <p className="hp-lead">Every route below is live and returns a 402 until paid. Exact prices are also in each 402 challenge.</p>
+            </div>
+            <table className="hp-table">
+              <thead>
+                <tr>
+                  <th>Route</th>
+                  <th className="m">Method</th>
+                  <th className="b">Returns</th>
+                  <th className="p">Per call</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {s.byCategory.map((g) => [
+                  <tr className="grp" key={g.category}>
+                    <td colSpan={5}>{g.label}</td>
+                  </tr>,
+                  ...g.routes.map((r) => {
+                    const name = routeName(r);
+                    return (
+                      <tr key={r.path}>
+                        <td className="r">{`/api/${name}`}</td>
+                        <td className="m">{r.method === "GET|POST" ? "GET · POST" : "GET"}</td>
+                        <td className="b">{r.blurb}</td>
+                        <td className="p">{r.priceUsd}</td>
+                        <td className="s">{demoSet.has(name) && <a href={`/api/demo/${name}`}>Sample →</a>}</td>
+                      </tr>
+                    );
+                  }),
+                ])}
+              </tbody>
+            </table>
+            <p className="hp-fine">{LIVE_PAID_ROUTES.length} routes from the live catalog. How agents pay is on the <a href="/#how">homepage</a>.</p>
+          </div>
+        </section>
+      </main>
+      <SiteFooter />
+    </div>
   );
 }

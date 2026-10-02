@@ -180,7 +180,10 @@ export default function ListingFixPage() {
                   <span className="k">No refund if</span>
                   <span>The fix isn&apos;t applied, no CDP settle is done, or settles go through another facilitator.</span>
                   <span className="k">How</span>
-                  <span>Claim within 30 days of payment. The full $99 is sent back manually in USDC on Base to the paying address.</span>
+                  <span>
+                    Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> with your payment tx hash within 30 days of payment. The
+                    full $99 is sent back manually in USDC on Base to the address the USDC came from (the token transfer sender).
+                  </span>
                 </div>
               </div>
             </div>
@@ -200,8 +203,8 @@ export default function ListingFixPage() {
               </div>
               <div className="hp-tile" data-reveal>
                 <Ico d={I.check} />
-                <h3>Verify moves no funds</h3>
-                <p>Where a check can use a verify instead of a settle, we&apos;ll say so. A verify doesn&apos;t move any money.</p>
+                <h3>No unnecessary payments</h3>
+                <p>Where a free verify can stand in for a paid settle, we&apos;ll tell you.</p>
               </div>
             </div>
           </div>
