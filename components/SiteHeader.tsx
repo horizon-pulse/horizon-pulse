@@ -17,10 +17,9 @@ export function SiteHeader() {
           <a href="/#how">How it works</a>
           <a href="/#agents">For agents</a>
           <Link href="/status">Status</Link>
-          <a href="/openapi.json">OpenAPI</a>
+          <Link href="/docs">Docs</Link>
         </nav>
         <div className="hp-header-cta">
-          <a className="hp-btn ghost sm" href="/llms.txt">llms.txt</a>
           <a className="hp-btn ghost sm" href={GITHUB_REPO} target="_blank" rel="noreferrer">GitHub</a>
           <a className="hp-btn primary sm" href="/api/demo/pulse">Try free</a>
         </div>

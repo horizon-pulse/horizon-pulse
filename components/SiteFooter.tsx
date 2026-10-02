@@ -13,11 +13,14 @@ export function SiteFooter() {
               <p style={{ color: "var(--text-2)", margin: 0, maxWidth: 300 }}>Pay-per-call APIs for AI agents, settled in USDC on Base with x402.</p>
             </div>
             <div>
-              <h4>For agents</h4>
-              <a href="/llms.txt">/llms.txt</a>
-              <a href="/openapi.json">/openapi.json</a>
-              <a href="/.well-known/x402">/.well-known/x402</a>
+              <h4>Developers</h4>
+              <Link href="/docs">API docs</Link>
+              <Link href="/docs#quickstart">Quickstart</Link>
               <a href="/#catalog">Free samples</a>
+              <h4 style={{ marginTop: 18 }}>For agents (raw)</h4>
+              <a href="/openapi.json">openapi.json</a>
+              <a href="/llms.txt">llms.txt</a>
+              <a href="/.well-known/x402">.well-known/x402</a>
             </div>
             <div>
               <h4>Project</h4>

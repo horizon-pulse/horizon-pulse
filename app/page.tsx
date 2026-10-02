@@ -238,7 +238,7 @@ export default function HomePage() {
           <p>Real output, no wallet needed. Pay only when your agent needs a live input.</p>
           <div className="hp-ctas">
             <a className="hp-btn primary" href="/api/demo/pulse">Try /api/demo/pulse</a>
-            <a className="hp-btn ghost" href="/llms.txt">Read llms.txt</a>
+            <a className="hp-btn ghost" href="/docs">Read the docs</a>
           </div>
         </section>
       </main>
