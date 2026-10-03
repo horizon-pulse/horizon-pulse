@@ -14,7 +14,7 @@ const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/m
 export const metadata: Metadata = {
   title: "Bazaar listing fix | Horizon Pulse",
   description:
-    "Your x402 endpoint returns a 402 but isn't in Coinbase's x402 Bazaar? Free outside diagnosis, then a $99 per host hands-on fix with a clear refund rule.",
+    "Your x402 endpoint passes Coinbase's validator but isn't in the x402 Bazaar? Free outside diagnosis, then a $99 per host hands-on fix covering every route on the host, including a supervised trigger settle per route, with a written refund rule.",
 };
 
 const Ico = ({ d }: { d: string }) => (
@@ -49,8 +49,8 @@ export default function ListingFixPage() {
               <span>Agents still can&apos;t find it.</span>
             </h1>
             <p className="hp-sub">
-              If your x402 endpoint is missing from Coinbase&apos;s Bazaar, the blocker is usually small. We find it from the outside
-              for free, then fix it with you for <strong>$99 per host</strong>.
+              If your x402 endpoint passes Coinbase&apos;s validator but still isn&apos;t in the Bazaar, the blocker is usually specific
+              and checkable from outside. We find it for free, then fix it with you for <strong>$99 per host</strong>.
             </p>
             <div className="hp-ctas">
               <a className="hp-btn primary" href={MAIL}>Get a free listing check</a>
@@ -69,18 +69,49 @@ export default function ListingFixPage() {
             <div data-reveal>
               <div className="hp-label">What we usually find</div>
               <h2>
-                Three common blockers. <span>All checkable from outside.</span>
+                Validator passes. <span>Still not listed.</span>
               </h2>
               <p className="hp-lead">
-                Coinbase only lists routes that pass its validator and have settled a payment through the CDP Facilitator. These
-                are the failures we&apos;ve found on live x402 endpoints.
+                Coinbase only lists routes that pass its validator and have settled a payment through the CDP Facilitator. A{" "}
+                <code>valid: true</code> result doesn&apos;t rule out the cases below. They are the ones we check first.
               </p>
             </div>
             <div className="hp-grid">
               <div className="hp-tile" data-reveal>
+                <Ico d={I.json} />
+                <h3>External schema references</h3>
+                <p>
+                  The schema in <code>extensions.bazaar</code> uses an external <code>$ref</code> or <code>$id</code>. CDP rejects it at
+                  indexing, but the public validator may not flag it. The fix is a fully inlined schema.
+                </p>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.search} />
+                <h3>Probe gets a non-402</h3>
+                <p>
+                  The indexer calls your resource with the declared <code>extensions.bazaar.info.input</code>, so that call must return
+                  402 with <code>PAYMENT-REQUIRED</code>. Any other status blocks indexing; in reported cases it was a 400 or 409 from
+                  validation middleware running ahead of x402.
+                </p>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.settle} />
+                <h3>Resource missing from the settle</h3>
+                <p>
+                  The settle payload has no <code>paymentPayload.resource</code>. Coinbase&apos;s docs say a settle needs both{" "}
+                  <code>paymentPayload.resource</code> and <code>extensions.bazaar</code> to index. See{" "}
+                  <a href={TROUBLESHOOT} target="_blank" rel="noreferrer">Coinbase&apos;s troubleshooting guide ↗</a>.
+                </p>
+              </div>
+            </div>
+            <div className="hp-grid" style={{ marginTop: 1 }}>
+              <div className="hp-tile" data-reveal>
                 <Ico d={I.scheme} />
                 <h3>Resource URL scheme</h3>
-                <p>The 402 advertises an <code>http://</code> resource behind an HTTPS proxy, and the validator rejects it.</p>
+                <p>
+                  The 402 advertises an <code>http://</code> resource behind an HTTPS proxy, and the validator rejects it. The resource
+                  has to be <code>https://</code>.
+                </p>
               </div>
               <div className="hp-tile" data-reveal>
                 <Ico d={I.json} />
@@ -88,9 +119,12 @@ export default function ListingFixPage() {
                 <p>The discovery extension is present but missing required fields, so the validator returns <code>valid: false</code>.</p>
               </div>
               <div className="hp-tile" data-reveal>
-                <Ico d={I.settle} />
-                <h3>Settle path</h3>
-                <p>Everything validates, but no settle has gone through the CDP Facilitator yet, so nothing gets indexed.</p>
+                <Ico d={I.wallet} />
+                <h3>Settle timing</h3>
+                <p>
+                  <code>valid: true</code> doesn&apos;t index a route on its own. Indexing needs a settle through the CDP Facilitator made
+                  after the metadata is final.
+                </p>
               </div>
             </div>
           </div>
@@ -103,7 +137,10 @@ export default function ListingFixPage() {
               <h2>
                 Diagnosis is free. <span>The fix is $99.</span>
               </h2>
-              <p className="hp-lead">Intro rate, per host. You keep full control of your code, keys and wallet the whole time.</p>
+              <p className="hp-lead">
+                Intro rate, per host, covering every route on the host, paid in USDC on Base. Hosts with more than 25 paid routes get a
+                quote before work starts. You keep full control of your code, keys and wallet the whole time.
+              </p>
             </div>
             <div className="hp-grid">
               <div className="hp-tile" data-reveal>
@@ -121,17 +158,21 @@ export default function ListingFixPage() {
                 <Ico d={I.wrench} />
                 <h3>Hands-on fix</h3>
                 <p>
-                  The specific change for your stack, worked through with you until the validator returns <code>valid: true</code>,
-                  plus guidance on the CDP-facilitated settle that triggers indexing.
+                  The specific change for your stack, worked through with you until the validator returns <code>valid: true</code> and
+                  the checks above are clear.
                 </p>
-                <div className="hp-tile-foot"><b>$99 per host</b><span style={{ color: "var(--text-3)", fontSize: 13 }}>intro rate</span></div>
+                <div className="hp-tile-foot"><b>$99 per host</b><span style={{ color: "var(--text-3)", fontSize: 13 }}>all routes, intro rate</span></div>
               </div>
               <div className="hp-tile" data-reveal>
                 <span className="hp-step-n">03</span>
                 <Ico d={I.check} />
-                <h3>Recheck</h3>
-                <p>We re-run the validator and CDP discovery after your settle and send you the results, so you can see where things stand.</p>
-                <div className="hp-tile-foot"><b>Included</b></div>
+                <h3>Supervised trigger settle</h3>
+                <p>
+                  Once the fix is live, we walk you through one CDP-facilitated settle per route you want listed, from your own wallet: a
+                  small mainnet settle at your route&apos;s own price, paid from your wallet to your own payTo. Those settles are yours. We
+                  never hold your keys. Then we re-run the validator and CDP discovery and send you the results.
+                </p>
+                <div className="hp-tile-foot"><b>Included in the $99</b></div>
               </div>
             </div>
           </div>
@@ -155,7 +196,10 @@ export default function ListingFixPage() {
                 <h3>Payment</h3>
                 <div className="hp-kv">
                   <span className="k">Price</span>
-                  <span>$99 per host, intro rate. The diagnosis is free.</span>
+                  <span>
+                    $99 per host, intro rate, covering every route on the host. Hosts with more than 25 paid routes get a quote before
+                    work starts. The diagnosis is free.
+                  </span>
                   <span className="k">Asset</span>
                   <span>USDC on Base <code>{USDC_BASE}</code></span>
                   <span className="k">Pay to</span>
@@ -184,6 +228,11 @@ export default function ListingFixPage() {
                     Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> with your payment tx hash within 30 days of payment. The
                     full $99 is sent back manually in USDC on Base to the address the USDC came from (the token transfer sender).
                   </span>
+                  <span className="k">Per host</span>
+                  <span>
+                    The refund rule applies per host: a host counts as resolved when its fixed routes pass validation and appear in
+                    discovery. If any fixed route still meets refund condition (a) or (b), the full $99 for that host is refunded.
+                  </span>
                 </div>
               </div>
             </div>
@@ -191,7 +240,7 @@ export default function ListingFixPage() {
               <div className="hp-tile" data-reveal>
                 <Ico d={I.lock} />
                 <h3>No access needed</h3>
-                <p>We never ask for API keys, deploy access, private keys or wallet control. You make every change in your own code.</p>
+                <p>We never ask for API keys, deploy access, private keys or wallet control. You make every change in your own code, and every settle comes from your own wallet.</p>
               </div>
               <div className="hp-tile" data-reveal>
                 <Ico d={I.search} />
@@ -204,7 +253,7 @@ export default function ListingFixPage() {
               <div className="hp-tile" data-reveal>
                 <Ico d={I.check} />
                 <h3>No unnecessary payments</h3>
-                <p>Where a free verify can stand in for a paid settle, we&apos;ll tell you.</p>
+                <p>Beyond the $99, the only payment is the trigger settle, from your wallet to your own payTo.</p>
               </div>
             </div>
           </div>
