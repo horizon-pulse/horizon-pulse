@@ -169,7 +169,7 @@ export default function ListingFixPage() {
                 <h3>Supervised trigger settle</h3>
                 <p>
                   Once the fix is live, we walk you through one CDP-facilitated settle per route you want listed, from your own wallet: a
-                  small mainnet settle at your route&apos;s own price, paid from your wallet to your own payTo. Those settles are yours. We
+                  mainnet settle at your route&apos;s own price, paid from your wallet to your own payTo. Those settles are yours. We
                   never hold your keys. Then we re-run the validator and CDP discovery and send you the results.
                 </p>
                 <div className="hp-tile-foot"><b>Included in the $99</b></div>
@@ -212,11 +212,11 @@ export default function ListingFixPage() {
                 <Ico d={I.refund} />
                 <h3>Refunds</h3>
                 <div className="hp-kv">
-                  <span className="k">Full refund if</span>
+                  <span className="k">(a) Full refund if</span>
                   <span>
                     CDP&apos;s validator still returns <code>valid: false</code> on the fixed routes 7 days after we deliver the fix.
                   </span>
-                  <span className="k">Or if</span>
+                  <span className="k">(b) Or if</span>
                   <span>
                     The validator passes, you do your own paid settle through the CDP Facilitator within 14 days of delivery, and the
                     route still isn&apos;t in CDP discovery 7 days after that settle.
