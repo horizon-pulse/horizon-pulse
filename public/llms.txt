@@ -4,11 +4,11 @@
 
 Contact: horizonpulse.co@proton.me
 
-Base URL: https://horizonpulse.dev (the only host; do not pay any other host)
+Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any other host)
 
 ## Payment (x402 v2)
 
-- Unpaid request → HTTP 402 with `PAYMENT-REQUIRED` header (base64 JSON, x402 v2); the body carries the same challenge as JSON
+- Unpaid request → HTTP 402; the payment challenge is in the `PAYMENT-REQUIRED` response header (base64 JSON, x402 v2); the 402 body is empty JSON `{}`
 - Network: Base mainnet CAIP-2 `eip155:8453`
 - Asset: Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 - payTo: `0x5b32c973596078a967562ca652761404f19be0e9`
