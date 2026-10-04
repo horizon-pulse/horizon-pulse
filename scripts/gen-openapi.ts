@@ -86,7 +86,7 @@ const schemas: Json = {
   },
   PaymentRequired: {
     type: "object",
-    description: "x402 v2 payment challenge. Also sent base64-encoded in the PAYMENT-REQUIRED header (which additionally carries Bazaar discovery metadata).",
+    description: "Decoded shape of the PAYMENT-REQUIRED response header: base64-decode the header value and parse it as JSON to get this x402 v2 payment challenge (the live header may also carry Bazaar discovery metadata). Not sent in the 402 body, which is empty JSON {}.",
     required: ["x402Version", "accepts"],
     properties: {
       x402Version: { const: 2 },
@@ -196,18 +196,8 @@ for (const r of LIVE_PAID_ROUTES) {
         content: { "application/json": { schema: { $ref: `#/components/schemas/${respName}` }, ...(example ? { example } : {}) } },
       },
       "402": {
-        description: "Payment required (x402 v2). Not charged.",
+        description: "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
         headers: { "PAYMENT-REQUIRED": { $ref: "#/components/headers/PaymentRequired" } },
-        content: {
-          "application/json": {
-            schema: { $ref: "#/components/schemas/PaymentRequired" },
-            example: {
-              x402Version: 2,
-              resource: { url: `${PUBLIC_BASE_URL}${p}`, mimeType: "application/json" },
-              accepts: [{ scheme: "exact", network: acc.network, amount, asset: USDC_BASE, payTo: acc.payTo, maxTimeoutSeconds: 300, extra: { name: "USD Coin", version: "2" } }],
-            },
-          },
-        },
       },
     };
     if (BAD_REQUEST[p]) {
@@ -246,7 +236,11 @@ const spec = {
       },
     },
     headers: {
-      PaymentRequired: { description: "Base64-encoded JSON PaymentRequired challenge, including Bazaar discovery metadata.", schema: { type: "string", contentEncoding: "base64" } },
+      PaymentRequired: {
+        description: "Base64-encoded JSON x402 v2 payment challenge; decode for accepts, payTo, amount, network. Decoded shape: #/components/schemas/PaymentRequired (may also carry Bazaar discovery metadata).",
+        required: true,
+        schema: { type: "string", contentEncoding: "base64", contentMediaType: "application/json" },
+      },
       PaymentResponse: { description: "Base64-encoded JSON settlement receipt (success, transaction, network, payer).", schema: { type: "string", contentEncoding: "base64" } },
     },
     schemas,
