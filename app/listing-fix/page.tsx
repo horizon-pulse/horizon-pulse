@@ -6,7 +6,8 @@ import { Reveal } from "@/components/Reveal";
 
 /** Listing-fix fees go to the owner's Ledger, not the API payTo. Never counted as API revenue. */
 const FEE_ADDRESS = "0x330055d2b9B509079992Bb5712f1C9DcE32eb547";
-const MAIL = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Free listing check")}`;
+const MAIL = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Listing consult")}`;
+const MAIL_FIX = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Listing fix")}`;
 const TROUBLESHOOT = "https://docs.cdp.coinbase.com/x402/support/troubleshooting#my-endpoint-is-missing-from-the-bazaar";
 const VALIDATOR_DOCS = "https://docs.cdp.coinbase.com/x402/bazaar";
 const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/merchant?payTo=${DEFAULT_PAY_TO.toLowerCase()}`;
@@ -14,7 +15,7 @@ const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/m
 export const metadata: Metadata = {
   title: "Bazaar listing fix | Horizon Pulse",
   description:
-    "Your x402 endpoint passes Coinbase's validator but isn't in the x402 Bazaar? Free outside diagnosis, then a $99 per host hands-on fix covering every route on the host, including a supervised trigger settle per route, with a written refund rule.",
+    "Your x402 endpoint passes Coinbase's validator but isn't in the x402 Bazaar? A $49 listing consult, or a $99 per host hands-on fix covering every route on the host, including a supervised trigger settle per route, with a written refund rule.",
 };
 
 const Ico = ({ d }: { d: string }) => (
@@ -50,10 +51,11 @@ export default function ListingFixPage() {
             </h1>
             <p className="hp-sub">
               If your x402 endpoint passes Coinbase&apos;s validator but still isn&apos;t in the Bazaar, the blocker is usually specific
-              and checkable from outside. We find it for free, then fix it with you for <strong>$99 per host</strong>.
+              and checkable from outside. Book a <strong>$49 consult</strong> to find it, or have us fix it with you for{" "}
+              <strong>$99 per host</strong>.
             </p>
             <div className="hp-ctas">
-              <a className="hp-btn primary" href={MAIL}>Get a free listing check</a>
+              <a className="hp-btn primary" href={MAIL}>Book a $49 consult</a>
               <a className="hp-btn ghost" href="#terms">See terms and refunds</a>
             </div>
             <p className="hp-proof">
@@ -135,23 +137,24 @@ export default function ListingFixPage() {
             <div data-reveal>
               <div className="hp-label">How it works</div>
               <h2>
-                Diagnosis is free. <span>The fix is $99.</span>
+                A $49 consult. <span>A $99 fix.</span>
               </h2>
               <p className="hp-lead">
-                Intro rate, per host, covering every route on the host, paid in USDC on Base. Hosts with more than 25 paid routes get a
-                quote before work starts. You keep full control of your code, keys and wallet the whole time.
+                Intro rates, paid in USDC on Base. The $99 is per host and covers every route on the host; hosts with more than 25 paid
+                routes get a quote before work starts. Book the fix within 14 days of the consult call and the $49 counts toward the $99. You keep
+                full control of your code, keys and wallet the whole time.
               </p>
             </div>
             <div className="hp-grid">
               <div className="hp-tile" data-reveal>
                 <span className="hp-step-n">01</span>
                 <Ico d={I.search} />
-                <h3>Free diagnosis</h3>
+                <h3>Listing consult</h3>
                 <p>
-                  Send us your host. We run unpaid probes only: your 402, Coinbase&apos;s public validator, and CDP&apos;s discovery and
-                  merchant lookups. You get the exact check that fails.
+                  A 30-minute call. We go through as many of your host&apos;s routes as fit in the call, show what&apos;s blocking each one using Coinbase&apos;s
+                  public checks, and name the exact changes to make. You make them in your own code.
                 </p>
-                <div className="hp-tile-foot"><b>Free</b><a href={MAIL}>Request →</a></div>
+                <div className="hp-tile-foot"><b>$49</b><a href={MAIL}>Book →</a></div>
               </div>
               <div className="hp-tile" data-reveal>
                 <span className="hp-step-n">02</span>
@@ -161,7 +164,7 @@ export default function ListingFixPage() {
                   The specific change for your stack, worked through with you until the validator returns <code>valid: true</code> and
                   the checks above are clear.
                 </p>
-                <div className="hp-tile-foot"><b>$99 per host</b><span style={{ color: "var(--text-3)", fontSize: 13 }}>all routes, intro rate</span></div>
+                <div className="hp-tile-foot"><b>$99 per host</b><a href={MAIL_FIX}>Start →</a></div>
               </div>
               <div className="hp-tile" data-reveal>
                 <span className="hp-step-n">03</span>
@@ -197,15 +200,23 @@ export default function ListingFixPage() {
                 <div className="hp-kv">
                   <span className="k">Price</span>
                   <span>
-                    $99 per host, intro rate, covering every route on the host. Hosts with more than 25 paid routes get a quote before
-                    work starts. The diagnosis is free.
+                    $49 for a 30-minute listing consult. $99 per host for the fix, intro rate, covering every route on the host; hosts with more
+                    than 25 paid routes get a quote before work starts. Book the fix within 14 days of the consult call and the $49 counts toward the $99.
+                  </span>
+                  <span className="k">What&apos;s free</span>
+                  <span>
+                    Only our first note, if we reached out to you about your host: one outside pass that names the check we saw failing. One per
+                    host, and not a walkthrough. Walkthroughs, listing checks and follow-up advice are the $49 consult or the $99 fix.
                   </span>
                   <span className="k">Asset</span>
                   <span>USDC on Base <code>{USDC_BASE}</code></span>
                   <span className="k">Pay to</span>
                   <code>{FEE_ADDRESS}</code>
                   <span className="k">How</span>
-                  <span>Pay from a wallet you control, not straight from an exchange, then email us the transaction hash.</span>
+                  <span>
+                    Pay from a wallet you control, not straight from an exchange, then email us the transaction hash. Consults are paid before
+                    the call.
+                  </span>
                 </div>
               </div>
               <div className="hp-tile" data-reveal>
@@ -225,14 +236,17 @@ export default function ListingFixPage() {
                   <span>The fix isn&apos;t applied, no CDP settle is done, or settles go through another facilitator.</span>
                   <span className="k">How</span>
                   <span>
-                    Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> with your payment tx hash within 30 days of payment. The
-                    full $99 is sent back manually in USDC on Base to the address the USDC came from (the token transfer sender).
+                    Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> with your payment tx hash (both, if a consult was credited)
+                    within 30 days of payment. The full $99 is sent back manually in USDC on Base; each payment returns to its own sender (the
+                    token transfer sender for that payment).
                   </span>
                   <span className="k">Per host</span>
                   <span>
                     The refund rule applies per host: a host counts as resolved when its fixed routes pass validation and appear in
                     discovery. If any fixed route still meets refund condition (a) or (b), the full $99 for that host is refunded.
                   </span>
+                  <span className="k">Consult</span>
+                  <span>The $49 pays for the call and isn&apos;t refunded once the call has happened. If we can&apos;t hold it, you get the $49 back in full.</span>
                 </div>
               </div>
             </div>
@@ -253,18 +267,18 @@ export default function ListingFixPage() {
               <div className="hp-tile" data-reveal>
                 <Ico d={I.check} />
                 <h3>No unnecessary payments</h3>
-                <p>Beyond the $99, the only payment is the trigger settle, from your wallet to your own payTo.</p>
+                <p>Beyond our fee, the only payment is the trigger settle, from your wallet to your own payTo.</p>
               </div>
             </div>
           </div>
         </section>
 
         <section className="hp-cta-band" data-reveal>
-          <h2>Start with a free listing check.</h2>
-          <p>Send your host. We&apos;ll tell you exactly what&apos;s blocking it.</p>
+          <h2>Book a listing consult.</h2>
+          <p>30 minutes, $49, and it counts toward the $99 fix if you book the fix within 14 days.</p>
           <div className="hp-ctas">
-            <a className="hp-btn primary" href={MAIL}>Email {CONTACT_EMAIL}</a>
-            <a className="hp-btn ghost" href="/#catalog">See our own routes</a>
+            <a className="hp-btn primary" href={MAIL}>Book a $49 consult</a>
+            <a className="hp-btn ghost" href={MAIL_FIX}>Start the $99 fix</a>
           </div>
         </section>
       </main>
