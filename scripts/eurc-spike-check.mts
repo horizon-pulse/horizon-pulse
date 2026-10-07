@@ -16,7 +16,7 @@ import { gasRouteConfig } from "../lib/x402-server.ts";
 import { BASE_SEPOLIA, EURC_BASE_SEPOLIA } from "../lib/eurc-spike.ts";
 
 const accepts = (gasRouteConfig()["/api/gas"] as { accepts: object[] }).accepts;
-console.log("gas accepts order", JSON.stringify(accepts.map((a: any) => [a.scheme, a.network, typeof a.price === "string" ? `USDC ${a.price}` : `EURC ${a.price.amount}`])));
+console.log("gas accepts order", JSON.stringify(accepts.map((a: any) => [a.scheme, a.network, typeof a.price === "string" ? `USDC ${a.price}` : `EURC ${a.price.amount} atomic`])));
 const fac = new HTTPFacilitatorClient({ url: process.env.EURC_SPIKE_FACILITATOR_URL ?? "https://x402.org/facilitator" });
 const rs = new x402ResourceServer(fac).register(BASE_SEPOLIA, new ExactEvmScheme());
 await rs.initialize();

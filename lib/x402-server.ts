@@ -28,7 +28,8 @@ import {
   USDC_BASE,
   PUBLIC_BASE_URL,
 } from "./config";
-import { BASE_SEPOLIA, eurcSpikeEnabled, withEurcAccept } from "./eurc-spike";
+import { eurcNetwork, withEurcAccept } from "./eurc-spike";
+import { logEurcSettlement } from "./eurc-revenue";
 import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
 import { EXAMPLES_RECORDED_AT, OUTPUT_EXAMPLES } from "./route-examples";
 
@@ -54,7 +55,9 @@ export function getResourceServer(): x402ResourceServer {
     new ExactEvmScheme(),
   );
   // SPIKE: EURC on Base Sepolia (testnet only), off unless EURC_SPIKE_* env is set.
-  if (eurcSpikeEnabled()) cachedServer.register(BASE_SEPOLIA, new ExactEvmScheme());
+  const eurcNet = eurcNetwork();
+  if (eurcNet && eurcNet !== network) cachedServer.register(eurcNet, new ExactEvmScheme());
+  cachedServer.onAfterSettle(logEurcSettlement); // EURC-only, separate from USDC
   return cachedServer;
 }
 
@@ -153,14 +156,14 @@ export function pulseRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/pulse": {
-      accepts: [
+      accepts: withEurcAccept("/api/pulse", [
         {
           scheme: "exact",
           price: PULSE_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/pulse"),
       mimeType: "application/json",
       ...serviceMetadata("/api/pulse"),
@@ -174,14 +177,14 @@ export function signalsRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/signals": {
-      accepts: [
+      accepts: withEurcAccept("/api/signals", [
         {
           scheme: "exact",
           price: SIGNALS_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/signals"),
       mimeType: "application/json",
       ...serviceMetadata("/api/signals"),
@@ -195,14 +198,14 @@ export function yieldRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/yield": {
-      accepts: [
+      accepts: withEurcAccept("/api/yield", [
         {
           scheme: "exact",
           price: YIELD_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/yield"),
       mimeType: "application/json",
       ...serviceMetadata("/api/yield"),
@@ -216,14 +219,14 @@ export function portfolioRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/portfolio": {
-      accepts: [
+      accepts: withEurcAccept("/api/portfolio", [
         {
           scheme: "exact",
           price: PORTFOLIO_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/portfolio"),
       mimeType: "application/json",
       ...serviceMetadata("/api/portfolio"),
@@ -253,7 +256,7 @@ export function gasRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/gas": {
-      accepts: withEurcAccept("/api/gas", GAS_PRICE_USD, [
+      accepts: withEurcAccept("/api/gas", [
         {
           scheme: "exact",
           price: GAS_PRICE_USD,
@@ -274,7 +277,7 @@ export function fundingRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/funding": {
-      accepts: withEurcAccept("/api/funding", FUNDING_PRICE_USD, [
+      accepts: withEurcAccept("/api/funding", [
         {
           scheme: "exact",
           price: FUNDING_PRICE_USD,
@@ -296,14 +299,14 @@ export function fetchRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/fetch": {
-      accepts: [
+      accepts: withEurcAccept("/api/fetch", [
         {
           scheme: "exact",
           price: FETCH_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/fetch"),
       mimeType: "application/json",
       ...serviceMetadata("/api/fetch"),
@@ -408,14 +411,14 @@ export function httpRouteConfig(): RoutesConfig {
   return methodSplitRoutes(
     "/api/http",
     {
-      accepts: [
+      accepts: withEurcAccept("/api/http", [
         {
           scheme: "exact",
           price: HTTP_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/http"),
       mimeType: "application/json",
       ...serviceMetadata("/api/http"),
@@ -456,14 +459,14 @@ export function extractRouteConfig(): RoutesConfig {
   return methodSplitRoutes(
     "/api/extract",
     {
-      accepts: [
+      accepts: withEurcAccept("/api/extract", [
         {
           scheme: "exact",
           price: EXTRACT_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/extract"),
       mimeType: "application/json",
       ...serviceMetadata("/api/extract"),
@@ -539,14 +542,14 @@ export function x402CheckRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/x402-check": {
-      accepts: [
+      accepts: withEurcAccept("/api/x402-check", [
         {
           scheme: "exact",
           price: X402_CHECK_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/x402-check"),
       mimeType: "application/json",
       ...serviceMetadata("/api/x402-check"),
@@ -586,14 +589,14 @@ export function screenshotRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/screenshot": {
-      accepts: [
+      accepts: withEurcAccept("/api/screenshot", [
         {
           scheme: "exact",
           price: SCREENSHOT_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/screenshot"),
       mimeType: "application/json",
       ...serviceMetadata("/api/screenshot"),
@@ -783,14 +786,14 @@ export function searchRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/search": {
-      accepts: [
+      accepts: withEurcAccept("/api/search", [
         {
           scheme: "exact",
           price: SEARCH_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/search"),
       mimeType: "application/json",
       ...serviceMetadata("/api/search"),
@@ -817,14 +820,14 @@ export function pdfRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/pdf": {
-      accepts: [
+      accepts: withEurcAccept("/api/pdf", [
         {
           scheme: "exact",
           price: PDF_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/pdf"),
       mimeType: "application/json",
       ...serviceMetadata("/api/pdf"),
