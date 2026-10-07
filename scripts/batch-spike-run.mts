@@ -6,10 +6,6 @@
 import fs from "node:fs";
 import http from "node:http";
 import { HTTPFacilitatorClient, x402ResourceServer, x402HTTPResourceServer } from "@x402/core/server";
-import { x402Client } from "@x402/core/client";
-import { x402HTTPClient } from "@x402/core/http";
-import { BatchSettlementEvmScheme as BatchClient } from "@x402/evm/batch-settlement/client";
-import { toClientEvmSigner } from "@x402/evm";
 import { BatchSettlementChannelManager } from "@x402/evm/batch-settlement/server";
 import { FileClientChannelStorage } from "@x402/evm/batch-settlement/client/file-storage";
 import { privateKeyToAccount } from "viem/accounts";
@@ -66,32 +62,22 @@ const manager = new BatchSettlementChannelManager({ scheme, facilitator: fac, re
 
 if (mode === "calls") {
   const srv = await startServer();
-  const bc = new BatchClient(toClientEvmSigner(buyer as never, pub as never), { depositPolicy: { depositMultiplier: 10 }, storage: new FileClientChannelStorage({ directory: process.env.BATCH_SPIKE_CLIENT_DIR! }) as never, rpcUrl: "https://sepolia.base.org" });
-  const c = new x402Client(); c.register(BASE_SEPOLIA_CAIP2, bc); const hc = new x402HTTPClient(c);
+  const { createBatchBuyer } = await import("../lib/batch-buyer.ts");
+  const buyerClient = createBatchBuyer(buyer as never, pub as never, BASE_SEPOLIA_CAIP2, { depositPolicy: { depositMultiplier: 10 }, ...(process.env.BATCH_SPIKE_SALT ? { salt: process.env.BATCH_SPIKE_SALT as `0x${string}` } : {}), storage: new FileClientChannelStorage({ directory: process.env.BATCH_SPIKE_CLIENT_DIR! }) as never });
   const n = Number(process.argv[3] ?? 5);
   for (let i = 0; i < n; i++) {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const u = await fetch(`http://127.0.0.1:${PORT}${PATH}`);
-      const pr = hc.getPaymentRequiredResponse((h) => u.headers.get(h), await u.json().catch(() => ({})));
-      const pp = await hc.createPaymentPayload(pr);
-      const p = await fetch(`http://127.0.0.1:${PORT}${PATH}`, { headers: hc.encodePaymentSignatureHeader(pp) });
-      const requirements = (pp as any).accepted;
-      if (p.status === 200) {
-        const settle = hc.getPaymentSettleResponse((h) => p.headers.get(h));
-        await c.handlePaymentResponse({ paymentPayload: pp, requirements, settleResponse: settle });
-        log({ call: i + 1, attempt, paid: 200, tx: settle.transaction ?? null, charged: (settle as any).extra?.chargedAmount, cumulative: (settle as any).extra?.channelState?.chargedCumulativeAmount });
-        break;
-      }
-      const pr2 = hc.getPaymentRequiredResponse((h) => p.headers.get(h), await p.json().catch(() => ({})));
-      const r = { recovered: await bc.processCorrectivePaymentRequired(pr2) };
-      log({ call: i + 1, attempt, paid: p.status, error: (pr2 as any).error, recovered: (r as any)?.recovered ?? false });
-      if (!(r as any)?.recovered) break;
-    }
+    const r = await buyerClient.payGet(`http://127.0.0.1:${PORT}${PATH}`);
+    log({ call: i + 1, status: r.response.status, attempt: r.attempt, tx: r.settle?.transaction ?? null, charged: (r.settle as any)?.extra?.chargedAmount, cumulative: (r.settle as any)?.extra?.channelState?.chargedCumulativeAmount, error: (r as any).error });
   }
   srv.close();
 } else if (mode === "dryrun") {
   const v = await manager.getClaimableVouchers();
   log({ dryRun: true, claimable: v.length, vouchers: v });
+} else if (mode === "worker") {
+  process.env.BATCH_SPIKE_FACILITATOR_URL = FAC_URL;
+  process.env.BATCH_SPIKE_WORKER_LOG ??= process.env.BATCH_SPIKE_LOG!.replace(/\.jsonl$/, "-worker.jsonl");
+  const { runWorker } = await import("./batch-spike-worker.ts");
+  log({ worker: await runWorker({ refundIdleSecs: process.argv[3] ? Number(process.argv[3]) : undefined }) });
 } else if (mode === "claim") {
   log({ claim: await manager.claim({ maxClaimsPerBatch: 10 }) });
 } else if (mode === "settle") {
