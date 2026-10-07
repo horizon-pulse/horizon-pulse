@@ -28,6 +28,7 @@ import {
   USDC_BASE,
   PUBLIC_BASE_URL,
 } from "./config";
+import { BASE_SEPOLIA_CAIP2, batchSpikeEnabled, getBatchScheme, withBatchAccept } from "./batch-spike";
 import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
 import { EXAMPLES_RECORDED_AT, OUTPUT_EXAMPLES } from "./route-examples";
 
@@ -52,6 +53,10 @@ export function getResourceServer(): x402ResourceServer {
     network,
     new ExactEvmScheme(),
   );
+  // SPIKE: Base Sepolia batch-settlement rail, off unless BATCH_SPIKE_* env is set.
+  if (batchSpikeEnabled()) {
+    cachedServer.register(BASE_SEPOLIA_CAIP2, getBatchScheme());
+  }
   return cachedServer;
 }
 
@@ -150,14 +155,14 @@ export function pulseRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/pulse": {
-      accepts: [
+      accepts: withBatchAccept("/api/pulse", PULSE_PRICE_USD, [
         {
           scheme: "exact",
           price: PULSE_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/pulse"),
       mimeType: "application/json",
       ...serviceMetadata("/api/pulse"),
@@ -171,14 +176,14 @@ export function signalsRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/signals": {
-      accepts: [
+      accepts: withBatchAccept("/api/signals", SIGNALS_PRICE_USD, [
         {
           scheme: "exact",
           price: SIGNALS_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/signals"),
       mimeType: "application/json",
       ...serviceMetadata("/api/signals"),
@@ -250,14 +255,14 @@ export function gasRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/gas": {
-      accepts: [
+      accepts: withBatchAccept("/api/gas", GAS_PRICE_USD, [
         {
           scheme: "exact",
           price: GAS_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/gas"),
       mimeType: "application/json",
       ...serviceMetadata("/api/gas"),
@@ -271,14 +276,14 @@ export function fundingRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/funding": {
-      accepts: [
+      accepts: withBatchAccept("/api/funding", FUNDING_PRICE_USD, [
         {
           scheme: "exact",
           price: FUNDING_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/funding"),
       mimeType: "application/json",
       ...serviceMetadata("/api/funding"),
