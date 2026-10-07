@@ -151,7 +151,7 @@ export default function ListingFixPage() {
                 <Ico d={I.search} />
                 <h3>Written listing review</h3>
                 <p>
-                  A written listing review. We check every route on your host with Coinbase&apos;s public checks and send back what&apos;s
+                  A written listing review. We check every route on your host (hosts with more than 25 paid routes get a quote first) with Coinbase&apos;s public checks and send back what&apos;s
                   blocking each one and the exact changes to make. You make them in your own code.
                 </p>
                 <div className="hp-tile-foot"><b>$49</b><a href={MAIL}>Order →</a></div>
@@ -200,7 +200,7 @@ export default function ListingFixPage() {
                 <div className="hp-kv">
                   <span className="k">Price</span>
                   <span>
-                    $49 for a written listing review, delivered by email. $99 per host for the fix, intro rate, covering every route on the host; hosts with more
+                    $49 for a written listing review, delivered by email or in your thread. $99 per host for the fix, intro rate, covering every route on the host; hosts with more
                     than 25 paid routes get a quote before work starts. Book the fix within 14 days of when the review is delivered and the $49 counts toward the $99.
                   </span>
                   <span className="k">What&apos;s free</span>
@@ -275,7 +275,7 @@ export default function ListingFixPage() {
 
         <section className="hp-cta-band" data-reveal>
           <h2>Order a written listing review.</h2>
-          <p>$49, delivered by email, and it counts toward the $99 fix if you book the fix within 14 days of delivery.</p>
+          <p>$49, delivered by email or in your thread, and it counts toward the $99 fix if you book the fix within 14 days of delivery.</p>
           <div className="hp-ctas">
             <a className="hp-btn primary" href={MAIL}>Order a $49 written review</a>
             <a className="hp-btn ghost" href={MAIL_FIX}>Start the $99 fix</a>
