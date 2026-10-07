@@ -1,0 +1,12 @@
+{
+  "_status": "DRAFT, pre-v0.1, NOT CONFORMANT. The Personal Agent Protocol (PAP) spec is not published; this is a placeholder shape we made up for local testing, not a PAP document.",
+  "_branch": "spike/ath-pact (local mock only; no live endpoint)",
+  "name": "Horizon Pulse ATH Móvil bridge (spike)",
+  "endpoint": "http://127.0.0.1:<bridge-port>/api/pulse",
+  "payment": { "rail": "athmovil-button", "currency": "USD", "humanApproval": true, "fundsTo": "merchant's own ATH Business account", "custody": "none" },
+  "auth": {
+    "pact": { "repo": "https://github.com/openpactprotocol/openpactprotocol", "commit": "838c6bd1da9be39da04264e8b156dbb4e848a208",
+      "headers": ["Authorization: Bearer <personal-agent JWT>", "X-A2A-User-Delegation: Bearer <delegation token>"],
+      "brandScopes": ["purchase:api_call", "purchase:max_usd:<amount>"], "brandScopesNote": "our own scope ids, not defined by PACT" }
+  }
+}

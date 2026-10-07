@@ -39,3 +39,15 @@ Gaps vs real API (UNKNOWN until we have a merchant account): exact error codes; 
 - https://ath.business/en: "$0 monthly fees Pay only a flat rate of 2.25% per transaction".
 - https://ath.business/terminos: fees "detailed in ath.business, in the Business section"; Evertec may "charge additional fees … at any time".
 - No page names the Payment Button/eCommerce rate, and the API README's COMPLETED example shows `fee: 0.60` on `total: 1` (`netAmount: 0.40`). Confirm with Evertec before any pricing. The mock's fee is configurable (MOCK_ATH_FEE_PCT, MOCK_ATH_FEE_MIN).
+
+## PACT gate (branch spike/ath-pact)
+`pact/pact-verify.mjs` ports the verification from **openpactprotocol/openpactprotocol @ 838c6bd (Apache-2.0)**:
+- **Personal-agent JWT:** checks follow `verifyPlatformJwt.ts`.
+- **Delegation token:** checks follow `verifyDelegationToken` (`at+jwt`, ES256) and spec §5 (`client_id` must equal the PA `iss`; revoked grants are rejected).
+- **Libraries:** jose 6.1.0 and zod 4.1.5, the repo's pinned versions.
+- **Order:** the bridge creates the ATH payment request only after the credential passes.
+
+PACT has no purchase-type or amount claim. `purchase:api_call` and `purchase:max_usd:<n>` are OUR Brand-defined scope ids. Inside A2A, PACT would step up on a missing scope; here it's a 403.
+
+Run: `cd spikes/ath-movil-bridge/pact && npm i && node pact-test.mjs` (12 cases; output in `pact/pact-test-output.txt`).
+`pap/agent-pay.draft.json` is a DRAFT, pre-v0.1, non-conformant discovery stub: the PAP spec isn't published.

@@ -1,0 +1,17 @@
+┌─────────┬──────────────────────────────────────────────────┬──────────┬──────┬──────────────────┬────────┬─────────────────────────────────────────────────────────────┐
+│ (index) │ case                                             │ expected │ http │ athRequestIssued │ result │ detail                                                      │
+├─────────┼──────────────────────────────────────────────────┼──────────┼──────┼──────────────────┼────────┼─────────────────────────────────────────────────────────────┤
+│ 0       │ 'valid credential, $1.00 limit ≥ $0.25'          │ 'pass'   │ 402  │ true             │ 'OK'   │ 'payment_required'                                          │
+│ 1       │ 'valid, limit exactly $0.25'                     │ 'pass'   │ 402  │ true             │ 'OK'   │ 'payment_required'                                          │
+│ 2       │ 'bad signature (PA JWT signed by rogue key)'     │ 'fail'   │ 401  │ false            │ 'OK'   │ 'personal-agent JWT: ERR_JWS_SIGNATURE_VERIFICATION_FAILED' │
+│ 3       │ 'bad signature (delegation signed by rogue key)' │ 'fail'   │ 401  │ false            │ 'OK'   │ 'delegation token: ERR_JWS_SIGNATURE_VERIFICATION_FAILED'   │
+│ 4       │ 'expired PA JWT'                                 │ 'fail'   │ 401  │ false            │ 'OK'   │ 'personal-agent JWT: ERR_JWT_EXPIRED'                       │
+│ 5       │ 'expired delegation token'                       │ 'fail'   │ 401  │ false            │ 'OK'   │ 'delegation token: ERR_JWT_EXPIRED'                         │
+│ 6       │ 'wrong purchase type (scope orders:read only)'   │ 'fail'   │ 403  │ false            │ 'OK'   │ 'scope purchase:api_call not granted'                       │
+│ 7       │ 'over limit ($0.10 < $0.25)'                     │ 'fail'   │ 403  │ false            │ 'OK'   │ 'price 0.25 exceeds granted limit 0.10'                     │
+│ 8       │ 'missing principal (no delegation token)'        │ 'fail'   │ 401  │ false            │ 'OK'   │ 'missing delegation token (no principal)'                   │
+│ 9       │ 'missing principal (delegation without sub)'     │ 'fail'   │ 401  │ false            │ 'OK'   │ 'delegation token: ERR_JWT_CLAIM_VALIDATION_FAILED'         │
+│ 10      │ 'client_id != PA iss'                            │ 'fail'   │ 401  │ false            │ 'OK'   │ 'delegation client_id != personal-agent iss'                │
+│ 11      │ 'revoked grant'                                  │ 'fail'   │ 401  │ false            │ 'OK'   │ 'grant revoked'                                             │
+└─────────┴──────────────────────────────────────────────────┴──────────┴──────┴──────────────────┴────────┴─────────────────────────────────────────────────────────────┘
+PACT TESTS PASS

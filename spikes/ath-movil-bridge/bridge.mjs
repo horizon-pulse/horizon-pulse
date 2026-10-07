@@ -6,7 +6,7 @@
 import http from "node:http";
 
 const BASE = "/api/business-transaction/ecommerce";
-export function startBridge({ athUrl, publicToken, port = 0, priceUsd = 0.25, resultFor = () => ({ ok: true }) }) {
+export function startBridge({ athUrl, publicToken, port = 0, priceUsd = 0.25, resultFor = () => ({ ok: true }), authorize = null }) {
   const orders = new Map(); // ecommerceId -> { auth_token, path, status, result }
   const ath = (p, b, h = {}) => fetch(athUrl + BASE + p, { method: "POST", headers: { "content-type": "application/json", accept: "application/json", ...h }, body: JSON.stringify(b ?? {}) }).then((r) => r.json());
   const send = (res, code, obj, h = {}) => { res.writeHead(code, { "content-type": "application/json", ...h }); res.end(JSON.stringify(obj, null, 2)); };
@@ -34,9 +34,15 @@ export function startBridge({ athUrl, publicToken, port = 0, priceUsd = 0.25, re
     if (u.pathname.startsWith("/api/")) {
       const id = req.headers["x-ath-ecommerce-id"];
       if (!id) {                                                         // 1) no payment yet -> 402 with an ATH Móvil request
+        let principal = null;
+        if (authorize) {                                                 // optional PACT gate: no ATH request unless the credential passes
+          const v = await authorize(req, priceUsd, u.pathname);
+          if (!v.ok) return send(res, v.status ?? 401, { error: v.error }, v.status === 401 ? { "www-authenticate": 'Bearer realm="a2a", error="invalid_token"' } : {});
+          principal = v.principal;
+        }
         const p = await ath("/payment", { env: "production", publicToken, total: priceUsd.toFixed(2), subtotal: priceUsd.toFixed(2), tax: "0", timeout: "600",
           metadata1: "horizon-pulse", metadata2: u.pathname, items: [{ name: u.pathname, description: "API call", quantity: "1", price: priceUsd.toFixed(2), tax: "0", metadata: "agent" }] });
-        orders.set(p.data.ecommerceId, { auth_token: p.data.auth_token, path: u.pathname, status: "OPEN" });
+        orders.set(p.data.ecommerceId, { auth_token: p.data.auth_token, path: u.pathname, status: "OPEN", principal });
         return send(res, 402, { error: "payment_required", accepts: [{ scheme: "athmovil-button", network: "athmovil", currency: "USD", amount: priceUsd.toFixed(2),
           payTo: "merchant ATH Business account (funds go directly to the merchant)", ecommerceId: p.data.ecommerceId, expiresInSeconds: 600,
           humanAction: "Approve the payment request in the ATH Móvil app", retry: { header: "X-ATH-ECOMMERCE-ID", value: p.data.ecommerceId } }] });
