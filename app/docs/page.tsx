@@ -195,6 +195,14 @@ export default function DocsPage() {
                 <p>Coinbase CDP verifies the payment first and settles it only after the route succeeds.</p>
               </div>
             </div>
+            <div className="hp-tile" style={{ marginTop: 16 }}>
+              <h3>Batch pay: coming at go-live</h3>
+              <p>
+                Per-call on Base stays first in every 402. At go-live some routes will also list x402 <code>batch-settlement</code> on
+                Base (CDP) and Solana (PayAI): one deposit, an off-chain voucher per call, batched settles, and unused balance refunded.
+                Batch prices and routes are published on the day. See <a href="/batch">Batch pay</a> for buyer requirements.
+              </p>
+            </div>
           </div>
         </section>
 

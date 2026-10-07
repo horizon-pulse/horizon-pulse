@@ -15,6 +15,14 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - Facilitator: Coinbase CDP `https://api.cdp.coinbase.com/platform/v2/x402`
 - Retry the same request with `PAYMENT-SIGNATURE` (v2). On success the settlement receipt is in the `PAYMENT-RESPONSE` header. Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.
 
+## Batch pay (coming at go-live; NOT live yet)
+
+- Today every route is per-call only (`exact` on Base). Do not attempt batch payments until a 402 lists them.
+- At go-live, the 402 `accepts` will list per-call Base `exact` FIRST, then `batch-settlement` on Base (`eip155:8453`, CDP facilitator) and Solana mainnet (PayAI facilitator) for selected routes.
+- Flow: deposit USDC into a channel once → sign a cumulative voucher per call (off-chain) → we claim and settle in batches → unused balance is refunded from the channel.
+- Buyer must: feed every `PAYMENT-RESPONSE` back to its x402 client (`handlePaymentResponse`), else the next voucher fails with `cumulative_amount_mismatch`; use a signer that can read the chain (EVM: `toClientEvmSigner(account, publicClient)`); keep channel state durable; on a corrective 402, resync once and retry.
+- Batch prices, routes and channel terms are published at go-live in the 402, /.well-known/x402 and here. Details: https://horizonpulse.dev/batch
+
 ## Live paid routes
 
 | Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |

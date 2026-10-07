@@ -4,7 +4,7 @@
     "title": "Horizon Pulse",
     "version": "1.1.0",
     "summary": "Pay-per-call APIs for AI agents, settled in USDC on Base with x402.",
-    "description": "Pay-per-call APIs for AI agents, paid in USDC on Base with x402: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key.\n\nYou pay only for a successful response; errors are not charged except where an operation says so. Every paid operation carries `x-payment-info` with the exact price, asset, network and payTo; these match the 402 challenge and https://horizonpulse.dev/.well-known/x402. Free fixed-input samples: GET /api/demo/{route}.",
+    "description": "Pay-per-call APIs for AI agents, paid in USDC on Base with x402: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key.\n\nYou pay only for a successful response; errors are not charged except where an operation says so. Every paid operation carries `x-payment-info` with the exact price, asset, network and payTo; these match the 402 challenge and https://horizonpulse.dev/.well-known/x402. Free fixed-input samples: GET /api/demo/{route}.\n\nBatch pay (coming at go-live, not live): selected operations will also accept x402 `batch-settlement` on Base (CDP) and Solana (PayAI), listed after per-call Base `exact` in the 402. Batch prices and routes are published at go-live; until then `x-payment-info` describes per-call only. See https://horizonpulse.dev/batch.",
     "contact": {
       "name": "Horizon Pulse",
       "email": "horizonpulse.co@proton.me",

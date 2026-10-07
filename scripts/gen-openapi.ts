@@ -219,7 +219,7 @@ const spec = {
     title: "Horizon Pulse",
     version: "1.1.0",
     summary: "Pay-per-call APIs for AI agents, settled in USDC on Base with x402.",
-    description: `${SERVICE_DESCRIPTION}\n\nYou pay only for a successful response; errors are not charged except where an operation says so. Every paid operation carries \`x-payment-info\` with the exact price, asset, network and payTo; these match the 402 challenge and ${PUBLIC_BASE_URL}/.well-known/x402. Free fixed-input samples: GET /api/demo/{route}.`,
+    description: `${SERVICE_DESCRIPTION}\n\nYou pay only for a successful response; errors are not charged except where an operation says so. Every paid operation carries \`x-payment-info\` with the exact price, asset, network and payTo; these match the 402 challenge and ${PUBLIC_BASE_URL}/.well-known/x402. Free fixed-input samples: GET /api/demo/{route}.\n\nBatch pay (coming at go-live, not live): selected operations will also accept x402 \`batch-settlement\` on Base (CDP) and Solana (PayAI), listed after per-call Base \`exact\` in the 402. Batch prices and routes are published at go-live; until then \`x-payment-info\` describes per-call only. See ${PUBLIC_BASE_URL}/batch.`,
     contact: { name: "Horizon Pulse", email: CONTACT_EMAIL, url: PUBLIC_BASE_URL },
   },
   servers: [{ url: PUBLIC_BASE_URL, description: "Production" }],

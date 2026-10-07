@@ -28,12 +28,14 @@ export function SiteFooter() {
               <a href={X_URL} target="_blank" rel="noreferrer">@HorizonPulseAPI on X</a>
               <Link href="/status">Status</Link>
               <Link href="/listing-fix">Bazaar listing fix</Link>
+              <Link href="/batch">Batch pay (coming)</Link>
               <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
             </div>
             <div>
               <h4>Network</h4>
               <a href="https://www.x402.org/" target="_blank" rel="noreferrer">x402 protocol</a>
               <a href="https://base.org" target="_blank" rel="noreferrer">Base</a>
+              <a href="https://solana.com" target="_blank" rel="noreferrer">Solana (batch, coming)</a>
               <a href={`https://basescan.org/address/${DEFAULT_PAY_TO}`} target="_blank" rel="noreferrer">payTo on Basescan</a>
             </div>
           </div>
