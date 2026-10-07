@@ -16,6 +16,8 @@ export function SiteHeader() {
           <a href="/#catalog">Catalog</a>
           <a href="/#how">How it works</a>
           <a href="/#agents">For agents</a>
+          <a href="/#rails">Payment rails</a>
+          <Link href="/listing-fix">Listing fix</Link>
           <Link href="/status">Status</Link>
           <Link href="/docs">Docs</Link>
         </nav>

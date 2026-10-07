@@ -11,6 +11,8 @@ import { CopyLine } from "@/components/CopyLine";
 const demoSet = new Set(DEMO_ROUTES.map((d) => d.route));
 const FEATURED = ["pulse", "fetch", "extract"];
 const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/merchant?payTo=${DEFAULT_PAY_TO.toLowerCase()}`;
+/** CDP Bazaar merchant lookup pagination.total; verified 2026-10-07 12:06 PM ET (claims register A2). Re-check before mid-October. */
+const BAZAAR_LISTED = 13;
 const WORDS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen", "Twenty"];
 
 const Ico = ({ d }: { d: string }) => (
@@ -28,6 +30,11 @@ const ICONS: Record<string, string> = {
   json: "M8 4c-2 0-3 1-3 3v2c0 1-1 3-2 3 1 0 2 2 2 3v2c0 2 1 3 3 3M16 4c2 0 3 1 3 3v2c0 1 1 3 2 3-1 0-2 2-2 3v2c0 2-1 3-3 3",
   wallet: "M3 7h15a2 2 0 012 2v8a2 2 0 01-2 2H3zM3 7l12-3v3M16 13h.01",
   agent: "M9 3h6M12 3v3M5 8h14v10H5zM9 12h.01M15 12h.01M9 15h6",
+  review: "M6 3h9l4 4v14H6zM9 12h7M9 16h5M9 8h3",
+  fix: "M14 6a4 4 0 00-5 5l-6 6 2 2 6-6a4 4 0 005-5l-2 2-2-2z",
+  batch: "M4 7h16M4 12h16M4 17h10",
+  sol: "M6 7h13l-2 3H4zM6 14h13l-2 3H4z",
+  eur: "M17 7a6 6 0 100 10M5 10h9M5 14h9",
 };
 
 export default function HomePage() {
@@ -56,7 +63,7 @@ export default function HomePage() {
             </div>
             <CopyLine text="curl https://horizonpulse.dev/api/demo/pulse" />
             <p className="hp-proof">
-              <a href={BAZAAR_LOOKUP} target="_blank" rel="noreferrer">Listed in Coinbase&apos;s x402 Bazaar ↗</a>
+              <a href={BAZAAR_LOOKUP} target="_blank" rel="noreferrer">{BAZAAR_LISTED} routes listed in Coinbase&apos;s x402 Bazaar ↗</a>
               <span>·</span>
               <a href="/.well-known/x402">/.well-known/x402</a>
             </p>
@@ -225,9 +232,89 @@ export default function HomePage() {
                   <span>USDC <code>{USDC_BASE}</code></span>
                   <span className="k">Network</span>
                   <span>Base mainnet, Coinbase CDP facilitator</span>
+                  <span className="k">Listed</span>
+                  <span><a href={BAZAAR_LOOKUP} target="_blank" rel="noreferrer">{BAZAAR_LISTED} routes in the x402 Bazaar ↗</a></span>
                   <span className="k">Balance</span>
                   <span>Live on <Link href="/status">/status</Link></span>
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="hp-section" id="services">
+          <div className="hp-wrap">
+            <div data-reveal>
+              <div className="hp-label">Services</div>
+              <h2>
+                Not in the Bazaar? <span>We fix that.</span>
+              </h2>
+              <p className="hp-lead">
+                Your x402 endpoint passes Coinbase&apos;s validator but isn&apos;t in the x402 Bazaar? Intro rates, paid in USDC on Base. All
+                async, no calls.
+              </p>
+            </div>
+            <div className="hp-grid">
+              <div className="hp-tile" data-reveal>
+                <Ico d={ICONS.review} />
+                <h3>Written listing review</h3>
+                <p>We check every route on your host and send back what&apos;s blocking the listing, delivered by email or in your thread.</p>
+                <div className="hp-tile-foot"><b>$49</b><Link href="/listing-fix">Details →</Link></div>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={ICONS.fix} />
+                <h3>Hands-on fix</h3>
+                <p>We fix it with you, covering every route on the host, with a written refund rule.</p>
+                <div className="hp-tile-foot"><b>$99 per host</b><Link href="/listing-fix">Details →</Link></div>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={ICONS.wallet} />
+                <h3>The $49 counts</h3>
+                <p>Book the fix within 14 days of when the review is delivered and the $49 counts toward the $99. Hosts with more than 25 paid routes get a quote first.</p>
+                <div className="hp-tile-foot"><b>14-day credit</b><Link href="/listing-fix">Details →</Link></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* HOLD: launch-day copy. Solana batch + EURC are written as live; merge only when both rails are live on mainnet and
+            Odin clears Class A. Every claim here needs its proof in docs/launch-checklist-2026-10-07.md first. */}
+        <section className="hp-section" id="rails">
+          <div className="hp-wrap">
+            <div data-reveal>
+              <div className="hp-label">Payment rails</div>
+              <h2>
+                Pay the way <span>your agent holds funds.</span>
+              </h2>
+              <p className="hp-lead">
+                Per-call USDC on Base is first in every 402, so existing clients keep working. Agents that call often can batch on
+                Solana, and agents that hold euros can pay in EURC.
+              </p>
+            </div>
+            <div className="hp-grid four">
+              <div className="hp-tile" data-reveal>
+                <Ico d={ICONS.call} />
+                <h3>Per-call USDC on Base</h3>
+                <p>One x402 <code>exact</code> payment per call, settled by the Coinbase CDP facilitator on every route.</p>
+                <div className="hp-tile-foot"><b>Live</b><span>Every route</span></div>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={ICONS.sol} />
+                <h3>Batch pay on Solana</h3>
+                <p>Deposit USDC into a channel once, pay each call with an off-chain voucher, we settle in batches, and unused balance is refunded.</p>
+                <div className="hp-tile-foot"><b>Live</b><span>In the 402</span></div>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={ICONS.eur} />
+                <h3>EURC at €0.01</h3>
+                <p>Circle&apos;s euro stablecoin on Base at a fixed €0.01 per call, listed after USDC. Your client opts in to the asset.</p>
+                <div className="hp-tile-foot"><b>Live</b><span>In the 402</span></div>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={ICONS.batch} />
+                <h3>Batch pay on Base</h3>
+                <p>The same channel model in USDC on Base. Planned and not live yet; per-call on Base works today.</p>
+                <div className="hp-tile-foot"><b>Coming soon</b><span>Not live</span></div>
               </div>
             </div>
           </div>
