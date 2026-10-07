@@ -129,7 +129,7 @@ function lazyRedis(url: string): RedisLike {
   };
 }
 
-let cached: Promise<{ scheme: BatchSvmScheme; channelStore: RedisSvmChannelStore; network: Network; payTo: string }> | null = null;
+let cached: Promise<{ scheme: BatchSvmScheme; channelStore: RedisSvmChannelStore; network: Network; payTo: string; receiverAuthorizer: KeyPairSigner }> | null = null;
 
 /** Async because Solana key signers are WebCrypto-backed. */
 export function getSolanaRail() {
@@ -139,14 +139,15 @@ export function getSolanaRail() {
     const r = lazyRedis(env.redisUrl);
     const prefix = `hp:svmbatch:${env.network}:`;
     const channelStore = new RedisSvmChannelStore(r, prefix);
+    const receiverAuthorizer = await signerFrom(env.authorizerKey);
     const scheme = new BatchSvmScheme({
       store: channelStore,
       operationStore: new RedisSvmOperationStore(r, prefix),
       operator: await signerFrom(env.operatorKey),
-      receiverAuthorizer: await signerFrom(env.authorizerKey),
+      receiverAuthorizer,
       withdrawDelay: 86_400,
     });
-    return { scheme, channelStore, network: env.network, payTo: env.payTo };
+    return { scheme, channelStore, network: env.network, payTo: env.payTo, receiverAuthorizer };
   })());
 }
 
