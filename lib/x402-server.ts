@@ -28,6 +28,7 @@ import {
   USDC_BASE,
   PUBLIC_BASE_URL,
 } from "./config";
+import { BASE_SEPOLIA, eurcSpikeEnabled, withEurcAccept } from "./eurc-spike";
 import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
 import { EXAMPLES_RECORDED_AT, OUTPUT_EXAMPLES } from "./route-examples";
 
@@ -52,6 +53,8 @@ export function getResourceServer(): x402ResourceServer {
     network,
     new ExactEvmScheme(),
   );
+  // SPIKE: EURC on Base Sepolia (testnet only), off unless EURC_SPIKE_* env is set.
+  if (eurcSpikeEnabled()) cachedServer.register(BASE_SEPOLIA, new ExactEvmScheme());
   return cachedServer;
 }
 
@@ -250,14 +253,14 @@ export function gasRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/gas": {
-      accepts: [
+      accepts: withEurcAccept("/api/gas", GAS_PRICE_USD, [
         {
           scheme: "exact",
           price: GAS_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/gas"),
       mimeType: "application/json",
       ...serviceMetadata("/api/gas"),
@@ -271,14 +274,14 @@ export function fundingRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/funding": {
-      accepts: [
+      accepts: withEurcAccept("/api/funding", FUNDING_PRICE_USD, [
         {
           scheme: "exact",
           price: FUNDING_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/funding"),
       mimeType: "application/json",
       ...serviceMetadata("/api/funding"),
