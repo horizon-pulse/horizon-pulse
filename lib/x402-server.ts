@@ -28,6 +28,7 @@ import {
   USDC_BASE,
   PUBLIC_BASE_URL,
 } from "./config";
+import { getSolanaRail, payaiFacilitator, solanaRailEnabled, withSolanaAccept } from "./solana-rail";
 import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
 import { EXAMPLES_RECORDED_AT, OUTPUT_EXAMPLES } from "./route-examples";
 
@@ -48,11 +49,25 @@ let cachedServer: x402ResourceServer | null = null;
 export function getResourceServer(): x402ResourceServer {
   if (cachedServer) return cachedServer;
   const network = getNetworkCaip2();
-  cachedServer = new x402ResourceServer(buildFacilitatorClient()).register(
+  // CDP first (Base exact, Bazaar, refunds of record). PayAI appended ONLY when the Solana
+  // batch rail is enabled; it serves only the Solana batch-settlement kind.
+  const facilitators = solanaRailEnabled()
+    ? [buildFacilitatorClient(), payaiFacilitator()]
+    : buildFacilitatorClient();
+  cachedServer = new x402ResourceServer(facilitators).register(
     network,
     new ExactEvmScheme(),
   );
   return cachedServer;
+}
+
+let solanaRegistered: Promise<void> | null = null;
+/** Register the Solana batch scheme once (async: Solana signers are WebCrypto-backed). */
+export function ensureSolanaRail(): Promise<void> {
+  if (!solanaRailEnabled()) return Promise.resolve();
+  return (solanaRegistered ??= getSolanaRail().then(({ scheme, network }) => {
+    getResourceServer().register(network, scheme);
+  }));
 }
 
 /** Avoid facilitator sync at boot when CDP secrets are absent. */
@@ -150,14 +165,14 @@ export function pulseRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/pulse": {
-      accepts: [
+      accepts: withSolanaAccept("/api/pulse", PULSE_PRICE_USD, [
         {
           scheme: "exact",
           price: PULSE_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/pulse"),
       mimeType: "application/json",
       ...serviceMetadata("/api/pulse"),
@@ -171,14 +186,14 @@ export function signalsRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/signals": {
-      accepts: [
+      accepts: withSolanaAccept("/api/signals", SIGNALS_PRICE_USD, [
         {
           scheme: "exact",
           price: SIGNALS_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/signals"),
       mimeType: "application/json",
       ...serviceMetadata("/api/signals"),
@@ -250,14 +265,14 @@ export function gasRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/gas": {
-      accepts: [
+      accepts: withSolanaAccept("/api/gas", GAS_PRICE_USD, [
         {
           scheme: "exact",
           price: GAS_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/gas"),
       mimeType: "application/json",
       ...serviceMetadata("/api/gas"),
@@ -271,14 +286,14 @@ export function fundingRouteConfig(): RoutesConfig {
   const network = getNetworkCaip2();
   return {
     "/api/funding": {
-      accepts: [
+      accepts: withSolanaAccept("/api/funding", FUNDING_PRICE_USD, [
         {
           scheme: "exact",
           price: FUNDING_PRICE_USD,
           network,
           payTo,
         },
-      ],
+      ]),
       description: routeDescription("/api/funding"),
       mimeType: "application/json",
       ...serviceMetadata("/api/funding"),
@@ -749,6 +764,7 @@ export function createX402GetHandler(
 
   return async (req: NextRequest) => {
     const cdpReady = hasCdpCredentials();
+    await ensureSolanaRail();
     if (!hasPaymentHeader(req)) {
       // Library's JSON path always (it would otherwise serve its own HTML to
       // any Mozilla + text/html request); our HTML only for real navigations.
