@@ -1,9 +1,9 @@
-• agent GET /api/pulse -> 402 {"amount":"0.25","ecommerceId":"072763cf-2382-46b8-82b6-3ca7860f8ac0"}
+• agent GET /api/pulse -> 402 {"amount":"0.25","ecommerceId":"4f61dc24-c5a6-48c6-92e7-aa8622a1b43f"}
 • agent retry before approval -> 202 OPEN
 • human approves in ATH Móvil (mock)
-• agent retry -> 200 {"route":"/api/pulse","data":{"btc":"mock","note":"result released after a verified ATH Móvil payment"}} ref-67e55194
-• bridge stored (ids + status only): {"status":"COMPLETED","referenceNumber":"ref-67e55194","fee":0.06}
-• agent GET /api/pulse -> 402 {"amount":"0.25","ecommerceId":"643bf839-cf07-49a6-b0ed-0ab511e1fca6"}
+• agent retry -> 200 {"route":"/api/pulse","data":{"btc":"mock","note":"result released after a verified ATH Móvil payment"}} ref-b6af6701
+• bridge stored (ids + status only): {"status":"COMPLETED","referenceNumber":"ref-b6af6701","fee":0.06}
+• agent GET /api/pulse -> 402 {"amount":"0.25","ecommerceId":"9ede8d95-e4f0-44dd-b5ec-c501395bcb63"}
 • agent retry before approval -> 202 OPEN
 • human cancels in ATH Móvil (mock)
 • agent retry -> 410 {"error":"payment_cancelled_or_expired"} 

@@ -2,7 +2,11 @@
 // "We currently do not have a Testing environment" — github.com/evertec/ATHM-Payment-Button-API).
 // Shapes follow that README (/payment, /business/findPayment, /authorization; statuses OPEN → CONFIRM → COMPLETED | CANCEL)
 // and the webhook payload in github.com/evertec/athmovil-webhooks ("eCommerce Payment Completed").
-// The fee mirrors the published 2.25% with a $0.06 minimum (ath.business/en). Not affiliated with Evertec.
+// FEE IS UNVERIFIED for Payment Button (eCommerce) payments. The mock defaults to the general ATH Business rate published in the
+// FAQ "Limits and fees" ("2.25% for each payment received, with a minimum of $ 0.06", ath.business/en/faq), which no page ties
+// explicitly to the Payment Button. The API README's COMPLETED example shows fee 0.60 on total 1. Override with MOCK_ATH_FEE_PCT /
+// MOCK_ATH_FEE_MIN. Not affiliated with Evertec.
+const FEE_PCT = Number(process.env.MOCK_ATH_FEE_PCT ?? 0.0225), FEE_MIN = Number(process.env.MOCK_ATH_FEE_MIN ?? 0.06);
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 
@@ -14,7 +18,7 @@ const body = (req) => new Promise((r) => { let d = ""; req.on("data", (c) => (d 
 const send = (res, code, obj) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(obj)); };
 const view = (t) => ({ ecommerceStatus: t.status, ecommerceId: t.ecommerceId, referenceNumber: t.referenceNumber, businessName: "ATH Business Test",
   total: t.total, subTotal: t.subtotal ?? t.total, tax: t.tax ?? 0, metadata1: t.metadata1, metadata2: t.metadata2, items: t.items ?? [],
-  fee: t.status === "COMPLETED" ? Math.max(0.06, +(t.total * 0.0225).toFixed(2)) : 0, netAmount: null, totalRefundedAmount: 0,
+  fee: t.status === "COMPLETED" ? Math.max(FEE_MIN, +(t.total * FEE_PCT).toFixed(2)) : 0, feeVerified: false, netAmount: null, totalRefundedAmount: 0,
   transactionDate: t.transactionDate ?? null, dailyTransactionId: t.daily ?? null });
 
 export function startMockAth(port = 0) {

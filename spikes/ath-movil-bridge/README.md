@@ -24,7 +24,7 @@ sequenceDiagram
   E-->>B: webhook (unsigned, treated as a hint)
   B->>E: POST /business/findPayment  -> CONFIRM
   B->>E: POST /ecommerce/authorization (Bearer auth_token)
-  E->>M: debit customer, credit merchant (minus 2.25% fee, $0.06 minimum)
+  E->>M: debit customer, credit merchant (minus Evertec fee: UNVERIFIED for Payment Button)
   E-->>B: COMPLETED {referenceNumber, fee}
   A->>B: GET /api/pulse + X-ATH-ECOMMERCE-ID
   B-->>A: 200 result (+ X-ATH-Reference)
@@ -33,3 +33,9 @@ sequenceDiagram
 Files: `mock-ath.mjs` (mock of /payment, /business/findPayment, /authorization, the webhook subscribe call, plus a mock-only `/__mock/customer` standing in for the human), `bridge.mjs` (402 → poll/webhook → verify → authorize → release), `demo.mjs` (approve path + cancel path).
 
 Gaps vs real API (UNKNOWN until we have a merchant account): exact error codes; whether `phoneNumber` is required for a push (it is optional in the docs); webhook retry/signing (none documented); JWT/Bearer for findPayment (the README shows a bare `Bearer`); real expiry timing (timeout is 120–600 s per docs).
+
+## Fee (UNVERIFIED for Payment Button payments)
+- https://ath.business/en/faq, "Limits and fees": "How much does this service cost? The service charge is only 2.25% for each payment received, with a minimum of $ 0.06. Paying your business through ATH Móvil is free for your customers." The same 2.25%/$0.06 text appears separately for donations.
+- https://ath.business/en: "$0 monthly fees Pay only a flat rate of 2.25% per transaction".
+- https://ath.business/terminos: fees "detailed in ath.business, in the Business section"; Evertec may "charge additional fees … at any time".
+- No page names the Payment Button/eCommerce rate, and the API README's COMPLETED example shows `fee: 0.60` on `total: 1` (`netAmount: 0.40`). Confirm with Evertec before any pricing. The mock's fee is configurable (MOCK_ATH_FEE_PCT, MOCK_ATH_FEE_MIN).
