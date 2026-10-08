@@ -31,7 +31,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 | GET | /api/screenshot?url=https://… | $0.02 | 20000 | Headless Chromium render → PNG/JPEG (base64 JSON), viewport/fullPage options |
 | GET | /api/search?q=…[&n=1-5] | $0.03 | 30000 | Web search → top 1-5 pages as clean markdown with URL, title, rank and per-source status (Google results via Serper) |
 | GET | /api/pdf?url=https://…[&pages=1-50] | $0.02 | 20000 | PDF URL → clean text per page + title/author metadata (text layer, no OCR; up to 10MB, 50 pages) |
-| GET | /api/x402-check?url=https://…[&method=POST][&body=<json>] | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays; optional JSON body for POST probes, auto POST retry on 405) |
+| GET | /api/x402-check?url=https://…[&method=POST][&body={json}] | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays; optional JSON body for POST probes, auto POST retry on 405) |
 
 ## Input bounds
 
@@ -49,7 +49,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - You pay only for a successful response. The payment is verified first and settled after the handler succeeds.
 - Errors return JSON `{ "ok": false, "error": "...", "code": "..." }` and are not charged: 400 bad input, 413 too large, 415 wrong content type, 422 nothing usable (e.g. `no_fields_matched`, `no_text_layer`), 404 no search results, 502 upstream failure, 503 search provider unavailable, 504 timeout.
 - Exceptions: `/api/http` returns upstream 4xx/5xx as data (charged), and `/api/x402-check` bills any HTTP answer from the target.
-- Response schemas and examples for every operation are in `/openapi.json`; free samples are at `/api/demo/<route>`.
+- Response schemas and examples for every operation are in `/openapi.json`; free samples are at `/api/demo/{route}`.
 
 ## Which route to call
 
@@ -66,7 +66,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 ## Free samples (no payment)
 
-`GET /api/demo/<route>` runs the real handler on a fixed input and returns `demo: true`. Use it to check the response shape before paying. Inputs cannot be changed.
+`GET /api/demo/{route}` runs the real handler on a fixed input and returns `demo: true`. Use it to check the response shape before paying. Inputs cannot be changed.
 
 - /api/demo/fetch, /api/demo/http, /api/demo/extract, /api/demo/x402-check, /api/demo/screenshot, /api/demo/search, /api/demo/pdf
 - /api/demo/pulse, /api/demo/signals, /api/demo/yield, /api/demo/gas, /api/demo/funding, /api/demo/portfolio

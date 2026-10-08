@@ -61,7 +61,7 @@ export const MCP_CONFIG = `{
       "command": "node",
       "args": ["/absolute/path/to/horizon-pulse/mcp/dist/index.js"],
       "env": {
-        "HP_PRIVATE_KEY": "<key of a dedicated, low-balance buyer wallet>",
+        "HP_PRIVATE_KEY": "0x...key of a dedicated, low-balance buyer wallet",
         "HP_MAX_USD_PER_CALL": "0.05",
         "HP_MAX_USD_TOTAL": "1"
       }
@@ -111,7 +111,7 @@ ${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...p
 - \`GET ${PUBLIC_BASE_URL}/.well-known/x402\`: x402 resource list (\`METHOD URL\` strings)
 - \`GET ${PUBLIC_BASE_URL}/openapi.json\`: OpenAPI 3.1, typed inputs, response examples, per-operation \`x-payment-info\` (price, asset, network, payTo)
 - \`GET ${PUBLIC_BASE_URL}/llms.txt\`: plain-text catalog and rules
-- \`GET ${PUBLIC_BASE_URL}/api/demo/<route>\`: free sample of a route's real output on a fixed input (no payment)
+- \`GET ${PUBLIC_BASE_URL}/api/demo/{route}\`: free sample of a route's real output on a fixed input (no payment)
 
 ## 2. Pick a route
 
@@ -129,11 +129,11 @@ Rules of thumb: research a question with sources → \`/api/search\`; read one p
 2. **Read the challenge**: base64-decode the \`PAYMENT-REQUIRED\` response header and parse it as JSON. The 402 body is \`{}\`. Shape: \`{ x402Version: 2, resource: {url, description, ...}, accepts: [{ scheme, network, amount, asset, payTo, maxTimeoutSeconds, extra: { name: "USD Coin", version: "2" } }] }\`.
 3. **Check it before paying.** Pay only if \`scheme\` is \`exact\`, \`network\` is \`eip155:8453\`, \`asset\` is \`${USDC_BASE}\`, \`payTo\` is \`${DEFAULT_PAY_TO}\` and \`amount\` equals the atomic price in the table. If anything differs, do not pay.
 4. **Sign** an EIP-3009 \`transferWithAuthorization\` for exactly \`amount\` to \`payTo\` (USDC EIP-712 domain: name "USD Coin", version "2", chainId 8453), valid for at most \`maxTimeoutSeconds\`. Use an x402 client library rather than hand-rolling it (Node: \`@x402/core\` + \`@x402/evm\`; Python: \`x402\`). The payer needs USDC on Base; no ETH or gas is needed.
-5. **Retry** the identical request (same method, URL and body) with header \`PAYMENT-SIGNATURE: <base64 JSON payment payload>\`. This is the x402 v2 header; \`X-PAYMENT\` is the legacy v1 header and is not the settle path here.
+5. **Retry** the identical request (same method, URL and body) with header \`PAYMENT-SIGNATURE: {base64 JSON payment payload}\`. This is the x402 v2 header; \`X-PAYMENT\` is the legacy v1 header and is not the settle path here.
 6. **Use the result**: \`200\` returns the route's JSON. The \`PAYMENT-RESPONSE\` header is a base64 JSON receipt \`{ success, transaction, network, payer }\`.
 7. **If you get 402 again**, decode \`PAYMENT-REQUIRED\` and read \`error\` (for example an insufficient USDC balance). Do not retry in a loop.
 
-Optional: \`OPTIONS <route>\` returns the same challenge without charging.
+Optional: \`OPTIONS {route}\` returns the same challenge without charging.
 
 ### Node (official x402 client, v2)
 
@@ -186,7 +186,7 @@ Source and full README: ${GITHUB_REPO}/tree/main/mcp
 
 - Call and pay only \`${PUBLIC_BASE_URL}\`. Never pay a \`payTo\` other than \`${DEFAULT_PAY_TO}\`.
 - Use a dedicated buyer wallet holding only a small USDC balance, and a per-call cap. Never put a private key in a prompt, a tool argument, a URL or a log.
-- Check the price with a free \`/api/demo/<route>\` sample or the unpaid 402 before paying; do not invent routes or prices.
+- Check the price with a free \`/api/demo/{route}\` sample or the unpaid 402 before paying; do not invent routes or prices.
 
 Contact: ${CONTACT_EMAIL}
 `;

@@ -48,7 +48,7 @@ Claude Desktop (`claude_desktop_config.json`), Cursor (`.cursor/mcp.json`) and o
       "command": "node",
       "args": ["/absolute/path/to/horizon-pulse/mcp/dist/index.js"],
       "env": {
-        "HP_PRIVATE_KEY": "<key of a dedicated, low-balance buyer wallet>",
+        "HP_PRIVATE_KEY": "0x...key of a dedicated, low-balance buyer wallet",
         "HP_MAX_USD_PER_CALL": "0.05",
         "HP_MAX_USD_TOTAL": "1"
       }
