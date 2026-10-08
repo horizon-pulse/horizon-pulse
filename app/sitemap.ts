@@ -5,7 +5,7 @@ const BASE = "https://horizonpulse.dev";
 
 // Public, free pages only. Paid routes are discoverable via /.well-known/x402.
 export default function sitemap(): MetadataRoute.Sitemap {
-  const pages = ["/", "/docs", "/agents", "/try", "/status", "/listing-fix", "/llms.txt", "/skill.md", "/openapi.json", "/.well-known/x402"];
+  const pages = ["/", "/docs", "/agents", "/try", "/status", "/listing-fix", "/agent-promotion", "/agent-promotion/spec", "/agent-promotion/start", "/llms.txt", "/skill.md", "/openapi.json", "/.well-known/x402"];
   return [
     ...pages.map((p) => ({ url: `${BASE}${p}`, changeFrequency: "daily" as const })),
     ...DEMO_ROUTES.map((d) => ({ url: `${BASE}/api/demo/${d.route}`, changeFrequency: "daily" as const })),

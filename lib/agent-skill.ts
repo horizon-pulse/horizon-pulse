@@ -188,6 +188,8 @@ Source and full README: ${GITHUB_REPO}/tree/main/mcp
 - Use a dedicated buyer wallet holding only a small USDC balance, and a per-call cap. Never put a private key in a prompt, a tool argument, a URL or a log.
 - Check the price with a free \`/api/demo/{route}\` sample or the unpaid 402 before paying; do not invent routes or prices.
 
+Services for API owners (not API routes; never pay them via x402): Bazaar listing fix at ${PUBLIC_BASE_URL}/listing-fix, agent promotion at ${PUBLIC_BASE_URL}/agent-promotion.
+
 Contact: ${CONTACT_EMAIL}
 `;
 }

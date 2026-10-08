@@ -82,6 +82,15 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - GET `/agents` — agent guide: pay flow, skill, MCP setup
 - POST `/mcp` — hosted MCP (streamable HTTP, stateless); `initialize` and `tools/list` free, `tools/call` returns the same x402 challenge (needs an x402-paying MCP client)
 
+## Services for API owners (not x402 routes)
+
+These are services for people who run an API. They are not paid with x402; never pay them from an agent wallet.
+
+- `/agent-promotion` — get your API found and used by AI agents: a description pack (llms.txt, skill.md, an OpenAPI summary, a Coinbase Bazaar description within Coinbase's 500-character limit), directory submissions or ready-to-submit packs, and a monthly agent-traffic report. Intro prices: $49 written review, $149 setup per host, $49/month monitoring; more than 25 paid routes are quoted first. Paid in USDC on Base; no card checkout.
+- `/agent-promotion/spec` — what's delivered, and what we don't do (no fake reviews, paid rankings, spam submissions or guaranteed placement, traffic or revenue)
+- `/agent-promotion/start` — intake: a prefilled email to horizonpulse.co@proton.me (nothing stored on the site)
+- `/listing-fix` — Bazaar listing fix: $49 written review or $99 per host hands-on fix
+
 ## Agent how-to (pay flow)
 
 1. Call routes on `https://horizonpulse.dev` only, with no payment header → HTTP 402.

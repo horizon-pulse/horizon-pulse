@@ -223,3 +223,12 @@
   .hp-try-meta, .hp-try-next { grid-template-columns: 1fr; }
   .hp-try-meta > div + div { border-left: 0; border-top: 1px solid rgba(255,255,255,.1); }
 }
+
+/* intake form (/agent-promotion/start): builds a mailto, no backend */
+.hp-form { display: grid; gap: 16px; }
+.hp-form label { display: grid; gap: 6px; font-size: 13.5px; color: var(--text-2); }
+.hp-form label em { font-style: normal; color: var(--text-3); font-size: 12px; margin-left: 6px; }
+.hp-form input, .hp-form textarea { font: 14px var(--sans); color: var(--text); background: var(--bg-1); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px 12px; outline: none; resize: vertical; }
+.hp-form input:focus, .hp-form textarea:focus { border-color: var(--accent); }
+.hp-form-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-3); padding-top: 4px; }
+.hp-btn.off { opacity: .55; }

@@ -30,6 +30,7 @@ export function SiteFooter() {
               <a href={X_URL} target="_blank" rel="noreferrer">@HorizonPulseAPI on X</a>
               <Link href="/status">Status</Link>
               <Link href="/listing-fix">Bazaar listing fix</Link>
+              <Link href="/agent-promotion">Agent promotion</Link>
               <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
             </div>
             <div>
