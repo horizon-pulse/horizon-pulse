@@ -20,7 +20,7 @@ Before signing, the server refuses unless all of these hold:
 | --- | --- |
 | Scheme / network | `exact` on Base mainnet `eip155:8453` |
 | Asset | USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` via EIP-3009 |
-| payTo | `0x5b32c973596078a967562ca652761404f19be0e9` (override only with `HP_EXPECTED_PAY_TO`) |
+| payTo | `0x5b32c973596078a967562ca652761404f19be0e9` (hardcoded; no environment override) |
 | Price | amount ≤ the price advertised for that route in `/openapi.json` |
 | Per call | amount ≤ `HP_MAX_USD_PER_CALL` (default **$0.05**; the most expensive route is $0.04) |
 | Per session | total paid by this process ≤ `HP_MAX_USD_TOTAL` (default **$1**) |
@@ -68,7 +68,6 @@ Leave `HP_PRIVATE_KEY` out to try it in quote-only mode first.
 | `HP_MAX_USD_TOTAL` | `1` | Max USD paid per server process. Restart resets it. |
 | `HP_DRY_RUN` | unset | `1` = never pay, even with a key. |
 | `HP_BASE_URL` | `https://horizonpulse.dev` | API host. Change only for local testing. |
-| `HP_EXPECTED_PAY_TO` | Horizon Pulse treasury | Only change if horizonpulse.dev/llms.txt publishes a new payTo. |
 | `HP_TIMEOUT_SECONDS` | `60` | Per-request timeout. |
 
 ## Tool results
@@ -81,7 +80,7 @@ Each route tool returns the route's JSON, then a `horizon-pulse: {...}` line wit
 npm test
 ```
 
-Builds, then runs `test/unpaid-test.mjs`: against the live site **without a key** (tools list, 402 decoding, quote-only, per-call and session caps) and against a local 127.0.0.1 mock (wrong payTo and over-price refusals, the signing path with private key = 1, dry-run). Nothing is broadcast and nothing is paid. Pass `skip` to run only the mock part: `node test/unpaid-test.mjs skip`.
+Builds, then runs `test/unpaid-test.mjs`: against the live site **without a key** (tools list, 402 decoding, quote-only, per-call and session caps) and against a local 127.0.0.1 mock (wrong payTo and over-price refusals, the signing path with private key = 1, a lost response after signing counted as spent, the ignored HP_EXPECTED_PAY_TO, dry-run). Nothing is broadcast and nothing is paid. Pass `skip` to run only the mock part: `node test/unpaid-test.mjs skip`.
 
 ## Hosted alternative
 

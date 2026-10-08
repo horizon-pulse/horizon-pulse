@@ -7,8 +7,12 @@
  * HP_MAX_USD_TOTAL per server process.
  */
 
-/** Horizon Pulse treasury (payTo) as published on https://horizonpulse.dev/llms.txt. */
-export const DEFAULT_EXPECTED_PAY_TO = "0x5b32c973596078a967562ca652761404f19be0e9";
+/**
+ * Horizon Pulse treasury (payTo) as published on https://horizonpulse.dev/llms.txt.
+ * Hardcoded on purpose: there is no environment override, so this server can only
+ * ever pay this address. A payTo change ships as a new release of this package.
+ */
+export const EXPECTED_PAY_TO = "0x5b32c973596078a967562ca652761404f19be0e9";
 /** USDC on Base mainnet. */
 export const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 /** Base mainnet, CAIP-2. */
@@ -52,8 +56,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     privateKey = k as `0x${string}`;
   }
 
-  const expectedPayTo = (env.HP_EXPECTED_PAY_TO?.trim() || DEFAULT_EXPECTED_PAY_TO).toLowerCase();
-  if (!/^0x[0-9a-f]{40}$/.test(expectedPayTo)) throw new Error("HP_EXPECTED_PAY_TO must be a 0x + 40 hex address");
+  // payTo is not configurable (no HP_EXPECTED_PAY_TO); see EXPECTED_PAY_TO above.
+  const expectedPayTo = EXPECTED_PAY_TO.toLowerCase();
 
   const timeoutSec = Number(env.HP_TIMEOUT_SECONDS?.trim() || "60");
 
