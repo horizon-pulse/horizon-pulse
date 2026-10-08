@@ -199,14 +199,15 @@ export default function AgentsPage() {
           </div>
         </section>
 
-        <section className="hp-section" id="agent-promotion">
+        <section className="hp-section" id="agent-promotion" style={{ paddingBottom: 80 }}>
           <div className="hp-wrap">
-            <div className="hp-tile" style={{ border: "1px solid var(--line)", borderRadius: 12 }}>
-              <div className="hp-label" style={{ marginBottom: 0 }}>For API owners</div>
-              <p style={{ color: "var(--text)", fontSize: 15 }}>
-                Want your own API found by agents? See <a href="/agent-promotion">Agent promotion →</a>
-              </p>
-            </div>
+            <div className="hp-label">For API owners</div>
+            <h2>
+              Want your own API <span>found by agents?</span>
+            </h2>
+            <p className="hp-lead" style={{ marginBottom: 0 }}>
+              See <a href="/agent-promotion">Agent promotion →</a>
+            </p>
           </div>
         </section>
       </main>
