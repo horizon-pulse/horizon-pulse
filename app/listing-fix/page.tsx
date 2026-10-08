@@ -237,8 +237,8 @@ export default function ListingFixPage() {
                   <span className="k">How</span>
                   <span>
                     Email <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> with your payment tx hash (both, if a review was credited)
-                    within 30 days of payment. The full $99 is sent back manually in USDC on Base; each payment returns to its own sender (the
-                    token transfer sender for that payment).
+                    within 30 days of payment. Once we confirm the refund by email, the full $99 is returned in USDC on Base within 5 business
+                    days; each payment returns to its own sender (the token transfer sender for that payment).
                   </span>
                   <span className="k">Per host</span>
                   <span>
@@ -246,7 +246,10 @@ export default function ListingFixPage() {
                     discovery. If any fixed route still meets refund condition (a) or (b), the full $99 for that host is refunded.
                   </span>
                   <span className="k">Review</span>
-                  <span>The $49 is not refunded once the review is delivered; full refund if we can&apos;t deliver it.</span>
+                  <span>
+                    The $49 is not refunded once the review is delivered; full refund if we can&apos;t deliver it. If refunded, it&apos;s returned
+                    the same way, within 5 business days of our email confirming it.
+                  </span>
                 </div>
               </div>
             </div>

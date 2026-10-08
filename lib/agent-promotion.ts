@@ -26,7 +26,7 @@ export const REFUND_LINES = [
   },
   { k: "Monitoring", v: "Cancel monitoring anytime; the current month isn't refunded." },
   { k: "Declined jobs", v: "If we decline a job after reviewing your intake, nothing is charged, or the payment is returned in full." },
-  { k: "How", v: "Refunds are returned in USDC on Base to the paying wallet within 5 business days." },
+  { k: "How", v: "Refunds are returned in USDC on Base to the paying wallet within 5 business days of our email confirming the refund." },
 ] as const;
 
 export const HONESTY_LINE =
