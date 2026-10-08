@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE, BASE_CAIP2 } from "@/lib/config";
+import { CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE, BASE_CAIP2 } from "@/lib/config";
 import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -238,7 +238,7 @@ export default function HomePage() {
             <div className="hp-label" data-reveal>Services for API owners</div>
             <div className="hp-grid two">
               <a className="hp-tile" href="/listing-fix" style={{ textDecoration: "none" }} data-reveal>
-                <h3>x402 setup: make your API payable</h3>
+                <h3>Fix your x402 listing</h3>
                 <div className="hp-tile-foot"><span>/listing-fix</span><span>→</span></div>
               </a>
               <a className="hp-tile" href="/agent-promotion" style={{ textDecoration: "none" }} data-reveal>
@@ -246,6 +246,9 @@ export default function HomePage() {
                 <div className="hp-tile-foot"><span>/agent-promotion</span><span>→</span></div>
               </a>
             </div>
+            <p className="hp-lead" style={{ marginTop: 16 }}>
+              Full x402 setup from scratch is quoted by email: <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+            </p>
           </div>
         </section>
 

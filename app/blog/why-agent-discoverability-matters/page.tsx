@@ -141,7 +141,7 @@ export default function WhyAgentDiscoverabilityMattersPage() {
 
           <h2>Where we can help</h2>
           <p>
-            If you&apos;d like this done for your API, our new <strong>Agent promotion</strong> service covers listing in the Coinbase
+            If you&apos;d like this done for your API, our new <strong>Agent promotion</strong> service covers listing work for the Coinbase
             x402 Bazaar, x402scan, MCP directories and agent catalogs. It also includes an agent-optimized description pack (llms.txt,
             skill.md, an OpenAPI summary, and a Bazaar description that fits Coinbase&apos;s 500-character limit) and a monthly
             agent-traffic report. Where a directory needs your own account, such as the MCP Registry or npm, we prepare a

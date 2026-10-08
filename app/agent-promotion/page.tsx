@@ -40,8 +40,8 @@ const FAQ = [
   { q: "Do you guarantee listings or rankings?", a: <>No. Each directory decides acceptance and ranking. We don&apos;t guarantee placement, ranking, traffic or revenue.</> },
   { q: "Do I need an account on each directory?", a: <>Sometimes. {HONESTY_LINE}</> },
   { q: "Which payment?", a: <>USDC on Base, to the same address and with the same &quot;email us the transaction hash&quot; flow as <a href="/listing-fix">/listing-fix</a>. No card checkout.</> },
-  { q: "Is it a call?", a: <>No. Everything is written and async, by email or in your thread.</> },
-  { q: "What if my route isn't payable yet?", a: <>Start with <a href="/listing-fix">/listing-fix</a>.</> },
+  { q: "Is it a call?", a: <>No. Everything is written and async.</> },
+  { q: "What if my route isn't payable yet?", a: <>Full x402 setup from scratch is quoted by email: <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>. If your route already returns a 402, <a href="/listing-fix">fix your x402 listing</a>.</> },
   { q: "What's in the monthly report?", a: <>Directory status, calls and payers we can observe on-chain or through Bazaar data, and changes we made.</> },
 ];
 
@@ -143,7 +143,7 @@ export default function AgentPromotionPage() {
                 <Ico d={I.search} />
                 <h3>Start with a review</h3>
                 <p>
-                  A $49 written listing review (<a href="/listing-fix">/listing-fix</a>), credited as on that page.
+                  A $49 written listing review (<a href="/listing-fix">/listing-fix</a>). The $49 review credit applies to the $99 listing fix: book the fix within 14 days of delivery and the $49 counts toward the $99.
                 </p>
                 <div className="hp-tile-foot"><b>$49</b><a href="/listing-fix">Details →</a></div>
               </div>
@@ -317,7 +317,7 @@ export default function AgentPromotionPage() {
               Every directory makes its own decisions, so we can&apos;t guarantee listing, ranking or traffic.
             </p>
             <p style={{ margin: "8px 0 0", fontSize: 14, color: "var(--text-2)" }}>
-              Want the same setup for your API? See <a href="/agent-promotion">/agent-promotion</a>.
+              Want the same setup for your API? Start at <a href="/agent-promotion/start">/agent-promotion/start</a>.
             </p>
           </div>
         </section>
