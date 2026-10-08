@@ -28,7 +28,7 @@ const I = {
 };
 
 const CASE_TIMELINE: [string, ReactNode][] = [
-  ["9/20", "First routes indexed in the Coinbase x402 Bazaar"],
+  ["9/20", "Earliest Bazaar entries on record (oldest lastUpdated)"],
   ["9/23", "One route committed and listed in the Bazaar the same afternoon, in our own codebase"],
   ["9/28", "x402-dev PR merged; x402 List listing created; nohumans listings added"],
   ["9/30", "13 of 13 paid routes listed in the Bazaar. gold-402 PR merged"],
