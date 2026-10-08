@@ -89,6 +89,21 @@ export default function AgentPromotionPage() {
                 Everything is written and async, by email or in your thread. You keep full control of your code, keys and wallet.
               </p>
             </div>
+            <div data-reveal style={{ maxWidth: 720, margin: "0 0 40px" }}>
+              <h3 style={{ fontSize: 15, fontWeight: 560, letterSpacing: "-.01em", margin: "0 0 12px" }}>Why discovery comes first</h3>
+              <blockquote className="hp-quote">&ldquo;An agent can compare only the endpoints it can find.&rdquo;</blockquote>
+              <p style={{ margin: "8px 0 0", fontSize: 14, color: "var(--text-2)" }}>
+                &mdash; Coinbase Institute, &ldquo;
+                <a href="https://www.coinbase.com/public-policy/advocacy/documents/machine-to-machine-payments-in-the-aifi-era" target="_blank" rel="noopener">
+                  Machine-to-machine payments in the AiFi era
+                </a>
+                &rdquo; (Oct 7, 2026), p. 7
+              </p>
+              <p style={{ margin: "12px 0 0", fontSize: 14, color: "var(--text-2)" }}>
+                That&apos;s the job: making sure agents can find your paid routes and read them correctly. Quoted for context only. This is
+                not an endorsement of Horizon Pulse by Coinbase.
+              </p>
+            </div>
             <div className="hp-grid four">
               <div className="hp-tile" data-reveal>
                 <span className="hp-step-n">01</span>

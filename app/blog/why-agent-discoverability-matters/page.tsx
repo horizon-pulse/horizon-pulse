@@ -6,6 +6,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 const POST = BLOG_POSTS.find((p) => p.slug === "why-agent-discoverability-matters")!;
 const TROUBLESHOOT = "https://docs.cdp.coinbase.com/x402/support/troubleshooting#my-endpoint-is-missing-from-the-bazaar";
 const GET_DISCOVERED = "https://docs.cdp.coinbase.com/x402/seller/get-discovered";
+const CBI_PAPER = "https://www.coinbase.com/public-policy/advocacy/documents/machine-to-machine-payments-in-the-aifi-era";
 
 export const metadata: Metadata = {
   title: `${POST.title} | Horizon Pulse`,
@@ -29,6 +30,12 @@ export default function WhyAgentDiscoverabilityMattersPage() {
             A paid API that no agent can find earns nothing. That sounds obvious, but it&apos;s one of the most common gaps in x402: the
             route works, it returns <code>402 Payment Required</code>, a payment even settles, and the API still doesn&apos;t show up
             where agents look.
+          </p>
+          <p>
+            Coinbase Institute&apos;s October 2026 paper,{" "}
+            <a href={CBI_PAPER} target="_blank" rel="noopener">Machine-to-machine payments in the AiFi era</a>, opens its case with a
+            simple line: &ldquo;The internet now has a second customer.&rdquo; That customer is software, and it can only pay for what it
+            can find. (Quoted for context only. This is not an endorsement of Horizon Pulse by Coinbase.)
           </p>
 
           <h2>How agents find tools today</h2>
@@ -119,7 +126,9 @@ export default function WhyAgentDiscoverabilityMattersPage() {
           <ul>
             <li>
               <strong>Metadata goes in the 402 itself.</strong> Our 402 responses carry <code>serviceName</code>, tags and an icon URL,
-              so a catalog has something to show beyond a URL.
+              so a catalog has something to show beyond a URL. The Coinbase Institute paper makes the same general point about x402:
+              &ldquo;The standard therefore needs to carry discovery metadata, including price and schema information, alongside the
+              payment flow so an agent can locate a priced endpoint rather than merely pay one.&rdquo;
             </li>
             <li>
               <strong>The first settle is the trigger, so plan for it.</strong> One route in our own codebase was committed and listed
