@@ -19,6 +19,15 @@
  *   - Failed init is cached for RETRY_AFTER_MS so an outage costs at most one
  *     bounded wait (initTimeoutMs) per instance per window. A good init is
  *     refreshed every RAIL_TTL_MS (re-fetches PayAI /supported).
+ *   - Rail refresh (fix 2026-10-08, live fault 2:46 PM ET: 12/15 resources
+ *     Base-only for 30-60 s after the 10-min refresh failed with only a warn):
+ *     a refresh ERROR (timeout / transport / HTTP / malformed reply / SDK
+ *     init error) never retires a rail this instance has confirmed; the last
+ *     good rail is kept (≤ RAIL_MAX_STALE_MS) and the refresh is retried after
+ *     RETRY_AFTER_MS. Only a CONFIRMED ABSENCE (PayAI answered /supported and
+ *     no longer offers the exact/Solana kind or a valid listed fee payer —
+ *     SolanaRailAbsentError) retires it, with a "[solana-rail][ALERT]
+ *     solana_entry_dropped" line.
  *   - Fee payer: the `extra.feePayer` PayAI advertises for exact/Solana-mainnet
  *     must also appear in PayAI's own live signer list (same HTTPS /supported
  *     response, `signers["solana:*"]` or `signers[<network>]`). Not listed, or
@@ -125,6 +134,11 @@ export const ATA_MAX_STALE_MS = 6 * 60 * 60_000;
 export const ATA_COLD_ATTEMPTS = 2;
 /** At most one "Solana entry dropped" ALERT line per instance per this window. */
 export const DROP_ALERT_WINDOW_MS = 5 * 60_000;
+/**
+ * Rail last-known-good window: a confirmed rail survives refresh ERRORS this
+ * long (same window as the token-account guard). Beyond it → Base-only + ALERT.
+ */
+export const RAIL_MAX_STALE_MS = ATA_MAX_STALE_MS;
 /** Same default @x402/core applies to the Base entry. */
 const MAX_TIMEOUT_SECONDS = 300;
 /** Solana packet limit for a serialized transaction. */
@@ -290,7 +304,12 @@ export type SolanaAlert =
   | {
       /** The Solana entry is hidden because a dependency check could not be completed (not a confirmed absence). */
       kind: "solana_entry_dropped";
-      reason: "token_account_rpc_unavailable";
+      reason:
+        | "token_account_rpc_unavailable"
+        /** PayAI /supported answered and no longer offers exact/Solana or a valid listed fee payer (confirmed absence). */
+        | "payai_kind_absent"
+        /** /supported refresh kept failing for longer than RAIL_MAX_STALE_MS. */
+        | "payai_supported_unavailable_stale";
     }
   | {
       kind: "payai_allowance";
@@ -432,6 +451,26 @@ function classifySettleThrow(err: unknown): SettleOutcome {
 // ---------------------------------------------------------------------------
 
 /**
+ * A CONFIRMED absence: PayAI's /supported answered, but it no longer offers
+ * what the Solana entry needs (the one exact/Solana-mainnet kind, a valid fee
+ * payer on its own live signer list), or our pinned constants disagree. Only
+ * this may retire a rail that was confirmed present; anything else thrown
+ * during a refresh (timeout, transport, HTTP status, malformed reply) is a
+ * transient error and keeps the last good rail.
+ */
+export class SolanaRailAbsentError extends Error {
+  override name = "SolanaRailAbsentError";
+}
+
+/** True if `err` (or anything on its `cause` chain, e.g. the SDK's "Failed to initialize" wrapper) is a confirmed absence. */
+export function isConfirmedAbsence(err: unknown): boolean {
+  for (let e: unknown = err, i = 0; e && i < 5; e = (e as { cause?: unknown }).cause, i++) {
+    if (e instanceof SolanaRailAbsentError) return true;
+  }
+  return false;
+}
+
+/**
  * Wraps PayAI so it can only ever be used for `exact` on Solana mainnet:
  * getSupported is filtered to that one kind (and reports no extensions, so
  * the Solana server never declares Bazaar), and verify/settle refuse
@@ -450,7 +489,7 @@ export class SolanaOnlyFacilitatorClient implements FacilitatorClient {
     for (const c of [this.inner, this.settleInner]) {
       const url = (c as { url?: unknown }).url;
       if (typeof url !== "string" || !url.startsWith("https://")) {
-        throw new Error("PayAI facilitator URL must be https");
+        throw new SolanaRailAbsentError("PayAI facilitator URL must be https");
       }
     }
     let supported: SupportedResponse;
@@ -459,15 +498,17 @@ export class SolanaOnlyFacilitatorClient implements FacilitatorClient {
     } catch (err) {
       throw scrubPayaiError(err, "supported");
     }
-    const kinds = (supported.kinds ?? []).filter(
+    // A malformed reply is a transient error, not a confirmed absence.
+    if (!supported || !Array.isArray(supported.kinds)) throw new Error("PayAI /supported returned a malformed response");
+    const kinds = supported.kinds.filter(
       (k) => k.x402Version === 2 && k.scheme === "exact" && k.network === this.network,
     );
     if (kinds.length !== 1) {
-      throw new Error(`PayAI does not list exactly one x402 v2 exact kind on ${this.network}`);
+      throw new SolanaRailAbsentError(`PayAI does not list exactly one x402 v2 exact kind on ${this.network}`);
     }
     const feePayer = (kinds[0].extra as { feePayer?: unknown } | undefined)?.feePayer;
     if (!isValidSolanaPubkey(feePayer)) {
-      throw new Error("PayAI exact kind has no valid extra.feePayer");
+      throw new SolanaRailAbsentError("PayAI exact kind has no valid extra.feePayer");
     }
     // The advertised fee payer must be one of PayAI's own live Solana signers.
     const allSigners = (supported.signers ?? {}) as Record<string, unknown>;
@@ -475,9 +516,9 @@ export class SolanaOnlyFacilitatorClient implements FacilitatorClient {
       .filter(Array.isArray)
       .flat()
       .filter((a): a is string => typeof a === "string");
-    if (listed.length === 0) throw new Error("PayAI /supported has no Solana signer list");
-    if (!listed.includes(feePayer)) throw new Error("PayAI feePayer is not in PayAI's live Solana signer list");
-    if (feePayer === SOLANA_PAYTO) throw new Error("PayAI feePayer equals payTo");
+    if (listed.length === 0) throw new SolanaRailAbsentError("PayAI /supported has no Solana signer list");
+    if (!listed.includes(feePayer)) throw new SolanaRailAbsentError("PayAI feePayer is not in PayAI's live Solana signer list");
+    if (feePayer === SOLANA_PAYTO) throw new SolanaRailAbsentError("PayAI feePayer equals payTo");
     const signers = Object.fromEntries(
       Object.entries(allSigners).filter(([k]) => k.startsWith("solana:")),
     ) as SupportedResponse["signers"];
@@ -605,7 +646,8 @@ type Rail = {
   server: x402ResourceServer;
 };
 
-let railState: { key: string; rail: Rail; builtAt: number } | null = null;
+/** builtAt = last SUCCESSFUL (confirmed) init; retryAt = earliest next refresh after a failed one. */
+let railState: { key: string; rail: Rail; builtAt: number; retryAt?: number } | null = null;
 let railInit: { key: string; promise: Promise<Rail | null> } | null = null;
 let failedKey: string | null = null;
 let failedUntil = 0;
@@ -622,13 +664,13 @@ async function initRail(config: SolanaRailConfig): Promise<Rail> {
   const mods = await loader();
   // Cross-check our pinned constants against the package.
   if (mods.SOLANA_MAINNET_CAIP2 !== SOLANA_MAINNET_CAIP2) {
-    throw new Error("Solana mainnet CAIP-2 mismatch between repo constant and @x402/svm");
+    throw new SolanaRailAbsentError("Solana mainnet CAIP-2 mismatch between repo constant and @x402/svm");
   }
   if (mods.USDC_MAINNET_ADDRESS !== USDC_SOLANA_MINT) {
-    throw new Error("USDC mint mismatch between repo constant and @x402/svm");
+    throw new SolanaRailAbsentError("USDC mint mismatch between repo constant and @x402/svm");
   }
   if ((await mods.deriveUsdcAta(config.payTo, USDC_SOLANA_MINT)) !== SOLANA_PAYTO_USDC_ATA) {
-    throw new Error("payTo USDC token account derivation does not match the pinned constant");
+    throw new SolanaRailAbsentError("payTo USDC token account derivation does not match the pinned constant");
   }
   const server = new x402ResourceServer(createPayaiFacilitator(config)).register(config.network, new mods.ExactSvmScheme());
   await server.initialize();
@@ -645,9 +687,20 @@ function startRailInit(config: SolanaRailConfig, key: string): Promise<Rail | nu
         return rail;
       },
       (err): Rail | null => {
-        warn("rail init failed", err);
-        // Fail closed: a failed refresh (e.g. fee payer dropped from PayAI's list) retires the old rail.
-        if (railState?.key === key) railState = null;
+        const prev = railState?.key === key ? railState : null;
+        const absent = isConfirmedAbsence(err);
+        if (prev && !absent && Date.now() - prev.builtAt < RAIL_MAX_STALE_MS) {
+          // Refresh ERROR (timeout / transport / malformed): NOT evidence Solana is gone.
+          // Keep the confirmed rail; retry the refresh after RETRY_AFTER_MS.
+          warn("rail refresh failed; keeping last confirmed rail (present)", err, false);
+          prev.retryAt = Date.now() + RETRY_AFTER_MS;
+          return prev.rail;
+        }
+        warn(prev ? "rail refresh failed; Solana entry retired" : "rail init failed", err);
+        if (prev) dropAlert(absent ? "payai_kind_absent" : "payai_supported_unavailable_stale");
+        // Fail closed: a confirmed absence (e.g. fee payer dropped from PayAI's list), a
+        // stale rail past RAIL_MAX_STALE_MS, or a cold init failure → Base-only.
+        if (prev) railState = null;
         failedKey = key;
         failedUntil = Date.now() + RETRY_AFTER_MS;
         return null;
@@ -662,13 +715,15 @@ function startRailInit(config: SolanaRailConfig, key: string): Promise<Rail | nu
 
 /**
  * Warm: returns the current rail immediately; after RAIL_TTL_MS a background
- * refresh re-fetches PayAI /supported (fee payer list) and replaces it, or
- * retires it on failure. Cold: one bounded init (initTimeoutMs).
+ * refresh re-fetches PayAI /supported (fee payer list) and replaces it. A
+ * refresh ERROR keeps it (≤ RAIL_MAX_STALE_MS, retried after RETRY_AFTER_MS);
+ * only a confirmed absence retires it. Cold: one bounded init (initTimeoutMs).
  */
 async function getRail(config: SolanaRailConfig): Promise<Rail | null> {
   const key = JSON.stringify(config);
   if (railState?.key === key) {
-    if (Date.now() - railState.builtAt > RAIL_TTL_MS) void startRailInit(config, key);
+    const now = Date.now();
+    if (now - railState.builtAt > RAIL_TTL_MS && now >= (railState.retryAt ?? 0)) void startRailInit(config, key);
     return railState.rail;
   }
   if (failedKey === key && Date.now() < failedUntil) return null;
@@ -685,11 +740,12 @@ let ataCache: AtaState | null = null;
 let ataConfirmedAt = 0;
 let dropAlertedAt = 0;
 
-function dropAlert(): void {
+type DropReason = Extract<SolanaAlert, { kind: "solana_entry_dropped" }>["reason"];
+function dropAlert(reason: DropReason = "token_account_rpc_unavailable"): void {
   const now = Date.now();
   if (dropAlertedAt && now - dropAlertedAt < DROP_ALERT_WINDOW_MS) return;
   dropAlertedAt = now;
-  emitAlert({ kind: "solana_entry_dropped", reason: "token_account_rpc_unavailable" });
+  emitAlert({ kind: "solana_entry_dropped", reason });
 }
 let ataRefresh: Promise<boolean> | null = null;
 

@@ -515,8 +515,8 @@ describe("should-fixes 4-9", () => {
     const t = await Promise.race([accepts(), new Promise<"waited">((r) => setTimeout(() => r("waited"), 100))]);
     expect(t).not.toBe("waited");
     expect((t as PaymentRequirements[]).length).toBe(2);
-    await __flushSolanaBackgroundForTests(); // refresh times out → rail retired (fail closed)
-    expect((await accepts()).length).toBe(1);
+    await __flushSolanaBackgroundForTests(); // refresh times out → a refresh ERROR keeps the confirmed rail (fix 2026-10-08 2:46 PM ET fault)
+    expect((await accepts()).length).toBe(2); // only a confirmed absence retires it (see solana-rail-refresh-resilience.test.ts)
   });
 
   it("(7) PayAI settle deadline is 12 s (10-15 s band), verify 10 s; both https", () => {
