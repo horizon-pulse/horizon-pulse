@@ -167,7 +167,9 @@ export default function AgentsPage() {
               Want your own API <span>found by agents?</span>
             </h2>
             <p className="hp-lead" style={{ marginBottom: 0 }}>
-              See <a href="/agent-promotion">Agent promotion →</a>
+              Agent promotion gets your API found and used by AI agents: a description pack (llms.txt, skill.md, an OpenAPI summary and
+              a Coinbase Bazaar description), directory submissions or ready-to-submit packs, and a monthly agent-traffic report. See{" "}
+              <a href="/agent-promotion">Agent promotion →</a>
             </p>
           </div>
         </section>
