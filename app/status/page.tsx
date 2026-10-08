@@ -74,7 +74,10 @@ export default async function StatusPage() {
                 <div className="k">Base payTo balance</div>
                 <div className="v">{usdc}{bal.ok && <span style={{ fontSize: 14, color: "var(--text-2)" }}> USDC</span>}</div>
                 <div className="d">{bal.ok ? `Read ${fmtUtc(bal.at)}` : "RPC read failed. No cached figure is shown."}</div>
-                <div className="d">Not revenue. Can include the operator&apos;s own test payments.</div>
+                <div className="d">
+                  {bal.ok ? `Base payTo balance ${usdc} USDC. ` : ""}Not revenue: 0.295 USDC is our own test payments; 0.315 USDC came from
+                  unidentified automated wallets. (Split as of 2026-10-08.)
+                </div>
               </div>
               <div className="hp-stat">
                 <div className="k">Paid routes</div>
