@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CopyBlock } from "@/components/CopyBlock";
+import { DEMO_CAPTURED_AT, DEMO_COMMAND, DEMO_OUTPUT } from "@/lib/agent-demo";
 import { CODE } from "@/lib/client-snippets";
 import { DEFAULT_PAY_TO, GITHUB_REPO, PUBLIC_BASE_URL, USDC_BASE } from "@/lib/config";
 import { HOSTED_MCP_CONFIG, MCP_CONFIG, MCP_INSTALL, PAY_STEPS, loadSkillRoutes } from "@/lib/agent-skill";
@@ -134,6 +135,27 @@ export default function AgentsPage() {
               <CopyBlock title="Install" code={MCP_INSTALL} />
               <CopyBlock title="MCP client config (Claude Desktop, Cursor and other stdio clients)" code={MCP_CONFIG} />
               <CopyBlock title={`Hosted MCP at ${PUBLIC_BASE_URL}/mcp (for MCP clients that can pay x402)`} code={HOSTED_MCP_CONFIG} />
+            </div>
+          </div>
+        </section>
+
+        <section className="hp-section" id="demo">
+          <div className="hp-wrap">
+            <div>
+              <div className="hp-label">Demo · dry run</div>
+              <h2>
+                From a domain name to a payment, <span>without paying.</span>
+              </h2>
+              <p className="hp-lead">
+                <code>mcp/examples/demo.mjs</code> starts with only <code>horizonpulse.dev</code>, finds the routes through <code>/.well-known/x402</code>,{" "}
+                <code>llms.txt</code> and <code>skill.md</code>, then drives the local MCP server: <code>catalog</code>, <code>quote</code>, then a paid tool. It runs with{" "}
+                <code>HP_DRY_RUN=1</code> and no private key, so it <strong>never signs and never pays</strong>. It prints the real 402 requirements and the exact
+                authorization a client would sign, with the payTo, price and cap checks.
+              </p>
+            </div>
+            <div style={{ display: "grid", gap: 16 }}>
+              <CopyBlock title="Run it yourself (dry run)" code={DEMO_COMMAND} />
+              <CopyBlock title={`Captured output, ${DEMO_CAPTURED_AT.slice(0, 16).replace("T", " ")} UTC (dry run: nothing signed, nothing paid; trimmed where marked)`} code={DEMO_OUTPUT} />
             </div>
           </div>
         </section>

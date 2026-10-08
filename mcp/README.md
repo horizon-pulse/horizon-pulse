@@ -74,6 +74,11 @@ Leave `HP_PRIVATE_KEY` out to try it in quote-only mode first.
 
 Each route tool returns the route's JSON, then a `horizon-pulse: {...}` line with the status, `result` (`paid`, `quote`, `refused`, `error`), the settlement receipt (`transaction`, `payer`) when paid, the decoded challenge when not paid, and the session total.
 
+
+## Dry-run demo
+
+`node examples/demo.mjs [domain]` (default `horizonpulse.dev`) starts from the domain alone, discovers the routes via `/.well-known/x402`, `llms.txt` and `skill.md`, then runs this server with `HP_DRY_RUN=1` and no key: `catalog`, `quote`, then a paid tool. It prints the real 402 requirements and the exact EIP-3009 authorization a client would sign, with payTo, price and cap checks. **It never signs and never pays.** Run `npm install` first (it builds `dist/`).
+
 ## Test (no money moves)
 
 ```sh
