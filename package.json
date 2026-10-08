@@ -11,7 +11,8 @@
     "smoke:pulse": "node scripts/smoke-pulse.mjs",
     "smoke:http:unpaid": "node scripts/smoke-http-unpaid.mjs",
     "smoke:extract:unpaid": "node scripts/smoke-extract-unpaid.mjs",
-    "gen:openapi": "npx -y tsx --tsconfig tsconfig.json scripts/gen-openapi.ts"
+    "gen:openapi": "npx -y tsx --tsconfig tsconfig.json scripts/gen-openapi.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@coinbase/x402": "^2.1.0",
@@ -38,7 +39,8 @@
     "@types/node": "^22.18.1",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "3.2.4"
   },
   "engines": {
     "node": ">=20"
