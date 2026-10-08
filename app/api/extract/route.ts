@@ -26,7 +26,7 @@ export const GET = paid;
 export const POST = paid;
 
 export async function OPTIONS() {
-  const res = discoveryOptionsResponse(paymentOpts);
+  const res = await discoveryOptionsResponse(paymentOpts);
   // Advertise both paid verbs for CORS / Allow (same price).
   res.headers.set("Allow", "GET, POST, OPTIONS");
   res.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");

@@ -17,6 +17,7 @@
   "dependencies": {
     "@coinbase/x402": "^2.1.0",
     "@modelcontextprotocol/sdk": "1.31.0",
+    "@solana/kit": "5.5.1",
     "@sparticuz/chromium": "153.0.0",
     "@x402/core": "2.27.0",
     "@x402/evm": "2.27.0",
@@ -24,6 +25,7 @@
     "@x402/mcp": "2.27.0",
     "@x402/next": "2.27.0",
     "@x402/paywall": "2.27.0",
+    "@x402/svm": "2.27.0",
     "css-select": "7.0.0",
     "domutils": "4.0.2",
     "htmlparser2": "12.0.0",
@@ -36,6 +38,7 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@solana-program/token": "0.9.0",
     "@types/node": "^22.18.1",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",

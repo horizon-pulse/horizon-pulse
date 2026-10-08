@@ -4,8 +4,7 @@ import type { RouteConfig, RoutesConfig } from "@x402/core/server";
 import { encodePaymentRequiredHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
-import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { withX402 } from "@x402/next";
 import { asJsonRequest, browser402, isBrowserNavigation, withVary } from "@/lib/browser-402";
 import {
@@ -30,6 +29,8 @@ import {
 } from "./config";
 import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
 import { EXAMPLES_RECORDED_AT, OUTPUT_EXAMPLES } from "./route-examples";
+import { getSolanaRailConfig } from "./solana-config";
+import { handleSolanaPayment, isSolanaPaymentRequest, withSolanaAccept } from "./solana-rail";
 
 /**
  * Coinbase CDP facilitator via @coinbase/x402.
@@ -694,13 +695,13 @@ export function settlementUnavailableResponse(): NextResponse {
   );
 }
 
-export function discoveryOptionsResponse(opts: {
+export async function discoveryOptionsResponse(opts: {
   maxAmountRequired: string;
   resource: string;
   description: string;
-}): NextResponse {
+}): Promise<NextResponse> {
   const paymentRequired = buildPaymentRequirements(opts);
-  return NextResponse.json(paymentRequired, {
+  const res = NextResponse.json(paymentRequired, {
     status: 200,
     headers: {
       Allow: "GET, OPTIONS",
@@ -708,9 +709,23 @@ export function discoveryOptionsResponse(opts: {
       "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired),
     },
   });
+  // Solana USDC rail (lib/solana-config.ts): off unless HP_SOLANA_ENABLED=true
+  // + HP_SOLANA_PAYTO equal to the pinned payTo. Off → `res` above, unchanged.
+  // On → Solana entry appended after Base; any Solana failure → `res` unchanged.
+  const solana = getSolanaRailConfig();
+  if (!solana.enabled) return res;
+  return withSolanaAccept(res, solana.config, opts.maxAmountRequired);
 }
 
 type AppRouteHandler = (req: NextRequest) => Promise<NextResponse>;
+
+/** Copy of req minus x402 payment headers (used only on the Solana fallback path). */
+function withoutPaymentHeaders(req: NextRequest): NextRequest {
+  const headers = new Headers(req.headers);
+  headers.delete("payment-signature");
+  headers.delete("x-payment");
+  return new NextRequest(req.url, { method: req.method, headers });
+}
 
 /**
  * Unpaid + no CDP → local v2 402 (no facilitator sync).
@@ -747,14 +762,29 @@ export function createX402GetHandler(
     return paidHandler;
   }
 
+  /** Base-only unpaid challenge: exactly what main serves. */
+  async function baseChallenge(req: NextRequest, cdpReady: boolean): Promise<NextResponse> {
+    return cdpReady
+      ? await getPaidHandler()(asJsonRequest(req))
+      : paymentRequiredResponse(paymentOpts);
+  }
+
   return async (req: NextRequest) => {
     const cdpReady = hasCdpCredentials();
+    // Solana USDC rail (lib/solana-config.ts). Off (the default) → every
+    // branch below behaves exactly as on main. On → Solana entry appended
+    // after Base on the unpaid 402; Solana-paid requests go to the
+    // Solana-only (PayAI) server. Any Solana failure falls back to the
+    // Base-only 402. Base payments never touch Solana code: they take the
+    // unchanged CDP path at the bottom.
+    const solana = getSolanaRailConfig();
     if (!hasPaymentHeader(req)) {
       // Library's JSON path always (it would otherwise serve its own HTML to
       // any Mozilla + text/html request); our HTML only for real navigations.
-      const challenge = cdpReady
-        ? await getPaidHandler()(asJsonRequest(req))
-        : paymentRequiredResponse(paymentOpts);
+      let challenge: NextResponse = await baseChallenge(req, cdpReady);
+      if (solana.enabled && challenge.status === 402) {
+        challenge = await withSolanaAccept(challenge, solana.config, paymentOpts.maxAmountRequired);
+      }
       if (challenge.status === 402 && isBrowserNavigation(req)) {
         const accepts = Object.values(routes)[0]?.accepts;
         const first = Array.isArray(accepts) ? accepts[0] : accepts;
@@ -767,6 +797,13 @@ export function createX402GetHandler(
         ) as NextResponse;
       }
       return withVary(challenge) as NextResponse;
+    }
+    if (solana.enabled && isSolanaPaymentRequest(req)) {
+      const paid = await handleSolanaPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, solana.config);
+      // Solana unavailable / rejected / threw → the Base-only 402 (built from
+      // a copy of the request WITHOUT the Solana payment header, so the Base
+      // server never even parses a Solana payload).
+      return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
     }
     if (!cdpReady) {
       return settlementUnavailableResponse();

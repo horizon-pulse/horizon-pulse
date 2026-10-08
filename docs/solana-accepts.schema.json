@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://horizonpulse.dev/schemas/solana-accepts-entry.json",
+  "title": "Horizon Pulse Solana USDC accepts entry (x402 v2, exact)",
+  "description": "Second entry in PAYMENT-REQUIRED.accepts on every paid route when HP_SOLANA_ENABLED=true (Base/CDP exact entry is always first and unchanged). Facilitated by PayAI. PayAI-facilitated Solana sales do NOT count toward the Coinbase Bazaar settlement window; CDP/Base remains the Bazaar-indexed entry.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scheme", "network", "amount", "asset", "payTo", "maxTimeoutSeconds", "extra"],
+  "properties": {
+    "scheme": { "const": "exact" },
+    "network": { "const": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "description": "Solana mainnet-beta CAIP-2 (x402 v2)." },
+    "amount": { "type": "string", "pattern": "^[1-9][0-9]*$", "description": "Atomic USDC (6 decimals); always equal to the Base entry's amount on the same route." },
+    "asset": { "const": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "description": "Circle USDC mint on Solana mainnet (SPL Token program, 6 decimals)." },
+    "payTo": { "const": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz", "description": "Pinned Solana payout owner; payment credits its USDC associated token account." },
+    "maxTimeoutSeconds": { "const": 300 },
+    "extra": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feePayer"],
+      "properties": {
+        "feePayer": { "type": "string", "pattern": "^[1-9A-HJ-NP-Za-km-z]{32,44}$", "description": "PayAI fee payer from GET https://facilitator.payai.network/supported (2026-10-08: CjNFTjvBhbJJd2B5ePPMHRLx1ELZpa8dwQgGL727eKww)." }
+      }
+    }
+  }
+}
