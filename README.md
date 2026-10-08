@@ -57,6 +57,7 @@ Optional: `OPTIONS` on a paid route returns discovery + the same `PAYMENT-REQUIR
 | Field | Value |
 | --- | --- |
 | **payTo** | `0x5b32c973596078a967562ca652761404f19be0e9` |
+| **Basename** | `horizonpulsebase.base.eth` (resolves to the payTo above; a label only, the 402 carries the hex address) |
 | **Custody** | **Interim Coinbase-custodial** Base address (Michael-controlled). **Not** a Safe or multisig. |
 | **Upgrade path** | Move later to a non-custodial Safe / multisig when ready — same catalog and prices. |
 | **USDC (Base)** | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |

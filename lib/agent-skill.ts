@@ -7,7 +7,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { BASE_CAIP2, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, PUBLIC_BASE_URL, USDC_BASE } from "./config";
+import { BASE_CAIP2, BASE_PAY_TO_BASENAME, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, PUBLIC_BASE_URL, USDC_BASE } from "./config";
 import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "./solana-config";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -108,7 +108,7 @@ ${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...p
 | --- | --- | --- |
 | Network (CAIP-2) | \`${BASE_CAIP2}\` | \`${SOLANA_MAINNET_CAIP2}\` |
 | Asset | USDC \`${USDC_BASE}\` | USDC mint \`${USDC_SOLANA_MINT}\` |
-| payTo (the only address to pay on that network) | \`${DEFAULT_PAY_TO}\` | \`${SOLANA_PAYTO}\` |
+| payTo (the only address to pay on that network) | \`${DEFAULT_PAY_TO}\` (Basename \`${BASE_PAY_TO_BASENAME}\`) | \`${SOLANA_PAYTO}\` |
 | Facilitator | Coinbase CDP | PayAI \`${PAYAI_FACILITATOR_URL}\` |
 
 Each facilitator verifies the payment first and settles it only after the route succeeds. If a 402 lists only the Base entry, the Solana rail is temporarily unavailable: pay on Base.
@@ -134,7 +134,7 @@ Rules of thumb: research a question with sources → \`/api/search\`; read one p
 
 1. **Call** the route with no payment header, e.g. \`GET ${PUBLIC_BASE_URL}/api/pulse\`. Expect \`HTTP 402\`.
 2. **Read the challenge**: base64-decode the \`PAYMENT-REQUIRED\` response header and parse it as JSON. The 402 body is \`{}\`. Shape: \`{ x402Version: 2, resource: {url, description, ...}, accepts: [{ scheme, network, amount, asset, payTo, maxTimeoutSeconds, extra }] }\`, with one \`accepts\` entry per network: Base (\`extra: { name: "USD Coin", version: "2" }\`) and Solana (\`extra: { feePayer }\`).
-3. **Check it before paying.** Pick one entry. Pay only if \`scheme\` is \`exact\`, \`amount\` equals the atomic price in the table, and \`network\`, \`asset\` and \`payTo\` match one column of the table above exactly (Base: \`${BASE_CAIP2}\`, \`${USDC_BASE}\`, \`${DEFAULT_PAY_TO}\`; Solana: \`${SOLANA_MAINNET_CAIP2}\`, \`${USDC_SOLANA_MINT}\`, \`${SOLANA_PAYTO}\`). If anything differs, do not pay.
+3. **Check it before paying.** Pick one entry. Pay only if \`scheme\` is \`exact\`, \`amount\` equals the atomic price in the table, and \`network\`, \`asset\` and \`payTo\` match one column of the table above exactly (Base: \`${BASE_CAIP2}\`, \`${USDC_BASE}\`, \`${DEFAULT_PAY_TO}\`; Solana: \`${SOLANA_MAINNET_CAIP2}\`, \`${USDC_SOLANA_MINT}\`, \`${SOLANA_PAYTO}\`). Compare the hex \`payTo\`; the Basename is only a label for the Base address and never appears in the challenge. If anything differs, do not pay.
 4. **Sign** for exactly \`amount\`, valid for at most \`maxTimeoutSeconds\`. Use an x402 client library rather than hand-rolling it.
    - **Base:** an EIP-3009 \`transferWithAuthorization\` to \`payTo\` (USDC EIP-712 domain: name "USD Coin", version "2", chainId 8453). Node: \`@x402/core\` + \`@x402/evm\`; Python: \`x402\`. The payer needs USDC on Base; no ETH or gas is needed.
    - **Solana:** a partially signed SPL Token \`TransferChecked\` from your USDC token account to the payTo's USDC token account, with \`extra.feePayer\` (PayAI) as the transaction fee payer; the facilitator co-signs and submits it. Node: \`@x402/core\` + \`@x402/svm\`. The payer needs USDC on Solana; no SOL is needed for fees.

@@ -6,6 +6,15 @@
 export const DEFAULT_PAY_TO =
   "0x5b32c973596078a967562ca652761404f19be0e9" as const;
 
+/**
+ * Basename (Base name service) for the Base payTo above: a human-readable
+ * LABEL only. Verified 2026-10-08 on Base mainnet (block 52344832): registry
+ * owner and resolver addr() of horizonpulsebase.base.eth are both
+ * DEFAULT_PAY_TO. The 402 challenge always carries the hex payTo; clients must
+ * compare that, never resolve this name at pay time. Copy only, no payment logic.
+ */
+export const BASE_PAY_TO_BASENAME = "horizonpulsebase.base.eth" as const;
+
 /** USDC on Base mainnet */
 export const USDC_BASE =
   "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as const;

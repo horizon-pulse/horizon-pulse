@@ -10,7 +10,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 - Unpaid request → HTTP 402; the payment challenge is in the `PAYMENT-REQUIRED` response header (base64 JSON, x402 v2); the 402 body is empty JSON `{}`
 - Scheme: `exact` (one payment per call). Two networks, same price in USDC (6 decimals) on both; the challenge's `accepts` lists one entry per network, and you pay exactly one:
-  - Base: network Base mainnet CAIP-2 `eip155:8453`; asset Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`; payTo `0x5b32c973596078a967562ca652761404f19be0e9`; facilitator Coinbase CDP `https://api.cdp.coinbase.com/platform/v2/x402`
+  - Base: network Base mainnet CAIP-2 `eip155:8453`; asset Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`; payTo `0x5b32c973596078a967562ca652761404f19be0e9` (Basename `horizonpulsebase.base.eth`, which resolves to this address; the challenge carries the hex address, so compare that); facilitator Coinbase CDP `https://api.cdp.coinbase.com/platform/v2/x402`
   - Solana: network Solana mainnet CAIP-2 `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`; asset USDC mint `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`; payTo `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz`; facilitator PayAI `https://facilitator.payai.network` (its fee payer is in the entry's `extra.feePayer`)
 - If a challenge lists only the Base entry, the Solana rail is temporarily unavailable: pay on Base.
 - Retry the same request with `PAYMENT-SIGNATURE` (v2). On success the settlement receipt is in the `PAYMENT-RESPONSE` header. Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.

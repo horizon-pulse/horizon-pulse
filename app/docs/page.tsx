@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CopyBlock } from "@/components/CopyBlock";
 import { CODE } from "@/lib/client-snippets";
+import { BASE_PAY_TO_BASENAME } from "@/lib/config";
 import { SOLANA_MAINNET_CAIP2, SOLANA_PAYTO } from "@/lib/solana-config";
 
 export const dynamic = "force-static";
@@ -194,7 +195,7 @@ export default function DocsPage() {
               </div>
               <div className="hp-tile">
                 <h3>payTo</h3>
-                <p style={{ wordBreak: "break-all" }}>Base <code>{ops[0].op["x-payment-info"].payTo}</code></p>
+                <p style={{ wordBreak: "break-all" }}>Base <code>{ops[0].op["x-payment-info"].payTo}</code> (<code>{BASE_PAY_TO_BASENAME}</code>)</p>
                 <p style={{ wordBreak: "break-all" }}>Solana <code>{SOLANA_PAYTO}</code></p>
               </div>
               <div className="hp-tile">

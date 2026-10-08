@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DEFAULT_PAY_TO, USDC_BASE, CDP_FACILITATOR_URL, BASE_CAIP2, PUBLIC_BASE_URL } from "@/lib/config";
+import { BASE_PAY_TO_BASENAME, DEFAULT_PAY_TO, USDC_BASE, CDP_FACILITATOR_URL, BASE_CAIP2, PUBLIC_BASE_URL } from "@/lib/config";
 import { fetchTreasuryUsdcBalance } from "@/lib/treasury";
 import { PAYAI_FACILITATOR_URL, SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
 import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
@@ -114,6 +114,8 @@ export default async function StatusPage() {
                 <div className="hp-kv">
                   <span className="k">Base payTo</span>
                   <code>{DEFAULT_PAY_TO}</code>
+                  <span className="k">Base name</span>
+                  <span><code>{BASE_PAY_TO_BASENAME}</code> (Basename, resolves to the payTo above)</span>
                   <span className="k">Base asset</span>
                   <span>USDC <code>{USDC_BASE}</code></span>
                   <span className="k">Base facilitator</span>

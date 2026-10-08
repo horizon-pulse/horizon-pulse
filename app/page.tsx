@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE } from "@/lib/config";
+import { BASE_PAY_TO_BASENAME, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE } from "@/lib/config";
 import { SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
 import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
@@ -222,6 +222,8 @@ export default function HomePage() {
                 <div className="hp-kv">
                   <span className="k">Base: pay to</span>
                   <code>{DEFAULT_PAY_TO}</code>
+                  <span className="k">Base name</span>
+                  <span><code>{BASE_PAY_TO_BASENAME}</code>, the Basename for this address</span>
                   <span className="k">Base asset</span>
                   <span>USDC <code>{USDC_BASE}</code></span>
                   <span className="k">Solana: pay to</span>
