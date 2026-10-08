@@ -19,7 +19,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 | Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |
 | --- | --- | --- | --- | --- |
-| GET | /api/pulse | $0.005 | 5000 | BTC/ETH/SOL spot + momentum (CoinGecko) |
+| GET | /api/pulse | $0.005 | 5000 | BTC/ETH/SOL spot + momentum (Coinbase Exchange, CoinGecko fallback) |
 | GET | /api/signals | $0.015 | 15000 | RSI/MACD/Bollinger + OKX funding |
 | GET | /api/yield | $0.02 | 20000 | DefiLlama yields (TVL ≥ $10M) |
 | GET | /api/portfolio?address=0x… | $0.04 | 40000 | Base + Ethereum balances, risk, rebalance suggestions |

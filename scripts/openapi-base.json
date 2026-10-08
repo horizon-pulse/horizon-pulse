@@ -13,7 +13,7 @@
   "paths": {
     "/api/pulse": {
       "get": {
-        "summary": "BTC/ETH/SOL spot + momentum (CoinGecko)",
+        "summary": "BTC/ETH/SOL spot + momentum (Coinbase Exchange, CoinGecko fallback)",
         "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.005 USDC (5000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
         "responses": {
           "200": {

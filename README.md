@@ -20,7 +20,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 - Agents hit **thirteen** live paid HTTP endpoints (six crypto frozen; `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/screenshot` + `/api/search` + `/api/pdf` non-crypto LIVE — see below).
 - Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header; network is CAIP-2 **`eip155:8453`** (Base); asset is Base USDC; `payTo` is the treasury below.
 - Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
-- No stubbed prices or fake APYs: CoinGecko for spot/OHLC; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only); `/api/fetch` returns best-effort cleaned text from a requested public URL (SSRF-safe, size/time capped); `/api/http` is a raw universal proxy (filtered headers, text|base64 body, SSRF-safe) priced **$0.01** for volume; `/api/extract` returns best-effort structured page fields from a URL or HTML (SSRF-safe, size/time capped) priced **$0.015**.
+- No stubbed prices or fake APYs: Coinbase Exchange (CoinGecko fallback) for spot; CoinGecko OHLC (Coinbase candles fallback) for signals; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only); `/api/fetch` returns best-effort cleaned text from a requested public URL (SSRF-safe, size/time capped); `/api/http` is a raw universal proxy (filtered headers, text|base64 body, SSRF-safe) priced **$0.01** for volume; `/api/extract` returns best-effort structured page fields from a URL or HTML (SSRF-safe, size/time capped) priced **$0.015**.
 - Never invent metrics; never advertise routes that 404; never cite a cached balance — `/status` reads live USDC `balanceOf` on `payTo`. Honest: current `payTo` is interim Coinbase-custodial (not Safe/multisig).
 
 ## Catalog status (post first settlement)
@@ -96,7 +96,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
 ### `GET /api/pulse`
 
-Real CoinGecko spot prices for BTC / ETH / SOL with per-asset momentum, plus overall momentum / sentiment / signal.
+Real spot prices for BTC / ETH / SOL (Coinbase Exchange, CoinGecko fallback) with per-asset momentum, plus overall momentum / sentiment / signal.
 
 - `runtime = 'nodejs'`
 - Discovery: Bazaar extension + `outputSchema.input.discoverable: true` in payment requirements
@@ -126,7 +126,7 @@ On-chain portfolio snapshot for **one EVM address** (`?address=0x…`, required)
 
 - Networks: **Base + Ethereum mainnet** (public RPCs; optional `BASE_RPC_URL` / `ETH_RPC_URL` with failover)
 - Tokens: native ETH; USDC, WETH, DAI on both chains; **WBTC** on Ethereum; **cbBTC** on Base (honest substitute — Base has no BitGo WBTC)
-- USD marks via CoinGecko; **real balances only** — if an RPC fails, that network is marked failed in `networks[]` / `warnings`
+- USD marks via Coinbase public exchange rates (CoinGecko for the rest or on Coinbase failure); **real balances only** — if an RPC fails, that network is marked failed in `networks[]` / `warnings`
 - Rule-based **risk score** (0–100) and **rebalancing suggestions** with transparent formulas in `methodology`
 - Price: **$0.04** USDC (`40000` atomic)
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
@@ -139,7 +139,7 @@ Live gas snapshot for **Base** and **Ethereum** from public RPCs.
 - Prefers `eth_feeHistory` (last 20 blocks, reward percentiles 10/50/90): `baseFeeGwei`, `priorityFeeGwei` (p50), `suggestedMaxFeeGwei` (= 2×baseFee + priority)
 - Falls back to `eth_gasPrice` when feeHistory is unavailable
 - Transparent `timingHint`: **cheap** / **normal** / **expensive** from percentile rank of the latest confirmed baseFee within the feeHistory window (<33 / 33–67 / >67); documented in `methodology` — not a forecast
-- Optional ETH USD via CoinGecko for a simple 21k-gas transfer cost estimate (`simpleTransfer.costUsd`)
+- Optional ETH USD (Coinbase Exchange, CoinGecko fallback) for a simple 21k-gas transfer cost estimate (`simpleTransfer.costUsd`)
 - Price: **$0.01** USDC (`10000` atomic)
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
 - Unpaid GET → **402** + **`PAYMENT-REQUIRED`** (v2, `eip155:8453`) · `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`

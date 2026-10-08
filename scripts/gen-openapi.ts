@@ -129,7 +129,7 @@ for (const r of LIVE_PAID_ROUTES) {
     const op: Json = {
       operationId: opId,
       tags: [CATEGORY_LABELS[r.category]],
-      summary: r.blurb,
+      summary: r.docBlurb ?? r.blurb,
       description: `${cfg.description}\n\nPrice: ${acc.price} USDC per call (${amount} atomic), paid with x402 v2 \`exact\` on Base. Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.`,
       "x-payment-info": {
         protocol: "x402",

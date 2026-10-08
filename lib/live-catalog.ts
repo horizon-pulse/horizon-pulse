@@ -46,6 +46,11 @@ export type LiveRoute = {
   priceAtomic: string;
   /** Short agent-facing summary */
   summary: string;
+  /**
+   * Blurb for docs surfaces (OpenAPI summary, skill.md, /agents, /status) when the
+   * landing blurb is held for the site refresh (site/refresh-2026-10-07). Falls back to blurb.
+   */
+  docBlurb?: string;
   /** Landing-page grouping */
   category: "crypto" | "web" | "agent";
   /** One-line landing-page description */
@@ -59,9 +64,11 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     method: "GET",
     priceUsd: PULSE_PRICE_USD,
     priceAtomic: PULSE_PRICE_ATOMIC,
-    summary: "BTC/ETH/SOL spot + momentum (CoinGecko)",
+    summary: "BTC/ETH/SOL spot + momentum (Coinbase Exchange, CoinGecko fallback)",
     category: "crypto",
+    // Landing blurb held for the site refresh; docs surfaces use docBlurb.
     blurb: "BTC, ETH and SOL spot prices with 24h momentum (CoinGecko)",
+    docBlurb: "BTC, ETH and SOL spot prices with 24h momentum (Coinbase Exchange, CoinGecko fallback)",
   },
   {
     path: "/api/signals",

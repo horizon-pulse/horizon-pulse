@@ -47,7 +47,7 @@
         "tags": [
           "Crypto market data"
         ],
-        "summary": "BTC, ETH and SOL spot prices with 24h momentum (CoinGecko)",
+        "summary": "BTC, ETH and SOL spot prices with 24h momentum (Coinbase Exchange, CoinGecko fallback)",
         "description": "Crypto market data. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), signal (buy/sell/hold) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` on Base. Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",

@@ -172,7 +172,7 @@ export default async function StatusPage() {
                       <tr key={r.path}>
                         <td className="r">{`/api/${name}`}</td>
                         <td className="m">{r.method === "GET|POST" ? "GET · POST" : "GET"}</td>
-                        <td className="b">{r.blurb}</td>
+                        <td className="b">{r.docBlurb ?? r.blurb}</td>
                         <td className="p">{r.priceUsd}</td>
                         <td className="s">{demoSet.has(name) && <a href={`/try#${name}`}>Sample →</a>}</td>
                       </tr>
