@@ -302,7 +302,11 @@ export function redact(text: string): string {
 export type SolanaAlert =
   | { kind: "warn_rate"; count: number; windowMs: number; threshold: number }
   | {
-      /** The Solana entry is hidden because a dependency check could not be completed (not a confirmed absence). */
+      /**
+       * The Solana entry was hidden: token-account RPC unavailable on a cold instance,
+       * PayAI confirmed the exact/Solana kind or fee payer is gone (payai_kind_absent),
+       * or /supported refresh errors outlasted RAIL_MAX_STALE_MS.
+       */
       kind: "solana_entry_dropped";
       reason:
         | "token_account_rpc_unavailable"
