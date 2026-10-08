@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE, BASE_CAIP2 } from "@/lib/config";
+import { CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE } from "@/lib/config";
+import { SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
 import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -40,7 +41,7 @@ export default function HomePage() {
       <main>
         <section className="hp-hero">
           <div className="hp-wrap">
-            <span className="hp-chip">Live on Base · x402 v2</span>
+            <span className="hp-chip">Live on Base + Solana · x402 v2</span>
             <h1>
               Pay-per-call APIs
               <br />
@@ -48,7 +49,7 @@ export default function HomePage() {
             </h1>
             <p className="hp-sub">
               {s.routes} routes for market data, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
-              {s.minPrice}–{s.maxPrice} in USDC per call and gets JSON back.
+              {s.minPrice}–{s.maxPrice} in USDC per call, on Base or Solana, and gets JSON back.
             </p>
             <div className="hp-ctas">
               <a className="hp-btn primary" href="/try">Try a free sample</a>
@@ -156,7 +157,7 @@ export default function HomePage() {
               <h2>
                 Plain HTTP. <span>Standard x402 v2.</span>
               </h2>
-              <p className="hp-lead">No accounts and nothing to sign up for. Any x402 v2 client can pay, and the Coinbase CDP facilitator settles on Base.</p>
+              <p className="hp-lead">No accounts and nothing to sign up for. Any x402 v2 client can pay in USDC on Base or Solana at the same price: the Coinbase CDP facilitator settles on Base, PayAI on Solana.</p>
             </div>
             <div className="hp-grid four">
               <div className="hp-tile" data-reveal>
@@ -170,7 +171,7 @@ export default function HomePage() {
                 <Ico d={ICONS[402]} />
                 <h3>Read the 402</h3>
                 <p>
-                  The <code>PAYMENT-REQUIRED</code> header gives the exact USDC amount, the network <code>{BASE_CAIP2}</code> and payTo.
+                  The <code>PAYMENT-REQUIRED</code> header lists one option per network, Base and Solana, each with the exact USDC amount and payTo.
                 </p>
               </div>
               <div className="hp-tile" data-reveal>
@@ -196,7 +197,7 @@ export default function HomePage() {
               <h2>
                 Everything an agent needs <span>to find and pay us.</span>
               </h2>
-              <p className="hp-lead">Discovery files for machines, one working example for humans, and exactly one address to pay.</p>
+              <p className="hp-lead">Discovery files for machines, one working example for humans, and exactly one address to pay on each network.</p>
             </div>
             <div className="hp-grid two">
               <div className="hp-tile" data-reveal>
@@ -219,14 +220,18 @@ export default function HomePage() {
                 <Ico d={ICONS.wallet} />
                 <h3>Payment</h3>
                 <div className="hp-kv">
-                  <span className="k">Only pay to</span>
+                  <span className="k">Base: pay to</span>
                   <code>{DEFAULT_PAY_TO}</code>
-                  <span className="k">Asset</span>
+                  <span className="k">Base asset</span>
                   <span>USDC <code>{USDC_BASE}</code></span>
-                  <span className="k">Network</span>
-                  <span>Base mainnet, Coinbase CDP facilitator</span>
+                  <span className="k">Solana: pay to</span>
+                  <code>{SOLANA_PAYTO}</code>
+                  <span className="k">Solana asset</span>
+                  <span>USDC <code>{USDC_SOLANA_MINT}</code></span>
+                  <span className="k">Settlement</span>
+                  <span>x402 <code>exact</code>, same price on both. Coinbase CDP facilitator on Base, PayAI on Solana</span>
                   <span className="k">Balance</span>
-                  <span>Live on <Link href="/status">/status</Link></span>
+                  <span>Base payTo live on <Link href="/status">/status</Link></span>
                 </div>
               </div>
             </div>

@@ -12,6 +12,7 @@ import * as S from "../lib/x402-server";
 import { LIVE_PAID_ROUTES, CATEGORY_LABELS, routeName } from "../lib/live-catalog";
 import { USDC_BASE, CDP_FACILITATOR_URL, PUBLIC_BASE_URL, CONTACT_EMAIL, SERVICE_DESCRIPTION } from "../lib/config";
 import { EXAMPLES_RECORDED_AT } from "../lib/route-examples";
+import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "../lib/solana-config";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 const OUT = path.join(__dirname, "..", "public", "openapi.json");
@@ -98,12 +99,12 @@ const schemas: Json = {
           required: ["scheme", "network", "amount", "asset", "payTo", "maxTimeoutSeconds"],
           properties: {
             scheme: { const: "exact" },
-            network: { type: "string", examples: ["eip155:8453"] },
+            network: { type: "string", examples: ["eip155:8453", SOLANA_MAINNET_CAIP2] },
             amount: { type: "string", description: "Price in USDC atomic units (6 decimals)." },
-            asset: { type: "string", description: "USDC contract on Base." },
+            asset: { type: "string", description: "USDC contract on Base, or the USDC mint on Solana." },
             payTo: { type: "string" },
             maxTimeoutSeconds: { type: "integer" },
-            extra: { type: "object", properties: { name: { type: "string" }, version: { type: "string" } } },
+            extra: { type: "object", description: "Base: USDC EIP-712 name and version. Solana: feePayer, the facilitator's fee payer for the transaction.", properties: { name: { type: "string" }, version: { type: "string" }, feePayer: { type: "string" } } },
           },
         },
       },
@@ -130,7 +131,7 @@ for (const r of LIVE_PAID_ROUTES) {
       operationId: opId,
       tags: [CATEGORY_LABELS[r.category]],
       summary: r.docBlurb ?? r.blurb,
-      description: `${cfg.description}\n\nPrice: ${acc.price} USDC per call (${amount} atomic), paid with x402 v2 \`exact\` on Base. Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.`,
+      description: `${cfg.description}\n\nPrice: ${acc.price} USDC per call (${amount} atomic), paid with x402 v2 \`exact\` on Base or Solana (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.`,
       "x-payment-info": {
         protocol: "x402",
         x402Version: 2,
@@ -218,8 +219,8 @@ const spec = {
   info: {
     title: "Horizon Pulse",
     version: "1.1.0",
-    summary: "Pay-per-call APIs for AI agents, settled in USDC on Base with x402.",
-    description: `${SERVICE_DESCRIPTION}\n\nYou pay only for a successful response; errors are not charged except where an operation says so. Every paid operation carries \`x-payment-info\` with the exact price, asset, network and payTo; these match the 402 challenge and ${PUBLIC_BASE_URL}/.well-known/x402. Free fixed-input samples: GET /api/demo/{route}.\n\nAgent integration: step-by-step skill at ${PUBLIC_BASE_URL}/skill.md; guide with MCP setup at ${PUBLIC_BASE_URL}/agents (hosted MCP at ${PUBLIC_BASE_URL}/mcp for x402-aware clients, plus a local stdio MCP server in the repo's mcp/ folder that pays from your own wallet with spend caps).\n\nServices for API owners (web pages, not API operations; not paid via x402): Bazaar listing fix at ${PUBLIC_BASE_URL}/listing-fix; agent promotion at ${PUBLIC_BASE_URL}/agent-promotion.`,
+    summary: "Pay-per-call APIs for AI agents, settled in USDC on Base or Solana with x402.",
+    description: `${SERVICE_DESCRIPTION}\n\nYou pay only for a successful response; errors are not charged except where an operation says so. Every paid operation carries \`x-payment-info\` with the exact price, asset, network and payTo of its Base entry; these match the 402 challenge and ${PUBLIC_BASE_URL}/.well-known/x402. The 402 challenge also offers the same price in USDC on Solana mainnet (\`exact\`, network ${SOLANA_MAINNET_CAIP2}, USDC mint ${USDC_SOLANA_MINT}, payTo ${SOLANA_PAYTO}, PayAI facilitator ${PAYAI_FACILITATOR_URL}). Free fixed-input samples: GET /api/demo/{route}.\n\nAgent integration: step-by-step skill at ${PUBLIC_BASE_URL}/skill.md; guide with MCP setup at ${PUBLIC_BASE_URL}/agents (hosted MCP at ${PUBLIC_BASE_URL}/mcp for x402-aware clients, plus a local stdio MCP server in the repo's mcp/ folder that pays from your own wallet with spend caps).\n\nServices for API owners (web pages, not API operations; not paid via x402): Bazaar listing fix at ${PUBLIC_BASE_URL}/listing-fix; agent promotion at ${PUBLIC_BASE_URL}/agent-promotion.`,
     contact: { name: "Horizon Pulse", email: CONTACT_EMAIL, url: PUBLIC_BASE_URL },
   },
   externalDocs: { description: "Agent guide: discovery, the x402 pay flow, skill file and MCP setup", url: `${PUBLIC_BASE_URL}/agents` },

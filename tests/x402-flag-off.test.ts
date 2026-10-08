@@ -9,6 +9,12 @@
  * Solana code existed (lib/ and app/ untouched; only this harness + vitest
  * added). Both CDP mode (facilitator-synced withX402 challenge) and local mode
  * (no CDP keys, lib/x402-server.ts builder) are covered.
+ *
+ * 2026-10-08 (branch solana-public-copy): ONLY golden.discovery was refreshed,
+ * because the public copy (/.well-known/x402, skill.md, openapi.json,
+ * llms.txt) now names Base + Solana. golden.cdp and golden.local (every 402 /
+ * OPTIONS byte) are untouched from main. The invariant tested here is
+ * unchanged: discovery docs do not vary with the Solana flag.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

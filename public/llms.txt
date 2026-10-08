@@ -1,6 +1,6 @@
 # Horizon Pulse
 
-> Pay-per-call APIs for AI agents, paid in USDC on Base with x402 v2: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key.
+> Pay-per-call APIs for AI agents, paid in USDC on Base or Solana with x402 v2: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key.
 
 Contact: horizonpulse.co@proton.me
 
@@ -9,10 +9,10 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 ## Payment (x402 v2)
 
 - Unpaid request → HTTP 402; the payment challenge is in the `PAYMENT-REQUIRED` response header (base64 JSON, x402 v2); the 402 body is empty JSON `{}`
-- Network: Base mainnet CAIP-2 `eip155:8453`
-- Asset: Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
-- payTo: `0x5b32c973596078a967562ca652761404f19be0e9`
-- Facilitator: Coinbase CDP `https://api.cdp.coinbase.com/platform/v2/x402`
+- Scheme: `exact` (one payment per call). Two networks, same price in USDC (6 decimals) on both; the challenge's `accepts` lists one entry per network, and you pay exactly one:
+  - Base: network Base mainnet CAIP-2 `eip155:8453`; asset Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`; payTo `0x5b32c973596078a967562ca652761404f19be0e9`; facilitator Coinbase CDP `https://api.cdp.coinbase.com/platform/v2/x402`
+  - Solana: network Solana mainnet CAIP-2 `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`; asset USDC mint `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`; payTo `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz`; facilitator PayAI `https://facilitator.payai.network` (its fee payer is in the entry's `extra.feePayer`)
+- If a challenge lists only the Base entry, the Solana rail is temporarily unavailable: pay on Base.
 - Retry the same request with `PAYMENT-SIGNATURE` (v2). On success the settlement receipt is in the `PAYMENT-RESPONSE` header. Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.
 
 ## Live paid routes
@@ -74,13 +74,13 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 ## Free (not paid)
 
 - GET `/` — landing (live paid catalog + agent how-to)
-- GET `/status` — live USDC `balanceOf` on payTo (not revenue) + catalog
+- GET `/status` — live USDC `balanceOf` on the Base payTo (not revenue), both payTo addresses + catalog
 - GET `/llms.txt` — this file
-- GET `/openapi.json` — OpenAPI 3.1 for every paid operation: typed parameters and bodies, 200/400/402 schemas and examples, and per-operation `x-payment-info` (price, asset, network, payTo)
+- GET `/openapi.json` — OpenAPI 3.1 for every paid operation: typed parameters and bodies, 200/400/402 schemas and examples, and per-operation `x-payment-info` (price, asset, network, payTo of the Base entry; Solana details are under Payment above)
 - GET `/.well-known/x402` — machine-readable x402 resource list
 - GET `/skill.md` — agent skill (markdown): when to use each route, prices, the pay flow step by step, errors, safety checks
 - GET `/agents` — agent guide: pay flow, skill, MCP setup
-- POST `/mcp` — hosted MCP (streamable HTTP, stateless); `initialize` and `tools/list` free, `tools/call` returns the same x402 challenge (needs an x402-paying MCP client)
+- POST `/mcp` — hosted MCP (streamable HTTP, stateless); `initialize` and `tools/list` free, `tools/call` returns an x402 challenge for Base USDC (needs an x402-paying MCP client)
 
 ## Services for API owners (not x402 routes)
 
@@ -96,8 +96,10 @@ These are services for people who run an API. They are not paid with x402; never
 
 1. Call routes on `https://horizonpulse.dev` only, with no payment header → HTTP 402.
 2. Base64-decode the `PAYMENT-REQUIRED` header (x402 v2 JSON; the body is `{}`).
-3. Pay only if `scheme` = `exact`, `network` = `eip155:8453`, `asset` = Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, `payTo` = `0x5b32c973596078a967562ca652761404f19be0e9`, and atomic `amount` = the price above.
-4. Sign an EIP-3009 `transferWithAuthorization` for that amount to payTo with an x402 client (Node `@x402/core` + `@x402/evm` 2.27.x; Python `x402`). No gas needed.
+3. Pick one entry in `accepts` and pay only if `scheme` = `exact`, atomic `amount` = the price above, and the entry matches one network exactly:
+   - Base: `network` = `eip155:8453`, `asset` = Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, `payTo` = `0x5b32c973596078a967562ca652761404f19be0e9`
+   - Solana: `network` = `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`, `asset` = USDC mint `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`, `payTo` = `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz`
+4. Sign with an x402 client. Base: an EIP-3009 `transferWithAuthorization` for that amount to payTo (Node `@x402/core` + `@x402/evm` 2.27.x; Python `x402`). Solana: a partially signed SPL `TransferChecked` of that amount to payTo's USDC token account, with `extra.feePayer` as fee payer (Node `@x402/core` + `@x402/svm` 2.27.x). No gas needed on either network: no ETH on Base, no SOL on Solana.
 5. Retry the identical request with `PAYMENT-SIGNATURE` (x402 v2). `X-PAYMENT` is the legacy v1 header; do not rely on it.
 6. 200 → live JSON; settlement receipt in `PAYMENT-RESPONSE` (base64 JSON). Another 402 → read `error` in the decoded challenge; do not loop.
 
@@ -105,7 +107,7 @@ These are services for people who run an API. They are not paid with x402; never
 
 - Skill file: https://horizonpulse.dev/skill.md (follow it end to end; generated from /openapi.json so prices match the 402s)
 - Guide: https://horizonpulse.dev/agents
-- Local MCP server (stdio, Node): https://github.com/horizon-pulse/horizon-pulse/tree/main/mcp. Every route as a tool (same names as the hosted /mcp: pulse, signals, yield, portfolio, gas, funding, fetch, http, extract, x402_check, screenshot, search, pdf) plus free `catalog`, `quote`, `demo`. Pays the x402 challenge from `HP_PRIVATE_KEY` (use a dedicated low-balance wallet); pays only the payTo above in Base USDC, refuses amounts above the listed price, caps per call (`HP_MAX_USD_PER_CALL`, default $0.05) and per session (`HP_MAX_USD_TOTAL`, default $1). No key → quote only.
+- Local MCP server (stdio, Node): https://github.com/horizon-pulse/horizon-pulse/tree/main/mcp. Every route as a tool (same names as the hosted /mcp: pulse, signals, yield, portfolio, gas, funding, fetch, http, extract, x402_check, screenshot, search, pdf) plus free `catalog`, `quote`, `demo`. Pays the x402 challenge from `HP_PRIVATE_KEY` (use a dedicated low-balance wallet); pays only the Base payTo above in Base USDC (the MCP server pays on Base only), refuses amounts above the listed price, caps per call (`HP_MAX_USD_PER_CALL`, default $0.05) and per session (`HP_MAX_USD_TOTAL`, default $1). No key → quote only.
 - Hosted MCP: `https://horizonpulse.dev/mcp` (for MCP clients that can pay x402).
 
 ## Honesty

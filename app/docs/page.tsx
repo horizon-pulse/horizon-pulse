@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CopyBlock } from "@/components/CopyBlock";
 import { CODE } from "@/lib/client-snippets";
+import { SOLANA_MAINNET_CAIP2, SOLANA_PAYTO } from "@/lib/solana-config";
 
 export const dynamic = "force-static";
 
@@ -124,8 +125,8 @@ curl ${BASE}/api/demo/pulse
 # 2. Unpaid call: HTTP 402 with the price in PAYMENT-REQUIRED (base64 JSON)
 curl -si ${BASE}/api/pulse | grep -i '^payment-required' | cut -d' ' -f2 | base64 -d
 
-# 3. Pay: an x402 client signs a USDC transfer on Base and retries with
-#    PAYMENT-SIGNATURE. You get 200 plus a PAYMENT-RESPONSE receipt.`;
+# 3. Pay: an x402 client signs a USDC payment on Base or Solana (same price)
+#    and retries with PAYMENT-SIGNATURE. You get 200 plus a PAYMENT-RESPONSE receipt.`;
 
 export default function DocsPage() {
   const s = { ops: ops.length, routes: Object.keys(spec.paths).length };
@@ -142,7 +143,7 @@ export default function DocsPage() {
               <span>One payment flow.</span>
             </h1>
             <p className="hp-sub">
-              {s.routes} paid routes and {s.ops} operations, paid per call in USDC on Base with x402. No signup or API key. This page is
+              {s.routes} paid routes and {s.ops} operations, paid per call in USDC on Base or Solana with x402. No signup or API key. This page is
               rendered from <code>/openapi.json</code>, so prices and inputs always match what the API charges.
             </p>
             <div className="hp-raw">
@@ -185,16 +186,20 @@ export default function DocsPage() {
             </div>
             <div className="hp-grid" style={{ marginTop: 16 }}>
               <div className="hp-tile">
-                <h3>Network</h3>
-                <p>Base mainnet <code>eip155:8453</code>, USDC, x402 v2 <code>exact</code> scheme.</p>
+                <h3>Networks</h3>
+                <p>
+                  USDC with the x402 v2 <code>exact</code> scheme, same price on both: Base mainnet <code>eip155:8453</code> or Solana mainnet{" "}
+                  <code style={{ wordBreak: "break-all" }}>{SOLANA_MAINNET_CAIP2}</code>.
+                </p>
               </div>
               <div className="hp-tile">
                 <h3>payTo</h3>
-                <p style={{ wordBreak: "break-all" }}><code>{ops[0].op["x-payment-info"].payTo}</code></p>
+                <p style={{ wordBreak: "break-all" }}>Base <code>{ops[0].op["x-payment-info"].payTo}</code></p>
+                <p style={{ wordBreak: "break-all" }}>Solana <code>{SOLANA_PAYTO}</code></p>
               </div>
               <div className="hp-tile">
                 <h3>Facilitator</h3>
-                <p>Coinbase CDP verifies the payment first and settles it only after the route succeeds.</p>
+                <p>Coinbase CDP on Base, PayAI on Solana. Each verifies the payment first and settles it only after the route succeeds.</p>
               </div>
             </div>
           </div>

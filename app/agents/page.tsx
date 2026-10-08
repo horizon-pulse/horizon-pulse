@@ -5,6 +5,7 @@ import { CopyBlock } from "@/components/CopyBlock";
 import { DEMO_CAPTURED_AT, DEMO_COMMAND, DEMO_OUTPUT } from "@/lib/agent-demo";
 import { CODE } from "@/lib/client-snippets";
 import { DEFAULT_PAY_TO, GITHUB_REPO, PUBLIC_BASE_URL, USDC_BASE } from "@/lib/config";
+import { SOLANA_MAINNET_CAIP2 } from "@/lib/solana-config";
 import { HOSTED_MCP_CONFIG, MCP_CONFIG, MCP_INSTALL, PAY_STEPS, loadSkillRoutes } from "@/lib/agent-skill";
 
 export const dynamic = "force-static";
@@ -12,7 +13,7 @@ export const dynamic = "force-static";
 export const metadata: Metadata = {
   title: "For agents | Horizon Pulse",
   description:
-    "How an AI agent finds, pays and calls Horizon Pulse: discovery files, the x402 v2 pay flow in USDC on Base, a skill file at /skill.md and an MCP server that pays per call with spend caps.",
+    "How an AI agent finds, pays and calls Horizon Pulse: discovery files, the x402 v2 pay flow in USDC on Base or Solana, a skill file at /skill.md and an MCP server that pays per call with spend caps.",
   alternates: { canonical: "/agents" },
 };
 
@@ -21,8 +22,9 @@ const routes = loadSkillRoutes();
 const FLOW = `# 1. Unpaid call: HTTP 402, challenge in the PAYMENT-REQUIRED header
 curl -si ${PUBLIC_BASE_URL}/api/pulse | grep -i '^payment-required' | cut -d' ' -f2 | base64 -d
 
-# 2. Check scheme exact, network eip155:8453, USDC, payTo and amount
-# 3. Sign EIP-3009 with an x402 client, retry with PAYMENT-SIGNATURE
+# 2. Pick one accepts entry: Base (eip155:8453) or Solana (${SOLANA_MAINNET_CAIP2}).
+#    Check scheme exact, USDC, payTo and amount for that network
+# 3. Sign with an x402 client, retry with PAYMENT-SIGNATURE
 # 4. 200 + JSON, receipt in the PAYMENT-RESPONSE header`;
 
 export default function AgentsPage() {
@@ -32,14 +34,14 @@ export default function AgentsPage() {
       <main>
         <section className="hp-hero">
           <div className="hp-wrap">
-            <span className="hp-chip">For agents · x402 v2 · USDC on Base</span>
+            <span className="hp-chip">For agents · x402 v2 · USDC on Base + Solana</span>
             <h1>
               Find it, pay it,
               <br />
               <span>call it.</span>
             </h1>
             <p className="hp-sub">
-              {routes.length} paid routes. No signup or API key: each call is paid on its own in USDC on Base. Give your agent the skill file, or plug in the MCP
+              {routes.length} paid routes. No signup or API key: each call is paid on its own in USDC on Base or Solana, at the same price. Give your agent the skill file, or plug in the MCP
               server and set a spend cap.
             </p>
             <div className="hp-raw">
@@ -110,6 +112,8 @@ export default function AgentsPage() {
                 <div className="hp-kv">
                   <span className="k">Pays only</span>
                   <code>{DEFAULT_PAY_TO}</code>
+                  <span className="k">Network</span>
+                  <span>Base only. To pay on Solana, use an x402 client directly (see <a href="/skill.md">/skill.md</a>)</span>
                   <span className="k">Asset</span>
                   <span>USDC <code>{USDC_BASE}</code> on Base</span>
                   <span className="k">Price check</span>

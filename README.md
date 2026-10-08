@@ -1,6 +1,6 @@
 # Horizon Pulse
 
-Pay-per-call crypto market **pulse**, **signals**, **funding**, **yield** rankings, **portfolio** risk, **gas**, plus public URL **fetch** → clean text, universal **http** proxy, and **extract** → structured fields for AI agents, monetized with the [x402](https://www.x402.org/) protocol on **Base mainnet** (USDC).
+Pay-per-call crypto market **pulse**, **signals**, **funding**, **yield** rankings, **portfolio** risk, **gas**, plus public URL **fetch** → clean text, universal **http** proxy, and **extract** → structured fields for AI agents, monetized with the [x402](https://www.x402.org/) protocol on **Base mainnet** and **Solana mainnet** (USDC, `exact`, same price on both).
 
 This repo is a Next.js App Router service ready to deploy (e.g. Vercel) and push to:
 
@@ -18,8 +18,8 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 ## What it is
 
 - Agents hit **thirteen** live paid HTTP endpoints (six crypto frozen; `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/screenshot` + `/api/search` + `/api/pdf` non-crypto LIVE — see below).
-- Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header; network is CAIP-2 **`eip155:8453`** (Base); asset is Base USDC; `payTo` is the treasury below.
-- Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. Coinbase CDP facilitator **verifies + settles**, then the route returns live market data.
+- Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header, with one `accepts` entry per network: Base (CAIP-2 **`eip155:8453`**, Base USDC, the treasury below) and Solana (CAIP-2 **`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`**, USDC mint, the Solana payTo below). See [`docs/solana-rail.md`](docs/solana-rail.md).
+- Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. The facilitator (Coinbase CDP on Base, PayAI on Solana) **verifies + settles**, then the route returns live data.
 - No stubbed prices or fake APYs: Coinbase Exchange (CoinGecko fallback) for spot; CoinGecko OHLC (Coinbase candles fallback) for signals; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only); `/api/fetch` returns best-effort cleaned text from a requested public URL (SSRF-safe, size/time capped); `/api/http` is a raw universal proxy (filtered headers, text|base64 body, SSRF-safe) priced **$0.01** for volume; `/api/extract` returns best-effort structured page fields from a URL or HTML (SSRF-safe, size/time capped) priced **$0.015**.
 - Never invent metrics; never advertise routes that 404; never cite a cached balance — `/status` reads live USDC `balanceOf` on `payTo`. Honest: current `payTo` is interim Coinbase-custodial (not Safe/multisig).
 
@@ -39,9 +39,9 @@ Coming-soon / placeholder / 404 routes are **not** listed on `/`, `/status`, or 
 ## Agent how-to (x402 v2)
 
 1. **`GET`** a paid route with no payment → **HTTP 402**.
-2. Read **`PAYMENT-REQUIRED`** (v2). Confirm `network` = `eip155:8453`, USDC on Base, exact atomic `amount`, and `payTo`.
+2. Read **`PAYMENT-REQUIRED`** (v2) and pick one `accepts` entry. Confirm `network` (`eip155:8453` for Base or `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` for Solana), USDC on that network, exact atomic `amount`, and that network's `payTo`.
 3. Sign and retry the same **`GET`** with **`PAYMENT-SIGNATURE`** (v2 primary; do not rely on legacy `X-PAYMENT` as the settle path).
-4. On success: facilitator settles on Base; response body is the live JSON for that route.
+4. On success: the facilitator settles on the network you paid on; response body is the live JSON for that route.
 
 Optional: `OPTIONS` on a paid route returns discovery + the same `PAYMENT-REQUIRED` challenge without charging.
 
@@ -62,6 +62,10 @@ Optional: `OPTIONS` on a paid route returns discovery + the same `PAYMENT-REQUIR
 | **USDC (Base)** | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | **Network** | `base` (CAIP-2 `eip155:8453`) |
 | **Facilitator** | `https://api.cdp.coinbase.com/platform/v2/x402` |
+| **Solana payTo** | `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz` (operator-controlled; pinned in `lib/solana-config.ts`; payments credit its USDC token account) |
+| **USDC (Solana)** | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` |
+| **Solana network** | CAIP-2 `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` (`exact` only) |
+| **Solana facilitator** | PayAI `https://facilitator.payai.network` |
 
 Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 

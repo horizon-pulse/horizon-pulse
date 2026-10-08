@@ -26,7 +26,7 @@ export default function TryPage() {
             </h1>
             <p className="hp-sub">
               Each free sample is real output from the route on a fixed input, cached for a few minutes. The paid route takes your own input and costs a fraction of a
-              cent to a few cents in USDC on Base.
+              cent to a few cents in USDC on Base or Solana.
             </p>
           </div>
         </section>

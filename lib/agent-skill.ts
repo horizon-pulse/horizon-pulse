@@ -7,7 +7,8 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, PUBLIC_BASE_URL, USDC_BASE } from "./config";
+import { BASE_CAIP2, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, PUBLIC_BASE_URL, USDC_BASE } from "./config";
+import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "./solana-config";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -78,8 +79,8 @@ export const HOSTED_MCP_CONFIG = `{
 export const PAY_STEPS = [
   { t: "Call", d: "Send the request with no payment header. Paid routes answer HTTP 402." },
   { t: "Read the challenge", d: "Base64-decode the PAYMENT-REQUIRED response header (x402 v2 JSON). The 402 body is empty JSON {}." },
-  { t: "Check it", d: `Pay only if scheme is exact, network is eip155:8453 (Base), asset is USDC ${USDC_BASE}, payTo is ${DEFAULT_PAY_TO} and amount matches the listed price.` },
-  { t: "Sign", d: "Sign an EIP-3009 transferWithAuthorization for that USDC amount to payTo with an x402 client library. No gas, no on-chain transaction from you." },
+  { t: "Check it", d: `The challenge offers one entry per network; pick one. Pay only if scheme is exact, the amount matches the listed price, and the entry is either Base (network ${BASE_CAIP2}, USDC ${USDC_BASE}, payTo ${DEFAULT_PAY_TO}) or Solana (network ${SOLANA_MAINNET_CAIP2}, USDC mint ${USDC_SOLANA_MINT}, payTo ${SOLANA_PAYTO}).` },
+  { t: "Sign", d: "Sign with an x402 client library: an EIP-3009 transferWithAuthorization on Base, or a partially signed USDC transfer on Solana that the facilitator's fee payer completes. No gas, no ETH or SOL needed." },
   { t: "Retry", d: "Send the identical request again with the PAYMENT-SIGNATURE header (x402 v2). X-PAYMENT is the legacy v1 header; do not rely on it." },
   { t: "Use the result", d: "200 returns the JSON plus a PAYMENT-RESPONSE receipt header. Settlement happens only after the route succeeds; error responses are not charged." },
 ];
@@ -93,23 +94,29 @@ export function buildSkillMarkdown(): string {
 
   return `---
 name: horizon-pulse
-description: Call Horizon Pulse pay-per-call APIs at ${PUBLIC_BASE_URL} and pay each request in USDC on Base with x402 v2 (no signup or API key). Use when you need web search with sources, a web page as clean text, structured page fields, a page screenshot, PDF text, a proxied HTTP request, an x402 endpoint audit, or crypto data (spot prices, indicators, perp funding, gas, DeFi yields, wallet holdings).
+description: Call Horizon Pulse pay-per-call APIs at ${PUBLIC_BASE_URL} and pay each request in USDC on Base or Solana with x402 v2 (no signup or API key). Use when you need web search with sources, a web page as clean text, structured page fields, a page screenshot, PDF text, a proxied HTTP request, an x402 endpoint audit, or crypto data (spot prices, indicators, perp funding, gas, DeFi yields, wallet holdings).
 ---
 
-# Horizon Pulse: pay-per-call APIs for agents (x402 v2, USDC on Base)
+# Horizon Pulse: pay-per-call APIs for agents (x402 v2, USDC on Base or Solana)
 
-${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call. Every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet. No account, no API key.
+${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call. Every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet or Solana mainnet, at the same price on both. No account, no API key.
 
 - Base URL: ${PUBLIC_BASE_URL} (call and pay this host only)
-- Network: Base mainnet, CAIP-2 \`eip155:8453\`
-- Asset: USDC \`${USDC_BASE}\` (6 decimals; 10000 atomic = $0.01)
-- payTo: \`${DEFAULT_PAY_TO}\` (the only address to pay)
-- Facilitator: Coinbase CDP (verifies the payment, settles it only after the route succeeds)
+- Amounts: USDC, 6 decimals on both networks (10000 atomic = $0.01)
+
+| | Base | Solana |
+| --- | --- | --- |
+| Network (CAIP-2) | \`${BASE_CAIP2}\` | \`${SOLANA_MAINNET_CAIP2}\` |
+| Asset | USDC \`${USDC_BASE}\` | USDC mint \`${USDC_SOLANA_MINT}\` |
+| payTo (the only address to pay on that network) | \`${DEFAULT_PAY_TO}\` | \`${SOLANA_PAYTO}\` |
+| Facilitator | Coinbase CDP | PayAI \`${PAYAI_FACILITATOR_URL}\` |
+
+Each facilitator verifies the payment first and settles it only after the route succeeds. If a 402 lists only the Base entry, the Solana rail is temporarily unavailable: pay on Base.
 
 ## 1. Discover
 
 - \`GET ${PUBLIC_BASE_URL}/.well-known/x402\`: x402 resource list (\`METHOD URL\` strings)
-- \`GET ${PUBLIC_BASE_URL}/openapi.json\`: OpenAPI 3.1, typed inputs, response examples, per-operation \`x-payment-info\` (price, asset, network, payTo)
+- \`GET ${PUBLIC_BASE_URL}/openapi.json\`: OpenAPI 3.1, typed inputs, response examples, per-operation \`x-payment-info\` (price, asset, network, payTo of the Base entry; the Solana entry is in the 402 and the table above)
 - \`GET ${PUBLIC_BASE_URL}/llms.txt\`: plain-text catalog and rules
 - \`GET ${PUBLIC_BASE_URL}/api/demo/{route}\`: free sample of a route's real output on a fixed input (no payment)
 
@@ -126,16 +133,20 @@ Rules of thumb: research a question with sources → \`/api/search\`; read one p
 ## 3. Pay and call (x402 v2)
 
 1. **Call** the route with no payment header, e.g. \`GET ${PUBLIC_BASE_URL}/api/pulse\`. Expect \`HTTP 402\`.
-2. **Read the challenge**: base64-decode the \`PAYMENT-REQUIRED\` response header and parse it as JSON. The 402 body is \`{}\`. Shape: \`{ x402Version: 2, resource: {url, description, ...}, accepts: [{ scheme, network, amount, asset, payTo, maxTimeoutSeconds, extra: { name: "USD Coin", version: "2" } }] }\`.
-3. **Check it before paying.** Pay only if \`scheme\` is \`exact\`, \`network\` is \`eip155:8453\`, \`asset\` is \`${USDC_BASE}\`, \`payTo\` is \`${DEFAULT_PAY_TO}\` and \`amount\` equals the atomic price in the table. If anything differs, do not pay.
-4. **Sign** an EIP-3009 \`transferWithAuthorization\` for exactly \`amount\` to \`payTo\` (USDC EIP-712 domain: name "USD Coin", version "2", chainId 8453), valid for at most \`maxTimeoutSeconds\`. Use an x402 client library rather than hand-rolling it (Node: \`@x402/core\` + \`@x402/evm\`; Python: \`x402\`). The payer needs USDC on Base; no ETH or gas is needed.
+2. **Read the challenge**: base64-decode the \`PAYMENT-REQUIRED\` response header and parse it as JSON. The 402 body is \`{}\`. Shape: \`{ x402Version: 2, resource: {url, description, ...}, accepts: [{ scheme, network, amount, asset, payTo, maxTimeoutSeconds, extra }] }\`, with one \`accepts\` entry per network: Base (\`extra: { name: "USD Coin", version: "2" }\`) and Solana (\`extra: { feePayer }\`).
+3. **Check it before paying.** Pick one entry. Pay only if \`scheme\` is \`exact\`, \`amount\` equals the atomic price in the table, and \`network\`, \`asset\` and \`payTo\` match one column of the table above exactly (Base: \`${BASE_CAIP2}\`, \`${USDC_BASE}\`, \`${DEFAULT_PAY_TO}\`; Solana: \`${SOLANA_MAINNET_CAIP2}\`, \`${USDC_SOLANA_MINT}\`, \`${SOLANA_PAYTO}\`). If anything differs, do not pay.
+4. **Sign** for exactly \`amount\`, valid for at most \`maxTimeoutSeconds\`. Use an x402 client library rather than hand-rolling it.
+   - **Base:** an EIP-3009 \`transferWithAuthorization\` to \`payTo\` (USDC EIP-712 domain: name "USD Coin", version "2", chainId 8453). Node: \`@x402/core\` + \`@x402/evm\`; Python: \`x402\`. The payer needs USDC on Base; no ETH or gas is needed.
+   - **Solana:** a partially signed SPL Token \`TransferChecked\` from your USDC token account to the payTo's USDC token account, with \`extra.feePayer\` (PayAI) as the transaction fee payer; the facilitator co-signs and submits it. Node: \`@x402/core\` + \`@x402/svm\`. The payer needs USDC on Solana; no SOL is needed for fees.
 5. **Retry** the identical request (same method, URL and body) with header \`PAYMENT-SIGNATURE: {base64 JSON payment payload}\`. This is the x402 v2 header; \`X-PAYMENT\` is the legacy v1 header and is not the settle path here.
 6. **Use the result**: \`200\` returns the route's JSON. The \`PAYMENT-RESPONSE\` header is a base64 JSON receipt \`{ success, transaction, network, payer }\`.
 7. **If you get 402 again**, decode \`PAYMENT-REQUIRED\` and read \`error\` (for example an insufficient USDC balance). Do not retry in a loop.
 
 Optional: \`OPTIONS {route}\` returns the same challenge without charging.
 
-### Node (official x402 client, v2)
+### Node (official x402 client, v2, paying on Base)
+
+For Solana, register \`ExactSvmScheme\` from \`@x402/svm/exact/client\` with a Solana signer for network \`${SOLANA_MAINNET_CAIP2}\`, and filter on the Solana payTo \`${SOLANA_PAYTO}\` instead (exact match: Solana addresses are case-sensitive, so do not lower-case them).
 
 \`\`\`js
 // npm i @x402/core@2.27.0 @x402/evm@2.27.0 viem
@@ -163,7 +174,7 @@ console.log(http.getPaymentSettleResponse((h) => r2.headers.get(h))); // receipt
 
 ## 4. Or use the MCP server
 
-**Local stdio MCP server (pays for you, with caps).** Exposes every route above as a tool (same names as the Tool column) plus free \`catalog\`, \`quote\` and \`demo\` tools. It reads the live catalog from \`/openapi.json\`, pays only \`${DEFAULT_PAY_TO}\` in Base USDC, refuses any amount above the listed price, and enforces \`HP_MAX_USD_PER_CALL\` (default $0.05) and \`HP_MAX_USD_TOTAL\` per session (default $1). Without \`HP_PRIVATE_KEY\` it only quotes and never pays.
+**Local stdio MCP server (pays for you, with caps).** Exposes every route above as a tool (same names as the Tool column) plus free \`catalog\`, \`quote\` and \`demo\` tools. It reads the live catalog from \`/openapi.json\`, pays on Base only, only \`${DEFAULT_PAY_TO}\` in Base USDC, refuses any amount above the listed price, and enforces \`HP_MAX_USD_PER_CALL\` (default $0.05) and \`HP_MAX_USD_TOTAL\` per session (default $1). Without \`HP_PRIVATE_KEY\` it only quotes and never pays.
 
 \`\`\`sh
 ${MCP_INSTALL}
@@ -175,7 +186,7 @@ ${MCP_CONFIG}
 
 Source and full README: ${GITHUB_REPO}/tree/main/mcp
 
-**Hosted MCP** (\`${PUBLIC_BASE_URL}/mcp\`, streamable HTTP, stateless): \`initialize\` and \`tools/list\` are free; \`tools/call\` returns the same x402 challenge as REST, so it needs an MCP client that can pay x402.
+**Hosted MCP** (\`${PUBLIC_BASE_URL}/mcp\`, streamable HTTP, stateless): \`initialize\` and \`tools/list\` are free; \`tools/call\` returns an x402 challenge for Base USDC, so it needs an MCP client that can pay x402.
 
 ## 5. Errors and billing
 
@@ -184,7 +195,7 @@ Source and full README: ${GITHUB_REPO}/tree/main/mcp
 
 ## 6. Safety rules
 
-- Call and pay only \`${PUBLIC_BASE_URL}\`. Never pay a \`payTo\` other than \`${DEFAULT_PAY_TO}\`.
+- Call and pay only \`${PUBLIC_BASE_URL}\`. Never pay a \`payTo\` other than \`${DEFAULT_PAY_TO}\` on Base or \`${SOLANA_PAYTO}\` on Solana.
 - Use a dedicated buyer wallet holding only a small USDC balance, and a per-call cap. Never put a private key in a prompt, a tool argument, a URL or a log.
 - Check the price with a free \`/api/demo/{route}\` sample or the unpaid 402 before paying; do not invent routes or prices.
 

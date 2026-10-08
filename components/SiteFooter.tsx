@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { DEFAULT_PAY_TO, GITHUB_REPO, CONTACT_EMAIL } from "@/lib/config";
+import { SOLANA_PAYTO } from "@/lib/solana-config";
 
 const X_URL = "https://x.com/HorizonPulseAPI";
 
@@ -10,7 +11,7 @@ export function SiteFooter() {
           <div className="hp-foot-grid">
             <div>
               <h4>Horizon Pulse</h4>
-              <p style={{ color: "var(--text-2)", margin: 0, maxWidth: 300 }}>Pay-per-call APIs for AI agents, settled in USDC on Base with x402.</p>
+              <p style={{ color: "var(--text-2)", margin: 0, maxWidth: 300 }}>Pay-per-call APIs for AI agents, settled in USDC on Base or Solana with x402.</p>
             </div>
             <div>
               <h4>Developers</h4>
@@ -38,7 +39,9 @@ export function SiteFooter() {
               <h4>Network</h4>
               <a href="https://www.x402.org/" target="_blank" rel="noreferrer">x402 protocol</a>
               <a href="https://base.org" target="_blank" rel="noreferrer">Base</a>
-              <a href={`https://basescan.org/address/${DEFAULT_PAY_TO}`} target="_blank" rel="noreferrer">payTo on Basescan</a>
+              <a href="https://solana.com" target="_blank" rel="noreferrer">Solana</a>
+              <a href={`https://basescan.org/address/${DEFAULT_PAY_TO}`} target="_blank" rel="noreferrer">Base payTo on Basescan</a>
+              <a href={`https://solscan.io/account/${SOLANA_PAYTO}`} target="_blank" rel="noreferrer">Solana payTo on Solscan</a>
             </div>
           </div>
           <p className="hp-fine">

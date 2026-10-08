@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DEFAULT_PAY_TO, USDC_BASE, CDP_FACILITATOR_URL, BASE_CAIP2, PUBLIC_BASE_URL } from "@/lib/config";
 import { fetchTreasuryUsdcBalance } from "@/lib/treasury";
+import { PAYAI_FACILITATOR_URL, SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
 import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Status | Horizon Pulse",
-  description: "Live on-chain USDC balance of the Horizon Pulse payTo on Base, the paid route catalog, and where to pay.",
+  description: "Live on-chain USDC balance of the Horizon Pulse payTo on Base, the paid route catalog, and where to pay on Base and Solana.",
 };
 
 const OLD_HOST = "horizon-pulse.vercel.app";
@@ -59,16 +60,18 @@ export default async function StatusPage() {
               <span>Read from the chain.</span>
             </h1>
             <p className="hp-sub">
-              The payTo balance below is a live <code>balanceOf</code> read on Base each time this page loads. Nothing is cached or estimated.
+              The Base payTo balance below is a live <code>balanceOf</code> read on Base each time this page loads. Nothing is cached or estimated.
             </p>
             <p className="hp-proof">
-              <a href={`https://basescan.org/address/${DEFAULT_PAY_TO}`} target="_blank" rel="noreferrer">payTo on Basescan ↗</a>
+              <a href={`https://basescan.org/address/${DEFAULT_PAY_TO}`} target="_blank" rel="noreferrer">Base payTo on Basescan ↗</a>
+              <span>·</span>
+              <a href={`https://solscan.io/account/${SOLANA_PAYTO}`} target="_blank" rel="noreferrer">Solana payTo on Solscan ↗</a>
               <span>·</span>
               <a href={BAZAAR_LOOKUP} target="_blank" rel="noreferrer">Coinbase Bazaar merchant lookup ↗</a>
             </p>
             <div className="hp-stats">
               <div className="hp-stat">
-                <div className="k">payTo balance</div>
+                <div className="k">Base payTo balance</div>
                 <div className="v">{usdc}{bal.ok && <span style={{ fontSize: 14, color: "var(--text-2)" }}> USDC</span>}</div>
                 <div className="d">{bal.ok ? `Read ${fmtUtc(bal.at)}` : "RPC read failed. No cached figure is shown."}</div>
                 <div className="d">Not revenue. Can include the operator&apos;s own test payments.</div>
@@ -84,9 +87,9 @@ export default async function StatusPage() {
                 <div className="d">USDC, exact amount in the 402</div>
               </div>
               <div className="hp-stat">
-                <div className="k">Network</div>
-                <div className="v">Base</div>
-                <div className="d"><code>{BASE_CAIP2}</code></div>
+                <div className="k">Networks</div>
+                <div className="v">Base + Solana</div>
+                <div className="d"><code>{BASE_CAIP2}</code> · Solana mainnet</div>
               </div>
             </div>
           </div>
@@ -97,35 +100,45 @@ export default async function StatusPage() {
             <div>
               <div className="hp-label">Payments</div>
               <h2>
-                One address. <span>One host.</span>
+                One address per network. <span>One host.</span>
               </h2>
-              <p className="hp-lead">Agents should only pay through {PUBLIC_BASE_URL.replace("https://", "")} to the payTo below.</p>
+              <p className="hp-lead">
+                Agents should only pay through {PUBLIC_BASE_URL.replace("https://", "")}, to the payTo below for the network they pay on. Same price on Base and
+                Solana.
+              </p>
             </div>
             <div className="hp-grid two">
               <div className="hp-tile">
                 <Ico d={I.wallet} />
                 <h3>Where to pay</h3>
                 <div className="hp-kv">
-                  <span className="k">payTo</span>
+                  <span className="k">Base payTo</span>
                   <code>{DEFAULT_PAY_TO}</code>
-                  <span className="k">Asset</span>
+                  <span className="k">Base asset</span>
                   <span>USDC <code>{USDC_BASE}</code></span>
-                  <span className="k">Facilitator</span>
+                  <span className="k">Base facilitator</span>
                   <span>Coinbase CDP <code>{CDP_FACILITATOR_URL}</code></span>
                   {bal.ok && (
                     <>
-                      <span className="k">Atomic</span>
+                      <span className="k">Base atomic</span>
                       <span><code>{bal.atomic}</code></span>
                     </>
                   )}
+                  <span className="k">Solana payTo</span>
+                  <code>{SOLANA_PAYTO}</code>
+                  <span className="k">Solana asset</span>
+                  <span>USDC <code>{USDC_SOLANA_MINT}</code></span>
+                  <span className="k">Solana facilitator</span>
+                  <span>PayAI <code>{PAYAI_FACILITATOR_URL}</code></span>
                 </div>
               </div>
               <div className="hp-tile">
                 <Ico d={I.shield} />
                 <h3>Custody</h3>
                 <p>
-                  The payTo is an interim Coinbase-custodial address on Base, controlled by the operator. It is not a Safe or multisig. A
-                  non-custodial upgrade is planned. Until then, this is the only settlement address for API calls.
+                  The Base payTo is an interim Coinbase-custodial address, controlled by the operator. The Solana payTo is a separate
+                  operator-controlled address; payments credit its USDC token account. Neither is a Safe or multisig. A non-custodial upgrade
+                  is planned for Base. These two are the only settlement addresses for API calls.
                 </p>
               </div>
             </div>
