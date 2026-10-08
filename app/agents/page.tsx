@@ -198,6 +198,16 @@ export default function AgentsPage() {
             </table>
           </div>
         </section>
+
+        <section className="hp-section" id="agent-promotion">
+          <div className="hp-wrap">
+            <a className="hp-tile" href="/agent-promotion" style={{ textDecoration: "none", border: "1px solid var(--line)", borderRadius: 12 }}>
+              <div className="hp-label" style={{ marginBottom: 0 }}>For API owners</div>
+              <h3>Want your own API found by agents?</h3>
+              <div className="hp-tile-foot"><span>See Agent promotion</span><span>/agent-promotion →</span></div>
+            </a>
+          </div>
+        </section>
       </main>
       <SiteFooter />
     </div>
