@@ -55,8 +55,8 @@ code change + Michael's passphrase; env can only turn the rail on/off.
   RPC: `HP_SOLANA_RPC_URL` (hardened, see fix 3), default `https://api.mainnet-beta.solana.com`.
   The pinned ATA constant is re-derived at init; mismatch → rail off.
 - **(c) Rejection logging.** PayAI verify-invalid / settle-failed / throws are logged
-  server-side as `[solana-rail] … reason=<code>` with addresses, signatures, hex and
-  base64 redacted (PayAI response bodies are not logged). The client response follows
+  server-side as `[solana-rail] … reason=<code>` — **reason codes only** (R1, below);
+  no PayAI free text, addresses, signatures, hex or base64. The client response follows
   the failure table below (definitive rejections → exactly main's Base-only 402).
 - **(e) Bazaar.** `extensions.bazaar` is stripped from incoming Solana payloads before
   PayAI sees them; Solana-only routes carry no extensions and the PayAI wrapper reports
@@ -85,7 +85,7 @@ No PayAI text ever reaches the client (the SDK's own 502 `{"error":"<facilitator
 message>"}` is never passed through). Server logs carry the reason code and, for an
 unconfirmed settle, a 16-hex fingerprint of the payment key (`fp=`) for on-chain
 reconciliation; PayAI response bodies, addresses, signatures and tx bytes are not
-logged. An unconfirmed settle is never answered with 402 because a 402 invites
+logged (R1 below). An unconfirmed settle is never answered with 402 because a 402 invites
 the client to sign and pay again (double charge).
 
 ### Replay guard (fix 2)
@@ -95,9 +95,9 @@ the client to sign and pay again (double charge).
   `settle_failed`, kept for `REPLAY_TTL_MS` = **25 h** (≥ the 300 s
   `maxTimeoutSeconds`). Released (deleted) when nothing could have been charged:
   verify rejected/failed, or the handler failed before settle.
-- In-memory, **per instance**. On a multi-instance deploy a replay that lands on a
-  different instance is not caught locally (see PayAI behaviour below). A global
-  guard needs a shared store (e.g. KV) = an account → Michael's decision.
+- In-memory, **per instance**. A fully global guard needs a shared store (e.g.
+  KV) = an account → Michael's decision. Instead, a cheap cross-instance check
+  (N1, below) catches replays that land on another instance.
 
 **PayAI duplicate handling (from PayAI's own docs, read 2026-10-08;
 copies in hp-tests/solana-rail-20261008/payai-*.2026-10-08.*):**
@@ -119,6 +119,57 @@ copies in hp-tests/solana-rail-20261008/payai-*.2026-10-08.*):**
   The reference `@x402/svm` facilitator does the same with an in-memory
   `SettlementCache` (`duplicate_settlement`).
 
+## Re-review fixes (Odin re-review 2026-10-08, PASS WITH 1 FIX)
+
+### R1 — reason codes only in logs (required)
+- Verify-invalid logs `reason=<invalidReason>`, settle-failed logs `reason=<errorReason>`,
+  and the decide/402 path logs `error=<code>`, each **only if** the value matches
+  `/^[a-z0-9_]+$/` (≤ 80 chars); anything else is logged as `unrecognized` (or omitted).
+  `invalidMessage` / `errorMessage` are dropped (also removed from the objects handed
+  back to x402 core).
+- Thrown PayAI errors (`VerifyError`, `SettleError`, `FacilitatorResponseError`,
+  `FacilitatorTimeoutError`, plain `Facilitator <op> failed (<status>): <excerpt>`) are
+  re-thrown **scrubbed** (same class, no PayAI text) at the facilitator-wrapper
+  boundary for `getSupported`, `verify` and `settle`. This also covers x402 core's own
+  `console.warn("Failed to fetch supported kinds from facilitator: …")`, which
+  previously printed the PayAI body excerpt. Only the SDK's fixed timeout text
+  (`Facilitator <op> request timed out after <n>ms`) and `failed (<status>)` survive.
+- Test: `tests/solana-rereview-fixes.test.ts` — "(R1) marker never logged — …" (19
+  paths through the real `HTTPFacilitatorClient`: verify ×7, settle ×9, supported ×3)
+  injects `PAYAI-FREETEXT-MARKER-Zq9` into every PayAI field/body and asserts it never
+  appears in any `console.*` argument; plus "(R1) safeCode keeps only plain reason codes".
+
+### N1 — cross-instance replay check (no new account)
+- After a **successful** settle, the rail reads the tx's `blockTime` via read-only
+  `getTransaction` (`commitment: confirmed`). If the tx confirmed **before this request
+  started** (minus `REPLAY_CONFIRM_SKEW_MS` = **30 s**, block times are 1 s validator
+  estimates), PayAI re-reported an old success (its 24 h idempotent replay) → **409**
+  `{"error":"duplicate_payment"}`, paid body withheld, key marked `settled` locally.
+- **Fails open**: RPC error, `null` (not yet visible) or no `blockTime` → the paid
+  response is served and a warning logged (never withhold a settled payment on an RPC
+  hiccup). Limit: a replay landing on another instance within 30 s of the original
+  confirmation is not caught.
+- Tests: "(N1) replay on ANOTHER instance: … => 409 duplicate_payment, paid body
+  withheld", "(N1) genuine payment confirmed during the request => 200",
+  "(N1) inside the 30 s clock-skew allowance => 200 (no false 409)", and three
+  fail-open cases.
+
+### N2 — tinypool override
+- `package.json` `"overrides": {"tinypool": "^2.1.2"}` → tinypool 1.1.1 → **2.2.0**
+  (lockfile change limited to tinypool). Full suite passes on it; `npm audit` no longer
+  lists GHSA-5gmw-xhrv-c9v3 / GHSA-85c8-ppgw-ccpr. `@vitest/mocker` GHSA-82fw-gwwq-j7x9
+  remains (needs a vitest major; dev-only, not shipped).
+- Test: "(4/N2) vitest 3.2.7 + tinypool override >=2.1.2 …" in
+  `tests/solana-review-fixes.test.ts`.
+
+### N3 — parallel cold start
+- On a cold instance the token-account check and the rail init (lazy import +
+  PayAI `/supported`) run in **parallel** (`Promise.all`), so the first request waits
+  for the slower of the two, not the sum. Consequence: with the flag on and the token
+  account still absent, `/supported` is also fetched (read-only).
+- Tests: "(N3) unpaid 402: PayAI /supported is fetched while the token-account RPC is
+  still in flight", "(N3) paid path cold start: same parallel init, payment still settles".
+
 ### RPC override hardening (fix 3)
 `HP_SOLANA_RPC_URL` is trimmed, parsed, and must be: https; no userinfo; not an IP
 literal (any IPv4 form the URL parser normalises, or IPv6); not `localhost` /
@@ -129,14 +180,14 @@ Michael's approval, then its hostname is added in code). Anything else → rail 
 `fetch` uses `redirect: "error"`. Never logged.
 
 ### Should-fixes
-- 4: `vitest` 3.2.4 → **3.2.7** (dev only; clears GHSA-5xrq-8626-4rwp). `npm audit`
-  still lists tinypool GHSA-5gmw-xhrv-c9v3 / GHSA-85c8-ppgw-ccpr and @vitest/mocker
-  GHSA-82fw-gwwq-j7x9: only fixed in vitest 5.x (major), dev-only, not shipped.
+- 4: `vitest` 3.2.4 → **3.2.7** (dev only; clears GHSA-5xrq-8626-4rwp). The tinypool
+  advisories are cleared by the N2 override; @vitest/mocker GHSA-82fw-gwwq-j7x9 still
+  listed (needs a vitest major), dev-only, not shipped.
 - 6: token-account check, PayAI `/supported` (fee payer list) refresh and the
   allowance count are **stale-while-revalidate**: once warm, a 402 answers from
   cache and the refresh runs in the background (a failed refresh still fails
   closed for the following requests). Only the very first request on a cold
-  instance waits, bounded by `HP_SOLANA_INIT_TIMEOUT_MS`.
+  instance waits, bounded by `HP_SOLANA_INIT_TIMEOUT_MS` (both checks in parallel, N3).
 - 7: PayAI deadlines: verify **10 s**, settle **12 s** (was 30 s each). PayAI itself
   may hold `/settle` up to ~100 s; a timeout here is the ambiguous 504 above.
 - 9: alerts go through `setSolanaAlertHook()` (default: one
@@ -171,8 +222,9 @@ Bazaar settlement window.**
 ## Tests / smoke
 - `npm test` (vitest): flag-off identity, flag-on shape, config/pin validation,
   isolation (unpaid + paid), SDK local verify (watch-only signer, no keys), Odin
-  guards (`tests/solana-guards.test.ts`) and review fixes
-  (`tests/solana-review-fixes.test.ts`).
+  guards (`tests/solana-guards.test.ts`), review fixes
+  (`tests/solana-review-fixes.test.ts`) and re-review fixes
+  (`tests/solana-rereview-fixes.test.ts`).
 - No-money smoke: `next build`, `next start` with the flag on (no CDP keys), then
   `node scripts/smoke-solana-rail.mjs <base> <out.json>` and
   `SMOKE_FLAG_ON_JSON=<out.json> npx vitest run -c vitest.smoke.config.mts`

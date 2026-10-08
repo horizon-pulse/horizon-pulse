@@ -31,7 +31,11 @@
  *   - Incoming Solana payloads have any `extensions.bazaar` stripped before
  *     they reach PayAI; the Solana server never declares Bazaar.
  *   - PayAI rejections (verify invalid / settle failed / throws) are logged
- *     server-side with the reason code only (addresses, tx data redacted).
+ *     server-side with REASON CODES ONLY (R1): a PayAI-supplied code is kept
+ *     only if it matches /^[a-z0-9_]+$/ (else "unrecognized"); PayAI free
+ *     text (invalidMessage, errorMessage, HTTP error-body excerpts) is never
+ *     logged — PayAI errors are re-thrown scrubbed at the facilitator-wrapper
+ *     boundary, so x402 core's own console.warn cannot leak them either.
  *   - Paid-path outcomes (Odin code review 2026-10-08, fix 1):
  *       verify phase (nothing charged): any rejection, throw, timeout or
  *         malformed PayAI response → exactly main's Base-only 402;
@@ -50,8 +54,13 @@
  *     replay of recorded outcomes); a duplicate gets 409
  *     {"error":"duplicate_payment"}. Keys are released when nothing was
  *     charged (verify failed, handler error before settle).
+ *     Cross-instance (N1): after a successful settle the tx's block time is
+ *     read (read-only getTransaction); confirmed before this request started
+ *     (minus REPLAY_CONFIRM_SKEW_MS) → 409 duplicate_payment. RPC error /
+ *     unknown → fail open (the paid response is served).
  *   - Token-account check and PayAI /supported (fee payer list) refresh are
- *     stale-while-revalidate: once warm, a 402 never waits on them.
+ *     stale-while-revalidate: once warm, a 402 never waits on them. On a cold
+ *     instance both run in parallel (N3).
  *   - Ops alerts (should-fix 9): warn-rate alert and the 80%-of-PayAI-free-
  *     allowance alert go through setSolanaAlertHook (default: one
  *     console.error line tagged "[solana-rail][ALERT]").
@@ -75,7 +84,7 @@ import {
   encodePaymentRequiredHeader,
   encodePaymentSignatureHeader,
 } from "@x402/core/http";
-import { FacilitatorResponseError, FacilitatorTimeoutError, SettleError } from "@x402/core/types";
+import { FacilitatorResponseError, FacilitatorTimeoutError, SettleError, VerifyError } from "@x402/core/types";
 import { withX402 } from "@x402/next";
 import {
   SOLANA_MAINNET_CAIP2,
@@ -110,6 +119,12 @@ export const SOLANA_SETTLE_TIMEOUT_MS = 12_000;
  */
 export const REPLAY_TTL_MS = 25 * 60 * 60_000;
 const REPLAY_MAX_ENTRIES = 50_000;
+/**
+ * N1 cross-instance replay check: after a successful settle, the tx's block
+ * time (read-only getTransaction) must not be earlier than this request's
+ * start minus this skew (block times are 1 s-granular validator estimates).
+ */
+export const REPLAY_CONFIRM_SKEW_MS = 30_000;
 /** Warn-rate alert: this many [solana-rail] warnings inside the window. */
 export const WARN_ALERT_THRESHOLD = 20;
 export const WARN_ALERT_WINDOW_MS = 5 * 60_000;
@@ -307,7 +322,19 @@ export function getSolanaRailStats(): { receiptCount: number | null; allowanceAl
 }
 
 function warn(msg: string, err?: unknown, fallback = true): void {
-  const detail = err instanceof Error ? err.message : err === undefined ? "" : String(err);
+  // R1: a PayAI/SDK facilitator error never contributes free text to a log line.
+  const payaiShaped =
+    err instanceof FacilitatorResponseError ||
+    err instanceof SettleError ||
+    err instanceof VerifyError ||
+    (err instanceof Error && err.message.startsWith("Facilitator "));
+  const detail = payaiShaped
+    ? (payaiErrorDetail(err) ?? "")
+    : err instanceof Error
+      ? err.message
+      : err === undefined
+        ? ""
+        : String(err);
   console.warn(`${LOG} ${redact(msg)}${detail ? `: ${redact(detail)}` : ""}${fallback ? " (serving Base-only)" : ""}`);
   noteWarn();
 }
@@ -318,7 +345,8 @@ function warn(msg: string, err?: unknown, fallback = true): void {
 // a key unique among in-flight requests, so this is race-free.
 // ---------------------------------------------------------------------------
 
-type SettleOutcome = { outcome: "success" | "failed" | "unconfirmed"; reason: string; timeout: boolean };
+/** `reason` is log-safe (safeCode); `raw` is PayAI's value, used for matching only — never logged. */
+type SettleOutcome = { outcome: "success" | "failed" | "unconfirmed"; reason: string; raw: string; timeout: boolean; transaction?: string };
 type Attempt = {
   handlerRan: boolean;
   handlerThrew: boolean;
@@ -328,32 +356,46 @@ type Attempt = {
 };
 const attempts = new Map<string, Attempt>();
 
+/**
+ * R1 (log hygiene): only machine reason codes from PayAI are ever logged.
+ * Anything that is not a plain lower-case code (/^[a-z0-9_]+$/, ≤ 80 chars)
+ * is replaced by "unrecognized". PayAI free text (messages, excerpts) is never
+ * logged.
+ */
+export function safeCode(value: unknown): string {
+  return typeof value === "string" && value.length <= 80 && /^[a-z0-9_]+$/.test(value) ? value : "unrecognized";
+}
+
 /** PayAI reasons that mean "the outcome is not known yet" (PayAI developers.md, 2026-10-08). */
 const UNRESOLVED_SETTLE_REASONS = new Set(["settlement_pending", "duplicate_settlement"]);
 
 function classifySettleResult(res: SettleResponse): SettleOutcome {
-  if (res.success) return { outcome: "success", reason: "success", timeout: false };
-  const reason = String(res.errorReason ?? "unknown");
-  const unresolved = UNRESOLVED_SETTLE_REASONS.has(reason) || (typeof res.transaction === "string" && res.transaction !== "");
-  return { outcome: unresolved ? "unconfirmed" : "failed", reason, timeout: false };
+  if (res.success) {
+    return { outcome: "success", reason: "success", raw: "success", timeout: false, transaction: typeof res.transaction === "string" ? res.transaction : undefined };
+  }
+  const raw = String(res.errorReason ?? "unknown");
+  const unresolved = UNRESOLVED_SETTLE_REASONS.has(raw) || (typeof res.transaction === "string" && res.transaction !== "");
+  return { outcome: unresolved ? "unconfirmed" : "failed", reason: safeCode(raw), raw, timeout: false };
 }
 
 function classifySettleThrow(err: unknown): SettleOutcome {
-  if (err instanceof FacilitatorTimeoutError) return { outcome: "unconfirmed", reason: "facilitator_timeout", timeout: true };
-  if (err instanceof FacilitatorResponseError) return { outcome: "unconfirmed", reason: "facilitator_malformed_response", timeout: false };
+  if (err instanceof FacilitatorTimeoutError) return { outcome: "unconfirmed", reason: "facilitator_timeout", raw: "facilitator_timeout", timeout: true };
+  if (err instanceof FacilitatorResponseError) {
+    return { outcome: "unconfirmed", reason: "facilitator_malformed_response", raw: "facilitator_malformed_response", timeout: false };
+  }
   if (err instanceof SettleError) {
-    const reason = String(err.errorReason ?? "unknown");
+    const raw = String(err.errorReason ?? "unknown");
     const status = err.statusCode;
     const unresolved =
-      UNRESOLVED_SETTLE_REASONS.has(reason) ||
+      UNRESOLVED_SETTLE_REASONS.has(raw) ||
       status >= 500 ||
       status === 429 ||
       status === 409 ||
       (typeof err.transaction === "string" && err.transaction !== "");
-    return { outcome: unresolved ? "unconfirmed" : "failed", reason, timeout: false };
+    return { outcome: unresolved ? "unconfirmed" : "failed", reason: safeCode(raw), raw, timeout: false };
   }
   // fetch failed / connection reset / non-JSON 5xx body: the request may have reached PayAI.
-  return { outcome: "unconfirmed", reason: "transport_error", timeout: false };
+  return { outcome: "unconfirmed", reason: "transport_error", raw: "transport_error", timeout: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -382,7 +424,12 @@ export class SolanaOnlyFacilitatorClient implements FacilitatorClient {
         throw new Error("PayAI facilitator URL must be https");
       }
     }
-    const supported = await this.inner.getSupported();
+    let supported: SupportedResponse;
+    try {
+      supported = await this.inner.getSupported();
+    } catch (err) {
+      throw scrubPayaiError(err, "supported");
+    }
     const kinds = (supported.kinds ?? []).filter(
       (k) => k.x402Version === 2 && k.scheme === "exact" && k.network === this.network,
     );
@@ -430,12 +477,13 @@ export class SolanaOnlyFacilitatorClient implements FacilitatorClient {
     } catch (err) {
       if (att) att.verify = "error";
       warn(`PayAI verify threw (${errorKind(err)})`, payaiErrorDetail(err));
-      throw err;
+      throw scrubPayaiError(err, "verify");
     }
     if (att) att.verify = res.isValid ? "valid" : "invalid";
     if (!res.isValid) {
-      // Reason code only; payer / tx never logged.
-      warn(`PayAI verify rejected: reason=${res.invalidReason ?? "unknown"}${res.invalidMessage ? ` message=${res.invalidMessage}` : ""}`);
+      // Reason code only (R1): invalidMessage, payer, tx never logged.
+      warn(`PayAI verify rejected: reason=${safeCode(res.invalidReason)}`);
+      return { ...res, invalidReason: safeCode(res.invalidReason), invalidMessage: undefined };
     }
     return res;
   }
@@ -450,18 +498,16 @@ export class SolanaOnlyFacilitatorClient implements FacilitatorClient {
       const c = classifySettleThrow(err);
       if (att) att.settle = c;
       warn(`PayAI settle threw (${errorKind(err)}): outcome=${c.outcome} reason=${c.reason}`, payaiErrorDetail(err), c.outcome === "failed");
-      if (c.reason.startsWith("free_tier_exhausted")) allowanceAlert("free_tier_exhausted", lastReceiptCount);
-      throw err;
+      if (c.raw.startsWith("free_tier_exhausted")) allowanceAlert("free_tier_exhausted", lastReceiptCount);
+      throw scrubPayaiError(err, "settle");
     }
     const c = classifySettleResult(res);
     if (att) att.settle = c;
     if (!res.success) {
-      warn(
-        `PayAI settle failed: outcome=${c.outcome} reason=${c.reason}${res.errorMessage ? ` message=${res.errorMessage}` : ""}`,
-        undefined,
-        c.outcome === "failed",
-      );
-      if (c.reason.startsWith("free_tier_exhausted")) allowanceAlert("free_tier_exhausted", lastReceiptCount);
+      // Reason code only (R1): errorMessage never logged.
+      warn(`PayAI settle failed: outcome=${c.outcome} reason=${c.reason}`, undefined, c.outcome === "failed");
+      if (c.raw.startsWith("free_tier_exhausted")) allowanceAlert("free_tier_exhausted", lastReceiptCount);
+      return { ...res, errorReason: c.reason, errorMessage: undefined };
     }
     return res;
   }
@@ -472,16 +518,44 @@ function errorKind(err: unknown): string {
 }
 
 /**
- * What of a PayAI client error may be logged: never PayAI's response body.
- * Malformed-response errors carry a body excerpt → dropped; "Facilitator
- * <op> failed (<status>): <excerpt>" → cut at the colon.
+ * What of a PayAI client error may be logged (R1): never PayAI's text.
+ *   - our SDK's own timeout message ("Facilitator settle request timed out after 12000ms");
+ *   - "Facilitator <op> failed (<status>)" — the SDK prefix only, PayAI's excerpt cut;
+ *   - VerifyError / SettleError → their reason code (safeCode) only;
+ *   - anything else (malformed-response excerpts, unknown errors) → nothing.
  */
 function payaiErrorDetail(err: unknown): string | undefined {
-  if (err instanceof FacilitatorTimeoutError) return err.message;
+  if (err instanceof FacilitatorTimeoutError) return /^Facilitator \w+ request timed out after \d+ms$/.test(err.message) ? err.message : undefined;
   if (err instanceof FacilitatorResponseError) return undefined;
-  if (err instanceof SettleError) return undefined; // reason code is logged separately
-  const msg = err instanceof Error ? err.message : String(err);
-  return msg.startsWith("Facilitator ") && msg.includes(":") ? msg.slice(0, msg.indexOf(":")) : msg;
+  if (err instanceof SettleError) return `reason=${safeCode(err.errorReason)}`;
+  if (err instanceof Error && err.name === "VerifyError") return `reason=${safeCode((err as { invalidReason?: unknown }).invalidReason)}`;
+  const msg = err instanceof Error ? err.message : "";
+  const m = /^(Facilitator (?:verify|settle|getSupported|supported) failed \(\d{3}\))(?::|$)/.exec(msg);
+  return m ? m[1] : undefined;
+}
+
+/**
+ * R1 boundary: the error / response handed back to the x402 SDK carries no
+ * PayAI free text either (the SDK logs some errors itself, and copies
+ * reasons into the Solana server's 402 header). Same error CLASS, so the
+ * SDK's behaviour and our classification are unchanged.
+ */
+function scrubPayaiError(err: unknown, op: "verify" | "settle" | "supported"): unknown {
+  if (err instanceof FacilitatorTimeoutError) return err; // SDK-generated message only
+  if (err instanceof FacilitatorResponseError) return new FacilitatorResponseError(`PayAI ${op} returned a malformed response`);
+  if (err instanceof SettleError) {
+    return new SettleError(err.statusCode, {
+      success: false,
+      errorReason: safeCode(err.errorReason),
+      transaction: typeof err.transaction === "string" ? err.transaction : "",
+      network: err.network,
+    } as SettleResponse);
+  }
+  if (err instanceof VerifyError) {
+    return new VerifyError(err.statusCode, { isValid: false, invalidReason: safeCode(err.invalidReason) } as VerifyResponse);
+  }
+  const detail = payaiErrorDetail(err);
+  return new Error(detail ?? `PayAI ${op} failed (${errorKind(err)})`);
 }
 
 /** Build the PayAI client pair: verify/supported at SOLANA_VERIFY_TIMEOUT_MS, settle at SOLANA_SETTLE_TIMEOUT_MS. */
@@ -716,9 +790,9 @@ async function buildSolanaRequirement(rail: Rail, atomicUsdc: string): Promise<P
  */
 export async function getSolanaAccept(config: SolanaRailConfig, atomicUsdc: string): Promise<PaymentRequirements | null> {
   try {
-    if (!(await solanaTokenAccountReady(config))) return null;
-    const rail = await getRail(config);
-    if (!rail) return null;
+    // N3: token-account check and rail init run in parallel (cold start ≤ one initTimeoutMs).
+    const [ready, rail] = await Promise.all([solanaTokenAccountReady(config), getRail(config)]);
+    if (!ready || !rail) return null;
     return await buildSolanaRequirement(rail, atomicUsdc);
   } catch (err) {
     warn("could not build Solana requirement", err);
@@ -986,7 +1060,8 @@ function decide(key: string, att: Attempt, res: NextResponse | null, threw: bool
     let reason = "";
     try {
       const pr = decodePaymentRequiredHeader(res?.headers.get("payment-required") ?? "");
-      reason = typeof pr.error === "string" ? ` error=${pr.error}` : "";
+      // R1: only a plain reason code; core may put PayAI's raw excerpt here.
+      reason = typeof pr.error === "string" && /^[a-z0-9_]+$/.test(pr.error) && pr.error.length <= 80 ? ` error=${pr.error}` : "";
     } catch {
       /* no header */
     }
@@ -996,12 +1071,43 @@ function decide(key: string, att: Attempt, res: NextResponse | null, threw: bool
 }
 
 /**
+ * N1: cross-instance replay check with no shared store. PayAI answers an
+ * identical settle body with the recorded success for 24 h, so a replay sent
+ * to ANOTHER instance (whose local guard has never seen it) would be
+ * "settled" again. A genuine settle lands during this request; a replayed one
+ * landed earlier. Read-only getTransaction on the allow-listed RPC.
+ * "unknown" (RPC error / not yet indexed / no block time) → serve (fail open:
+ * the payment did settle; never withhold a paid response on an RPC hiccup).
+ */
+async function settledBeforeRequest(
+  config: SolanaRailConfig,
+  signature: string | undefined,
+  startedAt: number,
+): Promise<"replay" | "fresh" | "unknown"> {
+  if (typeof signature !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(signature)) return "unknown";
+  try {
+    const tx = (await rpc(
+      config.rpcUrl,
+      "getTransaction",
+      [signature, { commitment: "confirmed", encoding: "json", maxSupportedTransactionVersion: 0 }],
+      config.initTimeoutMs,
+    )) as { blockTime?: unknown } | null;
+    const bt = tx?.blockTime;
+    if (typeof bt !== "number" || !Number.isFinite(bt)) return "unknown";
+    return bt * 1000 < startedAt - REPLAY_CONFIRM_SKEW_MS ? "replay" : "fresh";
+  } catch {
+    return "unknown";
+  }
+}
+
+/**
  * Serve a Solana-paid request through the Solana-only server.
  *   - null → caller serves main's exact Base-only 402 (rail unavailable,
  *     preflight failed, verify-phase rejection/throw/timeout/malformed, or a
  *     definitive settle failure);
  *   - 409 {"error":"duplicate_payment"} → replay of a payment already in
- *     flight / settled / unconfirmed (checked before verify);
+ *     flight / settled / unconfirmed (checked before verify), or (N1) a
+ *     settle whose tx was confirmed before this request started;
  *   - 502/504 {"error":"settlement_unconfirmed"} → ambiguous settle;
  *   - the paid response → settled;
  *   - throws → the route handler threw (same as the Base path: Next 500).
@@ -1015,10 +1121,11 @@ export async function handleSolanaPayment(
 ): Promise<NextResponse | null> {
   let key: string | null = null;
   let decision: Decision;
+  const startedAt = Date.now();
   try {
-    if (!(await solanaTokenAccountReady(config))) return null;
-    const rail = await getRail(config);
-    if (!rail) return null;
+    // N3: token-account check and rail init in parallel.
+    const [ready, rail] = await Promise.all([solanaTokenAccountReady(config), getRail(config)]);
+    if (!ready || !rail) return null;
 
     const requirement = await buildSolanaRequirement(rail, atomicUsdc);
     const received = decodePaymentSignatureHeader(req.headers.get("payment-signature")!.trim()) as PaymentPayload;
@@ -1078,6 +1185,15 @@ export async function handleSolanaPayment(
     } catch (err) {
       threw = true;
       thrown = err;
+    }
+    if (att.settle?.outcome === "success" && res && res.status < 400) {
+      const when = await settledBeforeRequest(config, att.settle.transaction, startedAt);
+      if (when === "replay") {
+        replaySet(key, "settled");
+        warn(`cross-instance replay: tx confirmed before this request fp=${fp(key)}; client gets 409`, undefined, false);
+        return jsonError(409, "duplicate_payment");
+      }
+      if (when === "unknown") warn(`could not read settled tx time fp=${fp(key)}; serving the paid response`, undefined, false);
     }
     decision = decide(key, att, res, threw, thrown);
   } catch (err) {

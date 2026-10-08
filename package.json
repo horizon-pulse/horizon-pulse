@@ -47,5 +47,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "overrides": {
+    "tinypool": "^2.1.2"
   }
 }

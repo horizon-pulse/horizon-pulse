@@ -465,9 +465,19 @@ describe("fix 3: HP_SOLANA_RPC_URL hardening", () => {
 
 // ===========================================================================
 describe("should-fixes 4-9", () => {
-  it("(4) vitest pinned to 3.2.7", () => {
-    const pkg = JSON.parse(readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  it("(4/N2) vitest 3.2.7 + tinypool override >=2.1.2 (clears GHSA-5gmw-xhrv-c9v3 / GHSA-85c8-ppgw-ccpr); @vitest/mocker 3.2.7 GHSA-82fw-gwwq-j7x9 remains (dev-only, accepted)", () => {
+    const root = path.join(__dirname, "..");
+    const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+    const lock = JSON.parse(readFileSync(path.join(root, "package-lock.json"), "utf8")).packages;
     expect(pkg.devDependencies.vitest).toBe("3.2.7");
+    expect(pkg.overrides?.tinypool).toBe("^2.1.2");
+    const [maj, min, pat] = String(lock["node_modules/tinypool"].version).split(".").map(Number);
+    expect(maj > 2 || (maj === 2 && (min > 1 || (min === 1 && pat >= 2)))).toBe(true);
+    expect(lock["node_modules/vitest"].version).toBe("3.2.7");
+    // Reality check: the mocker advisory is only fixed in vitest >= 4.1.11 (major bump, not done).
+    expect(lock["node_modules/@vitest/mocker"].version).toBe("3.2.7");
+    // tinypool is dev-only (never shipped).
+    expect(lock["node_modules/tinypool"].dev).toBe(true);
   });
 
   it("(5) docs/solana-rail.md states the fix-1 fallback (verify → 402; ambiguous settle → 502/504, never 402)", () => {

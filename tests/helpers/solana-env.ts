@@ -65,11 +65,17 @@ export type AtaMode = "present" | "absent" | "error" | (() => unknown);
 export type RpcCall = { url: string; method: string; account: unknown };
 
 /** Read-only RPC stub for the token-account guard (+ allowance receipt count). Records every call. */
-export function installRpc(mode: AtaMode = "present", receipts: number | (() => unknown) = 0): RpcCall[] {
+export function installRpc(
+  mode: AtaMode = "present",
+  receipts: number | (() => unknown) = 0,
+  /** getTransaction result for a settled signature (default: confirmed "now"). */
+  getTransaction: (signature: string) => unknown = () => ({ slot: 1, blockTime: Math.floor(Date.now() / 1000), meta: { err: null } }),
+): RpcCall[] {
   const calls: RpcCall[] = [];
   let current: AtaMode = mode;
   const fn: SolanaRpc = async (url, method, params) => {
     calls.push({ url, method, account: params[0] });
+    if (method === "getTransaction") return getTransaction(String(params[0]));
     if (method === "getSignaturesForAddress" && params[0] === SOLANA_PAYTO_USDC_ATA) {
       if (typeof receipts === "function") return receipts();
       return Array.from({ length: receipts }, (_, i) => ({ signature: `sig${i}`, slot: i, err: null }));
