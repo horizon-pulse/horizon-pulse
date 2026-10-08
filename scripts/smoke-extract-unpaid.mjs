@@ -7,7 +7,9 @@
  *   SMOKE_BASE_URL=https://horizonpulse.dev node scripts/smoke-extract-unpaid.mjs
  *   SMOKE_BASE_URL=http://127.0.0.1:3000 node scripts/smoke-extract-unpaid.mjs
  */
-const EXPECTED_PAY_TO = "0x5b32c973596078a967562ca652761404f19be0e9";
+import { readFileSync } from "node:fs";
+// Single source of truth for payTo (see lib/payto.ts); fs read works on Node 20.0+.
+const EXPECTED_PAY_TO = JSON.parse(readFileSync(new URL("../config/payto.json", import.meta.url), "utf8")).base.payTo;
 const EXPECTED_ATOMIC = "15000";
 const BASE_URL = (
   process.env.SMOKE_BASE_URL?.trim() || "https://horizonpulse.dev"

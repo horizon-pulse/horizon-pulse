@@ -12,6 +12,8 @@
     "smoke:http:unpaid": "node scripts/smoke-http-unpaid.mjs",
     "smoke:extract:unpaid": "node scripts/smoke-extract-unpaid.mjs",
     "gen:openapi": "npx -y tsx --tsconfig tsconfig.json scripts/gen-openapi.ts",
+    "gen:llms": "npx -y tsx --tsconfig tsconfig.json scripts/gen-llms.ts",
+    "sync:payto": "node scripts/sync-payto.mjs",
     "test": "vitest run"
   },
   "dependencies": {

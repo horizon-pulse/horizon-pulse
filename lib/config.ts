@@ -1,19 +1,21 @@
 /**
  * Horizon Pulse — shared payment & network config.
- * payTo MUST remain the Coinbase treasury address below unless overridden by env.
+ * The payTo addresses come ONLY from config/payto.json (via lib/payto.ts).
+ * Env PAY_TO is a fail-closed guard, not a source: see getPayTo().
  */
+import { PAYTO } from "./payto";
 
-export const DEFAULT_PAY_TO =
-  "0x5b32c973596078a967562ca652761404f19be0e9" as const;
+/** Base payTo (Coinbase treasury), from config/payto.json base.payTo. */
+export const DEFAULT_PAY_TO: `0x${string}` = PAYTO.base.payTo;
 
 /**
  * Basename (Base name service) for the Base payTo above: a human-readable
- * LABEL only. Verified 2026-10-08 on Base mainnet (block 52344832): registry
- * owner and resolver addr() of horizonpulsebase.base.eth are both
- * DEFAULT_PAY_TO. The 402 challenge always carries the hex payTo; clients must
+ * LABEL only (config/payto.json base.basename). Verified 2026-10-08 on Base
+ * mainnet (block 52344832): registry owner and resolver addr() of the
+ * Basename are both DEFAULT_PAY_TO. The 402 challenge always carries the hex payTo; clients must
  * compare that, never resolve this name at pay time. Copy only, no payment logic.
  */
-export const BASE_PAY_TO_BASENAME = "horizonpulsebase.base.eth" as const;
+export const BASE_PAY_TO_BASENAME: string = PAYTO.base.basename;
 
 /** USDC on Base mainnet */
 export const USDC_BASE =
@@ -112,19 +114,30 @@ export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as c
 /** Canonical public host (custom domain). Prefer this in agent docs and clients. */
 export const PUBLIC_BASE_URL = "https://horizonpulse.dev" as const;
 
+/**
+ * The Base payTo every 402 / verify / settle / treasury read uses: always
+ * config/payto.json base.payTo (= DEFAULT_PAY_TO, so the 402s and the copy
+ * cannot diverge).
+ *
+ * Env PAY_TO is a guard, not a source (mirrors HP_SOLANA_PAYTO): unset or
+ * empty is fine; if set, it must equal the config value (trimmed,
+ * case-insensitive) or this throws, so paid routes fail closed (nothing is
+ * charged) instead of silently paying another address. Retired addresses
+ * (config retired.base) are always refused.
+ */
 export function getPayTo(): `0x${string}` {
-  const fromEnv = process.env.PAY_TO?.trim();
-  const addr = (fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_PAY_TO).toLowerCase();
-  if (!/^0x[a-f0-9]{40}$/.test(addr)) {
-    throw new Error(`Invalid PAY_TO address: ${addr}`);
+  const addr = DEFAULT_PAY_TO;
+  // Guard: never pay a retired treasury (config/payto.json retired.base)
+  if (PAYTO.retired.base.includes(addr)) {
+    throw new Error(`Refusing retired payTo ${addr} — use the new treasury`);
   }
-  // Guard: never silently fall back to the retired treasury
-  if (addr === "0xe16a1b12404cb2ebc6e783beca6e2a9253c3dc7e") {
+  const fromEnv = process.env.PAY_TO?.trim();
+  if (fromEnv && fromEnv.toLowerCase() !== addr) {
     throw new Error(
-      "Refusing retired payTo 0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E — use the new treasury",
+      "PAY_TO env does not match config/payto.json base.payTo — refusing to serve payments (env is a guard, not a source)",
     );
   }
-  return addr as `0x${string}`;
+  return addr;
 }
 
 /**

@@ -20,7 +20,9 @@ import { createPublicClient, http, formatUnits, erc20Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { base } from "viem/chains";
 
-const EXPECTED_PAY_TO = "0x5b32c973596078a967562ca652761404f19be0e9";
+import { readFileSync } from "node:fs";
+// Single source of truth for payTo (see lib/payto.ts); fs read works on Node 20.0+.
+const EXPECTED_PAY_TO = JSON.parse(readFileSync(new URL("../config/payto.json", import.meta.url), "utf8")).base.payTo;
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const EXPECTED_ATOMIC = "5000"; // $0.005 USDC (6 decimals)
 const EXPECTED_PRICE_USD = "$0.005";

@@ -21,14 +21,16 @@
  * account exists and PayAI's live fee payer checks out (lib/solana-rail.ts).
  *
  * Moving the payout to any other address (e.g. a treasury account) needs a
- * code change to SOLANA_PAYTO plus a fresh passphrase from Michael; the env
+ * change to config/payto.json solana.payTo (+ usdcAta, + the literal tripwire
+ * in tests/payto-pin.test.ts) plus a fresh passphrase from Michael; the env
  * alone can only switch the rail on or off.
  *
  * See docs/solana-rail.md.
  */
+import { PAYTO } from "./payto";
 
-/** Michael's Ledger Solana receive address. The ONLY Solana payTo. */
-export const SOLANA_PAYTO = "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz" as const;
+/** Michael's Ledger Solana receive address. The ONLY Solana payTo (config/payto.json solana.payTo). */
+export const SOLANA_PAYTO: string = PAYTO.solana.payTo;
 
 /** CAIP-2 id for Solana mainnet-beta (x402 v2 / PayAI `/supported`; = @x402/svm SOLANA_MAINNET_CAIP2). */
 export const SOLANA_MAINNET_CAIP2 = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" as const;
@@ -51,7 +53,7 @@ export const ASSOCIATED_TOKEN_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJ
  * advertised ONLY while this account exists on mainnet (lib/solana-rail.ts,
  * read-only RPC, re-checked every ~10 minutes).
  */
-export const SOLANA_PAYTO_USDC_ATA = "3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu" as const;
+export const SOLANA_PAYTO_USDC_ATA: string = PAYTO.solana.usdcAta;
 
 /** Public read-only Solana mainnet JSON-RPC (override with HP_SOLANA_RPC_URL, https only). */
 export const DEFAULT_SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com" as const;

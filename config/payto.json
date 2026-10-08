@@ -1,0 +1,14 @@
+{
+  "base": {
+    "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+    "basename": "horizonpulsebase.base.eth"
+  },
+  "solana": {
+    "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+    "usdcAta": "3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu"
+  },
+  "retired": {
+    "base": ["0xe16a1b12404cb2ebc6e783beca6e2a9253c3dc7e"],
+    "solana": []
+  }
+}

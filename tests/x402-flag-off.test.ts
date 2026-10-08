@@ -21,6 +21,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installFacilitatorMock } from "./helpers/facilitator-mock";
 import { CDP_ENV, captureDiscovery, captureRoutes } from "./helpers/capture";
+import payto from "../config/payto.json";
 
 const GOLDEN = path.join(__dirname, "fixtures", "x402-flag-off.golden.json");
 
@@ -36,7 +37,7 @@ async function captureWith(env: Record<string, string>) {
   return { cdp, local, discovery: await captureDiscovery() };
 }
 
-const PINNED = "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz";
+const PINNED = payto.solana.payTo;
 
 /** Env variants that must all be treated as flag OFF. */
 const OFF_VARIANTS: Record<string, Record<string, string>> = {
@@ -56,7 +57,7 @@ const OFF_VARIANTS: Record<string, Record<string, string>> = {
     HP_SOLANA_ENABLED: "true",
     HP_SOLANA_PAYTO: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
   },
-  "flag=true, payTo is the Base EVM payTo": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: "0x5b32c973596078a967562ca652761404f19be0e9" },
+  "flag=true, payTo is the Base EVM payTo": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: payto.base.payTo },
   "flag=true, network devnet (mainnet only)": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: PINNED, HP_SOLANA_NETWORK: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" },
   "flag=true, network garbage": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: PINNED, HP_SOLANA_NETWORK: "solana" },
 };

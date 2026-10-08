@@ -14,7 +14,7 @@
     "/api/pulse": {
       "get": {
         "summary": "BTC/ETH/SOL spot + momentum (Coinbase Exchange, CoinGecko fallback)",
-        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.005 USDC (5000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.005 USDC (5000 atomic). Network eip155:8453.",
         "responses": {
           "200": {
             "description": "Paid success \u2014 live pulse JSON"
@@ -28,7 +28,7 @@
     "/api/signals": {
       "get": {
         "summary": "RSI/MACD/Bollinger + OKX funding",
-        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453.",
         "responses": {
           "200": {
             "description": "Paid success \u2014 live signals JSON"
@@ -42,7 +42,7 @@
     "/api/yield": {
       "get": {
         "summary": "DefiLlama yields (TVL \u2265 $10M)",
-        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453.",
         "responses": {
           "200": {
             "description": "Paid success \u2014 live yield JSON"
@@ -56,7 +56,7 @@
     "/api/portfolio": {
       "get": {
         "summary": "Base + Ethereum portfolio risk snapshot",
-        "description": "x402 v2 exact payment. Requires query param address=0x\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.04 USDC (40000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "description": "x402 v2 exact payment. Requires query param address=0x\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.04 USDC (40000 atomic). Network eip155:8453.",
         "parameters": [
           {
             "name": "address",
@@ -82,7 +82,7 @@
     "/api/gas": {
       "get": {
         "summary": "Base + Ethereum gas fee snapshot",
-        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453.",
         "responses": {
           "200": {
             "description": "Paid success \u2014 live gas JSON"
@@ -96,7 +96,7 @@
     "/api/funding": {
       "get": {
         "summary": "OKX BTC/ETH/SOL perpetual funding",
-        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9.",
+        "description": "x402 v2 exact payment. Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453.",
         "responses": {
           "200": {
             "description": "Paid success \u2014 live funding JSON"
@@ -110,7 +110,7 @@
     "/api/fetch": {
       "get": {
         "summary": "Fetch public URL \u2192 clean text/markdown",
-        "description": "x402 v2 exact payment. Requires query param url=https://\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~200KB / 8s caps; preferred Content-Types: text/html, text/plain, application/json, text/markdown.",
+        "description": "x402 v2 exact payment. Requires query param url=https://\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453. SSRF-safe; ~200KB / 8s caps; preferred Content-Types: text/html, text/plain, application/json, text/markdown.",
         "parameters": [
           {
             "name": "url",
@@ -151,7 +151,7 @@
     "/api/http": {
       "get": {
         "summary": "Universal HTTP proxy (query)",
-        "description": "x402 v2 exact payment. Requires query param url=https://\u2026. Optional method (GET default), headers (JSON string). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~384KB / 12s caps. Response: ok, status, headers, body, bodyEncoding, contentType, elapsedMs.",
+        "description": "x402 v2 exact payment. Requires query param url=https://\u2026. Optional method (GET default), headers (JSON string). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. SSRF-safe; ~384KB / 12s caps. Response: ok, status, headers, body, bodyEncoding, contentType, elapsedMs.",
         "parameters": [
           {
             "name": "url",
@@ -278,7 +278,7 @@
     "/api/extract": {
       "get": {
         "summary": "Extract structured fields from a public URL",
-        "description": "x402 v2 exact payment. Query param url=https://\u2026 (optional if html provided via POST). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~200KB / 8s caps. Response omits empty fields: ok, url?, title, description, canonical, language?, links, images, jsonLd, headings, textSample, elapsedMs.",
+        "description": "x402 v2 exact payment. Query param url=https://\u2026 (optional if html provided via POST). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453. SSRF-safe; ~200KB / 8s caps. Response omits empty fields: ok, url?, title, description, canonical, language?, links, images, jsonLd, headings, textSample, elapsedMs.",
         "parameters": [
           {
             "name": "url",

@@ -1,3 +1,5 @@
+import { DEFAULT_PAY_TO } from "./config";
+
 /** Copy-paste client snippets shared by the homepage terminal and /docs. */
 export const CODE: Record<string, { title: string; code: string }> = {
   curl: {
@@ -18,7 +20,7 @@ import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount } from "viem/accounts";
 
-const PAY_TO = "0x5b32c973596078a967562ca652761404f19be0e9"; // the only payTo to accept
+const PAY_TO = "${DEFAULT_PAY_TO}"; // the only payTo to accept
 const account = privateKeyToAccount(process.env.PRIVATE_KEY); // dedicated low-balance wallet
 const http = new x402HTTPClient(
   x402Client.fromConfig({

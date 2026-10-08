@@ -17,17 +17,19 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getAddress } from "viem";
 import { resetSolanaRailForTests } from "@/lib/solana-rail";
+import payto from "../config/payto.json";
 import { captureDiscovery, captureRoutes } from "./helpers/capture";
 import { installBothFacilitators, setCdp, stubSolanaOn } from "./helpers/solana-env";
 
 const GOLDEN = path.join(__dirname, "fixtures", "payto-refactor.golden.json");
 
-// Literal on purpose: these are the env values production may carry.
+// The env values production may carry (PAY_TO equal to the config value).
 const PAY_TO_ENV: Record<string, string | undefined> = {
   "PAY_TO unset": undefined,
-  "PAY_TO=config (lower-case)": "0x5b32c973596078a967562ca652761404f19be0e9",
-  "PAY_TO=config (EIP-55 case, padded)": "  0x5b32C973596078A967562Ca652761404F19be0e9 \n",
+  "PAY_TO=config (lower-case)": payto.base.payTo,
+  "PAY_TO=config (EIP-55 case, padded)": `  ${getAddress(payto.base.payTo)} \n`,
 };
 
 async function captureMode(payTo: string | undefined, solana: boolean) {

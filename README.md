@@ -63,14 +63,14 @@ Optional: `OPTIONS` on a paid route returns discovery + the same `PAYMENT-REQUIR
 | **USDC (Base)** | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | **Network** | `base` (CAIP-2 `eip155:8453`) |
 | **Facilitator** | `https://api.cdp.coinbase.com/platform/v2/x402` |
-| **Solana payTo** | `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz` (operator-controlled; pinned in `lib/solana-config.ts`; payments credit its USDC token account) |
+| **Solana payTo** | `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz` (operator-controlled; pinned in `config/payto.json`; payments credit its USDC token account) |
 | **USDC (Solana)** | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` |
 | **Solana network** | CAIP-2 `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp` (`exact` only) |
 | **Solana facilitator** | PayAI `https://facilitator.payai.network` |
 
 Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
-`PAY_TO` may be overridden via env, but defaults to the address above. Agents should treat current `payTo` as the live settlement destination; custody shape may change later without changing route prices.
+The payTo values come from one file, `config/payto.json` (see [Changing the payTo](#changing-the-payto)). Env `PAY_TO` is a guard, not an override: if set, it must equal the address above or paid routes fail closed. Agents should treat current `payTo` as the live settlement destination; custody shape may change later without changing route prices.
 
 ## Endpoints
 
@@ -226,6 +226,18 @@ npm run dev
 npm run build && npm start
 ```
 
+## Changing the payTo
+
+`config/payto.json` is the single source of truth for every payTo (Base payTo + Basename label, Solana payTo + its USDC token account, retired addresses). `lib/payto.ts` loads and shape-checks it; `DEFAULT_PAY_TO`, `getPayTo()`, `SOLANA_PAYTO` and `SOLANA_PAYTO_USDC_ATA` read it, and so do the 402s, the site copy, `/skill.md`, `/.well-known/x402`, `public/openapi.json` (`npm run gen:openapi`) and `public/llms.txt` (`npm run gen:llms` from `scripts/llms.template.txt`). Env `PAY_TO` / `HP_SOLANA_PAYTO` are guards that must match it.
+
+A value change is a cut-over (Class A, highest-risk: Michael's approval, a fresh passphrase for Solana, Odin review). In ONE commit:
+1. Edit `config/payto.json` (keep the old address OUT of `retired` until the cut-over has held, so a rollback still works).
+2. `npm run sync:payto -- --check`, then `npm run sync:payto`: rewrites the docs and buyer-side pins that cannot import the config (README, docs/, examples/, mcp/, .env.example), regenerates llms.txt / openapi.json and the byte-capture golden fixtures.
+3. Update the literals in `tests/payto-pin.test.ts` by hand (deliberate tripwire).
+4. Re-record the historical examples (`lib/recorded-call.ts`, `lib/route-examples.ts`, `lib/agent-demo.ts`).
+5. `npm test`; the golden fixture diff must be only old -> new address swaps. `tests/payto-single-source.test.ts` fails on any drift.
+Outside the repo, in the same window: Vercel `PAY_TO` / `HP_SOLANA_PAYTO`, Basename re-point, a new mcp release, a small test payment per rail, Bazaar re-index.
+
 ## Environment variables (Vercel / production)
 
 Copy from `.env.example`:
@@ -233,7 +245,7 @@ Copy from `.env.example`:
 | Variable | Required | Notes |
 | --- | --- | --- |
 | `X402_NETWORK` | recommended | `base` |
-| `PAY_TO` | optional | defaults to `0x5b32c973596078a967562ca652761404f19be0e9` |
+| `PAY_TO` | optional | guard only: if set, must equal `0x5b32c973596078a967562ca652761404f19be0e9` (`config/payto.json`), else paid routes fail closed |
 | `CDP_API_KEY_ID` | for settle | Coinbase Developer Platform |
 | `CDP_API_KEY_SECRET` | for settle | PKCS8 PEM (store safely; never commit) |
 | `BASE_RPC_URL` | optional | overrides default Base RPC for `/status` + `/api/portfolio` + `/api/gas` |

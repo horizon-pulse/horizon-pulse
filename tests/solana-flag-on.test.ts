@@ -13,6 +13,7 @@ import { resetSolanaRailForTests } from "@/lib/solana-rail";
 import { captureDiscovery, captureRoutes, type Captured } from "./helpers/capture";
 import { CDP_URL_PREFIX } from "./helpers/facilitator-mock";
 import { PAYAI_FEE_PAYER, PINNED_PAYTO, installBothFacilitators, setCdp, stubSolanaOn } from "./helpers/solana-env";
+import payto from "../config/payto.json";
 
 const golden = JSON.parse(readFileSync(path.join(__dirname, "fixtures", "x402-flag-off.golden.json"), "utf8"));
 
@@ -72,7 +73,7 @@ describe("flag on", () => {
           network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
           amount: baseAccepts[0].amount,
           asset: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-          payTo: "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+          payTo: payto.solana.payTo,
           maxTimeoutSeconds: 300,
           extra: { feePayer: PAYAI_FEE_PAYER },
         });

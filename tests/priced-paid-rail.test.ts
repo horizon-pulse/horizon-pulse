@@ -25,6 +25,7 @@ import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
 import { CDP_URL_PREFIX } from "./helpers/facilitator-mock";
 import { PINNED_PAYTO, SOL_PAYER, installBothFacilitators, setCdp, stubSolanaOn } from "./helpers/solana-env";
 import { PAID_ROUTES } from "./helpers/capture";
+import payto from "../config/payto.json";
 
 vi.mock("@/lib/spot-prices", async (orig) => ({
   ...(await orig<object>()),
@@ -49,7 +50,7 @@ vi.mock("@/lib/x402-check", async (orig) => ({
 
 const SOLANA_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const SOLANA_USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-const BASE_PAYTO = "0x5b32c973596078a967562ca652761404f19be0e9";
+const BASE_PAYTO = payto.base.payTo;
 const ROOT = path.resolve(__dirname, "..");
 
 const BASE_PAYER = `0x${"11".repeat(20)}`;
@@ -118,10 +119,14 @@ describe("pricedBlock helper", () => {
     expect(JSON.stringify(pricedBlock("$0.005", "5000"))).toBe(JSON.stringify(old));
   });
 
-  it("Base rail context: Base USDC + PAY_TO read at call time (as before)", async () => {
-    vi.stubEnv("PAY_TO", "0x3300000000000000000000000000000000000001");
+  it("Base rail context: Base USDC + payTo from config/payto.json; PAY_TO env checked at call time as a guard", async () => {
+    // payTo single-source refactor: env PAY_TO no longer overrides (it was "0x33..01 -> 0x33..01" before).
+    vi.stubEnv("PAY_TO", BASE_PAYTO.toUpperCase().replace("0X", "0x"));
     const got = await runOnPaidRail(baseRail, async () => NextResponse.json(pricedBlock("$0.01", "10000")))(null);
-    expect(await got.json()).toEqual({ amountUsd: "$0.01", amountAtomic: "10000", asset: USDC_BASE, network: "base", payTo: "0x3300000000000000000000000000000000000001" });
+    expect(await got.json()).toEqual({ amountUsd: "$0.01", amountAtomic: "10000", asset: USDC_BASE, network: "base", payTo: BASE_PAYTO });
+    // A different PAY_TO fails closed at call time instead of paying elsewhere.
+    vi.stubEnv("PAY_TO", "0x3300000000000000000000000000000000000001");
+    await expect((async () => runOnPaidRail(baseRail, async () => NextResponse.json(pricedBlock("$0.01", "10000")))(null))()).rejects.toThrow(/PAY_TO env does not match/);
   });
 
   it("Solana rail context: Solana CAIP-2, canonical USDC mint, Solana payTo; key order unchanged", async () => {

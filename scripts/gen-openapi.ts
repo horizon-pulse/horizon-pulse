@@ -3,6 +3,8 @@
  * so prices, payTo, network, inputs and examples always match the 402s and
  * /.well-known/x402. Typed parameter schemas and non-2xx response descriptions
  * are carried over from scripts/openapi-base.json (the hand-written v1 spec).
+ * payTo comes from config/payto.json via getPayTo()/SOLANA_PAYTO (env PAY_TO
+ * can only make generation fail, never change the value).
  *
  *   npx tsx --tsconfig tsconfig.json scripts/gen-openapi.ts
  */
@@ -248,5 +250,10 @@ const spec = {
     schemas,
   },
 };
-fs.writeFileSync(OUT, JSON.stringify(spec, null, 2) + "\n");
-console.log(`wrote ${OUT}: ${Object.keys(paths).length} paths, ${Object.values(paths).reduce((n: number, v: Json) => n + Object.keys(v).length, 0)} operations`);
+/** The exact bytes of public/openapi.json (tests/payto-single-source.test.ts checks freshness). */
+export const OPENAPI_JSON = JSON.stringify(spec, null, 2) + "\n";
+// Imported by vitest (freshness test) = no write; run via `npm run gen:openapi` = write.
+if (!process.env.VITEST) {
+  fs.writeFileSync(OUT, OPENAPI_JSON);
+  console.log(`wrote ${OUT}: ${Object.keys(paths).length} paths, ${Object.values(paths).reduce((n: number, v: Json) => n + Object.keys(v).length, 0)} operations`);
+}

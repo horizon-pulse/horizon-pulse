@@ -17,10 +17,11 @@ import {
 } from "@/lib/solana-config";
 import { SOLANA_MAINNET_CAIP2 as SDK_MAINNET, USDC_MAINNET_ADDRESS as SDK_USDC } from "@x402/svm";
 import { PINNED_PAYTO, fillerPubkey } from "./helpers/solana-env";
+import payto from "../config/payto.json";
 
 describe("pinned Solana payTo", () => {
   it("is exactly the address Michael sent (char for char)", () => {
-    expect(SOLANA_PAYTO).toBe("BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz");
+    expect(SOLANA_PAYTO).toBe(payto.solana.payTo); // literal pin: tests/payto-pin.test.ts
     expect(SOLANA_PAYTO).toBe(PINNED_PAYTO);
     expect(SOLANA_PAYTO.length).toBe(44);
   });
@@ -54,7 +55,7 @@ describe("isValidSolanaPubkey rejects bad / edited addresses", () => {
     "invalid char 0": SOLANA_PAYTO.slice(0, -1) + "0",
     "invalid char O": SOLANA_PAYTO.slice(0, -1) + "O",
     "invalid char l": SOLANA_PAYTO.slice(0, -1) + "l",
-    "EVM address": "0x5b32c973596078a967562ca652761404f19be0e9",
+    "EVM address": payto.base.payTo,
     "31 bytes": base58Encode(new Uint8Array(31).fill(7)),
     "33 bytes": base58Encode(new Uint8Array(33).fill(7)),
     "not a string": 12345,
@@ -82,7 +83,7 @@ describe("getSolanaRailConfig", () => {
       enabled: true,
       config: {
         network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-        payTo: "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+        payTo: payto.solana.payTo,
         asset: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         facilitatorUrl: "https://facilitator.payai.network",
         rpcUrl: "https://api.mainnet-beta.solana.com",
@@ -129,7 +130,7 @@ describe("getSolanaRailConfig", () => {
     const { __loadRealSolanaModulesForTests } = await import("@/lib/solana-rail");
     const mods = await __loadRealSolanaModulesForTests();
     expect(await mods.deriveUsdcAta(SOLANA_PAYTO, USDC_SOLANA_MINT)).toBe(SOLANA_PAYTO_USDC_ATA);
-    expect(SOLANA_PAYTO_USDC_ATA).toBe("3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu");
+    expect(SOLANA_PAYTO_USDC_ATA).toBe(payto.solana.usdcAta); // literal pin: tests/payto-pin.test.ts
     const { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } = await import("@solana-program/token");
     const { address } = await import("@solana/kit");
     const [ata] = await findAssociatedTokenPda({ owner: address(SOLANA_PAYTO), mint: address(USDC_SOLANA_MINT), tokenProgram: TOKEN_PROGRAM_ADDRESS });

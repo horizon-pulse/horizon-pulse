@@ -12,8 +12,10 @@ import {
   base58Encode,
 } from "@/lib/solana-config";
 import { __setSolanaRpcForTests, type SolanaRpc } from "@/lib/solana-rail";
+import payto from "../../config/payto.json";
 
-export const PINNED_PAYTO = "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz";
+/** config/payto.json solana.payTo (literal pin lives in tests/payto-pin.test.ts). */
+export const PINNED_PAYTO = payto.solana.payTo;
 
 /**
  * PayAI's real GET /supported, recorded read-only on 2026-10-08 (multi-network;
