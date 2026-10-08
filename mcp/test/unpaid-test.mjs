@@ -89,7 +89,7 @@ if (LIVE !== "skip") {
 // ---------- mock (local only) ----------
 console.log(`\n# mock: 127.0.0.1 stand-in`);
 const openapi = fs.readFileSync(path.resolve(here, "..", "..", "public", "openapi.json"), "utf8");
-let mode = { payTo: PAY_TO, amount: "5000" };
+let mode = { payTo: PAY_TO, amount: "5000", dropPaid: false };
 let lastSig = null;
 const srv = http.createServer((req, res) => {
   const u = new URL(req.url, "http://x");
@@ -98,6 +98,7 @@ const srv = http.createServer((req, res) => {
     const sig = req.headers["payment-signature"];
     if (sig) {
       lastSig = decodePaymentSignatureHeader(sig);
+      if (mode.dropPaid) { req.socket.destroy(); return; } // simulate a lost response after the signed payment was sent
       const receipt = encodePaymentResponseHeader({ success: true, transaction: "0xmock", network: "eip155:8453", payer: lastSig.payload?.authorization?.from });
       res.writeHead(200, { "content-type": "application/json", "PAYMENT-RESPONSE": receipt });
       return res.end(JSON.stringify({ ok: true, mock: true }));
@@ -128,6 +129,28 @@ ok(m4.result === "paid" && m4.status === 200 && m4.settlement?.transaction === "
 ok(lastSig?.x402Version === 2 && String(auth.to).toLowerCase() === PAY_TO && auth.value === "5000" && lastSig?.accepted?.asset === USDC, `PAYMENT-SIGNATURE is x402 v2 EIP-3009: to …${String(auth.to).slice(-6)}, value ${auth.value}`);
 ok(m4.session?.spentUsd === "$0.005", `session spend tracked: ${m4.session?.spentUsd}`);
 await c4.close();
+
+console.log(`\n# mock: signed payment sent, response lost (session budget 0.008)`);
+mode = { payTo: PAY_TO, amount: "5000", dropPaid: true };
+lastSig = null;
+const c6 = await connect({ HP_BASE_URL: MOCK, HP_PRIVATE_KEY: TEST_KEY_ONE, HP_MAX_USD_TOTAL: "0.008" });
+const m6 = meta(await c6.callTool({ name: "pulse", arguments: {} }));
+ok(m6.result === "error" && lastSig !== null && /may have settled/.test(m6.message), `lost response after signing: error, signature was sent — ${m6.message}`);
+ok(m6.session?.spentUsd === "$0.005", `lost-response payment counted as spent, not refunded: ${m6.session?.spentUsd}`);
+mode = { payTo: PAY_TO, amount: "5000", dropPaid: false };
+lastSig = null;
+const m6b = meta(await c6.callTool({ name: "pulse", arguments: {} }));
+ok(m6b.result === "refused" && /HP_MAX_USD_TOTAL/.test(m6b.message) && lastSig === null, `next call refused by the remaining $0.003 budget, nothing signed — ${m6b.message}`);
+await c6.close();
+
+console.log(`\n# mock: HP_EXPECTED_PAY_TO is ignored (payTo is hardcoded)`);
+mode = { payTo: "0x000000000000000000000000000000000000dEaD", amount: "5000", dropPaid: false };
+lastSig = null;
+const c7 = await connect({ HP_BASE_URL: MOCK, HP_PRIVATE_KEY: TEST_KEY_ONE, HP_EXPECTED_PAY_TO: "0x000000000000000000000000000000000000dEaD" });
+const m7 = meta(await c7.callTool({ name: "pulse", arguments: {} }));
+ok(m7.result === "refused" && /payTo/.test(m7.message) && lastSig === null, `HP_EXPECTED_PAY_TO=0x…dEaD has no effect: refused, nothing signed`);
+await c7.close();
+mode = { payTo: PAY_TO, amount: "5000", dropPaid: false };
 
 const c5 = await connect({ HP_BASE_URL: MOCK, HP_PRIVATE_KEY: TEST_KEY_ONE, HP_DRY_RUN: "1" });
 lastSig = null;

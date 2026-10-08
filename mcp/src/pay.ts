@@ -173,14 +173,31 @@ export async function callRoute(cfg: Config, budget: Budget, tool: RouteTool, ar
   const http = new x402HTTPClient(client);
 
   budget.reserved += amount;
-  let paid: Response;
+  let headers: Record<string, string>;
   try {
     const payload = await http.createPaymentPayload({ ...pr, accepts: [payable] });
-    const headers = { ...(init.headers as Record<string, string>), ...http.encodePaymentSignatureHeader(payload) };
+    headers = { ...(init.headers as Record<string, string>), ...http.encodePaymentSignatureHeader(payload) };
+  } catch (e) {
+    // Nothing was signed, so nothing can settle: release the reservation.
+    budget.reserved -= amount;
+    return { ok: false, status: 0, kind: "error", requirements, message: `Could not sign the payment (nothing was sent or charged): ${String(e)}` };
+  }
+  let paid: Response;
+  try {
     paid = await fetch(url, { ...init, headers, signal: signal() });
   } catch (e) {
+    // A signed authorization left this process. The server or facilitator may have
+    // settled it even though we got no response, so count it as spent (no refund to
+    // the session budget) and never retry automatically.
     budget.reserved -= amount;
-    return { ok: false, status: 0, kind: "error", requirements, message: `Payment attempt failed before a response: ${String(e)}` };
+    budget.spent += amount;
+    return {
+      ok: false,
+      status: 0,
+      kind: "error",
+      requirements,
+      message: `Signed payment of ${atomicToUsd(amount)} was sent but no response came back (${String(e)}). It may have settled; check the buyer wallet on Base before retrying. Counted against the session budget; not retried.`,
+    };
   }
   budget.reserved -= amount;
 
