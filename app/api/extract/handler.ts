@@ -8,9 +8,8 @@ import { parseFieldSpecs } from "@/lib/extract-fields";
 import {
   EXTRACT_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
-  getPayTo,
-  USDC_BASE,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 /**
@@ -120,13 +119,7 @@ export async function extractHandler(req: NextRequest): Promise<NextResponse> {
     ...fields,
     elapsedMs,
     source: "extract",
-    priced: {
-      amountUsd: EXTRACT_PRICE_USD,
-      amountAtomic: EXTRACT_PRICE_ATOMIC,
-      asset: USDC_BASE,
-      network: "base",
-      payTo: getPayTo(),
-    },
+    priced: pricedBlock(EXTRACT_PRICE_USD, EXTRACT_PRICE_ATOMIC),
     asOf: new Date().toISOString(),
     methodology: EXTRACT_METHODOLOGY,
   });

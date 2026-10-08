@@ -86,6 +86,7 @@ import {
 } from "@x402/core/http";
 import { FacilitatorResponseError, FacilitatorTimeoutError, SettleError, VerifyError } from "@x402/core/types";
 import { withX402 } from "@x402/next";
+import { runOnPaidRail, solanaRail } from "./paid-rail";
 import {
   SOLANA_MAINNET_CAIP2,
   SOLANA_PAYTO,
@@ -1161,7 +1162,9 @@ export async function handleSolanaPayment(
         }
         if (a) a.handlerRan = true;
         try {
-          return await routeHandler(r);
+          // This server only verifies/settles Solana USDC to rail.config: the
+          // handler's `priced` block (lib/paid-rail.ts) reports that rail.
+          return await runOnPaidRail(() => solanaRail(rail.config), routeHandler)(r);
         } catch (err) {
           if (a) {
             a.handlerThrew = true;

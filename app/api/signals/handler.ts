@@ -6,9 +6,8 @@ import { bollinger, macd, rsi } from "@/lib/indicators";
 import {
   SIGNALS_PRICE_ATOMIC,
   SIGNALS_PRICE_USD,
-  getPayTo,
-  USDC_BASE,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { isMissing, upstreamUnavailable } from "@/lib/upstream-guard";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
@@ -83,13 +82,7 @@ export async function signalsHandler(_req: NextRequest): Promise<NextResponse> {
 
     return NextResponse.json({
       ok: true,
-      priced: {
-        amountUsd: SIGNALS_PRICE_USD,
-        amountAtomic: SIGNALS_PRICE_ATOMIC,
-        asset: USDC_BASE,
-        network: "base",
-        payTo: getPayTo(),
-      },
+      priced: pricedBlock(SIGNALS_PRICE_USD, SIGNALS_PRICE_ATOMIC),
       asOf: new Date().toISOString(),
       assets,
       methodology: {

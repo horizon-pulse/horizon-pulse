@@ -31,6 +31,7 @@ import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
 import { EXAMPLES_RECORDED_AT, OUTPUT_EXAMPLES } from "./route-examples";
 import { getSolanaRailConfig } from "./solana-config";
 import { handleSolanaPayment, isSolanaPaymentRequest, withSolanaAccept } from "./solana-rail";
+import { baseRail, runOnPaidRail } from "./paid-rail";
 
 /**
  * Coinbase CDP facilitator via @coinbase/x402.
@@ -779,7 +780,9 @@ export function createX402GetHandler(
   function getPaidHandler(): AppRouteHandler {
     if (!paidHandler) {
       paidHandler = withX402(
-        routeHandler,
+        // The Base (CDP) server only verifies/settles Base USDC: the handler's
+        // `priced` block (lib/paid-rail.ts) reports the Base rail.
+        runOnPaidRail(baseRail, routeHandler),
         routes,
         getResourceServer(),
         undefined,

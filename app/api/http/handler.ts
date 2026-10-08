@@ -8,9 +8,8 @@ import {
 import {
   HTTP_PRICE_ATOMIC,
   HTTP_PRICE_USD,
-  getPayTo,
-  USDC_BASE,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 /**
@@ -203,13 +202,7 @@ export async function httpHandler(req: NextRequest): Promise<NextResponse> {
     contentType: result.contentType,
     elapsedMs: result.elapsedMs,
     source: "http",
-    priced: {
-      amountUsd: HTTP_PRICE_USD,
-      amountAtomic: HTTP_PRICE_ATOMIC,
-      asset: USDC_BASE,
-      network: "base",
-      payTo: getPayTo(),
-    },
+    priced: pricedBlock(HTTP_PRICE_USD, HTTP_PRICE_ATOMIC),
     asOf: new Date().toISOString(),
     requestedUrl: result.requestedUrl,
     finalUrl: result.finalUrl,

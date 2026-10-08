@@ -7,9 +7,8 @@ import {
 import {
   PULSE_PRICE_ATOMIC,
   PULSE_PRICE_USD,
-  getPayTo,
-  USDC_BASE,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
@@ -39,13 +38,7 @@ export async function pulseHandler(_req: NextRequest): Promise<NextResponse> {
       ok: true,
       source,
       ...(warnings.length ? { priceWarnings: warnings } : {}),
-      priced: {
-        amountUsd: PULSE_PRICE_USD,
-        amountAtomic: PULSE_PRICE_ATOMIC,
-        asset: USDC_BASE,
-        network: "base",
-        payTo: getPayTo(),
-      },
+      priced: pricedBlock(PULSE_PRICE_USD, PULSE_PRICE_ATOMIC),
       asOf: new Date().toISOString(),
       assets,
       overall: {

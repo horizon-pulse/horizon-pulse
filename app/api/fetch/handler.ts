@@ -6,9 +6,8 @@ import {
 import {
   FETCH_PRICE_ATOMIC,
   FETCH_PRICE_USD,
-  getPayTo,
-  USDC_BASE,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
@@ -36,13 +35,7 @@ export async function fetchHandler(req: NextRequest): Promise<NextResponse> {
   return NextResponse.json({
     ok: true,
     source: "fetch",
-    priced: {
-      amountUsd: FETCH_PRICE_USD,
-      amountAtomic: FETCH_PRICE_ATOMIC,
-      asset: USDC_BASE,
-      network: "base",
-      payTo: getPayTo(),
-    },
+    priced: pricedBlock(FETCH_PRICE_USD, FETCH_PRICE_ATOMIC),
     asOf: new Date().toISOString(),
     requestedUrl: result.requestedUrl,
     finalUrl: result.finalUrl,

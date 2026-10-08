@@ -7,9 +7,8 @@ import {
 import {
   PORTFOLIO_PRICE_ATOMIC,
   PORTFOLIO_PRICE_USD,
-  getPayTo,
-  USDC_BASE,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { isMissing, NULL_BY_DESIGN, upstreamUnavailable } from "@/lib/upstream-guard";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
@@ -63,13 +62,7 @@ export async function portfolioHandler(req: NextRequest): Promise<NextResponse> 
       {
         ok: anyNetworkOk,
         source: ["rpc", ...(result.priceSources ?? [])].join("+"),
-        priced: {
-          amountUsd: PORTFOLIO_PRICE_USD,
-          amountAtomic: PORTFOLIO_PRICE_ATOMIC,
-          asset: USDC_BASE,
-          network: "base",
-          payTo: getPayTo(),
-        },
+        priced: pricedBlock(PORTFOLIO_PRICE_USD, PORTFOLIO_PRICE_ATOMIC),
         ...result,
       },
       { status },

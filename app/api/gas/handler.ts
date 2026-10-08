@@ -4,9 +4,8 @@ import { isMissing, upstreamUnavailable } from "@/lib/upstream-guard";
 import {
   GAS_PRICE_ATOMIC,
   GAS_PRICE_USD,
-  getPayTo,
-  USDC_BASE,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
@@ -31,13 +30,7 @@ export async function gasHandler(_req: NextRequest): Promise<NextResponse> {
       {
         ok: anyOk,
         source: result.priceSource ? `rpc+${result.priceSource}` : "rpc",
-        priced: {
-          amountUsd: GAS_PRICE_USD,
-          amountAtomic: GAS_PRICE_ATOMIC,
-          asset: USDC_BASE,
-          network: "base",
-          payTo: getPayTo(),
-        },
+        priced: pricedBlock(GAS_PRICE_USD, GAS_PRICE_ATOMIC),
         ...result,
       },
       { status },

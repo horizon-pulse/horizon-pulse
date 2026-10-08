@@ -3,9 +3,8 @@ import { fetchRankedYields, YIELD_METHODOLOGY } from "@/lib/defillama";
 import {
   YIELD_PRICE_ATOMIC,
   YIELD_PRICE_USD,
-  getPayTo,
-  USDC_BASE,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
@@ -22,13 +21,7 @@ export async function yieldHandler(_req: NextRequest): Promise<NextResponse> {
       ok: true,
       source: "defillama",
       sourceUrl: "https://yields.llama.fi/pools",
-      priced: {
-        amountUsd: YIELD_PRICE_USD,
-        amountAtomic: YIELD_PRICE_ATOMIC,
-        asset: USDC_BASE,
-        network: "base",
-        payTo: getPayTo(),
-      },
+      priced: pricedBlock(YIELD_PRICE_USD, YIELD_PRICE_ATOMIC),
       asOf: new Date().toISOString(),
       meta: {
         scanned: result.scanned,

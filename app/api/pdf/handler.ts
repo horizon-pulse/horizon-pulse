@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PDF_METHODOLOGY, pdfToText } from "@/lib/pdf";
-import { getPayTo, PDF_PRICE_ATOMIC, PDF_PRICE_USD, USDC_BASE } from "@/lib/config";
+import { PDF_PRICE_ATOMIC, PDF_PRICE_USD } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
@@ -21,13 +22,7 @@ export async function pdfHandler(req: NextRequest): Promise<NextResponse> {
   }
   return NextResponse.json({
     source: "pdf",
-    priced: {
-      amountUsd: PDF_PRICE_USD,
-      amountAtomic: PDF_PRICE_ATOMIC,
-      asset: USDC_BASE,
-      network: "base",
-      payTo: getPayTo(),
-    },
+    priced: pricedBlock(PDF_PRICE_USD, PDF_PRICE_ATOMIC),
     asOf: new Date().toISOString(),
     ...result,
   });

@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkX402Endpoint, X402_CHECK_METHODOLOGY } from "@/lib/x402-check";
 import {
-  getPayTo,
-  USDC_BASE,
   X402_CHECK_PRICE_ATOMIC,
   X402_CHECK_PRICE_USD,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
@@ -33,13 +32,7 @@ export async function x402CheckHandler(req: NextRequest): Promise<NextResponse> 
   }
   return NextResponse.json({
     source: "x402-check",
-    priced: {
-      amountUsd: X402_CHECK_PRICE_USD,
-      amountAtomic: X402_CHECK_PRICE_ATOMIC,
-      asset: USDC_BASE,
-      network: "base",
-      payTo: getPayTo(),
-    },
+    priced: pricedBlock(X402_CHECK_PRICE_USD, X402_CHECK_PRICE_ATOMIC),
     asOf: new Date().toISOString(),
     ...result,
   });

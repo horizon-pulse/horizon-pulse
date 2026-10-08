@@ -7,9 +7,8 @@ import {
 import {
   FUNDING_PRICE_ATOMIC,
   FUNDING_PRICE_USD,
-  getPayTo,
-  USDC_BASE,
 } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
@@ -42,13 +41,7 @@ export async function fundingHandler(_req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({
       ok: true,
       source: "okx",
-      priced: {
-        amountUsd: FUNDING_PRICE_USD,
-        amountAtomic: FUNDING_PRICE_ATOMIC,
-        asset: USDC_BASE,
-        network: "base",
-        payTo: getPayTo(),
-      },
+      priced: pricedBlock(FUNDING_PRICE_USD, FUNDING_PRICE_ATOMIC),
       asOf: new Date().toISOString(),
       assets,
       methodology: FUNDING_METHODOLOGY,

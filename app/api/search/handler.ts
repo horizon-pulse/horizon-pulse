@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SEARCH_METHODOLOGY, searchAndFetch } from "@/lib/search";
-import { getPayTo, SEARCH_PRICE_ATOMIC, SEARCH_PRICE_USD, USDC_BASE } from "@/lib/config";
+import { SEARCH_PRICE_ATOMIC, SEARCH_PRICE_USD } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
@@ -21,13 +22,7 @@ export async function searchHandler(req: NextRequest): Promise<NextResponse> {
   }
   return NextResponse.json({
     source: "search",
-    priced: {
-      amountUsd: SEARCH_PRICE_USD,
-      amountAtomic: SEARCH_PRICE_ATOMIC,
-      asset: USDC_BASE,
-      network: "base",
-      payTo: getPayTo(),
-    },
+    priced: pricedBlock(SEARCH_PRICE_USD, SEARCH_PRICE_ATOMIC),
     asOf: new Date().toISOString(),
     ...result,
   });

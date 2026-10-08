@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SCREENSHOT_METHODOLOGY, takeScreenshot } from "@/lib/screenshot";
-import { getPayTo, SCREENSHOT_PRICE_ATOMIC, SCREENSHOT_PRICE_USD, USDC_BASE } from "@/lib/config";
+import { SCREENSHOT_PRICE_ATOMIC, SCREENSHOT_PRICE_USD } from "@/lib/config";
+import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
 export const paymentOpts = {
@@ -29,7 +30,7 @@ export async function screenshotHandler(req: NextRequest): Promise<NextResponse>
   }
   return NextResponse.json({
     source: "screenshot",
-    priced: { amountUsd: SCREENSHOT_PRICE_USD, amountAtomic: SCREENSHOT_PRICE_ATOMIC, asset: USDC_BASE, network: "base", payTo: getPayTo() },
+    priced: pricedBlock(SCREENSHOT_PRICE_USD, SCREENSHOT_PRICE_ATOMIC),
     asOf: new Date().toISOString(),
     ...result,
     methodology: SCREENSHOT_METHODOLOGY,
