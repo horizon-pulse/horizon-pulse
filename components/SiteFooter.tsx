@@ -31,6 +31,7 @@ export function SiteFooter() {
               <Link href="/status">Status</Link>
               <Link href="/listing-fix">Bazaar listing fix</Link>
               <Link href="/agent-promotion">Agent promotion</Link>
+              <Link href="/blog">Blog</Link>
               <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
             </div>
             <div>

@@ -90,6 +90,7 @@ These are services for people who run an API. They are not paid with x402; never
 - `/agent-promotion/spec` — what's delivered, and what we don't do (no fake reviews, paid rankings, spam submissions or guaranteed placement, traffic or revenue)
 - `/agent-promotion/start` — intake: a prefilled email to horizonpulse.co@proton.me (nothing stored on the site)
 - `/listing-fix` — Bazaar listing fix: $49 written review or $99 per host hands-on fix
+- `/blog/why-agent-discoverability-matters` — blog post: how agents find paid APIs and the documented reasons a paid x402 route stays invisible
 
 ## Agent how-to (pay flow)
 

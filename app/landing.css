@@ -235,3 +235,14 @@
 
 /* case study quote (/agent-promotion#case-study) */
 .hp-quote { margin: 0; padding: 12px 16px; border-left: 2px solid var(--line-2); background: var(--bg-1); border-radius: 0 8px 8px 0; font-size: 13.5px; line-height: 1.6; color: var(--text); }
+
+/* blog post body */
+.hp-prose { max-width: 720px; margin: 0 auto; padding: 72px 24px 0; font-size: 16px; line-height: 1.7; color: #c8ccd2; }
+.hp-prose h1 { font-size: 40px; line-height: 1.12; letter-spacing: -.028em; font-weight: 560; color: var(--text); margin: 8px 0 10px; }
+.hp-prose h2 { font-size: 24px; letter-spacing: -.02em; font-weight: 560; color: var(--text); margin: 44px 0 12px; }
+.hp-prose p, .hp-prose ul, .hp-prose ol { margin: 0 0 16px; }
+.hp-prose li { margin-bottom: 8px; }
+.hp-prose strong { color: var(--text); font-weight: 560; }
+.hp-prose a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
+.hp-prose .hp-meta { font: 13px var(--mono); color: var(--text-3); margin: 0 0 32px; }
+.hp-prose hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
