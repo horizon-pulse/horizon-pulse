@@ -160,6 +160,18 @@ export default function AgentsPage() {
           </div>
         </section>
 
+        <section className="hp-section" id="agent-promotion">
+          <div className="hp-wrap">
+            <div className="hp-label">For API owners</div>
+            <h2>
+              Want your own API <span>found by agents?</span>
+            </h2>
+            <p className="hp-lead" style={{ marginBottom: 0 }}>
+              See <a href="/agent-promotion">Agent promotion →</a>
+            </p>
+          </div>
+        </section>
+
         <section className="hp-section" id="routes">
           <div className="hp-wrap">
             <div>
@@ -196,18 +208,6 @@ export default function AgentsPage() {
                 ))}
               </tbody>
             </table>
-          </div>
-        </section>
-
-        <section className="hp-section" id="agent-promotion" style={{ paddingBottom: 80 }}>
-          <div className="hp-wrap">
-            <div className="hp-label">For API owners</div>
-            <h2>
-              Want your own API <span>found by agents?</span>
-            </h2>
-            <p className="hp-lead" style={{ marginBottom: 0 }}>
-              See <a href="/agent-promotion">Agent promotion →</a>
-            </p>
           </div>
         </section>
       </main>
