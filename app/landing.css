@@ -232,3 +232,6 @@
 .hp-form input:focus, .hp-form textarea:focus { border-color: var(--accent); }
 .hp-form-foot { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--text-3); padding-top: 4px; }
 .hp-btn.off { opacity: .55; }
+
+/* case study quote (/agent-promotion#case-study) */
+.hp-quote { margin: 0; padding: 12px 16px; border-left: 2px solid var(--line-2); background: var(--bg-1); border-radius: 0 8px 8px 0; font-size: 13.5px; line-height: 1.6; color: var(--text); }

@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import { CONTACT_EMAIL, DEFAULT_PAY_TO, USDC_BASE } from "@/lib/config";
+import type { ReactNode } from "react";
+import { CONTACT_EMAIL, USDC_BASE } from "@/lib/config";
 import { HONESTY_LINE, REFUND_LINES, SERVICE_FEE_ADDRESS } from "@/lib/agent-promotion";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { Reveal } from "@/components/Reveal";
-
-const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/merchant?payTo=${DEFAULT_PAY_TO.toLowerCase()}`;
 
 export const metadata: Metadata = {
   title: "Agent promotion | Horizon Pulse",
@@ -27,6 +26,15 @@ const I = {
   refund: "M4 10h11a5 5 0 010 10H9M4 10l4-4M4 10l4 4",
   quote: "M7 7h4v4H7zM13 7h4v4h-4zM7 11c0 3-1 5-3 6M13 11c0 3-1 5-3 6",
 };
+
+const CASE_TIMELINE: [string, ReactNode][] = [
+  ["9/20", "First routes indexed in the Coinbase x402 Bazaar"],
+  ["9/23", "One route committed and listed in the Bazaar the same afternoon, in our own codebase"],
+  ["9/28", "x402-dev PR merged; x402 List listing created; nohumans listings added"],
+  ["9/30", "13 of 13 paid routes listed in the Bazaar. gold-402 PR merged"],
+  ["10/2", "All resources re-registered on x402scan"],
+  ["10/7", <><code key="s">skill.md</code> and <code key="a">/agents</code> deployed</>],
+];
 
 const FAQ = [
   { q: "Do you guarantee listings or rankings?", a: <>No. Each directory decides acceptance and ranking. We don&apos;t guarantee placement, ranking, traffic or revenue.</> },
@@ -239,13 +247,78 @@ export default function AgentPromotionPage() {
             <div data-reveal>
               <div className="hp-label">Case study</div>
               <h2>
-                Case study: Horizon Pulse <span>(coming soon)</span>
+                Horizon Pulse: <span>our own APIs, set up the way we set up yours</span>
               </h2>
-              <p className="hp-lead">
-                Horizon Pulse is our own pay-per-call API.{" "}
-                <a href={BAZAAR_LOOKUP} target="_blank" rel="noreferrer">See our routes in Coinbase&apos;s x402 Bazaar ↗</a>
+              <p className="hp-lead" style={{ maxWidth: 720 }}>
+                Horizon Pulse runs a live x402 v2 service on Base mainnet: pay-per-call APIs for AI agents, paid in USDC through
+                Coinbase&apos;s CDP facilitator, with 13 paid routes. Before we offered agent promotion to anyone else, we did it for
+                ourselves. This page records what we set up and when. It&apos;s a delivery reference, not a revenue claim.
               </p>
             </div>
+            <div className="hp-grid two">
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.list} />
+                <h3>What we set up</h3>
+                <div className="hp-kv">
+                  <span className="k">Coinbase x402 Bazaar</span>
+                  <span>
+                    All 13 paid routes were listed by 9/30. Through the Bazaar we&apos;re picked up automatically by agentic.market and
+                    402index.
+                  </span>
+                  <span className="k">Directories</span>
+                  <span>
+                    We&apos;re listed on x402scan, x402 List, the x402-dev and gold-402 GitHub directories (PRs merged), and nohumans.
+                  </span>
+                  <span className="k">Metadata in the 402 itself</span>
+                  <span>
+                    Each 402 response carries <code>serviceName</code>, tags, an icon URL and an agent-style description of 416–493
+                    characters, under Coinbase&apos;s 500-character limit. <code>/.well-known/x402</code> lists our resources.
+                  </span>
+                  <span className="k">Agent-readable files</span>
+                  <span>
+                    <code>skill.md</code> and an <code>/agents</code> page went live on 10/7. An MCP server answers at <code>/mcp</code>.
+                  </span>
+                </div>
+              </div>
+              <div className="hp-tile" data-reveal>
+                <Ico d={I.doc} />
+                <h3>What a good Bazaar description looks like</h3>
+                <p>
+                  Here&apos;s the one the Bazaar lists for our <code>/api/x402-check</code> route (477 characters):
+                </p>
+                <blockquote className="hp-quote">
+                  x402 developer tool. Use before paying an unknown x402 endpoint, or to debug your own. GET with required url (optional method GET/POST, body JSON for POST probes). Sends one unpaid request and never pays. Returns JSON: httpStatus, isX402, x402Version, decoded accepts (network, asset label, amount in USD, payTo and whether payTo is an EOA or contract), discovery metadata presence, and pass/warn/fail checks with a summary. Private targets are blocked. Errors are not charged.
+                </blockquote>
+                <p>
+                  The pattern: what it is, when to use it, how to call it, what comes back, and the caveats. It&apos;s written so an agent
+                  can choose the route and call it correctly the first time.
+                </p>
+              </div>
+            </div>
+            <table className="hp-table" data-reveal>
+              <thead>
+                <tr>
+                  <th className="m">Date</th>
+                  <th>Milestone (2026, ET)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {CASE_TIMELINE.map(([d, m]) => (
+                  <tr key={d}>
+                    <td className="m" style={{ display: "table-cell" }}>{d}</td>
+                    <td>{m}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p className="hp-lead" style={{ maxWidth: 720, marginTop: 24 }}>
+              Listings are ongoing work. Coinbase removes Bazaar resources that go 30 days without a settlement (
+              <a href="https://docs.cdp.coinbase.com/x402/seller/get-discovered" target="_blank" rel="noreferrer">Get discovered ↗</a>).
+              Every directory makes its own decisions, so we can&apos;t guarantee listing, ranking or traffic.
+            </p>
+            <p style={{ margin: "8px 0 0", fontSize: 14, color: "var(--text-2)" }}>
+              Want the same setup for your API? See <a href="/agent-promotion">/agent-promotion</a>.
+            </p>
           </div>
         </section>
 
