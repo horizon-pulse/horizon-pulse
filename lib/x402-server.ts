@@ -141,8 +141,9 @@ type DiscoveryDecl = Parameters<typeof declareDiscoveryExtension>[0];
  * for query declarations, ["POST","PUT","PATCH"] for body declarations) and
  * relies on @x402/next's runtime enrichment to narrow it to the request method.
  * That enrichment loads via a lazy webpackIgnore'd import("@x402/extensions/bazaar"),
- * which runs under vitest/Node but not in the Vercel bundle, so production served
- * the wide list. Pinning at declaration time gives the same bytes the enrichment
+ * which ran under vitest/Node but did not resolve in the Vercel bundle until
+ * next.config.ts externalized @x402/extensions, so production served the wide
+ * list. Pinning at declaration time gives the same bytes the enrichment
  * produces (it is a no-op on an already-pinned enum), so prod now matches the
  * golden. Discovery metadata only: accepts, price, payTo and gating are unchanged.
  */

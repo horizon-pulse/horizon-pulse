@@ -2,9 +2,10 @@
  * Bazaar discovery: each route key's schema input.method enum is exactly the
  * one method that key charges (Class B fix, branch fix-bazaar-method-enum).
  *
- * Production never runs @x402/next's bazaar enrichment (its lazy
- * webpackIgnore'd import of @x402/extensions/bazaar does not load in the
- * Vercel bundle), so the 402 carries the declaration as built in
+ * Production did not run @x402/next's bazaar enrichment (its lazy
+ * webpackIgnore'd import of @x402/extensions/bazaar did not load in the
+ * Vercel bundle until next.config.ts externalized @x402/extensions; see
+ * tests/bazaar-enrichment-parity.test.ts), so the 402 carried the declaration as built in
  * lib/x402-server.ts. Before this fix that was the library's verb family:
  * ["GET","HEAD","DELETE"] on GET keys and ["POST","PUT","PATCH"] on POST keys,
  * while vitest (where the enrichment does run) and the golden showed ["GET"].
