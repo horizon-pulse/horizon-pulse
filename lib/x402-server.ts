@@ -132,9 +132,37 @@ function outputOf(path: string, what: string) {
 /** @x402/extensions types omit `method` (enrichment-only); CDP Bazaar validate needs it statically. */
 type DiscoveryDecl = Parameters<typeof declareDiscoveryExtension>[0];
 
+/**
+ * declareDiscoveryExtension + the Bazaar schema's input.method enum pinned to
+ * the one method this route key charges (its info.input.method).
+ *
+ * The library emits the whole verb family in the schema (["GET","HEAD","DELETE"]
+ * for query declarations, ["POST","PUT","PATCH"] for body declarations) and
+ * relies on @x402/next's runtime enrichment to narrow it to the request method.
+ * That enrichment loads via a lazy webpackIgnore'd import("@x402/extensions/bazaar"),
+ * which runs under vitest/Node but not in the Vercel bundle, so production served
+ * the wide list. Pinning at declaration time gives the same bytes the enrichment
+ * produces (it is a no-op on an already-pinned enum), so prod now matches the
+ * golden. Discovery metadata only: accepts, price, payTo and gating are unchanged.
+ */
+function declareChargedDiscovery(config: DiscoveryDecl): ReturnType<typeof declareDiscoveryExtension> {
+  const ext = declareDiscoveryExtension(config);
+  const bazaar = ext.bazaar as {
+    info?: { input?: { method?: unknown } };
+    schema?: { properties?: { input?: { properties?: { method?: { enum?: unknown } } } } };
+  };
+  const method = bazaar.info?.input?.method;
+  const methodSchema = bazaar.schema?.properties?.input?.properties?.method;
+  if (typeof method !== "string" || !methodSchema) {
+    throw new Error("Bazaar declaration must name the one method the route charges (info.input.method)");
+  }
+  methodSchema.enum = [method];
+  return ext;
+}
+
 function discoveryExt(path: string, what: string) {
   return {
-    ...declareDiscoveryExtension({
+    ...declareChargedDiscovery({
       method: "GET",
       input: {},
       inputSchema: {
@@ -226,7 +254,7 @@ export function portfolioRouteConfig(): RoutesConfig {
       mimeType: "application/json",
       ...serviceMetadata("/api/portfolio"),
       extensions: {
-        ...declareDiscoveryExtension({
+        ...declareChargedDiscovery({
           method: "GET",
           input: { address: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
           inputSchema: {
@@ -306,7 +334,7 @@ export function fetchRouteConfig(): RoutesConfig {
       mimeType: "application/json",
       ...serviceMetadata("/api/fetch"),
       extensions: {
-        ...declareDiscoveryExtension({
+        ...declareChargedDiscovery({
           method: "GET",
           input: { url: "https://example.com" },
           inputSchema: {
@@ -419,7 +447,7 @@ export function httpRouteConfig(): RoutesConfig {
       ...serviceMetadata("/api/http"),
     },
     {
-      ...declareDiscoveryExtension({
+      ...declareChargedDiscovery({
         method: "GET",
         input: {
           url: "https://example.com",
@@ -430,7 +458,7 @@ export function httpRouteConfig(): RoutesConfig {
       } as DiscoveryDecl),
     },
     {
-      ...declareDiscoveryExtension({
+      ...declareChargedDiscovery({
         method: "POST",
         bodyType: "json",
         input: {
@@ -467,7 +495,7 @@ export function extractRouteConfig(): RoutesConfig {
       ...serviceMetadata("/api/extract"),
     },
     {
-      ...declareDiscoveryExtension({
+      ...declareChargedDiscovery({
         method: "GET",
         input: {
           url: "https://horizonpulse.dev",
@@ -496,7 +524,7 @@ export function extractRouteConfig(): RoutesConfig {
       } as DiscoveryDecl),
     },
     {
-      ...declareDiscoveryExtension({
+      ...declareChargedDiscovery({
         method: "POST",
         bodyType: "json",
         input: {
@@ -549,7 +577,7 @@ export function x402CheckRouteConfig(): RoutesConfig {
       mimeType: "application/json",
       ...serviceMetadata("/api/x402-check"),
       extensions: {
-        ...declareDiscoveryExtension({
+        ...declareChargedDiscovery({
           method: "GET",
           input: {
             url: "https://horizonpulse.dev/api/pulse",
@@ -596,7 +624,7 @@ export function screenshotRouteConfig(): RoutesConfig {
       mimeType: "application/json",
       ...serviceMetadata("/api/screenshot"),
       extensions: {
-        ...declareDiscoveryExtension({
+        ...declareChargedDiscovery({
           method: "GET",
           input: {
             url: "https://horizonpulse.dev",
@@ -829,7 +857,7 @@ export function searchRouteConfig(): RoutesConfig {
       mimeType: "application/json",
       ...serviceMetadata("/api/search"),
       extensions: {
-        ...declareDiscoveryExtension({
+        ...declareChargedDiscovery({
           method: "GET",
           input: { q: "x402 payment protocol", n: "2" },
           inputSchema: {
@@ -863,7 +891,7 @@ export function pdfRouteConfig(): RoutesConfig {
       mimeType: "application/json",
       ...serviceMetadata("/api/pdf"),
       extensions: {
-        ...declareDiscoveryExtension({
+        ...declareChargedDiscovery({
           method: "GET",
           input: { url: "https://horizonpulse.dev/sample.pdf" },
           inputSchema: {
