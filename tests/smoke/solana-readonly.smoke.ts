@@ -6,6 +6,10 @@
  *
  * Input: SMOKE_FLAG_ON_JSON = output of scripts/smoke-solana-rail.mjs against
  * a flag-on `next start`. Output: SMOKE_OUT (JSON evidence).
+ *
+ * ATA-aware: the server only advertises Solana while payTo's USDC token
+ * account exists (token-account guard). So: account missing → every live 402
+ * must be Base-only (one entry); account present → Base first + Solana second.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -38,18 +42,7 @@ describe("Solana rail read-only smoke", () => {
     evidence.payaiExtensions = sup.extensions;
     expect(exactMain).toBeTruthy();
 
-    // 2. Every live Solana accept: exact payTo / mint / network, fee payer = PayAI's current one, amount = Base amount
-    const perRoute: Record<string, unknown> = {};
-    for (const r of smoke.results) {
-      const [base, sol] = r.accepts as PaymentRequirements[];
-      expect(base.network).toBe("eip155:8453");
-      expect(sol).toMatchObject({ scheme: "exact", network: SOLANA_MAINNET_CAIP2, asset: USDC_SOLANA_MINT, payTo: SOLANA_PAYTO, amount: base.amount });
-      expect((sol.extra as { feePayer: string }).feePayer).toBe(exactMain.extra.feePayer);
-      perRoute[r.key] = { status: r.status, baseAmount: base.amount, solanaAmount: sol.amount };
-    }
-    evidence.liveRoutesChecked = Object.keys(perRoute).length;
-
-    // 3. Mainnet reads: USDC mint, payTo account, payTo's USDC ATA
+    // 2. Mainnet reads: USDC mint, payTo account, payTo's USDC ATA (decides what the server must advertise)
     const mint = await rpc("getAccountInfo", [USDC_SOLANA_MINT, { encoding: "jsonParsed" }]);
     evidence.usdcMint = { owner: mint.value.owner, decimals: mint.value.data.parsed.info.decimals, slot: mint.context.slot };
     expect(mint.value.owner).toBe("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -58,8 +51,41 @@ describe("Solana rail read-only smoke", () => {
     const payToAcct = await rpc("getAccountInfo", [SOLANA_PAYTO, { encoding: "base64" }]);
     const ataAcct = await rpc("getAccountInfo", [ata, { encoding: "jsonParsed" }]);
     const byOwner = await rpc("getTokenAccountsByOwner", [SOLANA_PAYTO, { mint: USDC_SOLANA_MINT }, { encoding: "jsonParsed" }]);
+    const info = ataAcct.value?.data?.parsed?.info;
+    // Same test the server's token-account guard applies.
+    const ataReady =
+      ataAcct.value !== null &&
+      ataAcct.value.owner === "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" &&
+      ataAcct.value.data?.parsed?.type === "account" &&
+      info?.mint === USDC_SOLANA_MINT &&
+      info?.owner === SOLANA_PAYTO &&
+      info?.state === "initialized";
     evidence.payTo = { address: SOLANA_PAYTO, accountExists: payToAcct.value !== null, slot: payToAcct.context.slot };
-    evidence.payToUsdcAta = { address: ata, exists: ataAcct.value !== null, usdcTokenAccountsByOwner: byOwner.value.length };
+    evidence.payToUsdcAta = { address: ata, exists: ataAcct.value !== null, ready: ataReady, usdcTokenAccountsByOwner: byOwner.value.length };
+    evidence.expectation = ataReady ? "token account present: Base first + Solana second" : "token account missing: Base-only (one entry)";
+
+    // 3. Every live 402: Base first; Solana second ONLY while the token account exists
+    const perRoute: Record<string, unknown> = {};
+    for (const r of smoke.results) {
+      const accepts = r.accepts as PaymentRequirements[];
+      const [base, sol] = accepts;
+      expect(base.network).toBe("eip155:8453");
+      if (!ataReady) {
+        expect(accepts, r.key).toHaveLength(1);
+        perRoute[r.key] = { status: r.status, accepts: 1, baseAmount: base.amount };
+        continue;
+      }
+      expect(accepts, r.key).toHaveLength(2);
+      expect(sol).toMatchObject({ scheme: "exact", network: SOLANA_MAINNET_CAIP2, asset: USDC_SOLANA_MINT, payTo: SOLANA_PAYTO, amount: base.amount });
+      expect((sol.extra as { feePayer: string }).feePayer).toBe(exactMain.extra.feePayer);
+      perRoute[r.key] = { status: r.status, accepts: 2, baseAmount: base.amount, solanaAmount: sol.amount };
+    }
+    evidence.liveRoutesChecked = Object.keys(perRoute).length;
+    if (!ataReady) {
+      evidence.sdkLocalVerify = "skipped: no live Solana accept while the token account is missing";
+      writeFileSync(OUT, JSON.stringify(evidence, null, 1) + "\n");
+      return;
+    }
 
     // 4. SDK client builds the tx from the LIVE accept with real read-only RPC; SDK facilitator static verify
     const sample = smoke.results.find((r: { key: string }) => r.key === "GET /api/pulse json").accepts[1] as PaymentRequirements;
