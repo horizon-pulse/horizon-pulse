@@ -857,7 +857,7 @@
             "name": "headers",
             "in": "query",
             "required": false,
-            "description": "Optional allowlisted outbound headers (no Cookie / hop-by-hop). On GET pass as JSON string query param.",
+            "description": "Optional allowlisted outbound headers as a URL-encoded JSON object string, e.g. {\"accept\":\"application/json\"} (no Cookie / Host / hop-by-hop).",
             "schema": {
               "type": "string"
             }
@@ -1145,7 +1145,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Optional CSS-selector fields (max 20). Map of name to selector string or {selector, attr?: \"text\"|\"html\"|<attribute>, all?: boolean, limit?: 1-50}. GET: URL-encoded JSON. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.",
+            "description": "Optional CSS-selector fields (max 20) as a URL-encoded JSON object string: map of name to selector string or {selector, attr?: \"text\"|\"html\"|<attribute>, all?: boolean, limit?: 1-50}, e.g. {\"heading\":\"h1\"}. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.",
             "schema": {
               "type": "string"
             }

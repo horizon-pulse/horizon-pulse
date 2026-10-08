@@ -362,14 +362,14 @@ const HTTP_GET_INPUT_SCHEMA = {
         "Upstream method: GET (default) | POST | HEAD | PUT | PATCH | DELETE",
     },
     headers: {
-      type: "object",
+      type: "string",
       description:
-        "Optional allowlisted outbound headers (no Cookie / hop-by-hop). On GET pass as JSON string query param.",
+        'Optional allowlisted outbound headers as a URL-encoded JSON object string, e.g. {"accept":"application/json"} (no Cookie / Host / hop-by-hop).',
     },
     body: {
       type: "string",
       description:
-        "Optional body for POST/PUT/PATCH (via POST /api/http JSON). Size-capped.",
+        "Not read on GET. To send a request body (POST/PUT/PATCH upstream), call POST /api/http with a JSON body {url, method, headers, body}. Size-capped (64KB).",
     },
   },
   required: ["url"],
@@ -484,9 +484,9 @@ export function extractRouteConfig(): RoutesConfig {
                 "POST /api/extract JSON body only (ignored on GET): raw HTML to parse instead of fetching (size-capped). If both url and html are sent, html is parsed and url is echoed.",
             },
             fields: {
-              type: "object",
+              type: "string",
               description:
-                'Optional CSS-selector fields (max 20). Map of name to selector string or {selector, attr?: "text"|"html"|<attribute>, all?: boolean, limit?: 1-50}. GET: URL-encoded JSON. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.',
+                'Optional CSS-selector fields (max 20) as a URL-encoded JSON object string: map of name to selector string or {selector, attr?: "text"|"html"|<attribute>, all?: boolean, limit?: 1-50}, e.g. {"heading":"h1"}. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.',
             },
           },
           required: ["url"],
