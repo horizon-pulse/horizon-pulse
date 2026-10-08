@@ -15,6 +15,9 @@
  *     2026-10-08, matched by Odin 9:34 AM ET)
  *   - SOLANA_PAYTO decodes as a 32-byte base58 Solana public key (runtime check)
  *   - HP_SOLANA_NETWORK, if set, is exactly the Solana mainnet CAIP-2 id
+ *   - HP_SOLANA_RPC_URL, if set, is an https URL (read-only RPC)
+ * Even when ON, the Solana entry is only shown while the payTo's USDC token
+ * account exists and PayAI's live fee payer checks out (lib/solana-rail.ts).
  *
  * Moving the payout to any other address (e.g. a treasury account) needs a
  * code change to SOLANA_PAYTO plus a fresh passphrase from Michael; the env
@@ -36,11 +39,29 @@ export const USDC_SOLANA_DECIMALS = 6 as const;
 /** PayAI facilitator: allowed for the Solana rail ONLY (Bazaar + refunds stay on CDP/Base). */
 export const PAYAI_FACILITATOR_URL = "https://facilitator.payai.network" as const;
 
+/** SPL Token program (owner of the USDC mint) and the Associated Token Account program. */
+export const SPL_TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as const;
+export const ASSOCIATED_TOKEN_PROGRAM = "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as const;
+
+/**
+ * The payTo's USDC associated token account (ATA(SOLANA_PAYTO, USDC_SOLANA_MINT,
+ * SPL Token)): the account an x402 `exact` payment credits. Pinned here and
+ * re-derived at rail init; any mismatch keeps the rail off. The Solana entry is
+ * advertised ONLY while this account exists on mainnet (lib/solana-rail.ts,
+ * read-only RPC, re-checked every ~10 minutes).
+ */
+export const SOLANA_PAYTO_USDC_ATA = "3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu" as const;
+
+/** Public read-only Solana mainnet JSON-RPC (override with HP_SOLANA_RPC_URL, https only). */
+export const DEFAULT_SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com" as const;
+
 export type SolanaRailConfig = {
   network: typeof SOLANA_MAINNET_CAIP2;
   payTo: typeof SOLANA_PAYTO;
   asset: typeof USDC_SOLANA_MINT;
   facilitatorUrl: typeof PAYAI_FACILITATOR_URL;
+  /** Read-only JSON-RPC used only for the token-account existence check. */
+  rpcUrl: string;
   /** Max wait for PayAI during lazy init (unpaid 402 path). */
   initTimeoutMs: number;
 };
@@ -134,6 +155,19 @@ export function getSolanaRailConfig(env: Env = process.env): SolanaConfigResult 
       return off(`HP_SOLANA_NETWORK must be ${SOLANA_MAINNET_CAIP2} (mainnet only)`, true);
     }
 
+    const rawRpc = env.HP_SOLANA_RPC_URL ?? "";
+    let rpcUrl: string = DEFAULT_SOLANA_RPC_URL;
+    if (rawRpc !== "") {
+      let u: URL;
+      try {
+        u = new URL(rawRpc);
+      } catch {
+        return off("HP_SOLANA_RPC_URL is not a URL", true);
+      }
+      if (u.protocol !== "https:") return off("HP_SOLANA_RPC_URL must be https", true);
+      rpcUrl = rawRpc;
+    }
+
     const rawTimeout = Number((env.HP_SOLANA_INIT_TIMEOUT_MS ?? "").trim() || DEFAULT_INIT_TIMEOUT_MS);
     const initTimeoutMs =
       Number.isInteger(rawTimeout) && rawTimeout > 0 && rawTimeout <= 30_000 ? rawTimeout : DEFAULT_INIT_TIMEOUT_MS;
@@ -145,6 +179,7 @@ export function getSolanaRailConfig(env: Env = process.env): SolanaConfigResult 
         payTo: SOLANA_PAYTO,
         asset: USDC_SOLANA_MINT,
         facilitatorUrl: PAYAI_FACILITATOR_URL,
+        rpcUrl,
         initTimeoutMs,
       },
     };

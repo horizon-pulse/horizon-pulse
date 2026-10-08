@@ -14,7 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
-import { __setSolanaModuleLoaderForTests, resetSolanaRailForTests, type SolanaModules } from "@/lib/solana-rail";
+import { __loadRealSolanaModulesForTests, __setSolanaModuleLoaderForTests, resetSolanaRailForTests, type SolanaModules } from "@/lib/solana-rail";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
 import { captureRoutes, captureDiscovery, type Captured } from "./helpers/capture";
@@ -35,12 +35,7 @@ async function captureAll() {
 const solanaWarned = () => vi.mocked(console.warn).mock.calls.some((c) => String(c[0]).startsWith("[solana-rail]"));
 
 async function realModules(): Promise<SolanaModules> {
-  const [server, root] = await Promise.all([import("@x402/svm/exact/server"), import("@x402/svm")]);
-  return {
-    ExactSvmScheme: server.ExactSvmScheme as never,
-    SOLANA_MAINNET_CAIP2: root.SOLANA_MAINNET_CAIP2,
-    USDC_MAINNET_ADDRESS: root.USDC_MAINNET_ADDRESS,
-  };
+  return __loadRealSolanaModulesForTests();
 }
 
 function payaiWithoutSolanaMainnet() {

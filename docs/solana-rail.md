@@ -43,6 +43,25 @@ code change + Michael's passphrase; env can only turn the rail on/off.
   Solana code.
 - MCP (`/mcp`) and the human browser-402 copy are unchanged (Base only).
 
+## Guards added 2026-10-08 (Odin review follow-up)
+- **(b) Token-account guard.** The Solana entry is shown only while the payTo's USDC
+  token account `3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu` exists (read-only
+  `getAccountInfo`, jsonParsed; must be an initialized SPL-Token USDC account owned by
+  the payTo). Result cached 10 min (present or absent; RPC error → absent, retry
+  after 60 s), so it flips on by itself after the account is created — no redeploy.
+  RPC: `HP_SOLANA_RPC_URL` (https only), default `https://api.mainnet-beta.solana.com`.
+  The pinned ATA constant is re-derived at init; mismatch → rail off.
+- **(c) Rejection logging.** PayAI verify-invalid / settle-failed / throws are logged
+  server-side as `[solana-rail] … reason=<code>` with addresses, signatures, hex and
+  base64 redacted; the client still gets exactly main's Base-only 402.
+- **(e) Bazaar.** `extensions.bazaar` is stripped from incoming Solana payloads before
+  PayAI sees them; Solana-only routes carry no extensions and the PayAI wrapper reports
+  `extensions: []`.
+- **(f) Fee payer.** PayAI's advertised `extra.feePayer` must appear in PayAI's own
+  live signer list (`signers["solana:*"]` / `signers[<network>]`) from the same HTTPS
+  `/supported` response. Not listed, list missing, non-https URL, or fetch failure →
+  fail closed (Base-only). The rail re-fetches `/supported` every 10 min.
+
 ## Bazaar
 CDP/Base stays the Bazaar-indexed entry: the `extensions.bazaar` block on every 402
 is byte-identical to main with the flag on (tested), and the Solana/PayAI server never
@@ -50,7 +69,7 @@ declares Bazaar. **PayAI-facilitated Solana sales do NOT count toward the Coinba
 Bazaar settlement window.**
 
 ## Known blockers before a Solana sale can succeed
-1. **payTo has no USDC token account.** x402 `exact` on Solana pays via
+1. **payTo has no USDC token account** (the guard above keeps the rail Base-only until it exists). x402 `exact` on Solana pays via
    `TransferChecked` into the payTo's USDC associated token account
    `3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu`. On 2026-10-08 (read-only RPC)
    neither the payTo account nor that ATA exists. Standard x402 clients do not

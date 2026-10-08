@@ -3,7 +3,15 @@ import path from "node:path";
 import { vi } from "vitest";
 import { CDP_URL_PREFIX, CDP_SUPPORTED, installFacilitatorMock, type FacilitatorBehaviour } from "./facilitator-mock";
 import { CDP_ENV } from "./capture";
-import { PAYAI_FACILITATOR_URL, SOLANA_PAYTO, base58Encode } from "@/lib/solana-config";
+import {
+  PAYAI_FACILITATOR_URL,
+  SOLANA_PAYTO,
+  SOLANA_PAYTO_USDC_ATA,
+  SPL_TOKEN_PROGRAM,
+  USDC_SOLANA_MINT,
+  base58Encode,
+} from "@/lib/solana-config";
+import { __setSolanaRpcForTests, type SolanaRpc } from "@/lib/solana-rail";
 
 export const PINNED_PAYTO = "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz";
 
@@ -30,12 +38,62 @@ export function fillerPubkey(fill: number): string {
 }
 export const SOL_PAYER = fillerPubkey(9);
 
-export function stubSolanaOn(extra: Record<string, string> = {}, cdp = true) {
+/** The jsonParsed getAccountInfo value of an initialized USDC token account owned by payTo. */
+export const ATA_ACCOUNT_VALUE = {
+  owner: SPL_TOKEN_PROGRAM,
+  lamports: 2039280,
+  executable: false,
+  rentEpoch: 0,
+  space: 165,
+  data: {
+    program: "spl-token",
+    space: 165,
+    parsed: {
+      type: "account",
+      info: {
+        mint: USDC_SOLANA_MINT,
+        owner: SOLANA_PAYTO,
+        state: "initialized",
+        isNative: false,
+        tokenAmount: { amount: "0", decimals: 6, uiAmount: 0, uiAmountString: "0" },
+      },
+    },
+  },
+};
+
+export type AtaMode = "present" | "absent" | "error" | (() => unknown);
+export type RpcCall = { url: string; method: string; account: unknown };
+
+/** Read-only RPC stub for the token-account guard. Records every call. */
+export function installRpc(mode: AtaMode = "present"): RpcCall[] {
+  const calls: RpcCall[] = [];
+  let current: AtaMode = mode;
+  const fn: SolanaRpc = async (url, method, params) => {
+    calls.push({ url, method, account: params[0] });
+    if (method !== "getAccountInfo" || params[0] !== SOLANA_PAYTO_USDC_ATA) throw new Error(`unexpected RPC ${method}`);
+    if (typeof current === "function") return current();
+    if (current === "error") throw new Error("RPC unreachable");
+    return { context: { slot: 1 }, value: current === "present" ? ATA_ACCOUNT_VALUE : null };
+  };
+  __setSolanaRpcForTests(fn);
+  (calls as RpcCall[] & { set?: (m: AtaMode) => void }).set = (m: AtaMode) => {
+    current = m;
+  };
+  return calls;
+}
+
+export function setAtaMode(calls: RpcCall[], m: AtaMode) {
+  (calls as RpcCall[] & { set: (m: AtaMode) => void }).set(m);
+}
+
+export function stubSolanaOn(extra: Record<string, string> = {}, cdp = true, ata: AtaMode = "present"): RpcCall[] {
+  const calls = installRpc(ata);
   vi.unstubAllEnvs();
   vi.stubEnv("HP_SOLANA_ENABLED", "true");
   vi.stubEnv("HP_SOLANA_PAYTO", SOLANA_PAYTO);
   for (const [k, v] of Object.entries(extra)) vi.stubEnv(k, v);
   setCdp(cdp);
+  return calls;
 }
 
 export function setCdp(on: boolean) {

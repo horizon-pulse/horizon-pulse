@@ -8,6 +8,7 @@ import {
   PAYAI_FACILITATOR_URL,
   SOLANA_MAINNET_CAIP2,
   SOLANA_PAYTO,
+  SOLANA_PAYTO_USDC_ATA,
   USDC_SOLANA_MINT,
   base58Decode,
   base58Encode,
@@ -84,6 +85,7 @@ describe("getSolanaRailConfig", () => {
         payTo: "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
         asset: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
         facilitatorUrl: "https://facilitator.payai.network",
+        rpcUrl: "https://api.mainnet-beta.solana.com",
         initTimeoutMs: 2500,
       },
     });
@@ -106,6 +108,8 @@ describe("getSolanaRailConfig", () => {
     "payTo trailing space (no trimming)": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO + " " },
     "payTo another valid key (no substitution)": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: fillerPubkey(5) },
     "devnet network": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO, HP_SOLANA_NETWORK: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" },
+    "RPC URL not https": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO, HP_SOLANA_RPC_URL: "http://api.mainnet-beta.solana.com" },
+    "RPC URL garbage": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO, HP_SOLANA_RPC_URL: "not a url" },
     "v1 network name": { HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO, HP_SOLANA_NETWORK: "solana" },
   };
   for (const [name, env] of Object.entries(offCases)) {
@@ -115,6 +119,22 @@ describe("getSolanaRailConfig", () => {
       if (!r.enabled) expect(r.misconfigured).toBe(env.HP_SOLANA_ENABLED === "true");
     });
   }
+
+  it("custom https RPC URL accepted", () => {
+    const r = getSolanaRailConfig({ HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO, HP_SOLANA_RPC_URL: "https://rpc.example.test" });
+    expect(r).toMatchObject({ enabled: true, config: { rpcUrl: "https://rpc.example.test" } });
+  });
+
+  it("pinned payTo USDC token account = SDK/kit derivation", async () => {
+    const { __loadRealSolanaModulesForTests } = await import("@/lib/solana-rail");
+    const mods = await __loadRealSolanaModulesForTests();
+    expect(await mods.deriveUsdcAta(SOLANA_PAYTO, USDC_SOLANA_MINT)).toBe(SOLANA_PAYTO_USDC_ATA);
+    expect(SOLANA_PAYTO_USDC_ATA).toBe("3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu");
+    const { findAssociatedTokenPda, TOKEN_PROGRAM_ADDRESS } = await import("@solana-program/token");
+    const { address } = await import("@solana/kit");
+    const [ata] = await findAssociatedTokenPda({ owner: address(SOLANA_PAYTO), mint: address(USDC_SOLANA_MINT), tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    expect(ata.toString()).toBe(SOLANA_PAYTO_USDC_ATA);
+  });
 
   it("init timeout: bounded parse", () => {
     const on = (t: string) => getSolanaRailConfig({ HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO, HP_SOLANA_INIT_TIMEOUT_MS: t });
