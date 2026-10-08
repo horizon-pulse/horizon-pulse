@@ -34,7 +34,9 @@ import {
   PAYAI_SUPPORTED,
   SOL_PAYER,
   fillerPubkey,
+  ataCalls,
   installBothFacilitators,
+  revalidateSolana,
   setAtaMode,
   setCdp,
   stubSolanaOn,
@@ -91,7 +93,7 @@ describe("(b) token-account guard", () => {
     const rpc = stubSolanaOn({}, true, "absent");
     expect(JSON.stringify(await captureAll())).toBe(JSON.stringify(golden));
     // Cached: one RPC call for all 82 requests, read-only getAccountInfo on the pinned ATA.
-    expect(rpc).toHaveLength(1);
+    expect(rpc).toHaveLength(1); // absent → no receipt count either
     expect(rpc[0]).toMatchObject({ url: "https://api.mainnet-beta.solana.com", method: "getAccountInfo", account: SOLANA_PAYTO_USDC_ATA });
     expect(warnLines().some((l) => l.includes("token account not found"))).toBe(true);
   });
@@ -116,10 +118,11 @@ describe("(b) token-account guard", () => {
     setCdp(true);
     expect(JSON.stringify(await captureRoutes())).toBe(JSON.stringify(golden.cdp));
 
-    now += 2000; // cache expired → re-check
+    now += 2000; // cache expired → re-check (stale-while-revalidate: in the background)
+    await revalidateSolana();
     const after = await captureAll();
     assertBaseFirstSolanaSecond(after);
-    expect(rpc.length).toBe(2);
+    expect(ataCalls(rpc).length).toBe(2);
   });
 
   it("(b) and flips back off if the account disappears", async () => {
@@ -130,6 +133,7 @@ describe("(b) token-account guard", () => {
     assertBaseFirstSolanaSecond({ cdp: await captureRoutes(), local: await (async () => { setCdp(false); return captureRoutes(); })() });
     setAtaMode(rpc, "absent");
     now += ATA_TTL_MS + 1;
+    await revalidateSolana();
     expect(JSON.stringify(await captureAll())).toBe(JSON.stringify(golden));
   });
 
@@ -379,6 +383,7 @@ describe("(f) fee payer must be on PayAI's live signer list (fail closed)", () =
     expect((await accepts()).length).toBe(2);
     list = list.filter((a) => a !== PAYAI_FEE_PAYER);
     now += RAIL_TTL_MS + 1;
+    await revalidateSolana(); // background /supported refresh fails → rail retired (fail closed)
     expect(JSON.stringify(await captureAll())).toBe(JSON.stringify(golden));
   });
 });

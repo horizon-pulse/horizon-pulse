@@ -120,9 +120,9 @@ describe("getSolanaRailConfig", () => {
     });
   }
 
-  it("custom https RPC URL accepted", () => {
-    const r = getSolanaRailConfig({ HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO, HP_SOLANA_RPC_URL: "https://rpc.example.test" });
-    expect(r).toMatchObject({ enabled: true, config: { rpcUrl: "https://rpc.example.test" } });
+  it("allow-listed https RPC URL accepted (stored parsed + normalised)", () => {
+    const r = getSolanaRailConfig({ HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO, HP_SOLANA_RPC_URL: "https://api.mainnet-beta.solana.com" });
+    expect(r).toMatchObject({ enabled: true, config: { rpcUrl: "https://api.mainnet-beta.solana.com/" } });
   });
 
   it("pinned payTo USDC token account = SDK/kit derivation", async () => {

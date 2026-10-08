@@ -5,8 +5,9 @@
  *     lacks Solana mainnet / lacks a fee payer, or the SDK builds an
  *     unexpected requirement
  *   - paid: Base payloads go only to CDP and settle exactly as with the flag
- *     off; Solana payloads go only to PayAI; a Solana verify/settle failure or
- *     throw returns the exact Base-only 402 and never reaches the Base path.
+ *     off; Solana payloads go only to PayAI; a Solana verify failure/throw or a
+ *     definitive settle failure returns the exact Base-only 402, an ambiguous
+ *     settle a generic 502/504 (never 402); none ever reaches the Base path.
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -284,22 +285,29 @@ describe("paid isolation", () => {
     expect(calls.some((c) => c.url.startsWith(CDP_URL_PREFIX))).toBe(false);
   });
 
-  for (const [name, sol, handlerRuns] of [
-    ["PayAI verify throws (PayAI down)", { verify: () => { throw new Error("payai verify exploded"); } }, 0],
-    ["PayAI verify says invalid", { verify: () => ({ isValid: false, invalidReason: "transaction_simulation_failed", payer: SOL_PAYER }) }, 0],
-    ["PayAI settle throws", { settle: () => { throw new Error("payai settle exploded"); } }, 1],
-    ["PayAI settle unsuccessful", { settle: () => ({ success: false, errorReason: "settle_failed", transaction: "", network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" }) }, 1],
+  // Odin review fix 1: verify-phase failures and DEFINITIVE settle failures → Base-only 402;
+  // an AMBIGUOUS settle (plain throw = transport error; tx may have landed) → generic 502, never 402.
+  for (const [name, sol, handlerRuns, expectStatus] of [
+    ["PayAI verify throws (PayAI down)", { verify: () => { throw new Error("payai verify exploded"); } }, 0, 402],
+    ["PayAI verify says invalid", { verify: () => ({ isValid: false, invalidReason: "transaction_simulation_failed", payer: SOL_PAYER }) }, 0, 402],
+    ["PayAI settle throws (transport error, outcome unknown)", { settle: () => { throw new Error("payai settle exploded"); } }, 1, 502],
+    ["PayAI settle unsuccessful", { settle: () => ({ success: false, errorReason: "settle_failed", transaction: "", network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp" }) }, 1, 402],
   ] as const) {
-    it(`${name}: exact Base-only 402, nothing to CDP, Base still settles after`, async () => {
+    it(`${name}: ${expectStatus === 402 ? "exact Base-only 402" : "generic 502 settlement_unconfirmed (no 402)"}, nothing to CDP, Base still settles after`, async () => {
       calls = installBothFacilitators(behaviour(sol as never));
       stubSolanaOn();
       const accepts = await getAccepts();
       calls.length = 0;
       const run = makeHandler();
       const res = await run.handler(paid(solanaPayload(accepts[1])));
-      expect(res.status).toBe(402);
+      expect(res.status).toBe(expectStatus);
       expect(run.ran.count).toBe(handlerRuns);
-      expect(res.headers.get("payment-required")).toBe(goldenPulseHeader());
+      if (expectStatus === 402) {
+        expect(res.headers.get("payment-required")).toBe(goldenPulseHeader());
+      } else {
+        expect(res.headers.get("payment-required")).toBeNull();
+        expect(await res.text()).toBe('{"error":"settlement_unconfirmed"}');
+      }
       expect(calls.filter((c) => c.url.startsWith(CDP_URL_PREFIX) && c.op !== "supported")).toEqual([]);
 
       calls.length = 0;

@@ -64,12 +64,16 @@ export const ATA_ACCOUNT_VALUE = {
 export type AtaMode = "present" | "absent" | "error" | (() => unknown);
 export type RpcCall = { url: string; method: string; account: unknown };
 
-/** Read-only RPC stub for the token-account guard. Records every call. */
-export function installRpc(mode: AtaMode = "present"): RpcCall[] {
+/** Read-only RPC stub for the token-account guard (+ allowance receipt count). Records every call. */
+export function installRpc(mode: AtaMode = "present", receipts: number | (() => unknown) = 0): RpcCall[] {
   const calls: RpcCall[] = [];
   let current: AtaMode = mode;
   const fn: SolanaRpc = async (url, method, params) => {
     calls.push({ url, method, account: params[0] });
+    if (method === "getSignaturesForAddress" && params[0] === SOLANA_PAYTO_USDC_ATA) {
+      if (typeof receipts === "function") return receipts();
+      return Array.from({ length: receipts }, (_, i) => ({ signature: `sig${i}`, slot: i, err: null }));
+    }
     if (method !== "getAccountInfo" || params[0] !== SOLANA_PAYTO_USDC_ATA) throw new Error(`unexpected RPC ${method}`);
     if (typeof current === "function") return current();
     if (current === "error") throw new Error("RPC unreachable");
@@ -84,6 +88,20 @@ export function installRpc(mode: AtaMode = "present"): RpcCall[] {
 
 export function setAtaMode(calls: RpcCall[], m: AtaMode) {
   (calls as RpcCall[] & { set: (m: AtaMode) => void }).set(m);
+}
+
+/** Only the token-account (getAccountInfo) calls. */
+export const ataCalls = (calls: RpcCall[]) => calls.filter((c) => c.method === "getAccountInfo");
+
+/** Trigger the stale-while-revalidate refreshes (token account + rail) and wait for them. */
+export async function revalidateSolana(): Promise<void> {
+  const { getSolanaRailConfig } = await import("@/lib/solana-config");
+  const { getSolanaAccept, __flushSolanaBackgroundForTests } = await import("@/lib/solana-rail");
+  const c = getSolanaRailConfig();
+  if (c.enabled) await getSolanaAccept(c.config, "5000");
+  await __flushSolanaBackgroundForTests();
+  if (c.enabled) await getSolanaAccept(c.config, "5000");
+  await __flushSolanaBackgroundForTests();
 }
 
 export function stubSolanaOn(extra: Record<string, string> = {}, cdp = true, ata: AtaMode = "present"): RpcCall[] {

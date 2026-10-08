@@ -15,7 +15,8 @@
  *     2026-10-08, matched by Odin 9:34 AM ET)
  *   - SOLANA_PAYTO decodes as a 32-byte base58 Solana public key (runtime check)
  *   - HP_SOLANA_NETWORK, if set, is exactly the Solana mainnet CAIP-2 id
- *   - HP_SOLANA_RPC_URL, if set, is an https URL (read-only RPC)
+ *   - HP_SOLANA_RPC_URL, if set, is an https URL on an allow-listed RPC host
+ *     (no userinfo, no IP literal, no localhost, default port; read-only RPC)
  * Even when ON, the Solana entry is only shown while the payTo's USDC token
  * account exists and PayAI's live fee payer checks out (lib/solana-rail.ts).
  *
@@ -54,6 +55,47 @@ export const SOLANA_PAYTO_USDC_ATA = "3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7Mz
 
 /** Public read-only Solana mainnet JSON-RPC (override with HP_SOLANA_RPC_URL, https only). */
 export const DEFAULT_SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com" as const;
+
+/**
+ * Hostnames HP_SOLANA_RPC_URL may point at (exact match, after URL parsing,
+ * which lower-cases the host). Only Solana's public mainnet-beta today. A
+ * dedicated provider (Helius, Triton, QuickNode, ...) needs an account =
+ * Michael's decision; add its exact hostname here (code change + review).
+ */
+export const SOLANA_RPC_HOST_ALLOWLIST: readonly string[] = ["api.mainnet-beta.solana.com"];
+
+export type RpcUrlCheck = { ok: true; url: string } | { ok: false; reason: string };
+
+/**
+ * Parse + validate an RPC override. Trims surrounding whitespace, then
+ * requires: https, no userinfo, not an IP literal (v4 in any numeric form the
+ * URL parser normalises, or v6), not localhost / *.localhost, default port,
+ * hostname on SOLANA_RPC_HOST_ALLOWLIST. Returns the normalised URL string
+ * (what is stored and fetched). Never throws.
+ */
+export function parseSolanaRpcUrl(raw: string): RpcUrlCheck {
+  const trimmed = raw.trim();
+  let u: URL;
+  try {
+    u = new URL(trimmed);
+  } catch {
+    return { ok: false, reason: "HP_SOLANA_RPC_URL is not a URL" };
+  }
+  if (u.protocol !== "https:") return { ok: false, reason: "HP_SOLANA_RPC_URL must be https" };
+  if (u.username !== "" || u.password !== "") return { ok: false, reason: "HP_SOLANA_RPC_URL must not contain userinfo" };
+  const host = u.hostname;
+  if (host.startsWith("[") || host.includes(":") || /^[0-9.]+$/.test(host)) {
+    return { ok: false, reason: "HP_SOLANA_RPC_URL must not be an IP literal" };
+  }
+  if (host === "localhost" || host.endsWith(".localhost") || host === "localhost.") {
+    return { ok: false, reason: "HP_SOLANA_RPC_URL must not be localhost" };
+  }
+  if (u.port !== "") return { ok: false, reason: "HP_SOLANA_RPC_URL must use the default https port" };
+  if (!SOLANA_RPC_HOST_ALLOWLIST.includes(host)) {
+    return { ok: false, reason: "HP_SOLANA_RPC_URL host is not on the allow-list" };
+  }
+  return { ok: true, url: u.toString() };
+}
 
 export type SolanaRailConfig = {
   network: typeof SOLANA_MAINNET_CAIP2;
@@ -157,15 +199,10 @@ export function getSolanaRailConfig(env: Env = process.env): SolanaConfigResult 
 
     const rawRpc = env.HP_SOLANA_RPC_URL ?? "";
     let rpcUrl: string = DEFAULT_SOLANA_RPC_URL;
-    if (rawRpc !== "") {
-      let u: URL;
-      try {
-        u = new URL(rawRpc);
-      } catch {
-        return off("HP_SOLANA_RPC_URL is not a URL", true);
-      }
-      if (u.protocol !== "https:") return off("HP_SOLANA_RPC_URL must be https", true);
-      rpcUrl = rawRpc;
+    if (rawRpc.trim() !== "") {
+      const checked = parseSolanaRpcUrl(rawRpc);
+      if (!checked.ok) return off(checked.reason, true);
+      rpcUrl = checked.url;
     }
 
     const rawTimeout = Number((env.HP_SOLANA_INIT_TIMEOUT_MS ?? "").trim() || DEFAULT_INIT_TIMEOUT_MS);

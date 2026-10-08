@@ -12,9 +12,10 @@
  *     client and never sees Solana or PayAI. A Base payload can only reach
  *     CDP and a Solana payload can only reach PayAI.
  *   - Every exported entry point catches everything. On any Solana failure
- *     (import, bad env, PayAI down/timeout/missing kind, unexpected
- *     requirement, verify/settle throw) callers get the untouched Base-only
- *     402 and a console.warn.
+ *     before money can move (import, bad env, PayAI down/timeout/missing kind,
+ *     unexpected requirement, verify-phase error) callers get the untouched
+ *     Base-only 402 and a console.warn; see "Paid-path outcomes" below for the
+ *     settle phase and handler throws.
  *   - Failed init is cached for RETRY_AFTER_MS so an outage costs at most one
  *     bounded wait (initTimeoutMs) per instance per window. A good init is
  *     refreshed every RAIL_TTL_MS (re-fetches PayAI /supported).
@@ -30,8 +31,30 @@
  *   - Incoming Solana payloads have any `extensions.bazaar` stripped before
  *     they reach PayAI; the Solana server never declares Bazaar.
  *   - PayAI rejections (verify invalid / settle failed / throws) are logged
- *     server-side with the reason code only (addresses, tx data redacted); the
- *     client still gets exactly main's Base-only 402.
+ *     server-side with the reason code only (addresses, tx data redacted).
+ *   - Paid-path outcomes (Odin code review 2026-10-08, fix 1):
+ *       verify phase (nothing charged): any rejection, throw, timeout or
+ *         malformed PayAI response → exactly main's Base-only 402;
+ *       settle DEFINITIVE failure (success:false / 4xx SettleError, no tx,
+ *         not pending) → Base-only 402;
+ *       settle AMBIGUOUS (timeout, transport error, malformed response,
+ *         settlement_pending, duplicate_settlement, 5xx/429/409, or a tx
+ *         signature with success:false) → generic 504 (timeout) / 502
+ *         {"error":"settlement_unconfirmed"}, NO PayAI text and NEVER a 402
+ *         (a 402 would invite the client to pay twice);
+ *       route handler throws → re-thrown, same as the Base path (Next 500).
+ *   - Replay guard (fix 2): one request per Solana payment. Keyed on
+ *     sha256 of the transaction message (signature slots excluded), checked
+ *     BEFORE verify; in-flight / settled / unconfirmed / failed-settle keys are
+ *     kept REPLAY_TTL_MS (25 h ≥ maxTimeoutSeconds; covers PayAI's 24 h
+ *     replay of recorded outcomes); a duplicate gets 409
+ *     {"error":"duplicate_payment"}. Keys are released when nothing was
+ *     charged (verify failed, handler error before settle).
+ *   - Token-account check and PayAI /supported (fee payer list) refresh are
+ *     stale-while-revalidate: once warm, a 402 never waits on them.
+ *   - Ops alerts (should-fix 9): warn-rate alert and the 80%-of-PayAI-free-
+ *     allowance alert go through setSolanaAlertHook (default: one
+ *     console.error line tagged "[solana-rail][ALERT]").
  */
 import type { NextRequest } from "next/server";
 import { NextRequest as NextRequestCtor, NextResponse } from "next/server";
@@ -52,6 +75,7 @@ import {
   encodePaymentRequiredHeader,
   encodePaymentSignatureHeader,
 } from "@x402/core/http";
+import { FacilitatorResponseError, FacilitatorTimeoutError, SettleError } from "@x402/core/types";
 import { withX402 } from "@x402/next";
 import {
   SOLANA_MAINNET_CAIP2,
@@ -75,6 +99,23 @@ const ATA_ERROR_RETRY_MS = 60_000;
 const MAX_TIMEOUT_SECONDS = 300;
 /** Solana packet limit for a serialized transaction. */
 const MAX_TX_BYTES = 1232;
+/** PayAI request deadlines (Odin should-fix 7: settle cut from 30 s to 12 s). */
+export const SOLANA_VERIFY_TIMEOUT_MS = 10_000;
+export const SOLANA_SETTLE_TIMEOUT_MS = 12_000;
+/**
+ * Replay guard retention. Must be ≥ maxTimeoutSeconds (300 s); set to 25 h
+ * because PayAI replays a recorded terminal settle outcome (incl. success) for
+ * an identical body for 24 h (developers.md, 2026-10-08), so a shorter local
+ * window would let a replay be "settled" again by PayAI and served for free.
+ */
+export const REPLAY_TTL_MS = 25 * 60 * 60_000;
+const REPLAY_MAX_ENTRIES = 50_000;
+/** Warn-rate alert: this many [solana-rail] warnings inside the window. */
+export const WARN_ALERT_THRESHOLD = 20;
+export const WARN_ALERT_WINDOW_MS = 5 * 60_000;
+/** PayAI free tier: 1,000 credits per receiving wallet ≈ 650 Solana settlements (PayAI pricing, 2026-10-08). */
+export const PAYAI_FREE_SETTLEMENTS = 650;
+export const PAYAI_ALLOWANCE_ALERT_RATIO = 0.8;
 
 // ---------------------------------------------------------------------------
 // Lazy package loading (test-overridable)
@@ -120,6 +161,8 @@ async function defaultRpc(url: string, method: string, params: unknown[], timeou
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+    // Never follow a redirect (a 307/308 could bounce the POST anywhere).
+    redirect: "error",
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) throw new Error(`RPC HTTP ${res.status}`);
@@ -130,10 +173,22 @@ async function defaultRpc(url: string, method: string, params: unknown[], timeou
 
 let rpc: SolanaRpc = defaultRpc;
 
+/** Tests only: the real fetch-based RPC (to assert its fetch options). */
+export const __defaultSolanaRpcForTests = defaultRpc;
+
 /** Tests only: swap the read-only RPC (null = real fetch). Also clears the token-account cache. */
 export function __setSolanaRpcForTests(fn: SolanaRpc | null): void {
   rpc = fn ?? defaultRpc;
   ataCache = null;
+  ataRefresh = null;
+}
+
+let timeouts = { verifyMs: SOLANA_VERIFY_TIMEOUT_MS, settleMs: SOLANA_SETTLE_TIMEOUT_MS };
+
+/** Tests only: shorten the PayAI deadlines to exercise a REAL FacilitatorTimeoutError (null = defaults). */
+export function __setSolanaFacilitatorTimeoutsForTests(t: { verifyMs: number; settleMs: number } | null): void {
+  timeouts = t ?? { verifyMs: SOLANA_VERIFY_TIMEOUT_MS, settleMs: SOLANA_SETTLE_TIMEOUT_MS };
+  resetSolanaRailForTests();
 }
 
 let loader: () => Promise<SolanaModules> = defaultLoader;
@@ -148,13 +203,30 @@ export function __setSolanaModuleLoaderForTests(fn: (() => Promise<SolanaModules
 }
 
 export function resetSolanaRailForTests(): void {
-  railKey = null;
-  railPromise = null;
-  railBuiltAt = 0;
+  railState = null;
+  railInit = null;
   failedKey = null;
   failedUntil = 0;
   ataCache = null;
+  ataRefresh = null;
+  allowanceCheck = null;
+  allowanceAlerted = false;
+  lastReceiptCount = null;
   paidHandlers = new WeakMap();
+  replay.clear();
+  attempts.clear();
+  warnTimes = [];
+  warnAlertedAt = 0;
+  alertHook = defaultAlertHook;
+}
+
+/** Tests only: wait for every background refresh (token account, rail, allowance count) to settle. */
+export async function __flushSolanaBackgroundForTests(): Promise<void> {
+  for (let i = 0; i < 5; i++) {
+    const pending = [ataRefresh, railInit?.promise, allowanceCheck].filter(Boolean);
+    if (pending.length === 0) return;
+    await Promise.allSettled(pending);
+  }
 }
 
 /**
@@ -170,9 +242,118 @@ export function redact(text: string): string {
     .slice(0, 200);
 }
 
-function warn(msg: string, err?: unknown): void {
+// ---------------------------------------------------------------------------
+// Ops alerts (warn rate, PayAI free allowance)
+// ---------------------------------------------------------------------------
+
+export type SolanaAlert =
+  | { kind: "warn_rate"; count: number; windowMs: number; threshold: number }
+  | {
+      kind: "payai_allowance";
+      source: "onchain_receipts" | "free_tier_exhausted";
+      /** Upper-bound proxy: transactions that touched payTo's USDC account (or null when unknown). */
+      used: number | null;
+      allowance: number;
+      threshold: number;
+    };
+
+function defaultAlertHook(alert: SolanaAlert): void {
+  console.error(`${LOG}[ALERT] ${JSON.stringify(alert)}`);
+}
+
+let alertHook: (alert: SolanaAlert) => void = defaultAlertHook;
+
+/** Route [solana-rail] alerts somewhere else (pager, webhook). null = default console.error line. */
+export function setSolanaAlertHook(fn: ((alert: SolanaAlert) => void) | null): void {
+  alertHook = fn ?? defaultAlertHook;
+}
+
+function emitAlert(alert: SolanaAlert): void {
+  try {
+    alertHook(alert);
+  } catch {
+    /* an alert sink must never break a request */
+  }
+}
+
+let warnTimes: number[] = [];
+let warnAlertedAt = 0;
+
+function noteWarn(): void {
+  const now = Date.now();
+  warnTimes.push(now);
+  const cutoff = now - WARN_ALERT_WINDOW_MS;
+  while (warnTimes.length && warnTimes[0] <= cutoff) warnTimes.shift();
+  if (warnTimes.length >= WARN_ALERT_THRESHOLD && now - warnAlertedAt >= WARN_ALERT_WINDOW_MS) {
+    warnAlertedAt = now;
+    emitAlert({ kind: "warn_rate", count: warnTimes.length, windowMs: WARN_ALERT_WINDOW_MS, threshold: WARN_ALERT_THRESHOLD });
+  }
+}
+
+const ALLOWANCE_ALERT_AT = Math.ceil(PAYAI_FREE_SETTLEMENTS * PAYAI_ALLOWANCE_ALERT_RATIO);
+let allowanceAlerted = false;
+let allowanceCheck: Promise<void> | null = null;
+let lastReceiptCount: number | null = null;
+
+function allowanceAlert(source: "onchain_receipts" | "free_tier_exhausted", used: number | null): void {
+  if (allowanceAlerted && source === "onchain_receipts") return;
+  allowanceAlerted = true;
+  emitAlert({ kind: "payai_allowance", source, used, allowance: PAYAI_FREE_SETTLEMENTS, threshold: ALLOWANCE_ALERT_AT });
+}
+
+/** Ops view (no PII): last on-chain receipt count used for the allowance alert. */
+export function getSolanaRailStats(): { receiptCount: number | null; allowanceAlertAt: number; allowanceAlerted: boolean } {
+  return { receiptCount: lastReceiptCount, allowanceAlertAt: ALLOWANCE_ALERT_AT, allowanceAlerted };
+}
+
+function warn(msg: string, err?: unknown, fallback = true): void {
   const detail = err instanceof Error ? err.message : err === undefined ? "" : String(err);
-  console.warn(`${LOG} ${redact(msg)}${detail ? `: ${redact(detail)}` : ""} (serving Base-only)`);
+  console.warn(`${LOG} ${redact(msg)}${detail ? `: ${redact(detail)}` : ""}${fallback ? " (serving Base-only)" : ""}`);
+  noteWarn();
+}
+
+// ---------------------------------------------------------------------------
+// Per-payment attempt record (replay key → what happened), filled by the
+// facilitator wrapper and the tracked route handler. The replay guard makes
+// a key unique among in-flight requests, so this is race-free.
+// ---------------------------------------------------------------------------
+
+type SettleOutcome = { outcome: "success" | "failed" | "unconfirmed"; reason: string; timeout: boolean };
+type Attempt = {
+  handlerRan: boolean;
+  handlerThrew: boolean;
+  handlerError?: unknown;
+  verify?: "valid" | "invalid" | "error";
+  settle?: SettleOutcome;
+};
+const attempts = new Map<string, Attempt>();
+
+/** PayAI reasons that mean "the outcome is not known yet" (PayAI developers.md, 2026-10-08). */
+const UNRESOLVED_SETTLE_REASONS = new Set(["settlement_pending", "duplicate_settlement"]);
+
+function classifySettleResult(res: SettleResponse): SettleOutcome {
+  if (res.success) return { outcome: "success", reason: "success", timeout: false };
+  const reason = String(res.errorReason ?? "unknown");
+  const unresolved = UNRESOLVED_SETTLE_REASONS.has(reason) || (typeof res.transaction === "string" && res.transaction !== "");
+  return { outcome: unresolved ? "unconfirmed" : "failed", reason, timeout: false };
+}
+
+function classifySettleThrow(err: unknown): SettleOutcome {
+  if (err instanceof FacilitatorTimeoutError) return { outcome: "unconfirmed", reason: "facilitator_timeout", timeout: true };
+  if (err instanceof FacilitatorResponseError) return { outcome: "unconfirmed", reason: "facilitator_malformed_response", timeout: false };
+  if (err instanceof SettleError) {
+    const reason = String(err.errorReason ?? "unknown");
+    const status = err.statusCode;
+    const unresolved =
+      UNRESOLVED_SETTLE_REASONS.has(reason) ||
+      status >= 500 ||
+      status === 429 ||
+      status === 409 ||
+      (typeof err.transaction === "string" && err.transaction !== "");
+    return { outcome: unresolved ? "unconfirmed" : "failed", reason, timeout: false };
+  }
+  // fetch failed / connection reset / non-JSON 5xx body: the request may have reached PayAI.
+  return { outcome: "unconfirmed", reason: "transport_error", timeout: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -184,18 +365,22 @@ function warn(msg: string, err?: unknown): void {
  * getSupported is filtered to that one kind (and reports no extensions, so
  * the Solana server never declares Bazaar), and verify/settle refuse
  * anything else. Registered as the sole client of the Solana server.
+ * `settleInner` (same PayAI URL, shorter deadline) is used for settle only.
  */
 export class SolanaOnlyFacilitatorClient implements FacilitatorClient {
   constructor(
     private readonly inner: FacilitatorClient,
     readonly network: string,
+    private readonly settleInner: FacilitatorClient = inner,
   ) {}
 
   async getSupported(): Promise<SupportedResponse> {
     // HTTPS only: the fee payer list must come from PayAI over TLS.
-    const url = (this.inner as { url?: unknown }).url;
-    if (typeof url !== "string" || !url.startsWith("https://")) {
-      throw new Error("PayAI facilitator URL must be https");
+    for (const c of [this.inner, this.settleInner]) {
+      const url = (c as { url?: unknown }).url;
+      if (typeof url !== "string" || !url.startsWith("https://")) {
+        throw new Error("PayAI facilitator URL must be https");
+      }
     }
     const supported = await this.inner.getSupported();
     const kinds = (supported.kinds ?? []).filter(
@@ -238,13 +423,16 @@ export class SolanaOnlyFacilitatorClient implements FacilitatorClient {
 
   async verify(payload: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResponse> {
     this.guard(payload, requirements);
+    const att = await attemptFor(payload);
     let res: VerifyResponse;
     try {
       res = await this.inner.verify(payload, requirements);
     } catch (err) {
-      warn("PayAI verify threw", err);
+      if (att) att.verify = "error";
+      warn(`PayAI verify threw (${errorKind(err)})`, payaiErrorDetail(err));
       throw err;
     }
+    if (att) att.verify = res.isValid ? "valid" : "invalid";
     if (!res.isValid) {
       // Reason code only; payer / tx never logged.
       warn(`PayAI verify rejected: reason=${res.invalidReason ?? "unknown"}${res.invalidMessage ? ` message=${res.invalidMessage}` : ""}`);
@@ -254,22 +442,59 @@ export class SolanaOnlyFacilitatorClient implements FacilitatorClient {
 
   async settle(payload: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResponse> {
     this.guard(payload, requirements);
+    const att = await attemptFor(payload);
     let res: SettleResponse;
     try {
-      res = await this.inner.settle(payload, requirements);
+      res = await this.settleInner.settle(payload, requirements);
     } catch (err) {
-      warn("PayAI settle threw", err);
+      const c = classifySettleThrow(err);
+      if (att) att.settle = c;
+      warn(`PayAI settle threw (${errorKind(err)}): outcome=${c.outcome} reason=${c.reason}`, payaiErrorDetail(err), c.outcome === "failed");
+      if (c.reason.startsWith("free_tier_exhausted")) allowanceAlert("free_tier_exhausted", lastReceiptCount);
       throw err;
     }
+    const c = classifySettleResult(res);
+    if (att) att.settle = c;
     if (!res.success) {
-      warn(`PayAI settle failed: reason=${res.errorReason ?? "unknown"}${res.errorMessage ? ` message=${res.errorMessage}` : ""}`);
+      warn(
+        `PayAI settle failed: outcome=${c.outcome} reason=${c.reason}${res.errorMessage ? ` message=${res.errorMessage}` : ""}`,
+        undefined,
+        c.outcome === "failed",
+      );
+      if (c.reason.startsWith("free_tier_exhausted")) allowanceAlert("free_tier_exhausted", lastReceiptCount);
     }
     return res;
   }
 }
 
+function errorKind(err: unknown): string {
+  return err instanceof Error ? err.name || "Error" : typeof err;
+}
+
+/**
+ * What of a PayAI client error may be logged: never PayAI's response body.
+ * Malformed-response errors carry a body excerpt → dropped; "Facilitator
+ * <op> failed (<status>): <excerpt>" → cut at the colon.
+ */
+function payaiErrorDetail(err: unknown): string | undefined {
+  if (err instanceof FacilitatorTimeoutError) return err.message;
+  if (err instanceof FacilitatorResponseError) return undefined;
+  if (err instanceof SettleError) return undefined; // reason code is logged separately
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.startsWith("Facilitator ") && msg.includes(":") ? msg.slice(0, msg.indexOf(":")) : msg;
+}
+
+/** Build the PayAI client pair: verify/supported at SOLANA_VERIFY_TIMEOUT_MS, settle at SOLANA_SETTLE_TIMEOUT_MS. */
+export function createPayaiFacilitator(config: SolanaRailConfig): SolanaOnlyFacilitatorClient {
+  return new SolanaOnlyFacilitatorClient(
+    new HTTPFacilitatorClient({ url: config.facilitatorUrl, timeoutMs: timeouts.verifyMs }),
+    config.network,
+    new HTTPFacilitatorClient({ url: config.facilitatorUrl, timeoutMs: timeouts.settleMs }),
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Rail init (cached)
+// Rail init (cached, stale-while-revalidate)
 // ---------------------------------------------------------------------------
 
 type Rail = {
@@ -277,9 +502,8 @@ type Rail = {
   server: x402ResourceServer;
 };
 
-let railKey: string | null = null;
-let railPromise: Promise<Rail> | null = null;
-let railBuiltAt = 0;
+let railState: { key: string; rail: Rail; builtAt: number } | null = null;
+let railInit: { key: string; promise: Promise<Rail | null> } | null = null;
 let failedKey: string | null = null;
 let failedUntil = 0;
 
@@ -303,43 +527,58 @@ async function initRail(config: SolanaRailConfig): Promise<Rail> {
   if ((await mods.deriveUsdcAta(config.payTo, USDC_SOLANA_MINT)) !== SOLANA_PAYTO_USDC_ATA) {
     throw new Error("payTo USDC token account derivation does not match the pinned constant");
   }
-  const facilitator = new SolanaOnlyFacilitatorClient(
-    new HTTPFacilitatorClient({ url: config.facilitatorUrl, timeoutMs: 30_000 }),
-    config.network,
-  );
-  const server = new x402ResourceServer(facilitator).register(config.network, new mods.ExactSvmScheme());
+  const server = new x402ResourceServer(createPayaiFacilitator(config)).register(config.network, new mods.ExactSvmScheme());
   await server.initialize();
   return { config, server };
 }
 
+function startRailInit(config: SolanaRailConfig, key: string): Promise<Rail | null> {
+  if (railInit?.key === key) return railInit.promise;
+  const promise: Promise<Rail | null> = withTimeout(initRail(config), config.initTimeoutMs, "Solana rail init")
+    .then(
+      (rail): Rail | null => {
+        railState = { key, rail, builtAt: Date.now() };
+        failedKey = null;
+        return rail;
+      },
+      (err): Rail | null => {
+        warn("rail init failed", err);
+        // Fail closed: a failed refresh (e.g. fee payer dropped from PayAI's list) retires the old rail.
+        if (railState?.key === key) railState = null;
+        failedKey = key;
+        failedUntil = Date.now() + RETRY_AFTER_MS;
+        return null;
+      },
+    )
+    .finally(() => {
+      if (railInit?.promise === promise) railInit = null;
+    });
+  railInit = { key, promise };
+  return promise;
+}
+
+/**
+ * Warm: returns the current rail immediately; after RAIL_TTL_MS a background
+ * refresh re-fetches PayAI /supported (fee payer list) and replaces it, or
+ * retires it on failure. Cold: one bounded init (initTimeoutMs).
+ */
 async function getRail(config: SolanaRailConfig): Promise<Rail | null> {
   const key = JSON.stringify(config);
+  if (railState?.key === key) {
+    if (Date.now() - railState.builtAt > RAIL_TTL_MS) void startRailInit(config, key);
+    return railState.rail;
+  }
   if (failedKey === key && Date.now() < failedUntil) return null;
-  if (railKey !== key || !railPromise || Date.now() - railBuiltAt > RAIL_TTL_MS) {
-    railKey = key;
-    railBuiltAt = Date.now();
-    railPromise = withTimeout(initRail(config), config.initTimeoutMs, "Solana rail init");
-  }
-  try {
-    return await railPromise;
-  } catch (err) {
-    warn("rail init failed", err);
-    if (railKey === key) {
-      railKey = null;
-      railPromise = null;
-    }
-    failedKey = key;
-    failedUntil = Date.now() + RETRY_AFTER_MS;
-    return null;
-  }
+  return startRailInit(config, key);
 }
 
 // ---------------------------------------------------------------------------
-// Token-account guard (read-only RPC, cached, re-checking)
+// Token-account guard (read-only RPC, cached, stale-while-revalidate)
 // ---------------------------------------------------------------------------
 
-type AtaState = { exists: boolean; until: number; pending?: Promise<boolean> };
+type AtaState = { exists: boolean; until: number };
 let ataCache: AtaState | null = null;
+let ataRefresh: Promise<boolean> | null = null;
 
 type ParsedTokenAccount = {
   value: null | {
@@ -370,30 +609,67 @@ async function checkAta(config: SolanaRailConfig): Promise<boolean> {
 }
 
 /**
- * True while the payTo's USDC token account exists. Read-only RPC, result
- * cached ATA_TTL_MS (present or absent), so creation of the account is picked
- * up automatically. RPC failure → false (Base-only), retried after 60 s.
- * Never throws.
+ * Allowance proxy (should-fix 9): number of transactions that touched payTo's
+ * USDC account (read-only getSignaturesForAddress, ≤1000). Every PayAI
+ * settlement is one of them; Michael's own transfers count too, so this is an
+ * upper bound (alerts early, never late). Background only.
  */
-export async function solanaTokenAccountReady(config: SolanaRailConfig): Promise<boolean> {
-  const now = Date.now();
-  if (ataCache && now < ataCache.until) return ataCache.exists;
-  if (ataCache?.pending) return ataCache.pending;
-  const previous = ataCache;
-  const pending = (async () => {
+function startAllowanceCheck(config: SolanaRailConfig): void {
+  if (allowanceCheck) return;
+  const p: Promise<void> = (async () => {
+    try {
+      const sigs = await rpc(
+        config.rpcUrl,
+        "getSignaturesForAddress",
+        [SOLANA_PAYTO_USDC_ATA, { limit: 1000, commitment: "confirmed" }],
+        config.initTimeoutMs,
+      );
+      if (!Array.isArray(sigs)) throw new Error("malformed getSignaturesForAddress result");
+      lastReceiptCount = sigs.length;
+      if (sigs.length >= ALLOWANCE_ALERT_AT) allowanceAlert("onchain_receipts", sigs.length);
+    } catch (err) {
+      warn("PayAI allowance receipt count failed", err, false);
+    }
+  })().finally(() => {
+    if (allowanceCheck === p) allowanceCheck = null;
+  });
+  allowanceCheck = p;
+}
+
+function refreshAta(config: SolanaRailConfig): Promise<boolean> {
+  if (ataRefresh) return ataRefresh;
+  const p: Promise<boolean> = (async () => {
     try {
       const exists = await checkAta(config);
       if (!exists) warn("payTo USDC token account not found; Solana entry hidden");
       ataCache = { exists, until: Date.now() + ATA_TTL_MS };
+      if (exists) startAllowanceCheck(config);
       return exists;
     } catch (err) {
       warn("token-account RPC check failed", err);
       ataCache = { exists: false, until: Date.now() + ATA_ERROR_RETRY_MS };
       return false;
     }
-  })();
-  ataCache = { exists: previous?.exists ?? false, until: 0, pending };
-  return pending;
+  })().finally(() => {
+    if (ataRefresh === p) ataRefresh = null;
+  });
+  ataRefresh = p;
+  return p;
+}
+
+/**
+ * True while the payTo's USDC token account exists. Read-only RPC, result
+ * cached ATA_TTL_MS (present or absent), so creation of the account is picked
+ * up automatically. Warm: answers from cache at once and re-checks in the
+ * background after the TTL. Cold: one bounded check. RPC failure → false
+ * (Base-only), retried after 60 s. Never throws.
+ */
+export async function solanaTokenAccountReady(config: SolanaRailConfig): Promise<boolean> {
+  if (ataCache) {
+    if (Date.now() >= ataCache.until) void refreshAta(config);
+    return ataCache.exists;
+  }
+  return refreshAta(config);
 }
 
 // ---------------------------------------------------------------------------
@@ -593,11 +869,142 @@ export function validateSolanaPaymentPayload(payload: PaymentPayload, requiremen
   return { ok: true };
 }
 
+// ---------------------------------------------------------------------------
+// Replay guard (Odin fix 2)
+// ---------------------------------------------------------------------------
+
+type ReplayState = "in_flight" | "settled" | "settle_failed" | "settle_unconfirmed";
+const replay = new Map<string, { state: ReplayState; until: number }>();
+
 /**
- * Serve a Solana-paid request through the Solana-only server. Returns null
- * when the rail is unavailable, the payload fails the preflight, the Solana
- * server answers 402 (rejected / settle failed), or the path throws; the
- * caller then serves the Base-only 402.
+ * Bytes that identify one Solana payment: the transaction MESSAGE (blockhash,
+ * fee payer, TransferChecked, amount, memo...). Signature slots are excluded,
+ * so re-encodings or a tampered placeholder fee-payer signature map to the
+ * same key. Falls back to the whole byte string if it does not parse.
+ */
+function paymentBytes(txB64: string): Uint8Array {
+  const b = Buffer.from(txB64, "base64");
+  let n = 0;
+  let i = 0;
+  for (;;) {
+    if (i >= b.length || i >= 3) return b;
+    const byte = b[i];
+    n |= (byte & 0x7f) << (7 * i);
+    i++;
+    if ((byte & 0x80) === 0) break;
+  }
+  const start = i + 64 * n;
+  if (n === 0 || start >= b.length) return b;
+  return b.subarray(start);
+}
+
+/** sha256 (hex) of the payment's transaction message. Web Crypto: works in any runtime. */
+export async function solanaPaymentKey(txB64: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", Uint8Array.from(paymentBytes(txB64)));
+  return Buffer.from(digest).toString("hex");
+}
+
+/** Short, non-reversible fingerprint for logs / reconciliation (16 hex of the key). */
+const fp = (key: string) => key.slice(0, 16);
+
+function replayGet(key: string): ReplayState | null {
+  const e = replay.get(key);
+  if (!e) return null;
+  if (Date.now() >= e.until) {
+    replay.delete(key);
+    return null;
+  }
+  return e.state;
+}
+
+function replaySet(key: string, state: ReplayState): void {
+  replay.delete(key);
+  replay.set(key, { state, until: Date.now() + REPLAY_TTL_MS });
+  if (replay.size > REPLAY_MAX_ENTRIES) {
+    const now = Date.now();
+    for (const [k, v] of replay) if (now >= v.until) replay.delete(k);
+    for (const k of replay.keys()) {
+      if (replay.size <= REPLAY_MAX_ENTRIES) break;
+      replay.delete(k);
+    }
+  }
+}
+
+function txOf(payload: PaymentPayload | undefined): string | null {
+  const tx = (payload?.payload as Record<string, unknown> | undefined)?.transaction;
+  return typeof tx === "string" && tx !== "" ? tx : null;
+}
+
+async function attemptFor(payload: PaymentPayload | undefined): Promise<Attempt | undefined> {
+  const tx = txOf(payload);
+  return tx ? attempts.get(await solanaPaymentKey(tx)) : undefined;
+}
+
+function jsonError(status: number, error: string): NextResponse {
+  return new NextResponse(JSON.stringify({ error }), {
+    status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Paid path
+// ---------------------------------------------------------------------------
+
+type Decision = { kind: "response"; res: NextResponse } | { kind: "base" } | { kind: "rethrow"; err: unknown };
+
+function decide(key: string, att: Attempt, res: NextResponse | null, threw: boolean, thrown: unknown): Decision {
+  const s = att.settle;
+  if (s) {
+    if (s.outcome === "success" && res && res.status < 400) {
+      replaySet(key, "settled");
+      return { kind: "response", res };
+    }
+    if (s.outcome === "failed") {
+      // Definitive: nothing landed. Key kept (the same tx would fail again).
+      replaySet(key, "settle_failed");
+      return { kind: "base" };
+    }
+    // Ambiguous (or settled but no deliverable response): the tx may have
+    // landed. Never a 402 (would invite a second payment); no PayAI text.
+    replaySet(key, "settle_unconfirmed");
+    const timeout = s.outcome === "unconfirmed" && s.timeout;
+    warn(
+      `settlement unconfirmed fp=${fp(key)} reason=${s.outcome === "success" ? "settled_without_response" : s.reason}; client gets ${timeout ? 504 : 502} settlement_unconfirmed (reconcile on-chain)`,
+      undefined,
+      false,
+    );
+    return { kind: "response", res: jsonError(timeout ? 504 : 502, "settlement_unconfirmed") };
+  }
+  // No settle attempted → nothing charged → release the key.
+  replay.delete(key);
+  if (att.handlerThrew) return { kind: "rethrow", err: att.handlerError };
+  if (att.handlerRan && res && res.status >= 400) return { kind: "response", res }; // route's own error, as on Base
+  if (threw) {
+    warn("Solana payment path threw", thrown);
+  } else {
+    let reason = "";
+    try {
+      const pr = decodePaymentRequiredHeader(res?.headers.get("payment-required") ?? "");
+      reason = typeof pr.error === "string" ? ` error=${pr.error}` : "";
+    } catch {
+      /* no header */
+    }
+    warn(`Solana payment not accepted (status ${res?.status ?? "none"} from Solana server${reason})`);
+  }
+  return { kind: "base" };
+}
+
+/**
+ * Serve a Solana-paid request through the Solana-only server.
+ *   - null → caller serves main's exact Base-only 402 (rail unavailable,
+ *     preflight failed, verify-phase rejection/throw/timeout/malformed, or a
+ *     definitive settle failure);
+ *   - 409 {"error":"duplicate_payment"} → replay of a payment already in
+ *     flight / settled / unconfirmed (checked before verify);
+ *   - 502/504 {"error":"settlement_unconfirmed"} → ambiguous settle;
+ *   - the paid response → settled;
+ *   - throws → the route handler threw (same as the Base path: Next 500).
  */
 export async function handleSolanaPayment(
   req: NextRequest,
@@ -606,6 +1013,8 @@ export async function handleSolanaPayment(
   atomicUsdc: string,
   config: SolanaRailConfig,
 ): Promise<NextResponse | null> {
+  let key: string | null = null;
+  let decision: Decision;
   try {
     if (!(await solanaTokenAccountReady(config))) return null;
     const rail = await getRail(config);
@@ -620,30 +1029,65 @@ export async function handleSolanaPayment(
       return null;
     }
 
+    // Replay guard: BEFORE verify.
+    const k = await solanaPaymentKey(txOf(payload)!);
+    const seen = replayGet(k);
+    if (seen) {
+      warn(`duplicate Solana payment rejected before verify fp=${fp(k)} state=${seen}; client gets 409`, undefined, false);
+      return jsonError(409, "duplicate_payment");
+    }
+    key = k;
+    replaySet(key, "in_flight");
+    const att: Attempt = { handlerRan: false, handlerThrew: false };
+    attempts.set(key, att);
+
     let entry = paidHandlers.get(routes as object);
     if (!entry || entry.rail !== rail) {
       // syncFacilitatorOnStart=false: rail.server was already initialized.
+      const tracked: AppRouteHandler = async (r) => {
+        const sig = r.headers.get("payment-signature");
+        let a: Attempt | undefined;
+        try {
+          a = sig ? await attemptFor(decodePaymentSignatureHeader(sig.trim()) as PaymentPayload) : undefined;
+        } catch {
+          a = undefined;
+        }
+        if (a) a.handlerRan = true;
+        try {
+          return await routeHandler(r);
+        } catch (err) {
+          if (a) {
+            a.handlerThrew = true;
+            a.handlerError = err;
+          }
+          throw err;
+        }
+      };
       entry = {
         rail,
-        handler: withX402(routeHandler, buildSolanaOnlyRoutes(rail.config, routes, atomicUsdc), rail.server, undefined, undefined, false),
+        handler: withX402(tracked, buildSolanaOnlyRoutes(rail.config, routes, atomicUsdc), rail.server, undefined, undefined, false),
       };
       paidHandlers.set(routes as object, entry);
     }
-    const res = await entry.handler(payload === received ? req : withPaymentSignature(req, payload));
-    if (res.status === 402) {
-      let reason = "";
-      try {
-        const pr = decodePaymentRequiredHeader(res.headers.get("payment-required") ?? "");
-        reason = typeof pr.error === "string" ? ` error=${pr.error}` : "";
-      } catch {
-        /* no header */
-      }
-      warn(`Solana payment not accepted (402 from Solana server${reason})`);
-      return null;
+
+    let res: NextResponse | null = null;
+    let threw = false;
+    let thrown: unknown;
+    try {
+      res = await entry.handler(payload === received ? req : withPaymentSignature(req, payload));
+    } catch (err) {
+      threw = true;
+      thrown = err;
     }
-    return res;
+    decision = decide(key, att, res, threw, thrown);
   } catch (err) {
+    // Our own code threw before/around the facilitator: nothing was settled.
+    if (key && !attempts.get(key)?.settle) replay.delete(key);
     warn("Solana payment path threw", err);
     return null;
+  } finally {
+    if (key) attempts.delete(key);
   }
+  if (decision.kind === "rethrow") throw decision.err;
+  return decision.kind === "response" ? decision.res : null;
 }
