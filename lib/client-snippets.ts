@@ -18,15 +18,20 @@ import { x402Client, x402HTTPClient } from "@x402/core/client";
 import { ExactEvmScheme } from "@x402/evm/exact/client";
 import { privateKeyToAccount } from "viem/accounts";
 
-const account = privateKeyToAccount(process.env.PRIVATE_KEY);
+const PAY_TO = "0x5b32c973596078a967562ca652761404f19be0e9"; // the only payTo to accept
+const account = privateKeyToAccount(process.env.PRIVATE_KEY); // dedicated low-balance wallet
 const http = new x402HTTPClient(
-  new x402Client().register("eip155:8453", new ExactEvmScheme(account)),
+  x402Client.fromConfig({
+    schemes: [{ network: "eip155:8453", client: new ExactEvmScheme(account) }],
+    policies: [(v, reqs) => reqs.filter((r) => r.payTo.toLowerCase() === PAY_TO)],
+    spendControls: { maxAmountPerPayment: "$0.05" }, // per-payment cap
+  }),
 );
 
 const url = "https://horizonpulse.dev/api/pulse";
 const r1 = await fetch(url); // 402 + PAYMENT-REQUIRED
 const req = http.getPaymentRequiredResponse((h) => r1.headers.get(h), await r1.json());
-const payload = await http.createPaymentPayload(req);
+const payload = await http.createPaymentPayload(req); // throws if payTo or cap don't match
 const r2 = await fetch(url, { headers: http.encodePaymentSignatureHeader(payload) });
 console.log(r2.status, (await r2.json()).assets.BTC.priceUsd); // 200, $0.005 USDC on Base`,
   },
