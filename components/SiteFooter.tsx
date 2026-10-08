@@ -17,7 +17,9 @@ export function SiteFooter() {
               <Link href="/docs">API docs</Link>
               <Link href="/docs#quickstart">Quickstart</Link>
               <a href="/try">Free samples</a>
+              <Link href="/agents">For agents: skill + MCP</Link>
               <h4 style={{ marginTop: 18 }}>For agents (raw)</h4>
+              <a href="/skill.md">skill.md</a>
               <a href="/openapi.json">openapi.json</a>
               <a href="/llms.txt">llms.txt</a>
               <a href="/.well-known/x402">.well-known/x402</a>

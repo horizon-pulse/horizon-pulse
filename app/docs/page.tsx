@@ -149,6 +149,8 @@ export default function DocsPage() {
               <a className="hp-btn ghost sm" href="/openapi.json">OpenAPI, for agents (JSON)</a>
               <a className="hp-btn ghost sm" href="/.well-known/x402">x402 discovery, for agents (JSON)</a>
               <a className="hp-btn ghost sm" href="/llms.txt">llms.txt, for agents (text)</a>
+              <a className="hp-btn ghost sm" href="/skill.md">skill.md, for agents (markdown)</a>
+              <a className="hp-btn ghost sm" href="/agents">Agent guide + MCP</a>
             </div>
             <div className="hp-docs-index">
               {groups.map((g) => (

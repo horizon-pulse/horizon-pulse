@@ -45,6 +45,13 @@ Coming-soon / placeholder / 404 routes are **not** listed on `/`, `/status`, or 
 
 Optional: `OPTIONS` on a paid route returns discovery + the same `PAYMENT-REQUIRED` challenge without charging.
 
+### Agent integration
+
+- **Skill file:** [`/skill.md`](https://horizonpulse.dev/skill.md), plain markdown an agent can follow end to end (generated from `public/openapi.json` by `lib/agent-skill.ts`).
+- **Guide:** [`/agents`](https://horizonpulse.dev/agents): pay flow, skill and MCP setup.
+- **Local MCP server:** [`mcp/`](mcp/README.md), stdio, every live route as a tool, pays the x402 challenge from a buyer wallet you configure, with per-call and per-session caps (quote-only without a key). Not published to npm; install from this repo.
+- **Hosted MCP:** `POST https://horizonpulse.dev/mcp` (streamable HTTP) for MCP clients that can pay x402 themselves.
+
 ## Treasury (payTo)
 
 | Field | Value |

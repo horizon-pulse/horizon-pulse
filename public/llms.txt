@@ -78,14 +78,25 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - GET `/llms.txt` — this file
 - GET `/openapi.json` — OpenAPI 3.1 for every paid operation: typed parameters and bodies, 200/400/402 schemas and examples, and per-operation `x-payment-info` (price, asset, network, payTo)
 - GET `/.well-known/x402` — machine-readable x402 resource list
+- GET `/skill.md` — agent skill (markdown): when to use each route, prices, the pay flow step by step, errors, safety checks
+- GET `/agents` — agent guide: pay flow, skill, MCP setup
+- POST `/mcp` — hosted MCP (streamable HTTP, stateless); `initialize` and `tools/list` free, `tools/call` returns the same x402 challenge (needs an x402-paying MCP client)
 
-## Agent how-to (short)
+## Agent how-to (pay flow)
 
-1. Call routes on `https://horizonpulse.dev` only.
-2. Call a paid route with no payment → 402 + `PAYMENT-REQUIRED`.
-3. Confirm network `eip155:8453`, Base USDC, atomic `amount`, and `payTo`.
-4. Sign and retry with `PAYMENT-SIGNATURE`.
-5. On success, response body is live JSON for that route.
+1. Call routes on `https://horizonpulse.dev` only, with no payment header → HTTP 402.
+2. Base64-decode the `PAYMENT-REQUIRED` header (x402 v2 JSON; the body is `{}`).
+3. Pay only if `scheme` = `exact`, `network` = `eip155:8453`, `asset` = Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`, `payTo` = `0x5b32c973596078a967562ca652761404f19be0e9`, and atomic `amount` = the price above.
+4. Sign an EIP-3009 `transferWithAuthorization` for that amount to payTo with an x402 client (Node `@x402/core` + `@x402/evm` 2.27.x; Python `x402`). No gas needed.
+5. Retry the identical request with `PAYMENT-SIGNATURE` (x402 v2). `X-PAYMENT` is the legacy v1 header; do not rely on it.
+6. 200 → live JSON; settlement receipt in `PAYMENT-RESPONSE` (base64 JSON). Another 402 → read `error` in the decoded challenge; do not loop.
+
+## Agent integration
+
+- Skill file: https://horizonpulse.dev/skill.md (follow it end to end; generated from /openapi.json so prices match the 402s)
+- Guide: https://horizonpulse.dev/agents
+- Local MCP server (stdio, Node): https://github.com/horizon-pulse/horizon-pulse/tree/main/mcp. Every route as a tool (same names as the hosted /mcp: pulse, signals, yield, portfolio, gas, funding, fetch, http, extract, x402_check, screenshot, search, pdf) plus free `catalog`, `quote`, `demo`. Pays the x402 challenge from `HP_PRIVATE_KEY` (use a dedicated low-balance wallet); pays only the payTo above in Base USDC, refuses amounts above the listed price, caps per call (`HP_MAX_USD_PER_CALL`, default $0.05) and per session (`HP_MAX_USD_TOTAL`, default $1). No key → quote only.
+- Hosted MCP: `https://horizonpulse.dev/mcp` (for MCP clients that can pay x402).
 
 ## Honesty
 
