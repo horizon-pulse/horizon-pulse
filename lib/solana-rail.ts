@@ -26,8 +26,11 @@
  *   - Token-account guard: the Solana entry is shown ONLY while the payTo's
  *     USDC token account (SOLANA_PAYTO_USDC_ATA) exists on mainnet, checked by
  *     read-only JSON-RPC and cached ATA_TTL_MS (~10 min), so it flips on by
- *     itself once the account is created (no redeploy). Absent / RPC error →
- *     Base-only.
+ *     itself once the account is created (no redeploy). Confirmed absent →
+ *     Base-only. RPC error: a cold instance retries once (ATA_COLD_ATTEMPTS),
+ *     then fails closed with a "[solana-rail][ALERT] solana_entry_dropped"
+ *     line; an instance that has confirmed the account keeps that result
+ *     through transient RPC errors for up to ATA_MAX_STALE_MS (6 h).
  *   - Incoming Solana payloads have any `extensions.bazaar` stripped before
  *     they reach PayAI; the Solana server never declares Bazaar.
  *   - PayAI rejections (verify invalid / settle failed / throws) are logged
@@ -103,8 +106,25 @@ const RETRY_AFTER_MS = 60_000;
 export const RAIL_TTL_MS = 10 * 60_000;
 /** Token-account existence result (present or absent) is cached this long. */
 export const ATA_TTL_MS = 10 * 60_000;
-/** RPC error → cached as "absent" for this long before retrying. */
-const ATA_ERROR_RETRY_MS = 60_000;
+/**
+ * RPC error → retried after this long. With no last-known-good "present"
+ * result the error is cached as "absent" (fail closed) for this window; with
+ * one, the last-known-good result is kept (see ATA_MAX_STALE_MS).
+ */
+export const ATA_ERROR_RETRY_MS = 60_000;
+/**
+ * Last-known-good window (fix 2026-10-08, live fault: public mainnet-beta RPC
+ * timeouts from Vercel dropped the Solana entry on random instances for 60 s
+ * at a time). A transient RPC error (timeout / transport / HTTP / JSON-RPC
+ * error / malformed reply) never flips a CONFIRMED "present" to absent while
+ * the last confirmation is younger than this. Only a successful RPC answer
+ * saying the account is gone/invalid (or staleness beyond this) hides it.
+ */
+export const ATA_MAX_STALE_MS = 6 * 60 * 60_000;
+/** Cold check: attempts at the token-account RPC before failing closed (each bounded by initTimeoutMs). */
+export const ATA_COLD_ATTEMPTS = 2;
+/** At most one "Solana entry dropped" ALERT line per instance per this window. */
+export const DROP_ALERT_WINDOW_MS = 5 * 60_000;
 /** Same default @x402/core applies to the Base entry. */
 const MAX_TIMEOUT_SECONDS = 300;
 /** Solana packet limit for a serialized transaction. */
@@ -197,6 +217,7 @@ export function __setSolanaRpcForTests(fn: SolanaRpc | null): void {
   rpc = fn ?? defaultRpc;
   ataCache = null;
   ataRefresh = null;
+  ataConfirmedAt = 0;
 }
 
 let timeouts = { verifyMs: SOLANA_VERIFY_TIMEOUT_MS, settleMs: SOLANA_SETTLE_TIMEOUT_MS };
@@ -225,6 +246,8 @@ export function resetSolanaRailForTests(): void {
   failedUntil = 0;
   ataCache = null;
   ataRefresh = null;
+  ataConfirmedAt = 0;
+  dropAlertedAt = 0;
   allowanceCheck = null;
   allowanceAlerted = false;
   lastReceiptCount = null;
@@ -264,6 +287,11 @@ export function redact(text: string): string {
 
 export type SolanaAlert =
   | { kind: "warn_rate"; count: number; windowMs: number; threshold: number }
+  | {
+      /** The Solana entry is hidden because a dependency check could not be completed (not a confirmed absence). */
+      kind: "solana_entry_dropped";
+      reason: "token_account_rpc_unavailable";
+    }
   | {
       kind: "payai_allowance";
       source: "onchain_receipts" | "free_tier_exhausted";
@@ -653,6 +681,16 @@ async function getRail(config: SolanaRailConfig): Promise<Rail | null> {
 
 type AtaState = { exists: boolean; until: number };
 let ataCache: AtaState | null = null;
+/** Time of the last successful RPC answer confirming the account exists (0 = never). */
+let ataConfirmedAt = 0;
+let dropAlertedAt = 0;
+
+function dropAlert(): void {
+  const now = Date.now();
+  if (dropAlertedAt && now - dropAlertedAt < DROP_ALERT_WINDOW_MS) return;
+  dropAlertedAt = now;
+  emitAlert({ kind: "solana_entry_dropped", reason: "token_account_rpc_unavailable" });
+}
 let ataRefresh: Promise<boolean> | null = null;
 
 type ParsedTokenAccount = {
@@ -714,17 +752,31 @@ function startAllowanceCheck(config: SolanaRailConfig): void {
 function refreshAta(config: SolanaRailConfig): Promise<boolean> {
   if (ataRefresh) return ataRefresh;
   const p: Promise<boolean> = (async () => {
-    try {
-      const exists = await checkAta(config);
-      if (!exists) warn("payTo USDC token account not found; Solana entry hidden");
-      ataCache = { exists, until: Date.now() + ATA_TTL_MS };
-      if (exists) startAllowanceCheck(config);
-      return exists;
-    } catch (err) {
-      warn("token-account RPC check failed", err);
-      ataCache = { exists: false, until: Date.now() + ATA_ERROR_RETRY_MS };
-      return false;
+    // Cold (no answer yet on this instance): retry once before failing closed.
+    const attempts = ataCache ? 1 : ATA_COLD_ATTEMPTS;
+    let lastErr: unknown;
+    for (let i = 0; i < attempts; i++) {
+      try {
+        const exists = await checkAta(config);
+        if (!exists) warn("payTo USDC token account not found; Solana entry hidden");
+        ataCache = { exists, until: Date.now() + ATA_TTL_MS };
+        ataConfirmedAt = exists ? Date.now() : 0;
+        if (exists) startAllowanceCheck(config);
+        return exists;
+      } catch (err) {
+        lastErr = err;
+      }
     }
+    // Transient RPC failure: NOT evidence the account is gone.
+    if (ataConfirmedAt && Date.now() - ataConfirmedAt < ATA_MAX_STALE_MS) {
+      warn("token-account RPC check failed; keeping last confirmed result (present)", lastErr, false);
+      ataCache = { exists: true, until: Date.now() + ATA_ERROR_RETRY_MS };
+      return true;
+    }
+    warn("token-account RPC check failed", lastErr);
+    dropAlert();
+    ataCache = { exists: false, until: Date.now() + ATA_ERROR_RETRY_MS };
+    return false;
   })().finally(() => {
     if (ataRefresh === p) ataRefresh = null;
   });
@@ -736,8 +788,10 @@ function refreshAta(config: SolanaRailConfig): Promise<boolean> {
  * True while the payTo's USDC token account exists. Read-only RPC, result
  * cached ATA_TTL_MS (present or absent), so creation of the account is picked
  * up automatically. Warm: answers from cache at once and re-checks in the
- * background after the TTL. Cold: one bounded check. RPC failure → false
- * (Base-only), retried after 60 s. Never throws.
+ * background after the TTL. Cold: up to ATA_COLD_ATTEMPTS bounded checks.
+ * RPC failure → last confirmed "present" kept (≤ ATA_MAX_STALE_MS) if this
+ * instance has one, else false (Base-only + ALERT line); retried after 60 s.
+ * Never throws.
  */
 export async function solanaTokenAccountReady(config: SolanaRailConfig): Promise<boolean> {
   if (ataCache) {
