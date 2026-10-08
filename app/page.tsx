@@ -233,6 +233,22 @@ export default function HomePage() {
           </div>
         </section>
 
+        <section className="hp-section" id="services">
+          <div className="hp-wrap">
+            <div className="hp-label" data-reveal>Services for API owners</div>
+            <div className="hp-grid two">
+              <a className="hp-tile" href="/listing-fix" style={{ textDecoration: "none" }} data-reveal>
+                <h3>x402 setup: make your API payable</h3>
+                <div className="hp-tile-foot"><span>/listing-fix</span><span>→</span></div>
+              </a>
+              <a className="hp-tile" href="/agent-promotion" style={{ textDecoration: "none" }} data-reveal>
+                <h3>Agent promotion: get your API found and used by agents</h3>
+                <div className="hp-tile-foot"><span>/agent-promotion</span><span>→</span></div>
+              </a>
+            </div>
+          </div>
+        </section>
+
         <section className="hp-cta-band" data-reveal>
           <h2>Start with a free sample.</h2>
           <p>Real output, no wallet needed. Pay only when your agent needs a live input.</p>
