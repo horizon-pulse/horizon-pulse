@@ -1,0 +1,69 @@
+{
+  "$comment": "License policy for scripts/license-check.mjs. Every installed package (prod + dev) must have a license expression satisfied by `allow`, must not match `deny`, and must not be in `denyPackages`. `exceptions` are keyed by package name (a trailing * matches a name prefix) and pinned to the exact license string reported: if that package's license ever changes, CI fails and the exception needs re-review. The root package (private, UNLICENSED) is excluded.",
+  "allow": [
+    "MIT",
+    "MIT-0",
+    "ISC",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "Apache-2.0",
+    "0BSD",
+    "CC0-1.0",
+    "Unlicense",
+    "Python-2.0",
+    "BlueOak-1.0.0"
+  ],
+  "deny": [
+    "GPL",
+    "AGPL",
+    "LGPL",
+    "SSPL",
+    "BUSL",
+    "Elastic",
+    "Commons-Clause",
+    "CC-BY-NC",
+    "Proprietary",
+    "UNLICENSED",
+    "UNKNOWN",
+    "Custom",
+    "SEE LICENSE",
+    "non-commercial",
+    "noncommercial"
+  ],
+  "denyPackages": {
+    "@metamask/sdk": "MetaMask SDK terms: proprietary, non-commercial or <10k MAU, non-transferable (Odin buyout-readiness scan 2026-10-08). Was pulled in only by the unused @x402/paywall.",
+    "@x402/paywall": "Unused browser paywall UI; pulls in @metamask/sdk and WalletConnect (custom LICENSE.md terms). Removed 2026-10-08. @x402/core serves its built-in fallback 402 HTML without it."
+  },
+  "exceptions": [
+    {
+      "package": "caniuse-lite",
+      "license": "CC-BY-4.0",
+      "scope": "prod (via next -> browserslist)",
+      "reason": "Browser-support data table, CC-BY-4.0 = attribution only, not copyleft, no use restriction. Attribution carried in THIRD-PARTY-NOTICES."
+    },
+    {
+      "package": "@img/sharp-libvips-*",
+      "license": "LGPL-3.0-or-later",
+      "scope": "prod, optional, platform-specific (via next -> sharp): prebuilt libvips for linux-x64 / linuxmusl-x64 / darwin / arm64",
+      "reason": "Unmodified prebuilt libvips shared library, dynamically loaded by sharp for Next.js image optimization. LGPL (weak copyleft), not GPL/AGPL; we do not modify or statically link it. Notice + upstream source link (github.com/lovell/sharp-libvips) in THIRD-PARTY-NOTICES. Flag for counsel review in the buyout data room; not a blocker."
+    },
+    {
+      "package": "@img/sharp-wasm32",
+      "license": "Apache-2.0 AND LGPL-3.0-or-later AND MIT",
+      "scope": "optional, platform-specific (via next -> sharp): WebAssembly build of sharp + libvips; installed by npm as an optional dep, only used where no native binary exists",
+      "reason": "Same libvips LGPL component as @img/sharp-libvips-*, compiled to wasm, unmodified. Same treatment and counsel flag."
+    },
+    {
+      "package": "spdx-exceptions",
+      "license": "CC-BY-3.0",
+      "scope": "dev only (via license-checker-rseidelsohn)",
+      "reason": "SPDX exception-list data, attribution only, dev tooling, not shipped."
+    },
+    {
+      "package": "spdx-ranges",
+      "license": "(MIT AND CC-BY-3.0)",
+      "scope": "dev only (via license-checker-rseidelsohn)",
+      "reason": "SPDX range data, attribution only, dev tooling, not shipped."
+    }
+  ]
+}
