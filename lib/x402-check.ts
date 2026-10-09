@@ -74,7 +74,27 @@ const KNOWN_ASSETS: Record<string, { label: string; decimals: number; usd: boole
   "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": { label: "USDC (Base)", decimals: 6, usd: true },
   "0x036cbd53842c5426634e7929541ec2318f3dcf7e": { label: "USDC (Base Sepolia)", decimals: 6, usd: true },
   "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": { label: "USDC (Ethereum)", decimals: 6, usd: true },
+  // Solana SPL mints: base58 is case-sensitive, so these keys keep their exact case (looked up before the lowercase EVM keys).
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { label: "USDC (Solana)", decimals: 6, usd: true },
+  "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": { label: "USDC (Solana devnet)", decimals: 6, usd: true },
 };
+
+/** Exact key first (Solana mints, case-sensitive), then lowercase (EVM addresses, checksum casing). */
+export function knownAsset(asset: string): { label: string; decimals: number; usd: boolean } | undefined {
+  return Object.prototype.hasOwnProperty.call(KNOWN_ASSETS, asset)
+    ? KNOWN_ASSETS[asset]
+    : /^0x[0-9a-fA-F]{40}$/.test(asset)
+      ? KNOWN_ASSETS[asset.toLowerCase()]
+      : undefined;
+}
+
+/**
+ * Hint for an unpaid probe answered 400/422: the endpoint checked its inputs
+ * before payment. Shared with /api/bazaar-check (lib/bazaar-check.ts not_402).
+ */
+export function inputsBeforePaymentHint(method: string): string {
+  return `The endpoint may validate the ${method === "POST" ? "body" : "query"} before returning 402`;
+}
 
 const RPCS: Record<string, string[]> = {
   base: [process.env.BASE_RPC_URL ?? "", "https://base.drpc.org", "https://mainnet.base.org"].filter(Boolean),
@@ -269,7 +289,7 @@ export async function checkX402Endpoint(input: {
     checks.push({
       id: "status_402",
       level: "fail",
-      message: `Unpaid ${method} returned HTTP ${status}, not 402. x402 clients only start payment on a 402.${status === 405 ? " Try the other method." : ""}${method === "POST" && rawBody === undefined && (status === 400 || status === 422) ? " The endpoint may validate the body before returning 402; pass a representative JSON body." : ""}`,
+      message: `Unpaid ${method} returned HTTP ${status}, not 402. x402 clients only start payment on a 402.${status === 405 ? " Try the other method." : ""}${method === "POST" && rawBody === undefined && (status === 400 || status === 422) ? ` ${inputsBeforePaymentHint("POST")}; pass a representative JSON body.` : ""}`,
     });
   } else {
     checks.push({ id: "status_402", level: "pass", message: "Unpaid request returned HTTP 402." });
@@ -302,7 +322,7 @@ export async function checkX402Endpoint(input: {
     const asset = str(a.asset);
     const amountAtomic = str(a.amount) ?? str(a.maxAmountRequired);
     const payTo = str(a.payTo);
-    const known = asset ? KNOWN_ASSETS[asset.toLowerCase()] : undefined;
+    const known = asset ? knownAsset(asset) : undefined;
     const amt = amountAtomic && known ? formatUnits(amountAtomic, known.decimals) : null;
     let payToType: NormalizedAccept["payToType"] = null;
     const ck = chainKey(network);

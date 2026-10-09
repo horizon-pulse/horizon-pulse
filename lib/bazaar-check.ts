@@ -9,7 +9,9 @@
  *     results are filtered to the host here. Reports which of the host's
  *     advertised routes are indexed and on which networks.
  * (b) LINT: fetches https://<host>/.well-known/x402 and sends ONE unpaid
- *     request per listed route+method (no payment header; POST sends "{}").
+ *     request per listed route+method (no payment header; POST sends an
+ *     empty body, the fallback CDP's Bazaar check uses when no example input
+ *     is declared; nothing else is known before the first 402).
  *     Each finding carries a plain fix line. Never pays, never signs.
  *
  * Only public https hosts are fetched: every hop goes through
@@ -23,11 +25,19 @@
 import { assertSafePublicUrl } from "@/lib/fetch-url";
 import { USDC_BASE } from "@/lib/config";
 import { DEFAULT_SOLANA_RPC_URL, USDC_SOLANA_MINT } from "@/lib/solana-config";
+import { inputsBeforePaymentHint } from "@/lib/x402-check";
 
 export const CDP_DISCOVERY_URL = "https://api.cdp.coinbase.com/platform/v2/x402/discovery" as const;
 export const CDP_TROUBLESHOOTING_URL =
   "https://docs.cdp.coinbase.com/x402/support/troubleshooting#my-endpoint-is-missing-from-the-bazaar" as const;
 export const CDP_FACILITATOR = "https://api.cdp.coinbase.com/platform/v2/x402" as const;
+export const CDP_GET_DISCOVERED_URL = "https://docs.cdp.coinbase.com/x402/seller/get-discovered" as const;
+/** CDP removes resources that go 30 days without a settlement (Get discovered guide); warn from day 23. */
+export const BC_EXPIRY_DAYS = 30;
+export const BC_EXPIRY_WARN_DAYS = 23;
+/** Schema pattern lint: at most this many patterns per 402, walked at most this deep. */
+export const BC_MAX_PATTERNS = 50;
+const BC_MAX_SCHEMA_DEPTH = 32;
 
 export const BC_PROBE_TIMEOUT_MS = 6_000;
 /**
@@ -80,7 +90,7 @@ const UA = "HorizonPulseBazaarCheck/1.0 (+https://horizonpulse.dev)";
 
 export const BAZAAR_CHECK_METHODOLOGY = {
   index: `CDP public discovery API (${CDP_DISCOVERY_URL}): /merchant?payTo=… for each payTo seen in the host's 402s (at most ${BC_MAX_PAYTOS} payTos, up to ${CDP_MAX_PAGES} pages of ${CDP_PAGE_SIZE}) and /search?query=<host>, filtered to resources on the host. Indexed networks come from each entry's accepts.`,
-  lint: `GET https://<host>/.well-known/x402, then one unpaid request per listed route and method (GET with no body, POST with '{}'), up to ${BC_MAX_ROUTES} routes, ${BC_PROBE_CONCURRENCY} at a time. No payment header is ever sent; nothing is signed or paid.`,
+  lint: `GET https://<host>/.well-known/x402, then one unpaid request per listed route and method (GET and POST both with no body), up to ${BC_MAX_ROUTES} routes, ${BC_PROBE_CONCURRENCY} at a time. No payment header is ever sent; nothing is signed or paid.`,
   settleInference: `'Likely needs one CDP-facilitated paid settle' is inferred only when CDP discovery returns no resources for a payTo AND a read-only on-chain check (USDC balanceOf on Base, USDC token accounts on Solana) has run. CDP indexes an endpoint only after it settles a payment through the CDP facilitator: ${CDP_TROUBLESHOOTING_URL}. The on-chain check reports one boolean, never an amount.`,
   limits: `https only; private/local targets blocked at every hop (DNS checked); ${BC_MAX_REDIRECTS} redirects; ${BC_PROBE_TIMEOUT_MS / 1000}s per request; ${BC_MAX_BODY_BYTES / 1000}KB body cap; unpaid probes end ${BC_PROBE_BUDGET_MS / 1000}s after request arrival (or use ${BC_PROBE_SHARE * 100}% of the time left if payment verification was slow); ${BC_DEADLINE_MS / 1000}s hard deadline counted from request arrival, payment verification included (CDP discovery that cannot finish in time returns 502 cdp_unavailable). Routes on other hosts are listed, not probed.`,
   billing:
@@ -214,8 +224,8 @@ export async function safeFetch(
         method: m,
         redirect: "manual",
         signal: AbortSignal.timeout(remaining),
-        headers: { accept: "application/json", "user-agent": UA, ...(m === "POST" ? { "content-type": "application/json" } : {}) },
-        ...(m === "POST" ? { body: "{}" } : {}),
+        // POST is sent with an empty body (no content-type), as CDP's check does when no example input is declared.
+        headers: { accept: "application/json", "user-agent": UA },
       });
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
@@ -342,6 +352,9 @@ export const FIX = {
   enumWide: "Pin extensions.bazaar.schema.properties.input.properties.method.enum to the one charged method (some SDK versions emit the whole verb family, e.g. GET/HEAD/DELETE, and rely on runtime enrichment that may not run in a bundled deployment).",
   description: `Keep resource.description at or under ${MAX_DESCRIPTION_CHARS} characters (CDP rejects verify/settle above that).`,
   resourceMismatch: "Set resource.url to the exact public URL of this route (same host and path the route is listed and called at).",
+  patternInvalid: "Fix or remove the pattern: it must compile as an ECMA-262 regular expression (JSON Schema's regex dialect).",
+  patternPortable: "Rewrite the pattern without lookarounds or backreferences (plain character classes, anchors and quantifiers work everywhere), or validate that rule in your handler instead.",
+  expiry: `Make a paid call to the route through the CDP facilitator before day ${BC_EXPIRY_DAYS}; CDP removes resources that go ${BC_EXPIRY_DAYS} days without a settlement.`,
 } as const;
 
 export function lintProbe(p: ProbeInput): ProbeLint {
@@ -361,7 +374,7 @@ export function lintProbe(p: ProbeInput): ProbeLint {
     f.push({
       id: "not_402",
       level: "fail",
-      message: `Unpaid ${p.method} returned HTTP ${p.status}, not 402. x402 clients and CDP's indexer only see a payable route on a 402.${p.status === 405 ? " 405 suggests the route is listed with the wrong method." : ""}`,
+      message: `Unpaid ${p.method} returned HTTP ${p.status}, not 402. x402 clients and CDP's indexer only see a payable route on a 402.${p.status === 405 ? " 405 suggests the route is listed with the wrong method." : ""}${p.status === 400 || p.status === 422 ? ` ${inputsBeforePaymentHint(p.method)} (it checked inputs before payment); this probe sent ${p.method === "POST" ? "an empty body" : "no query parameters"}, as CDP's check can.` : ""}`,
       fix: FIX.not402,
     });
     return out;
@@ -477,14 +490,112 @@ export function lintProbe(p: ProbeInput): ProbeLint {
       fix: FIX.enumWide,
     });
   }
+  f.push(...lintSchemaPatterns(bz.schema));
   return out;
+}
+
+/* ------------------------------------------------------------------ */
+/* Schema pattern lint                                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Scan one regex source for constructs that many non-JavaScript validators
+ * (RE2 / Go, Rust regex) reject: lookarounds (?= (?! (?<= (?<! and
+ * backreferences \1-\9 and \k<name>. Escapes and character classes are
+ * skipped so "\\1" (a literal backslash and 1) and "[(?=]" do not count.
+ */
+export function patternUnportable(src: string): { lookaround: boolean; backreference: boolean } {
+  let lookaround = false;
+  let backreference = false;
+  let inClass = false;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === "\\") {
+      const n = src[i + 1];
+      if (!inClass && n !== undefined && (/[1-9]/.test(n) || (n === "k" && src[i + 2] === "<"))) backreference = true;
+      i++;
+      continue;
+    }
+    if (inClass) {
+      if (c === "]") inClass = false;
+      continue;
+    }
+    if (c === "[") inClass = true;
+    else if (c === "(" && src[i + 1] === "?") {
+      const a = src[i + 2];
+      const b = src[i + 3];
+      if (a === "=" || a === "!" || (a === "<" && (b === "=" || b === "!"))) lookaround = true;
+    }
+  }
+  return { lookaround, backreference };
+}
+
+/** Collect every JSON Schema `pattern` string and `patternProperties` key, with its JSON path. */
+function collectPatterns(node: unknown, at: string, out: { path: string; pattern: string }[], depth: number): void {
+  if (depth > BC_MAX_SCHEMA_DEPTH || out.length >= BC_MAX_PATTERNS + 1) return;
+  if (Array.isArray(node)) {
+    node.forEach((v, i) => collectPatterns(v, `${at}[${i}]`, out, depth + 1));
+    return;
+  }
+  const o = obj(node);
+  if (!o) return;
+  for (const [k, v] of Object.entries(o)) {
+    // Data, not schema: example values may carry a key named "pattern".
+    if (k === "example" || k === "examples" || k === "default" || k === "const" || k === "enum") continue;
+    if (k === "pattern" && typeof v === "string") out.push({ path: `${at}.pattern`, pattern: v });
+    else if (k === "patternProperties" && obj(v)) for (const pk of Object.keys(v as Json)) out.push({ path: `${at}.patternProperties`, pattern: pk });
+    // Values under properties/patternProperties are subschemas; their KEYS are names, not keywords.
+    collectPatterns(v, `${at}.${k}`, out, depth + 1);
+  }
+}
+
+const shortPat = (s: string) => (s.length > 80 ? `${s.slice(0, 77)}...` : s);
+
+/**
+ * Every pattern in the declared input/output schema (extensions.bazaar.schema):
+ * fail when it is not a valid regular expression, warn when it uses lookarounds
+ * or backreferences (valid in JavaScript, rejected by RE2-style validators).
+ */
+export function lintSchemaPatterns(schema: unknown): Finding[] {
+  const found: { path: string; pattern: string }[] = [];
+  collectPatterns(schema, "extensions.bazaar.schema", found, 0);
+  const f: Finding[] = [];
+  for (const { path, pattern } of found.slice(0, BC_MAX_PATTERNS)) {
+    let valid = true;
+    try {
+      new RegExp(pattern, "u");
+    } catch {
+      // Unicode mode is stricter (e.g. "\\-" outside a class); fail only if the plain form is invalid too.
+      try {
+        new RegExp(pattern);
+      } catch {
+        valid = false;
+      }
+    }
+    if (!valid) {
+      f.push({ id: "schema_pattern_invalid", level: "fail", message: `${path} '${shortPat(pattern)}' is not a valid regular expression.`, fix: FIX.patternInvalid });
+      continue;
+    }
+    const u = patternUnportable(pattern);
+    if (u.lookaround || u.backreference)
+      f.push({
+        id: "schema_pattern_unportable",
+        level: "warn",
+        message: `${path} '${shortPat(pattern)}' uses ${[u.lookaround ? "a lookaround" : "", u.backreference ? "a backreference" : ""].filter(Boolean).join(" and ")}, which many non-JavaScript schema validators (RE2-style engines) reject.`,
+        fix: FIX.patternPortable,
+      });
+  }
+  if (found.length > BC_MAX_PATTERNS)
+    f.push({ id: "schema_patterns_capped", level: "info", message: `More than ${BC_MAX_PATTERNS} schema patterns; only the first ${BC_MAX_PATTERNS} were checked.` });
+  return f;
 }
 
 /* ------------------------------------------------------------------ */
 /* INDEX: CDP discovery                                               */
 /* ------------------------------------------------------------------ */
 
-export type IndexEntry = { url: string; networks: NetworkLabel[]; lastUpdated: string | null };
+/** lastCalledAt: CDP quality.lastCalledAt (ISO), the only quality field kept. */
+export type IndexEntry = { url: string; networks: NetworkLabel[]; lastUpdated: string | null; lastCalledAt: string | null };
 export type IndexData = {
   byKey: Map<string, IndexEntry>;
   merchantTotals: { payTo: string; network: string; totalForPayTo: number; onHost: number }[];
@@ -516,6 +627,15 @@ async function cdpGet(deps: Deps, path: string, deadline: number): Promise<Json>
   }
 }
 
+/** ISO string, epoch seconds or epoch ms → ISO string; anything else → null. */
+function isoTime(v: unknown): string | null {
+  let ms: number;
+  if (typeof v === "number" && Number.isFinite(v)) ms = v < 1e12 ? v * 1000 : v;
+  else if (typeof v === "string" && v.length && v.length < 64) ms = Date.parse(v);
+  else return null;
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+}
+
 function absorb(byKey: Map<string, IndexEntry>, host: string, resources: unknown): number {
   let n = 0;
   if (!Array.isArray(resources)) return 0;
@@ -532,7 +652,7 @@ function absorb(byKey: Map<string, IndexEntry>, host: string, resources: unknown
     if (h !== host) continue;
     n += 1;
     const key = resourceKey(url)!;
-    const cur = byKey.get(key) ?? { url, networks: [], lastUpdated: null };
+    const cur = byKey.get(key) ?? { url, networks: [], lastUpdated: null, lastCalledAt: null };
     for (const a0 of Array.isArray(r!.accepts) ? (r!.accepts as unknown[]) : []) {
       const net = str(obj(a0)?.network);
       if (net) {
@@ -542,6 +662,8 @@ function absorb(byKey: Map<string, IndexEntry>, host: string, resources: unknown
     }
     const lu = str(r!.lastUpdated);
     if (lu && (!cur.lastUpdated || lu > cur.lastUpdated)) cur.lastUpdated = lu;
+    const lc = isoTime(obj(r!.quality)?.lastCalledAt);
+    if (lc && (!cur.lastCalledAt || lc > cur.lastCalledAt)) cur.lastCalledAt = lc;
     byKey.set(key, cur);
   }
   return n;
@@ -684,6 +806,8 @@ export type RouteReport = {
   indexedNetworks: NetworkLabel[];
   advertisedNetworks: NetworkLabel[];
   lastIndexed: string | null;
+  /** CDP quality.lastCalledAt for the index entry (ISO), or null. */
+  lastCalledAt: string | null;
   /** Per-method probe facts; their findings are merged into `findings` below. */
   probes: Omit<ProbeLint, "payTos" | "advertisedNetworks" | "findings">[];
   findings: Finding[];
@@ -955,6 +1079,17 @@ export async function checkBazaar(
         doc: CDP_TROUBLESHOOTING_URL,
       });
     }
+    if (indexed && entry?.lastCalledAt) {
+      const ageDays = Math.floor((deps.now() - Date.parse(entry.lastCalledAt)) / 86_400_000);
+      if (ageDays > BC_EXPIRY_WARN_DAYS)
+        findings.push({
+          id: "index_expiry_soon",
+          level: "warn",
+          message: `CDP last recorded a call to this route at ${entry.lastCalledAt} (${ageDays} days ago). ${ageDays >= BC_EXPIRY_DAYS ? "That is past" : `${BC_EXPIRY_DAYS - ageDays} day(s) left of`} the ${BC_EXPIRY_DAYS}-day window: CDP removes resources that go ${BC_EXPIRY_DAYS} days without a settlement.`,
+          fix: FIX.expiry,
+          doc: CDP_GET_DISCOVERED_URL,
+        });
+    }
     if (indexed) {
       const missingNets = adv.filter((n) => !indexedNetworks.includes(n));
       if (missingNets.length)
@@ -975,6 +1110,7 @@ export async function checkBazaar(
       indexedNetworks,
       advertisedNetworks: adv,
       lastIndexed: entry?.lastUpdated ?? null,
+      lastCalledAt: entry?.lastCalledAt ?? null,
       probes,
       findings,
     };
