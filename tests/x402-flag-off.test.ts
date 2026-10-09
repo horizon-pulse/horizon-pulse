@@ -29,6 +29,12 @@
  * description ("technical signals" -> "technical indicators"). Every accepts
  * block (scheme, network, amount, asset, payTo, maxTimeoutSeconds, extra),
  * x402Version and status is byte-identical to main.
+ *
+ * 2026-10-09 (branch bazaar-check, rebased onto main a3b15ea): golden.discovery refreshed again (new
+ * /api/bazaar-check in /.well-known/x402, skill.md, openapi.json, llms.txt),
+ * and golden.cdp / golden.local gained ONLY the three new bazaar-check keys
+ * (GET json, GET browser, OPTIONS). All 41 pre-existing 402 / OPTIONS keys in
+ * each mode are byte-identical to main's golden (checked with a diff).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

@@ -17,7 +17,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 
 ## What it is
 
-- Agents hit **thirteen** live paid HTTP endpoints (six crypto frozen; `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/screenshot` + `/api/search` + `/api/pdf` non-crypto LIVE — see below).
+- Agents hit **fourteen** live paid HTTP endpoints (six crypto frozen; `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/bazaar-check` + `/api/screenshot` + `/api/search` + `/api/pdf` non-crypto LIVE — see below).
 - Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header, with one `accepts` entry per network: Base (CAIP-2 **`eip155:8453`**, Base USDC, the treasury below) and Solana (CAIP-2 **`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`**, USDC mint, the Solana payTo below). See [`docs/solana-rail.md`](docs/solana-rail.md).
 - Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. The facilitator (Coinbase CDP on Base, PayAI on Solana) **verifies + settles**, then the route returns live data.
 - No stubbed prices or fake APYs: Coinbase Exchange (CoinGecko fallback) for spot; CoinGecko OHLC (Coinbase candles fallback) for signals; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only); `/api/fetch` returns best-effort cleaned text from a requested public URL (SSRF-safe, size/time capped); `/api/http` is a raw universal proxy (filtered headers, text|base64 body, SSRF-safe) priced **$0.01** for volume; `/api/extract` returns best-effort structured page fields from a URL or HTML (SSRF-safe, size/time capped) priced **$0.015**.
@@ -27,7 +27,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 
 | Fact | Value |
 | --- | --- |
-| **Live paid routes** | **13** (table below) — six crypto + `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/screenshot` + `/api/search` + `/api/pdf` |
+| **Live paid routes** | **14** (table below) — six crypto + `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/bazaar-check` + `/api/screenshot` + `/api/search` + `/api/pdf` |
 | **First settle** | `/api/pulse` **$0.005** — tx `0xedbd1a51…` |
 | **Crypto policy** | **Frozen** — six crypto routes: no price changes |
 | **Fetch** | Non-crypto LIVE: clean-text (`$0.02`) |
@@ -74,7 +74,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
 ## Endpoints
 
-**Paid (13 — six crypto frozen + fetch + http + extract + x402-check + screenshot + search + pdf):**
+**Paid (14 — six crypto frozen + fetch + http + extract + x402-check + bazaar-check + screenshot + search + pdf):**
 
 | Route | Price | Auth |
 | --- | --- | --- |
@@ -88,6 +88,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 | `GET` / `POST` `/api/http` | **$0.01** USDC (`10000` atomic) | x402 v2 |
 | `GET` / `POST` `/api/extract` | **$0.015** USDC (`15000` atomic) | x402 v2 |
 | `GET /api/x402-check?url=https://…` | **$0.01** USDC (`10000` atomic) | x402 v2 |
+| `GET /api/bazaar-check?url=…` | **$0.01** USDC (`10000` atomic) | x402 v2 |
 | `GET /api/screenshot?url=https://…` | **$0.02** USDC (`20000` atomic) | x402 v2 |
 | `GET /api/search?q=…&n=3` | **$0.03** USDC (`30000` atomic) | x402 v2 |
 | `GET /api/pdf?url=https://…` | **$0.02** USDC (`20000` atomic) | x402 v2 |

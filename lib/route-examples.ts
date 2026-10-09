@@ -14,9 +14,21 @@
  * In /api/portfolio the suggestions[0].message text is re-rendered in the new
  * findings-only wording from the same recorded inputs (ETH 83.9%, code
  * concentration_high). No other value changed.
+ *
+ * /api/bazaar-check was recorded later (EXAMPLE_RECORDED_AT_BY_PATH) from a
+ * local build of its branch: GET /api/demo/bazaar-check against horizonpulse.dev.
  */
 
 export const EXAMPLES_RECORDED_AT = "2026-10-01T14:36Z" as const;
+
+/** Routes added after the 2026-10-01 recording, with their own recording time (UTC). */
+export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
+  "/api/bazaar-check": "2026-10-09T16:38Z",
+};
+
+export function exampleRecordedAt(path: string): string {
+  return EXAMPLE_RECORDED_AT_BY_PATH[path] ?? EXAMPLES_RECORDED_AT;
+}
 
 export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
   "/api/pulse": {
@@ -332,6 +344,90 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
     "matchedFields": 2,
     "requestedFields": 2,
     "elapsedMs": 120
+  },
+  "/api/bazaar-check": {
+      "ok": true,
+      "source": "bazaar-check",
+      "asOf": "2026-10-09T16:38:45.681Z",
+      "target": {
+          "input": "horizonpulse.dev",
+          "host": "horizonpulse.dev",
+          "origin": "https://horizonpulse.dev"
+      },
+      "verdict": "fully_indexed",
+      "summary": {
+          "routesListed": 13,
+          "routesProbed": 13,
+          "indexed": 13,
+          "notIndexed": 0,
+          "indexedOnBase": 13,
+          "indexedOnSolana": 13,
+          "fail": 0,
+          "warn": 0
+      },
+      "wellKnown": {
+          "url": "https://horizonpulse.dev/.well-known/x402",
+          "httpStatus": 200,
+          "found": true,
+          "entries": 15
+      },
+      "index": {
+          "payTos": [
+              {
+                  "network": "eip155:8453",
+                  "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+                  "indexedTotalForPayTo": 13,
+                  "indexedOnHost": 13
+              },
+              {
+                  "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+                  "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+                  "indexedTotalForPayTo": 13,
+                  "indexedOnHost": 13
+              }
+          ],
+          "searchHitsOnHost": 13
+      },
+      "routes": [
+          {
+              "url": "https://horizonpulse.dev/api/pulse",
+              "methods": [
+                  "GET"
+              ],
+              "probed": true,
+              "indexed": true,
+              "indexedNetworks": [
+                  "base",
+                  "solana"
+              ],
+              "advertisedNetworks": [
+                  "base",
+                  "solana"
+              ],
+              "lastIndexed": "2026-10-08T21:10:33.046Z",
+              "findings": []
+          },
+          {
+              "url": "https://horizonpulse.dev/api/signals",
+              "methods": [
+                  "GET"
+              ],
+              "probed": true,
+              "indexed": true,
+              "indexedNetworks": [
+                  "base",
+                  "solana"
+              ],
+              "advertisedNetworks": [
+                  "base",
+                  "solana"
+              ],
+              "lastIndexed": "2026-10-09T15:20:10.271Z",
+              "findings": []
+          }
+      ],
+      "findings": [],
+      "elapsedMs": 1707
   },
   "/api/x402-check": {
     "ok": true,

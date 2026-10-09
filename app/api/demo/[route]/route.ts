@@ -10,6 +10,7 @@ import { fetchHandler } from "@/app/api/fetch/handler";
 import { httpHandler } from "@/app/api/http/handler";
 import { extractHandler } from "@/app/api/extract/handler";
 import { x402CheckHandler } from "@/app/api/x402-check/handler";
+import { bazaarCheckHandler } from "@/app/api/bazaar-check/handler";
 import { screenshotHandler } from "@/app/api/screenshot/handler";
 import { searchHandler } from "@/app/api/search/handler";
 import { pdfHandler } from "@/app/api/pdf/handler";
@@ -20,7 +21,8 @@ export const maxDuration = 30;
 
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
-const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf"]);
+// bazaar-check: CDP discovery + ~15 outbound probes per run, so one sample per instance per 10 min.
+const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf", "bazaar-check"]);
 const HEAVY_TTL_MS = 10 * 60 * 1000;
 /** search spends paid provider quota: one sample per instance per day. */
 const TTL_MS: Record<string, number> = { search: 24 * 60 * 60 * 1000 };
@@ -40,6 +42,7 @@ const HANDLERS: Record<string, Handler> = {
   http: httpHandler,
   extract: extractHandler,
   "x402-check": x402CheckHandler,
+  "bazaar-check": bazaarCheckHandler,
   screenshot: screenshotHandler,
   search: searchHandler,
   pdf: pdfHandler,

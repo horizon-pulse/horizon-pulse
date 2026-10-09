@@ -66,6 +66,11 @@ export const ROUTE_METADATA = {
       "x402 developer tool. Use before paying an unknown x402 endpoint, or to debug your own. GET with required url (optional method GET/POST, JSON body for POST). Sends one unpaid request and never pays. Returns JSON: httpStatus, isX402, x402Version, decoded accepts (network, asset, USD amount, payTo, EOA or contract), discovery metadata presence, and pass/warn/fail checks. Any HTTP answer from the target, even 4xx/5xx, is billed; bad input, blocked hosts, connection failures and timeouts are not.",
     tags: ["developer-tools", "x402", "audit", "payment-check", "discovery"],
   },
+  "/api/bazaar-check": {
+    description:
+      "x402 developer tool. Use to find out whether an x402 seller is listed in Coinbase CDP Bazaar and, if not, why. GET with required url (host or https URL). Reads CDP discovery and the host's /.well-known/x402, then sends one unpaid request per route; never pays. Returns JSON: verdict, per-route indexed status and networks (Base, Solana), and fail/warn findings each with a fix line. https only; private targets blocked. Errors are not charged.",
+    tags: ["developer-tools", "x402", "bazaar", "indexing", "lint"],
+  },
   "/api/screenshot": {
     description:
       "Web page screenshot. Use when you need to see how a public page renders. GET with required url; optional width (320-1920), height (240-2000), fullPage=true (clipped at 4000px), format png/jpeg, delayMs (0-3000). Renders in headless Chromium and returns JSON: imageBase64, mimeType, width, height, bytes, finalUrl, pageStatus, title and blockedRequests. Every sub-request is checked; private targets blocked. Over the 25s budget returns 504. Errors are not charged.",

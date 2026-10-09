@@ -32,6 +32,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 | GET | /api/search?q=…[&n=1-5] | $0.03 | 30000 | Web search → top 1-5 pages as clean markdown with URL, title, rank and per-source status (Google results via Serper) |
 | GET | /api/pdf?url=https://…[&pages=1-50] | $0.02 | 20000 | PDF URL → clean text per page + title/author metadata (text layer, no OCR; up to 10MB, 50 pages) |
 | GET | /api/x402-check?url=https://…[&method=POST][&body={json}] | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays; optional JSON body for POST probes, auto POST retry on 405) |
+| GET | /api/bazaar-check?url=… | $0.01 | 10000 | Is an x402 seller indexed in Coinbase CDP Bazaar, and if not, why: per-route index status and networks (Base, Solana) from CDP discovery, plus lint findings with a fix line each (never pays) |
 
 ## Input bounds
 
@@ -43,6 +44,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - `/api/search`: `q` required, max 300 chars; `n` 1-5 (default 3).
 - `/api/pdf`: `url` required, max 10MB; `pages` 1-50 (default 50). Max 100K chars.
 - `/api/x402-check`: `url` required; `method` GET|POST; `body` JSON (POST probes only).
+- `/api/bazaar-check`: `url` required (host like `example.com` or an https URL; http is refused). Up to 25 routes from the host's `/.well-known/x402`, one unpaid probe each; 6s per request, 22s total.
 
 ## Billing and errors
 
@@ -60,6 +62,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - Need structured fields from a page (title, links, headings, JSON-LD), or specific values by CSS selector: `/api/extract` with `fields`
 - Need to see what a page looks like (visual check, OG preview, UI verification): `/api/screenshot?url=…`
 - Need to check an x402 endpoint before paying it, or audit your own: `/api/x402-check?url=…`
+- Need to know whether an x402 seller is listed in Coinbase CDP Bazaar, and why not: `/api/bazaar-check?url=host`
 - Need a quick crypto market read: `/api/pulse` (spot + momentum), `/api/signals` (indicators + funding)
 - Need DeFi yields, gas timing, or perp funding: `/api/yield`, `/api/gas`, `/api/funding`
 - Need a wallet risk snapshot: `/api/portfolio?address=0x…`
@@ -68,7 +71,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 `GET /api/demo/{route}` runs the real handler on a fixed input and returns `demo: true`. Use it to check the response shape before paying. Inputs cannot be changed.
 
-- /api/demo/fetch, /api/demo/http, /api/demo/extract, /api/demo/x402-check, /api/demo/screenshot, /api/demo/search, /api/demo/pdf
+- /api/demo/fetch, /api/demo/http, /api/demo/extract, /api/demo/x402-check, /api/demo/bazaar-check, /api/demo/screenshot, /api/demo/search, /api/demo/pdf
 - /api/demo/pulse, /api/demo/signals, /api/demo/yield, /api/demo/gas, /api/demo/funding, /api/demo/portfolio
 
 ## Free (not paid)
@@ -107,7 +110,7 @@ These are services for people who run an API. They are not paid with x402; never
 
 - Skill file: https://horizonpulse.dev/skill.md (follow it end to end; generated from /openapi.json so prices match the 402s)
 - Guide: https://horizonpulse.dev/agents
-- Local MCP server (stdio, Node): https://github.com/horizon-pulse/horizon-pulse/tree/main/mcp. Every route as a tool (same names as the hosted /mcp: pulse, signals, yield, portfolio, gas, funding, fetch, http, extract, x402_check, screenshot, search, pdf) plus free `catalog`, `quote`, `demo`. Pays the x402 challenge from `HP_PRIVATE_KEY` (use a dedicated low-balance wallet); pays only the Base payTo above in Base USDC (the MCP server pays on Base only), refuses amounts above the listed price, caps per call (`HP_MAX_USD_PER_CALL`, default $0.05) and per session (`HP_MAX_USD_TOTAL`, default $1). No key → quote only.
+- Local MCP server (stdio, Node): https://github.com/horizon-pulse/horizon-pulse/tree/main/mcp. Every route as a tool (same names as the hosted /mcp: pulse, signals, yield, portfolio, gas, funding, fetch, http, extract, x402_check, bazaar_check, screenshot, search, pdf) plus free `catalog`, `quote`, `demo`. Pays the x402 challenge from `HP_PRIVATE_KEY` (use a dedicated low-balance wallet); pays only the Base payTo above in Base USDC (the MCP server pays on Base only), refuses amounts above the listed price, caps per call (`HP_MAX_USD_PER_CALL`, default $0.05) and per session (`HP_MAX_USD_TOTAL`, default $1). No key → quote only.
 - Hosted MCP: `https://horizonpulse.dev/mcp` (for MCP clients that can pay x402).
 
 ## Honesty
@@ -117,6 +120,7 @@ These are services for people who run an API. They are not paid with x402; never
 - `/api/http` is a raw universal proxy (filtered headers, text|base64 body); same SSRF guards; priced $0.01 for volume.
 - `/api/extract` returns best-effort structured fields from a public URL or provided HTML; private/localhost blocked; size/time capped; priced $0.015. Optional `fields` (up to 20 CSS selectors, deterministic, no AI): each unmatched field is null with a `fieldErrors` entry; if no field matches, 422 `no_fields_matched` and no charge. Selector work has a hard 2s budget; pages nested deeper than 256 levels are refused for fields.
 - `/api/x402-check` sends one unpaid request and never pays or signs; it reports the challenge as served. Any HTTP answer from the target (including 5xx) is a billed report; bad input, blocked hosts, DNS/connection failures and timeouts return 400/502/504 and are not charged. Priced $0.01.
+- `/api/bazaar-check` reads Coinbase CDP's public discovery API (`/merchant` by each payTo the host's 402s advertise, and `/search` by host) and sends one unpaid request per route listed in the host's `/.well-known/x402`; it never pays or signs. https hosts only; private/local targets are blocked at every redirect hop. "Likely needs one CDP-facilitated paid settle" is only inferred when CDP lists nothing for a payTo, backed by a read-only on-chain check that reports a yes/no, never an amount. Technical facts only: no revenue or customer figures. A completed report is billed; bad input, blocked hosts, an unreachable host or CDP discovery being down return 400/502 and are not charged. Priced $0.01.
 - `/api/screenshot` renders in a fresh headless Chromium with no cookies; every HTTP(S) sub-request is SSRF-checked, the top-level host is pinned to its checked IP, and WebSocket/WebTransport/WebRTC are disabled in page scripts; billed only when an image is returned. Priced $0.02.
 - `/api/search` sends the query to a third-party search API (Serper, Google results) and fetches each result through the same SSRF-safe pipeline as `/api/fetch`; pages that fail carry their own error. Billed when at least one result is returned; bad input, zero results, or a search-provider failure return 400/404/503 and are not charged. Priced $0.03.
 - `/api/pdf` downloads the file through the same SSRF checks (every redirect hop, 10MB cap; larger files are rejected, not truncated) and reads the PDF text layer with pdf.js; no OCR. Billed only when text is returned; bad input, blocked hosts, non-PDFs, oversize, encrypted or corrupt files, image-only PDFs (`no_text_layer`), download failures, and a 10s parse budget running out before any text (`parse_timeout`; partial text is returned as truncated) return 400/413/415/422/502/504 and are not charged. Priced $0.02.

@@ -11,7 +11,7 @@ import path from "node:path";
 import * as S from "../lib/x402-server";
 import { LIVE_PAID_ROUTES, CATEGORY_LABELS, routeName } from "../lib/live-catalog";
 import { USDC_BASE, CDP_FACILITATOR_URL, PUBLIC_BASE_URL, CONTACT_EMAIL, SERVICE_DESCRIPTION } from "../lib/config";
-import { EXAMPLES_RECORDED_AT } from "../lib/route-examples";
+import { exampleRecordedAt } from "../lib/route-examples";
 import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "../lib/solana-config";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -188,7 +188,7 @@ for (const r of LIVE_PAID_ROUTES) {
     const respName = `${pascal(name)}Response`;
     const example = baz?.info?.output?.example;
     if (example && !schemas[respName]) {
-      schemas[respName] = { ...widen(infer(example)), description: `Inferred from a real response recorded from GET /api/demo/${name} at ${EXAMPLES_RECORDED_AT} UTC (trimmed). Fields may be added; clients should ignore unknown fields.` };
+      schemas[respName] = { ...widen(infer(example)), description: `Inferred from a real response recorded from GET /api/demo/${name} at ${exampleRecordedAt(p)} UTC (trimmed). Fields may be added; clients should ignore unknown fields.` };
       // Closed value set (lib/indicators.ts DirectionLabel); not inferable from one example.
       const dir = name === "pulse" ? schemas[respName]?.properties?.overall?.properties?.direction : undefined;
       if (dir) dir.enum = ["up", "down", "flat"];

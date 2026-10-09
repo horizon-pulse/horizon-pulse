@@ -1,0 +1,109 @@
+{
+ "x402Version": 2,
+ "error": "Payment required",
+ "resource": {
+  "url": "https://horizonpulse.dev/api/gas",
+  "description": "Blockchain gas fees. Use before sending a transaction on Base or Ethereum to choose fees and timing. Call GET with no parameters. Returns JSON per network: baseFeeGwei, priorityFeeGwei (p50, with p10/p90), suggestedMaxFeeGwei (2x base + priority), timingHint (cheap/normal/expensive vs the last 20 blocks) and simpleTransfer cost in ETH and USD, plus ethUsd. From eth_feeHistory with eth_gasPrice fallback. Descriptive, not a forecast. Errors are not charged.",
+  "mimeType": "application/json",
+  "serviceName": "Horizon Pulse",
+  "tags": [
+   "crypto",
+   "gas-fees",
+   "base",
+   "ethereum",
+   "transactions"
+  ],
+  "iconUrl": "https://horizonpulse.dev/icon.png"
+ },
+ "accepts": [
+  {
+   "scheme": "exact",
+   "network": "eip155:8453",
+   "amount": "10000",
+   "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+   "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+   "maxTimeoutSeconds": 300,
+   "extra": {
+    "name": "USD Coin",
+    "version": "2"
+   }
+  },
+  {
+   "scheme": "exact",
+   "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+   "amount": "10000",
+   "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+   "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+   "maxTimeoutSeconds": 300,
+   "extra": {
+    "feePayer": "CjNFTjvBhbJJd2B5ePPMHRLx1ELZpa8dwQgGL727eKww"
+   }
+  }
+ ],
+ "extensions": {
+  "bazaar": {
+   "info": {
+    "input": {
+     "type": "http",
+     "method": "GET",
+     "queryParams": {}
+    },
+    "output": {
+     "type": "json",
+     "example": {
+      "trimmed": true
+     }
+    }
+   },
+   "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+     "input": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string",
+        "const": "http"
+       },
+       "method": {
+        "type": "string",
+        "enum": [
+         "GET"
+        ]
+       },
+       "queryParams": {
+        "type": "object",
+        "properties": {},
+        "required": []
+       }
+      },
+      "required": [
+       "type",
+       "method"
+      ],
+      "additionalProperties": false
+     },
+     "output": {
+      "type": "object",
+      "properties": {
+       "type": {
+        "type": "string"
+       },
+       "example": {
+        "type": "object",
+        "description": "Horizon Pulse gas snapshot. The example is a trimmed real response recorded from GET /api/demo/gas at 2026-10-01T14:36Z UTC; live values differ on every call."
+       }
+      },
+      "required": [
+       "type"
+      ]
+     }
+    },
+    "required": [
+     "input"
+    ]
+   }
+  }
+ }
+}

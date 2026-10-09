@@ -26,6 +26,7 @@ import {
   FETCH_PRICE_USD,
   SCREENSHOT_PRICE_USD,
   X402_CHECK_PRICE_USD,
+  BAZAAR_CHECK_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -34,7 +35,7 @@ import {
   PUBLIC_BASE_URL,
 } from "./config";
 import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
-import { EXAMPLES_RECORDED_AT, OUTPUT_EXAMPLES } from "./route-examples";
+import { exampleRecordedAt, OUTPUT_EXAMPLES } from "./route-examples";
 import { getSolanaRailConfig } from "./solana-config";
 import { handleSolanaPayment, isSolanaPaymentRequest, withSolanaAccept } from "./solana-rail";
 import { baseRail, runOnPaidRail } from "./paid-rail";
@@ -248,7 +249,7 @@ function outputOf(path: string, what: string) {
     example,
     schema: {
       type: "object",
-      description: `${what}. The example is a trimmed real response recorded from GET /api/demo/${path.slice(5)} at ${EXAMPLES_RECORDED_AT} UTC; live values differ on every call.`,
+      description: `${what}. The example is a trimmed real response recorded from GET /api/demo/${path.slice(5)} at ${exampleRecordedAt(path)} UTC; live values differ on every call.`,
     },
   };
 }
@@ -725,6 +726,43 @@ export function x402CheckRouteConfig(): RoutesConfig {
             required: ["url"],
           },
           output: outputOf("/api/x402-check", "Horizon Pulse x402 endpoint audit report"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+export function bazaarCheckRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/bazaar-check": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: BAZAAR_CHECK_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/bazaar-check"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/bazaar-check"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { url: "horizonpulse.dev" },
+          inputSchema: {
+            properties: {
+              url: {
+                type: "string",
+                description:
+                  "Seller host (e.g. example.com) or https URL (required). A URL path is also probed as a route. https only; private/localhost blocked.",
+              },
+            },
+            required: ["url"],
+          },
+          output: outputOf("/api/bazaar-check", "Horizon Pulse CDP Bazaar index check with lint findings"),
         } as DiscoveryDecl),
       },
     },

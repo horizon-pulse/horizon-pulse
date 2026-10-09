@@ -28,6 +28,8 @@ import {
   SCREENSHOT_PRICE_ATOMIC,
   X402_CHECK_PRICE_USD,
   X402_CHECK_PRICE_ATOMIC,
+  BAZAAR_CHECK_PRICE_USD,
+  BAZAAR_CHECK_PRICE_ATOMIC,
   SEARCH_PRICE_USD,
   SEARCH_PRICE_ATOMIC,
   PDF_PRICE_USD,
@@ -156,6 +158,16 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     blurb: "Audit any x402 endpoint without paying it",
   },
   {
+    path: "/api/bazaar-check?url=…",
+    method: "GET",
+    priceUsd: BAZAAR_CHECK_PRICE_USD,
+    priceAtomic: BAZAAR_CHECK_PRICE_ATOMIC,
+    summary:
+      "Is an x402 seller indexed in CDP Bazaar, and if not, why: per-route index status + networks (Base, Solana) and lint findings with fixes (never pays)",
+    category: "agent",
+    blurb: "Check whether an x402 seller is listed in CDP Bazaar, and why not",
+  },
+  {
     path: "/api/screenshot?url=https://…",
     method: "GET",
     priceUsd: SCREENSHOT_PRICE_USD,
@@ -196,7 +208,7 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text)." as const;
 
 export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
   crypto: "Crypto market data",

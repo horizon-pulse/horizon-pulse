@@ -141,14 +141,14 @@ describe("pricedBlock helper", () => {
   });
 });
 
-describe("all 13 paid handlers build `priced` with the rail-aware helper", () => {
+describe("all 14 paid handlers build `priced` with the rail-aware helper", () => {
   it("no handler hard-codes the Base network / USDC / payTo in its priced block", () => {
     const dirs = readdirSync(path.join(ROOT, "app", "api"), { withFileTypes: true })
       .filter((d) => d.isDirectory() && d.name !== "demo")
       .map((d) => d.name)
       .sort();
     expect(dirs).toEqual([...PAID_ROUTES].sort());
-    expect(dirs).toHaveLength(13);
+    expect(dirs).toHaveLength(14);
     for (const d of dirs) {
       const src = readFileSync(path.join(ROOT, "app", "api", d, "handler.ts"), "utf8");
       expect(src.match(/priced: pricedBlock\(\w+_PRICE_USD, \w+_PRICE_ATOMIC\)/g), d).toHaveLength(1);

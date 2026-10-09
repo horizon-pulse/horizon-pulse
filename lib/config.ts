@@ -71,6 +71,14 @@ export const X402_CHECK_PRICE_USD = "$0.01" as const;
 export const X402_CHECK_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 
 /**
+ * /api/bazaar-check — is an x402 seller indexed in CDP Bazaar, and if not, why
+ * not (CDP discovery lookup + unpaid lint of each listed route).
+ * $0.01 (10000 atomic): same tier as /api/x402-check.
+ */
+export const BAZAAR_CHECK_PRICE_USD = "$0.01" as const;
+export const BAZAAR_CHECK_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
+
+/**
  * /api/screenshot — headless Chromium render → PNG/JPEG (base64 JSON).
  * $0.02 (20000 atomic): same tier as /api/fetch; a browser render costs more
  * compute than a plain fetch.
@@ -101,11 +109,11 @@ export const SERVICE_DESCRIPTION =
   "Pay-per-call APIs for AI agents, paid in USDC on Base or Solana with x402: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key." as const;
 
 /**
- * Service-level description for /.well-known/x402 (covers all 13 routes).
+ * Service-level description for /.well-known/x402 (covers all 14 routes).
  * Facts only: no uptime, volume or popularity claims.
  */
 export const DISCOVERY_DESCRIPTION =
-  "Pay-per-call APIs for AI agents via x402 on Base and Solana (USDC, no API key): web search with page contents, web fetch to markdown, HTTP proxy, structured page extract, page screenshots, PDF to text, x402 endpoint checks, and crypto data (spot prices, technical indicators, perp funding, gas fees, DeFi yields, wallet portfolios)." as const;
+  "Pay-per-call APIs for AI agents via x402 on Base and Solana (USDC, no API key): web search with page contents, web fetch to markdown, HTTP proxy, structured page extract, page screenshots, PDF to text, x402 endpoint checks, CDP Bazaar index checks, and crypto data (spot prices, technical indicators, perp funding, gas fees, DeFi yields, wallet portfolios)." as const;
 
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 

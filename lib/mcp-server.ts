@@ -1,5 +1,5 @@
 /**
- * Hosted MCP endpoint (POST /mcp): the same 9 paid routes as MCP tools.
+ * Hosted MCP endpoint (POST /mcp): the paid routes as MCP tools.
  *
  * - Each tool calls the EXISTING route handler unchanged (same SSRF guards,
  *   caps and upstreams). No new data paths, no free/demo data via MCP.
@@ -28,6 +28,7 @@ import * as fetchR from "@/app/api/fetch/handler";
 import * as http from "@/app/api/http/handler";
 import * as extract from "@/app/api/extract/handler";
 import * as x402check from "@/app/api/x402-check/handler";
+import * as bazaarCheck from "@/app/api/bazaar-check/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
 import * as pdf from "@/app/api/pdf/handler";
@@ -131,6 +132,14 @@ export const TOOLS: ToolDef[] = [
     },
     call: (a) =>
       runHandler(x402check.x402CheckHandler, makeRequest("/api/x402-check", { url: s(a.url), method: s(a.method), body: s(a.body) })),
+  },
+  {
+    name: "bazaar_check",
+    opts: bazaarCheck.paymentOpts,
+    schema: {
+      url: z.string().describe("Seller host (e.g. example.com) or https URL to check against CDP Bazaar discovery"),
+    },
+    call: (a) => runHandler(bazaarCheck.bazaarCheckHandler, makeRequest("/api/bazaar-check", { url: s(a.url) })),
   },
   {
     name: "screenshot",

@@ -66,7 +66,7 @@ function assertBaseFirstSolanaSecond(all: { cdp: Record<string, Captured>; local
       n++;
     }
   }
-  expect(n).toBe(82);
+  expect(n).toBe(88);
 }
 
 let now = 1_800_000_000_000;
@@ -92,13 +92,13 @@ describe("(b) token-account guard", () => {
     installBothFacilitators();
     const rpc = stubSolanaOn({}, true, "absent");
     expect(JSON.stringify(await captureAll())).toBe(JSON.stringify(golden));
-    // Cached: one RPC call for all 82 requests, read-only getAccountInfo on the pinned ATA.
+    // Cached: one RPC call for all 88 requests, read-only getAccountInfo on the pinned ATA.
     expect(rpc).toHaveLength(1); // absent → no receipt count either
     expect(rpc[0]).toMatchObject({ url: "https://api.mainnet-beta.solana.com", method: "getAccountInfo", account: SOLANA_PAYTO_USDC_ATA });
     expect(warnLines().some((l) => l.includes("token account not found"))).toBe(true);
   });
 
-  it("(b) account present => Base first (unchanged) + Solana second on all 82", async () => {
+  it("(b) account present => Base first (unchanged) + Solana second on all 88", async () => {
     installBothFacilitators();
     stubSolanaOn({}, true, "present");
     const all = await captureAll();
@@ -317,7 +317,7 @@ async function allRouteConfigs() {
   const routeConfigs = [
     m.pulseRouteConfig(), m.signalsRouteConfig(), m.yieldRouteConfig(), m.portfolioRouteConfig(), m.gasRouteConfig(),
     m.fundingRouteConfig(), m.fetchRouteConfig(), m.httpRouteConfig(), m.extractRouteConfig(), m.x402CheckRouteConfig(),
-    m.screenshotRouteConfig(), m.searchRouteConfig(), m.pdfRouteConfig(),
+    m.bazaarCheckRouteConfig(), m.screenshotRouteConfig(), m.searchRouteConfig(), m.pdfRouteConfig(),
   ];
   return { routeConfigs };
 }
