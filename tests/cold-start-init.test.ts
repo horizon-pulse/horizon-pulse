@@ -155,19 +155,25 @@ describe("cold start: first unpaid request never 500s on a transient /supported 
     expect(JSON.stringify(ok)).toBe(JSON.stringify(golden.cdp["GET /api/pulse json"]));
   });
 
-  it("a facilitator timeout is not retried (no multi-minute stall): 503 after one attempt", async () => {
+  it("a facilitator timeout is not retried (no multi-minute stall): 503 after exactly one /supported call", async () => {
+    // The import-time warm-up and the request share ONE in-flight sync: the
+    // stub holds the call open until the request is waiting on it, then times out.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
     const calls = installFacilitatorMock({
-      supported: () => {
-        throw new FacilitatorTimeoutError("supported", 90_000);
+      supported: async () => {
+        await gate;
+        throw new FacilitatorTimeoutError("supported", 10_000);
       },
     });
     coldInstance();
     const pulse = await loadRoute("pulse");
-    const res = await pulse.GET(jsonReq("pulse"));
+    const resP = pulse.GET(jsonReq("pulse"));
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    const res = await resP;
     expect(res.status).toBe(503);
-    // one attempt per sync, no backoff retries: at most the import-time
-    // warm-up sync (already failed) + the request's own sync
-    expect(supportedCalls(calls)).toBeLessThanOrEqual(2);
+    expect(supportedCalls(calls)).toBe(1);
     const retried = vi.mocked(console.warn).mock.calls.some((c) => String(c[0]).includes("facilitator sync attempt"));
     expect(retried).toBe(false);
   });

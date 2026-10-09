@@ -43,12 +43,20 @@ import { baseRail, runOnPaidRail } from "./paid-rail";
  * Coinbase CDP facilitator via @coinbase/x402.
  * list/discovery works without keys; verify+settle need CDP_API_KEY_ID/SECRET.
  */
+/**
+ * Per-request facilitator timeout (verify, settle, every /supported attempt).
+ * The @x402/core client default is 90 s, longer than any route's maxDuration,
+ * so a hung CDP call would outlive the function instead of becoming a 503.
+ */
+export const FACILITATOR_TIMEOUT_MS = 10_000;
+
 function buildFacilitatorClient(): HTTPFacilitatorClient {
   const apiKeyId = process.env.CDP_API_KEY_ID?.trim() || undefined;
   const apiKeySecret = process.env.CDP_API_KEY_SECRET?.trim() || undefined;
-  return new HTTPFacilitatorClient(
-    createFacilitatorConfig(apiKeyId, apiKeySecret),
-  );
+  return new HTTPFacilitatorClient({
+    ...createFacilitatorConfig(apiKeyId, apiKeySecret),
+    timeoutMs: FACILITATOR_TIMEOUT_MS,
+  });
 }
 
 /**
@@ -66,8 +74,8 @@ function buildFacilitatorClient(): HTTPFacilitatorClient {
  * Now initialize() on the shared server is single-flight and sticky: one sync
  * per instance, shared by every route (and the MCP endpoint), retried on a
  * transient failure with a short backoff, never re-run once it succeeded, and
- * reset on failure so a later request tries again. Facilitator timeouts (90 s
- * client default) and fatal capability/config errors are not retried.
+ * reset on failure so a later request tries again. Facilitator timeouts
+ * (FACILITATOR_TIMEOUT_MS) and fatal capability/config errors are not retried.
  * Discovery and payment behaviour are unchanged: same facilitator, same
  * /supported response, same accepts / payTo / price; withX402 still runs its
  * per-route route-config validation after the shared sync.

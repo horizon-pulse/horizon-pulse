@@ -176,13 +176,6 @@ export const TOOLS: ToolDef[] = [
   },
 ];
 
-let initPromise: Promise<void> | null = null;
-/** Facilitator sync is only needed to verify/settle; unpaid challenges don't need it. */
-export function ensureFacilitatorReady(): Promise<void> {
-  if (!initPromise) initPromise = getResourceServer().initialize();
-  return initPromise;
-}
-
 export function buildMcpServer(): McpServer {
   const server = new McpServer({ name: "horizon-pulse", version: "1.0.0" });
   const resourceServer = getResourceServer();
