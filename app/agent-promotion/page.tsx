@@ -266,7 +266,7 @@ export default function AgentPromotionPage() {
               </h2>
               <p className="hp-lead" style={{ maxWidth: 720 }}>
                 Horizon Pulse runs a live x402 v2 service on Base and Solana mainnet: pay-per-call APIs for AI agents, paid in USDC through
-                Coinbase&apos;s CDP facilitator on Base and PayAI on Solana, with 13 paid routes. Before we offered agent promotion to anyone else, we did it for
+                Coinbase&apos;s CDP facilitator on Base and PayAI on Solana. Before we offered agent promotion to anyone else, we did it for
                 ourselves. This page records what we set up and when. It&apos;s a delivery reference, not a revenue claim.
               </p>
             </div>
