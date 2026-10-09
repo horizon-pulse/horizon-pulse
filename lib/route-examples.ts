@@ -11,7 +11,9 @@
  *
  * 2026-10-09: in /api/pulse the recorded key overall.signal ("hold") is shown
  * under its new name overall.direction ("flat"), same rule (see CHANGELOG.md).
- * No other value changed.
+ * In /api/portfolio the suggestions[0].message text is re-rendered in the new
+ * findings-only wording from the same recorded inputs (ETH 83.9%, code
+ * concentration_high). No other value changed.
  */
 
 export const EXAMPLES_RECORDED_AT = "2026-10-01T14:36Z" as const;
@@ -187,7 +189,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
       {
         "priority": "high",
         "code": "concentration_high",
-        "message": "ETH is 83.9% of portfolio USD. Rule: trim toward ≤40% single-asset weight (swap a slice to USDC/DAI or another asset)."
+        "message": "ETH weight 83.9% of USD value, at or above the 50% single-asset threshold."
       }
     ]
   },

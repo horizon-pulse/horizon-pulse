@@ -22,7 +22,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 | GET | /api/pulse | $0.005 | 5000 | BTC/ETH/SOL spot + momentum (Coinbase Exchange, CoinGecko fallback) |
 | GET | /api/signals | $0.015 | 15000 | RSI/MACD/Bollinger + OKX funding |
 | GET | /api/yield | $0.02 | 20000 | DefiLlama yields (TVL ≥ $10M) |
-| GET | /api/portfolio?address=0x… | $0.04 | 40000 | Base + Ethereum balances, risk score, allocation flags vs fixed thresholds |
+| GET | /api/portfolio?address=0x… | $0.04 | 40000 | Base + Ethereum balances, risk score, rule findings vs fixed thresholds |
 | GET | /api/gas | $0.01 | 10000 | Base + Ethereum fee snapshot + timingHint |
 | GET | /api/funding | $0.01 | 10000 | OKX BTC/ETH/SOL perpetual funding + crowding hint |
 | GET | /api/fetch?url=https://… | $0.02 | 20000 | Fetch public URL → clean text/markdown (SSRF-safe, capped) |

@@ -33,7 +33,7 @@ export const ROUTE_METADATA = {
   },
   "/api/portfolio": {
     description:
-      "Crypto wallet analysis. Use when you need the token holdings and USD value of one EVM address. Call GET with required address=0x... (40 hex). Reads Base and Ethereum: ETH, USDC, WETH, WBTC/cbBTC, DAI. Returns JSON: holdings (balance, priceUsd, valueUsd, weight), totals (valueUsd, stablecoinShare, max asset/chain weight), risk {score 0-100, band} and allocation flags (asset, stablecoin and chain weights vs fixed thresholds). Read-only; not advice. Invalid addresses return 400, not charged.",
+      "Crypto wallet analysis. Use when you need the token holdings and USD value of one EVM address. Call GET with required address=0x... (40 hex). Reads Base and Ethereum: ETH, USDC, WETH, WBTC/cbBTC, DAI. Returns JSON: holdings (balance, priceUsd, valueUsd, weight), totals (valueUsd, stablecoinShare, max asset/chain weight), risk {score 0-100, band} and rule findings (asset, stablecoin and chain weights vs fixed thresholds). Read-only; not advice. Invalid addresses return 400, not charged.",
     tags: ["crypto", "portfolio", "wallet", "evm-address", "risk"],
   },
   "/api/gas": {

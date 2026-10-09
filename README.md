@@ -132,7 +132,7 @@ On-chain portfolio snapshot for **one EVM address** (`?address=0x…`, required)
 - Networks: **Base + Ethereum mainnet** (public RPCs; optional `BASE_RPC_URL` / `ETH_RPC_URL` with failover)
 - Tokens: native ETH; USDC, WETH, DAI on both chains; **WBTC** on Ethereum; **cbBTC** on Base (honest substitute — Base has no BitGo WBTC)
 - USD marks via Coinbase public exchange rates (CoinGecko for the rest or on Coinbase failure); **real balances only** — if an RPC fails, that network is marked failed in `networks[]` / `warnings`
-- Rule-based **risk score** (0–100) and **allocation flags** (asset, stablecoin and chain weights vs fixed thresholds, plus gas buffer; returned in the `suggestions` array) with transparent formulas in `methodology`
+- Rule-based **risk score** (0–100) and **rule findings** (largest asset weight vs 35%/50%, stablecoin share vs 15%/85%, largest chain share vs 85%, low native ETH gas balance; returned in the `suggestions` array as plain findings, no instructions) with transparent formulas in `methodology`
 - Price: **$0.04** USDC (`40000` atomic)
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
 - Unpaid GET → **402** + **`PAYMENT-REQUIRED`** (v2, `eip155:8453`) · `payTo` `0x5b32c973596078a967562ca652761404f19be0e9`

@@ -41,9 +41,9 @@ export const PORTFOLIO_METHODOLOGY = {
   riskScore:
     "0–100 (higher = riskier). riskScore = round( clamp0_100( 50*maxAssetWeight + 30*(1-stablecoinShare) + 20*maxChainWeight ) ). Empty / unpriced portfolio → null.",
   suggestions:
-    "Deterministic rules only (no LLM): concentration, stablecoin share, chain concentration, dust gas buffer. Empty portfolio → fund wallet.",
+    "Findings only, from deterministic rules (no LLM): largest single-asset weight vs 35% and 50%, stablecoin share vs 15% and 85%, largest single-chain share vs 85%, native ETH under $5 on a chain with over $50 of other tracked tokens. Empty or unpriced portfolio → empty_portfolio. The field name `suggestions` is kept for format stability; entries describe the balances and contain no instructions.",
   notAdvice:
-    "Not financial advice. Risk score and suggestions are mechanical rule outputs over the balances returned, not a recommendation to buy, sell, or hold any asset.",
+    "Not financial advice. Risk score and findings are mechanical rule outputs over the balances returned, not a recommendation to buy, sell, or hold any asset.",
 } as const;
 
 type TokenKind = "native" | "erc20";
@@ -362,7 +362,7 @@ function riskBand(
   return "high";
 }
 
-function buildSuggestions(opts: {
+export function buildSuggestions(opts: {
   totalUsd: number | null;
   stableShare: number | null;
   maxAssetWeight: number | null;
@@ -378,7 +378,7 @@ function buildSuggestions(opts: {
       priority: "high",
       code: "rpc_unavailable",
       message:
-        "One or more networks failed RPC reads — treat balances as incomplete; retry later or set BASE_RPC_URL / ETH_RPC_URL.",
+        "One or more networks failed RPC reads, so balances may be incomplete (see networks and warnings).",
     });
   }
 
@@ -387,7 +387,7 @@ function buildSuggestions(opts: {
       priority: "medium",
       code: "empty_portfolio",
       message:
-        "No priced balances among tracked tokens. Fund the wallet (or confirm the address) before rebalancing.",
+        "No priced balances found among tracked tokens for this address.",
     });
     return out;
   }
@@ -400,7 +400,7 @@ function buildSuggestions(opts: {
     out.push({
       priority: "high",
       code: "concentration_high",
-      message: `${opts.maxAssetSymbol} is ${(opts.maxAssetWeight * 100).toFixed(1)}% of portfolio USD. Rule: trim toward ≤40% single-asset weight (swap a slice to USDC/DAI or another asset).`,
+      message: `${opts.maxAssetSymbol} weight ${(opts.maxAssetWeight * 100).toFixed(1)}% of USD value, at or above the 50% single-asset threshold.`,
     });
   } else if (
     opts.maxAssetWeight !== null &&
@@ -410,7 +410,7 @@ function buildSuggestions(opts: {
     out.push({
       priority: "medium",
       code: "concentration_watch",
-      message: `${opts.maxAssetSymbol} is ${(opts.maxAssetWeight * 100).toFixed(1)}% of portfolio. Consider capping any single asset near 30–40%.`,
+      message: `${opts.maxAssetSymbol} weight ${(opts.maxAssetWeight * 100).toFixed(1)}% of USD value, at or above the 35% single-asset threshold (below 50%).`,
     });
   }
 
@@ -418,13 +418,13 @@ function buildSuggestions(opts: {
     out.push({
       priority: "high",
       code: "stables_low",
-      message: `Stablecoins are ${(opts.stableShare * 100).toFixed(1)}% of USD value. Rule: raise USDC/DAI toward ≥20% for dry powder and lower drawdown.`,
+      message: `Stablecoin share ${(opts.stableShare * 100).toFixed(1)}% of USD value, below the 15% threshold.`,
     });
   } else if (opts.stableShare !== null && opts.stableShare > 0.85) {
     out.push({
       priority: "low",
       code: "stables_high",
-      message: `Stablecoins are ${(opts.stableShare * 100).toFixed(1)}% of USD value. Rule: if seeking market exposure, allocate a defined slice (e.g. 10–30%) to ETH/WETH rather than remaining fully cash.`,
+      message: `Stablecoin share ${(opts.stableShare * 100).toFixed(1)}% of USD value, above the 85% threshold.`,
     });
   }
 
@@ -436,7 +436,7 @@ function buildSuggestions(opts: {
     out.push({
       priority: "medium",
       code: "chain_concentration",
-      message: `${opts.maxChain} holds ${(opts.maxChainWeight * 100).toFixed(1)}% of USD value. Rule: keep a bridgeable buffer on the other chain (≥15%) for gas and venue diversity.`,
+      message: `${opts.maxChain} share ${(opts.maxChainWeight * 100).toFixed(1)}% of USD value, at or above the 85% single-chain threshold.`,
     });
   }
 
@@ -457,7 +457,7 @@ function buildSuggestions(opts: {
       out.push({
         priority: "medium",
         code: "gas_buffer_low",
-        message: `Native ETH on ${net} is only ~$${native.valueUsd.toFixed(2)} while other ${net} holdings are ~$${otherValue.toFixed(0)}. Rule: keep a small ETH gas buffer (unwrap a bit of WETH if needed).`,
+        message: `Native ETH on ${net} ~$${native.valueUsd.toFixed(2)}, below the $5 gas-balance threshold, with ~$${otherValue.toFixed(0)} of other tracked tokens on ${net} (over $50).`,
       });
     }
   }
@@ -467,7 +467,7 @@ function buildSuggestions(opts: {
       priority: "low",
       code: "balanced",
       message:
-        "No hard rule breaches: concentration, stable share, and chain mix look within guidelines. Re-check after large transfers.",
+        "No rule threshold crossed: largest single-asset weight below 35%, stablecoin share between 15% and 85%, largest single-chain share below 85%, no low native ETH balance flagged.",
     });
   }
 

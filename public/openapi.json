@@ -348,7 +348,7 @@
           "Crypto market data"
         ],
         "summary": "Base and Ethereum balances, risk score and allocation breakdown vs fixed thresholds (not financial advice)",
-        "description": "Crypto wallet analysis. Use when you need the token holdings and USD value of one EVM address. Call GET with required address=0x... (40 hex). Reads Base and Ethereum: ETH, USDC, WETH, WBTC/cbBTC, DAI. Returns JSON: holdings (balance, priceUsd, valueUsd, weight), totals (valueUsd, stablecoinShare, max asset/chain weight), risk {score 0-100, band} and allocation flags (asset, stablecoin and chain weights vs fixed thresholds). Read-only; not advice. Invalid addresses return 400, not charged.\n\nPrice: $0.04 USDC per call (40000 atomic), paid with x402 v2 `exact` on Base or Solana (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Crypto wallet analysis. Use when you need the token holdings and USD value of one EVM address. Call GET with required address=0x... (40 hex). Reads Base and Ethereum: ETH, USDC, WETH, WBTC/cbBTC, DAI. Returns JSON: holdings (balance, priceUsd, valueUsd, weight), totals (valueUsd, stablecoinShare, max asset/chain weight), risk {score 0-100, band} and rule findings (asset, stablecoin and chain weights vs fixed thresholds). Read-only; not advice. Invalid addresses return 400, not charged.\n\nPrice: $0.04 USDC per call (40000 atomic), paid with x402 v2 `exact` on Base or Solana (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -440,7 +440,7 @@
                     {
                       "priority": "high",
                       "code": "concentration_high",
-                      "message": "ETH is 83.9% of portfolio USD. Rule: trim toward ≤40% single-asset weight (swap a slice to USDC/DAI or another asset)."
+                      "message": "ETH weight 83.9% of USD value, at or above the 50% single-asset threshold."
                     }
                   ]
                 }
