@@ -286,7 +286,7 @@ git push -u origin main
 
 ## Reference agent (`examples/`)
 
-Unpaid 402 discovery for **all thirteen** live paid routes, plus optional paid single-route when `SMOKE_PRIVATE_KEY` is set:
+Unpaid 402 discovery for the live paid routes listed in the script, plus optional paid single-route when `SMOKE_PRIVATE_KEY` is set:
 
 ```bash
 cd horizon-pulse
