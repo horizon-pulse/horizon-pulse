@@ -1,5 +1,11 @@
 import { createFacilitatorConfig } from "@coinbase/x402";
-import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
+import {
+  FacilitatorTimeoutError,
+  getFacilitatorResponseError,
+  HTTPFacilitatorClient,
+  isFatalStartupInitError,
+  x402ResourceServer,
+} from "@x402/core/server";
 import type { RouteConfig, RoutesConfig } from "@x402/core/server";
 import { encodePaymentRequiredHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
@@ -45,16 +51,91 @@ function buildFacilitatorClient(): HTTPFacilitatorClient {
   );
 }
 
+/**
+ * Cold-start facilitator sync (fix for the 3-hit cold-start 500 pattern,
+ * 2026-10-08/09: one 500 {"error":"Internal Server Error"} on the first
+ * request to a fresh instance, the immediate retry a normal 402).
+ *
+ * Before: every route's withX402 ran its own initialize() on this ONE shared
+ * server. That is a single CDP GET /supported (the client only retries 429),
+ * so one transient failure (5xx, "fetch failed", socket reset on a thawed
+ * instance) made that request a 500; and each later route's first request
+ * re-ran initialize(), which clears the shared supported-kinds map before
+ * refetching, so a concurrent request on an already-synced route could 500 too.
+ *
+ * Now initialize() on the shared server is single-flight and sticky: one sync
+ * per instance, shared by every route (and the MCP endpoint), retried on a
+ * transient failure with a short backoff, never re-run once it succeeded, and
+ * reset on failure so a later request tries again. Facilitator timeouts (90 s
+ * client default) and fatal capability/config errors are not retried.
+ * Discovery and payment behaviour are unchanged: same facilitator, same
+ * /supported response, same accepts / payTo / price; withX402 still runs its
+ * per-route route-config validation after the shared sync.
+ */
+export const FACILITATOR_INIT_BACKOFF_MS = [100, 300] as const;
+
+function isRetryableInitError(error: unknown): boolean {
+  if (isFatalStartupInitError(error)) return false;
+  return !(getFacilitatorResponseError(error) instanceof FacilitatorTimeoutError);
+}
+
+class SharedInitResourceServer extends x402ResourceServer {
+  private syncReady = false;
+  private syncInFlight: Promise<void> | null = null;
+
+  override initialize(): Promise<void> {
+    if (this.syncReady) return Promise.resolve();
+    if (!this.syncInFlight) {
+      this.syncInFlight = this.syncWithRetry().then(
+        () => {
+          this.syncReady = true;
+          this.syncInFlight = null;
+        },
+        (error: unknown) => {
+          this.syncInFlight = null;
+          throw error;
+        },
+      );
+    }
+    return this.syncInFlight;
+  }
+
+  private async syncWithRetry(): Promise<void> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await super.initialize();
+        return;
+      } catch (error) {
+        const delay = FACILITATOR_INIT_BACKOFF_MS[attempt];
+        if (delay === undefined || !isRetryableInitError(error)) throw error;
+        console.warn(`[x402] facilitator sync attempt ${attempt + 1} failed, retrying in ${delay} ms: ${error}`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+    }
+  }
+}
+
 let cachedServer: x402ResourceServer | null = null;
 
 export function getResourceServer(): x402ResourceServer {
   if (cachedServer) return cachedServer;
   const network = getNetworkCaip2();
-  cachedServer = new x402ResourceServer(buildFacilitatorClient()).register(
+  cachedServer = new SharedInitResourceServer(buildFacilitatorClient()).register(
     network,
     new ExactEvmScheme(),
   );
   return cachedServer;
+}
+
+/**
+ * Handler init: start the shared facilitator sync when a paid route module
+ * loads on an instance with CDP keys, so it runs alongside the cold start
+ * instead of inside the first request. Never during `next build`. Failures
+ * are swallowed here; the next request retries via initialize().
+ */
+export function warmFacilitator(): void {
+  if (!hasCdpCredentials() || process.env.NEXT_PHASE === "phase-production-build") return;
+  void getResourceServer().initialize().catch(() => {});
 }
 
 /** Avoid facilitator sync at boot when CDP secrets are absent. */
@@ -706,6 +787,25 @@ export function paymentRequiredResponse(opts: {
   });
 }
 
+/**
+ * HTTP 503 when the CDP facilitator sync still fails after the retries above.
+ * Replaces the library's generic 500: nothing was verified or settled, no
+ * challenge is served, and the client is told to retry shortly.
+ */
+export function facilitatorUnavailableResponse(): NextResponse {
+  return NextResponse.json(
+    { error: "Payment facilitator temporarily unavailable. Retry in a moment." },
+    {
+      status: 503,
+      headers: {
+        ...CORS_HEADERS,
+        "Cache-Control": "no-store",
+        "Retry-After": "1",
+      },
+    },
+  );
+}
+
 /** HTTP 503 when a payment header is present but CDP settle keys are missing. */
 export function settlementUnavailableResponse(): NextResponse {
   return NextResponse.json(
@@ -776,6 +876,19 @@ export function createX402GetHandler(
   },
 ): AppRouteHandler {
   let paidHandler: AppRouteHandler | null = null;
+  warmFacilitator();
+
+  /** Shared facilitator sync first; on failure a 503 instead of withX402's 500. */
+  async function runPaidHandler(req: NextRequest): Promise<NextResponse> {
+    try {
+      await getResourceServer().initialize();
+    } catch (error) {
+      if (isFatalStartupInitError(error)) throw error;
+      console.error(`[x402] facilitator sync failed, serving 503: ${error}`);
+      return facilitatorUnavailableResponse();
+    }
+    return getPaidHandler()(req);
+  }
 
   function getPaidHandler(): AppRouteHandler {
     if (!paidHandler) {
@@ -796,7 +909,7 @@ export function createX402GetHandler(
   /** Base-only unpaid challenge: exactly what main serves. */
   async function baseChallenge(req: NextRequest, cdpReady: boolean): Promise<NextResponse> {
     return cdpReady
-      ? await getPaidHandler()(asJsonRequest(req))
+      ? await runPaidHandler(asJsonRequest(req))
       : paymentRequiredResponse(paymentOpts);
   }
 
@@ -839,7 +952,7 @@ export function createX402GetHandler(
     if (!cdpReady) {
       return settlementUnavailableResponse();
     }
-    return getPaidHandler()(req);
+    return runPaidHandler(req);
   };
 }
 
