@@ -2,6 +2,7 @@ import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/
 import { isFatalStartupInitError } from "@x402/core/server";
 import { hasCdpCredentials } from "@/lib/config";
 import { buildMcpServer } from "@/lib/mcp-server";
+import { withRequestArrival } from "@/lib/request-arrival";
 import { getResourceServer } from "@/lib/x402-server";
 
 export const runtime = "nodejs";
@@ -31,8 +32,16 @@ function facilitatorUnavailable(): Response {
   );
 }
 
-/** Stateless streamable-HTTP MCP: fresh server + transport per request. */
-export async function POST(req: Request): Promise<Response> {
+/**
+ * Stateless streamable-HTTP MCP: fresh server + transport per request.
+ * The arrival time is stamped first so time-budgeted tools (bazaar_check)
+ * count their deadline from request arrival (lib/request-arrival.ts).
+ */
+export function POST(req: Request): Promise<Response> {
+  return withRequestArrival(() => handlePost(req));
+}
+
+async function handlePost(req: Request): Promise<Response> {
   if (hasCdpCredentials()) {
     try {
       await getResourceServer().initialize();

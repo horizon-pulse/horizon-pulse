@@ -1832,7 +1832,7 @@
             }
           },
           "502": {
-            "description": "Host unreachable on every request, or CDP discovery unavailable or not answering before the 26s deadline (code cdp_unavailable). Not charged.",
+            "description": "Host unreachable on every request, or CDP discovery unavailable or not answering before the 26s deadline counted from request arrival (code cdp_unavailable), or too little time left after payment verification (code time_budget_used). Not charged.",
             "content": {
               "application/json": {
                 "schema": {

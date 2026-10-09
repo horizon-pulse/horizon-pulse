@@ -44,7 +44,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - `/api/search`: `q` required, max 300 chars; `n` 1-5 (default 3).
 - `/api/pdf`: `url` required, max 10MB; `pages` 1-50 (default 50). Max 100K chars.
 - `/api/x402-check`: `url` required; `method` GET|POST; `body` JSON (POST probes only).
-- `/api/bazaar-check`: `url` required (host like `example.com` or an https URL; http is refused). Up to 25 routes from the host's `/.well-known/x402`, one unpaid probe each; 6s per request, 18s for the probes, 26s hard deadline for the whole run; at most 4 payTos looked up in CDP `/merchant`.
+- `/api/bazaar-check`: `url` required (host like `example.com` or an https URL; http is refused). Up to 25 routes from the host's `/.well-known/x402`, one unpaid probe each; 6s per request, 18s for the probes, 26s hard deadline counted from request arrival (payment verification included); at most 4 payTos looked up in CDP `/merchant`.
 
 ## Billing and errors
 

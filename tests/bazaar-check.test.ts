@@ -14,6 +14,7 @@ import {
   BC_MAX_PAYTOS,
   BC_PROBE_BUDGET_MS,
   BLOCKED_HOST_MESSAGE,
+  payToKey,
   CDP_DISCOVERY_URL,
   CDP_TROUBLESHOOTING_URL,
   checkBazaar,
@@ -590,5 +591,70 @@ describe("fix 1: pagination total, inconclusive on-chain, status codes, blocked 
     if (!r2.ok) throw new Error(r2.error);
     expect(JSON.stringify(r2)).not.toContain("10.1.2.3");
     expect(r2.routes[0]!.findings.find((f) => f.id === "probe_failed")!.message).toContain(BLOCKED_HOST_MESSAGE);
+  });
+});
+
+describe("rebase v2: deadline from request arrival, EVM payTo dedupe", () => {
+  it("time spent before the handler (verify) comes out of the budget: CDP hang stops at arrival + deadline", async () => {
+    const { pages } = fiftyPayTos();
+    const deps = mockDeps({ pages });
+    const inner = deps.fetch;
+    deps.limits = { deadlineMs: 1_500, probeBudgetMs: 600 };
+    deps.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).startsWith(CDP_DISCOVERY_URL)) return slow(60_000, init?.signal, () => Response.json({ resources: [] }));
+      return inner(input, init);
+    }) as typeof fetch;
+    const arrivedAt = Date.now() - 900; // e.g. 900ms spent in x402 verify
+    const r = await checkBazaar({ url: "many.example" }, deps, { arrivedAt });
+    expect(r).toMatchObject({ ok: false, status: 502, code: "cdp_unavailable" });
+    expect(Date.now() - arrivedAt).toBeLessThan(1_500 + 250); // bounded from arrival, not from handler start
+    expect(Date.now() - arrivedAt).toBeGreaterThanOrEqual(1_500 - 50);
+  });
+
+  it("too little budget left at handler start: 502 time_budget_used, nothing fetched", async () => {
+    const deps = mockDeps({ pages: BAD.routes });
+    const r = await checkBazaar({ url: "bad-seller.example" }, deps, { arrivedAt: Date.now() - (BC_DEADLINE_MS - 1_000) });
+    expect(r).toMatchObject({ ok: false, status: 502, code: "time_budget_used" });
+    expect(deps.calls).toEqual([]);
+  });
+
+  it("arrivedAt in the future is clamped to handler start; no arrivedAt = handler start (unchanged behaviour)", async () => {
+    const r1 = await checkBazaar({ url: "bad-seller.example" }, mockDeps({ pages: BAD.routes }), { arrivedAt: Date.now() + 10 * 60_000 });
+    const r2 = await checkBazaar({ url: "bad-seller.example" }, mockDeps({ pages: BAD.routes }));
+    expect(r1.ok && r2.ok).toBe(true);
+    if (r1.ok && r2.ok) expect(r1.verdict).toBe(r2.verdict);
+  });
+
+  it("EVM payTos dedupe case-insensitively before the cap of 4; Solana base58 stays case-sensitive", async () => {
+    expect(payToKey("0xAbCdEf0000000000000000000000000000000001")).toBe("0xabcdef0000000000000000000000000000000001");
+    expect(payToKey("HPzyWQ1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe("HPzyWQ1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    const url = "https://dd.example/api/a";
+    const c = clone(GOOD);
+    c.resource.url = url;
+    const base = c.accepts.find((a: { network: string }) => a.network === "eip155:8453");
+    const sol = c.accepts.find((a: { network: string }) => a.network.startsWith("solana:"));
+    const evm = "0x" + "ab".repeat(20);
+    const solA = "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU";
+    const solB = "7XKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU"; // differs only in case: a different Solana key
+    c.accepts = [
+      { ...base, payTo: evm },
+      { ...base, payTo: evm.toUpperCase().replace("0X", "0x") },
+      { ...base, payTo: "0x" + "AB".repeat(10) + "ab".repeat(10) },
+      { ...sol, payTo: solA },
+      { ...sol, payTo: solB },
+      { ...base, payTo: "0x" + "cd".repeat(20) },
+      { ...base, payTo: "0x" + "ef".repeat(20) },
+    ];
+    const pages: Record<string, Mock> = {
+      "GET https://dd.example/.well-known/x402": { status: 200, body: JSON.stringify({ resources: [`GET ${url}`] }) },
+      [`GET ${url}`]: { status: 402, headers: { "payment-required": b64(c) }, body: "{}" },
+    };
+    const deps = mockDeps({ pages, merchant: () => indexedFor("dd.example", ["/api/a"]) });
+    const r = await checkBazaar({ url: "dd.example" }, deps);
+    if (!r.ok) throw new Error(r.error);
+    // 3 EVM spellings of one address collapse to 1; the two Solana keys stay 2 → 1 + 2 + 2 more EVM = 5 distinct, capped at 4
+    expect(r.index.payTos.map((p) => p.payTo)).toEqual([evm, solA, solB, "0x" + "cd".repeat(20)]);
+    expect(r.findings.find((f) => f.id === "paytos_capped")!.message).toMatch(/5 distinct payTos/);
+    expect(merchantPayTos(deps.calls).size).toBe(4);
   });
 });

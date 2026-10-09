@@ -15,10 +15,14 @@ import { ROUTE_METADATA } from "@/lib/route-metadata";
 import { CDP_URL_PREFIX } from "./helpers/facilitator-mock";
 import { installBothFacilitators, setCdp, stubSolanaOn } from "./helpers/solana-env";
 
-const stub = vi.hoisted(() => ({ result: null as unknown }));
+const stub = vi.hoisted(() => ({ result: null as unknown, opts: undefined as { arrivedAt?: number } | undefined, calledAt: 0 }));
 vi.mock("@/lib/bazaar-check", async (orig) => ({
   ...(await orig<object>()),
-  checkBazaar: async () => stub.result,
+  checkBazaar: async (_i: unknown, _d: unknown, opts?: { arrivedAt?: number }) => {
+    stub.opts = opts;
+    stub.calledAt = Date.now();
+    return stub.result;
+  },
 }));
 
 const ROOT = path.resolve(__dirname, "..");
@@ -137,6 +141,33 @@ describe("/api/bazaar-check paid", () => {
     expect(body.verdict).toBe("fully_indexed");
     expect(body.priced).toEqual({ amountUsd: "$0.01", amountAtomic: "10000", asset: USDC_BASE, network: "base", payTo: BASE_PAYTO });
     expect(calls.filter((c) => c.op === "settle" && c.url.startsWith(CDP_URL_PREFIX))).toHaveLength(1);
+  });
+
+  it("deadline counts from request arrival: arrivedAt is stamped before x402 verify and passed to checkBazaar", async () => {
+    stub.result = { ok: true, verdict: "fully_indexed", routes: [] };
+    let verifyAt = 0;
+    installBothFacilitators({
+      verify: () => {
+        verifyAt = Date.now();
+        while (Date.now() - verifyAt < 40) {
+          /* slow verify: 40ms */
+        }
+        return { isValid: true, payer: BASE_PAYER };
+      },
+      settle: (_u, _p, r) => ({ success: true, transaction: `0x${"ab".repeat(32)}`, network: r.network, payer: BASE_PAYER }),
+    });
+    vi.unstubAllEnvs();
+    setCdp(true);
+    const a = await challenge();
+    stub.opts = undefined;
+    const t0 = Date.now();
+    const res = await (await load()).GET(req(basePayload(a)));
+    expect(res.status).toBe(200);
+    const arrivedAt = (stub.opts as { arrivedAt?: number } | undefined)?.arrivedAt;
+    expect(typeof arrivedAt).toBe("number");
+    expect(arrivedAt!).toBeGreaterThanOrEqual(t0);
+    expect(arrivedAt!).toBeLessThanOrEqual(verifyAt);
+    expect(stub.calledAt - arrivedAt!).toBeGreaterThanOrEqual(40); // verify time is inside the budget
   });
 
   it("not-billed error (CDP discovery down) → 502, charged:false, never settled", async () => {

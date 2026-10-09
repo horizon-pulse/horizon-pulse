@@ -30,17 +30,29 @@ export const CDP_TROUBLESHOOTING_URL =
 export const CDP_FACILITATOR = "https://api.cdp.coinbase.com/platform/v2/x402" as const;
 
 export const BC_PROBE_TIMEOUT_MS = 6_000;
-/** The /.well-known fetch and all unpaid probes must finish within this many ms of the request start. */
+/** The /.well-known fetch and all unpaid probes must finish within this many ms of request arrival. */
 export const BC_PROBE_BUDGET_MS = 18_000;
 /**
- * Hard deadline for the whole run (probes + CDP discovery + on-chain check),
- * measured from the request start. The route's maxDuration is 30s; 26s leaves
- * room for the paid rail and response. Every outbound timeout is
- * min(its own timeout, deadline - now). If CDP discovery cannot finish before
- * the deadline the run returns 502 cdp_unavailable (not billed), never a
- * platform 504.
+ * Hard deadline for the check (probes + CDP discovery + on-chain check),
+ * measured from REQUEST ARRIVAL: route.ts (and app/mcp/route.ts) stamp the
+ * arrival before x402 verify (lib/request-arrival.ts) and the handler passes
+ * it in as `arrivedAt`, so time spent in verify comes out of this budget.
+ * Every outbound timeout is min(its own timeout, deadline - now). If CDP
+ * discovery cannot finish before the deadline the run returns 502
+ * cdp_unavailable; if less than BC_MIN_START_MS is left when the handler
+ * starts it returns 502 time_budget_used. Neither is billed.
+ *
+ * Timing vs the route's maxDuration 30s: verify + this check end by arrival
+ * + 26s, leaving about 4s for settle and the response. That fits the normal
+ * case (settle typically takes a few seconds) but NOT the worst case: the
+ * shared CDP facilitator timeout is 20s (FACILITATOR_TIMEOUT_MS in
+ * lib/x402-server.ts), so a settle that hangs after a full-length check could
+ * run to ~46s and hit the platform limit (a platform 504 after the work is
+ * done, with the payment possibly settled).
  */
 export const BC_DEADLINE_MS = 26_000;
+/** Minimum budget left at handler start for a check to be worth running. */
+export const BC_MIN_START_MS = 3_000;
 /** At most this many distinct payTos are looked up in CDP /merchant (an info finding says when the cap is hit). */
 export const BC_MAX_PAYTOS = 4;
 export const BC_MAX_REDIRECTS = 3;
@@ -62,9 +74,9 @@ export const BAZAAR_CHECK_METHODOLOGY = {
   index: `CDP public discovery API (${CDP_DISCOVERY_URL}): /merchant?payTo=… for each payTo seen in the host's 402s (at most ${BC_MAX_PAYTOS} payTos, up to ${CDP_MAX_PAGES} pages of ${CDP_PAGE_SIZE}) and /search?query=<host>, filtered to resources on the host. Indexed networks come from each entry's accepts.`,
   lint: `GET https://<host>/.well-known/x402, then one unpaid request per listed route and method (GET with no body, POST with '{}'), up to ${BC_MAX_ROUTES} routes, ${BC_PROBE_CONCURRENCY} at a time. No payment header is ever sent; nothing is signed or paid.`,
   settleInference: `'Likely needs one CDP-facilitated paid settle' is inferred only when CDP discovery returns no resources for a payTo AND a read-only on-chain check (USDC balanceOf on Base, USDC token accounts on Solana) has run. CDP indexes an endpoint only after it settles a payment through the CDP facilitator: ${CDP_TROUBLESHOOTING_URL}. The on-chain check reports one boolean, never an amount.`,
-  limits: `https only; private/local targets blocked at every hop (DNS checked); ${BC_MAX_REDIRECTS} redirects; ${BC_PROBE_TIMEOUT_MS / 1000}s per request; ${BC_MAX_BODY_BYTES / 1000}KB body cap; ${BC_PROBE_BUDGET_MS / 1000}s for the unpaid probes; ${BC_DEADLINE_MS / 1000}s hard deadline for the whole run (CDP discovery that cannot finish in time returns 502 cdp_unavailable). Routes on other hosts are listed, not probed.`,
+  limits: `https only; private/local targets blocked at every hop (DNS checked); ${BC_MAX_REDIRECTS} redirects; ${BC_PROBE_TIMEOUT_MS / 1000}s per request; ${BC_MAX_BODY_BYTES / 1000}KB body cap; ${BC_PROBE_BUDGET_MS / 1000}s for the unpaid probes; ${BC_DEADLINE_MS / 1000}s hard deadline counted from request arrival, payment verification included (CDP discovery that cannot finish in time returns 502 cdp_unavailable). Routes on other hosts are listed, not probed.`,
   billing:
-    "Billed when a report is returned. Not billed: missing/bad/http-only input, blocked private/local host, host unreachable (DNS/connection/timeout on every request), or CDP discovery unavailable or not answering before the deadline; those return 400/502 and settlement is skipped.",
+    "Billed when a report is returned. Not billed: missing/bad/http-only input, blocked private/local host, host unreachable (DNS/connection/timeout on every request), CDP discovery unavailable or not answering before the deadline, or too little time left after payment verification; those return 400/502 and settlement is skipped.",
   notAdvice:
     "Technical facts only: no revenue, volume or customer claims. Fix lines reflect CDP's documented requirements and Horizon Pulse's own indexing experience, not a CDP guarantee.",
 } as const;
@@ -81,6 +93,11 @@ export function networkLabel(n: string): NetworkLabel {
   if (n === "eip155:8453" || n === "base") return "base";
   if (n.startsWith("solana:") || n === "solana") return "solana";
   return n;
+}
+
+/** Dedupe key for a payTo: EVM 0x addresses are case-insensitive (checksum casing); Solana base58 stays case-sensitive. */
+export function payToKey(payTo: string): string {
+  return /^0x[0-9a-fA-F]{40}$/.test(payTo) ? payTo.toLowerCase() : payTo;
 }
 
 /** Normalized resource key: https://host/path (lowercase host, no query/hash/trailing slash). */
@@ -536,7 +553,7 @@ export async function queryIndex(
 ): Promise<IndexData> {
   const byKey = new Map<string, IndexEntry>();
   const seen = new Set<string>();
-  const unique = payTos.filter(({ payTo }) => (seen.has(payTo) ? false : (seen.add(payTo), true))).slice(0, BC_MAX_PAYTOS);
+  const unique = payTos.filter(({ payTo }) => (seen.has(payToKey(payTo)) ? false : (seen.add(payToKey(payTo)), true))).slice(0, BC_MAX_PAYTOS);
 
   const merchant = unique.map(async ({ payTo, network }) => {
     let total = 0;
@@ -709,12 +726,26 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
   return out;
 }
 
-export async function checkBazaar(input: { url?: string }, deps: Deps = defaultDeps()): Promise<BazaarCheckResult | BazaarCheckError> {
+export async function checkBazaar(
+  input: { url?: string },
+  deps: Deps = defaultDeps(),
+  opts: { arrivedAt?: number } = {},
+): Promise<BazaarCheckResult | BazaarCheckError> {
   const started = deps.now();
-  const deadline = started + (deps.limits?.deadlineMs ?? BC_DEADLINE_MS);
-  const probeDeadline = Math.min(deadline, started + (deps.limits?.probeBudgetMs ?? BC_PROBE_BUDGET_MS));
+  // Budget origin: request arrival (before verify) when known, never in the future.
+  const origin = typeof opts.arrivedAt === "number" && Number.isFinite(opts.arrivedAt) ? Math.min(opts.arrivedAt, started) : started;
+  const total = deps.limits?.deadlineMs ?? BC_DEADLINE_MS;
+  const deadline = origin + total;
+  // Probes get up to BC_PROBE_BUDGET_MS from arrival; if verify ate into that,
+  // they still get 60% of what is left so CDP discovery keeps the rest.
+  const probeDeadline = Math.min(
+    deadline,
+    Math.max(origin + (deps.limits?.probeBudgetMs ?? BC_PROBE_BUDGET_MS), started + Math.floor((deadline - started) * 0.6)),
+  );
   const t = parseTarget(input.url);
   if ("error" in t) return { ok: false, error: t.error, code: t.code, status: 400 };
+  if (deadline - started < Math.min(BC_MIN_START_MS, total / 8))
+    return { ok: false, error: "Not enough of the request time budget was left to run the check (payment verification was slow). Retry.", code: "time_budget_used", status: 502 };
   const gate = await deps.assertSafe(t.origin);
   if ("ok" in gate && gate.ok === false) return { ok: false, error: BLOCKED_HOST_MESSAGE, code: "host_blocked", status: 400 };
 
@@ -802,7 +833,7 @@ export async function checkBazaar(input: { url?: string }, deps: Deps = defaultD
   if (!reachable) return { ok: false, error: `${t.host} could not be reached over https (DNS, connection or timeout)`, code: "unreachable", status: 502 };
 
   const payTos: { network: string; payTo: string }[] = [];
-  for (const pr of probeResults) for (const p of pr.lint?.payTos ?? []) if (!payTos.some((x) => x.payTo === p.payTo)) payTos.push(p);
+  for (const pr of probeResults) for (const p of pr.lint?.payTos ?? []) if (!payTos.some((x) => payToKey(x.payTo) === payToKey(p.payTo))) payTos.push(p);
   if (payTos.length > BC_MAX_PAYTOS) {
     hostFindings.push({
       id: "paytos_capped",
