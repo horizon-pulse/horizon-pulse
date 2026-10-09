@@ -458,6 +458,18 @@
         }
       }
     },
+    "/api/bazaar-check": {
+      "get": {
+        "responses": {
+          "400": {
+            "description": "Missing, bad or http-only url, or a blocked private/local host"
+          },
+          "502": {
+            "description": "Host unreachable on every request, or CDP discovery unavailable or not answering before the 26s deadline (code cdp_unavailable). Not charged."
+          }
+        }
+      }
+    },
     "/api/screenshot": {
       "get": {
         "summary": "Screenshot a public URL",

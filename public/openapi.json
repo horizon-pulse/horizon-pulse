@@ -1808,11 +1808,36 @@
               }
             }
           },
+          "400": {
+            "description": "Missing, bad or http-only url, or a blocked private/local host. Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "ok": false,
+                  "error": "Query param url is required (a host like example.com or an https URL)",
+                  "code": "missing_url"
+                }
+              }
+            }
+          },
           "402": {
             "description": "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
             "headers": {
               "PAYMENT-REQUIRED": {
                 "$ref": "#/components/headers/PaymentRequired"
+              }
+            }
+          },
+          "502": {
+            "description": "Host unreachable on every request, or CDP discovery unavailable or not answering before the 26s deadline (code cdp_unavailable). Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
               }
             }
           }

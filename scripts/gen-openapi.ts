@@ -29,6 +29,7 @@ const BAD_REQUEST: Record<string, Json> = {
   "/api/http": { ok: false, error: "url is required (absolute http/https URL)", code: "missing_url" },
   "/api/extract": { ok: false, error: "url is required when html is not provided", code: "missing_input" },
   "/api/x402-check": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url" },
+  "/api/bazaar-check": { ok: false, error: "Query param url is required (a host like example.com or an https URL)", code: "missing_url" },
   "/api/screenshot": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url" },
   "/api/search": { ok: false, error: "Query param q is required", code: "missing_query" },
   "/api/pdf": { ok: false, error: "Query param url is required (absolute http/https URL of a PDF)", code: "missing_url" },

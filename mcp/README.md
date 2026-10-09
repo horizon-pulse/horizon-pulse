@@ -2,7 +2,7 @@
 
 An MCP server that gives your agent every live [Horizon Pulse](https://horizonpulse.dev) paid route as a tool and pays each call's x402 v2 challenge (USDC on Base) from a buyer wallet you configure, within spend caps you set.
 
-- **Tools:** one per live route, with the same names as the hosted `https://horizonpulse.dev/mcp`: `pulse`, `signals`, `yield`, `portfolio`, `gas`, `funding`, `fetch`, `http`, `extract`, `x402_check`, `screenshot`, `search`, `pdf`. The list, inputs and prices are read at startup from `https://horizonpulse.dev/openapi.json`, so they match what the API charges.
+- **Tools:** one per live route, with the same names as the hosted `https://horizonpulse.dev/mcp`: `pulse`, `signals`, `yield`, `portfolio`, `gas`, `funding`, `fetch`, `http`, `extract`, `x402_check`, `bazaar_check`, `screenshot`, `search`, `pdf`. The list, inputs and prices are read at startup from `https://horizonpulse.dev/openapi.json`, so they match what the API charges.
 - **Free helper tools:** `catalog` (routes, prices, caps, wallet status), `quote` (calls a route unpaid and decodes the 402, never pays), `demo` (the route's free fixed-input sample).
 - **Payment:** official x402 client libraries (`@x402/core` + `@x402/evm` 2.27.0, the same version family the site runs). Unpaid call → 402 → decode `PAYMENT-REQUIRED` → sign an EIP-3009 USDC authorization → retry once with `PAYMENT-SIGNATURE` → return the JSON plus the decoded `PAYMENT-RESPONSE` receipt. Screenshots come back as MCP image content.
 

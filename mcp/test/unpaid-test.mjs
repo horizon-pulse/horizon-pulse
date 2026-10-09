@@ -19,7 +19,7 @@ const PAY_TO = "0x5b32c973596078a967562ca652761404f19be0e9";
 const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 // Private key = 1: a trivially public constant (address 0x7E5F…5Bdf), used only to sign against the local mock.
 const TEST_KEY_ONE = "0x" + "0".repeat(63) + "1";
-const EXPECTED_TOOLS = ["catalog", "demo", "extract", "fetch", "funding", "gas", "http", "pdf", "portfolio", "pulse", "quote", "screenshot", "search", "signals", "x402_check", "yield"];
+const EXPECTED_TOOLS = ["bazaar_check", "catalog", "demo", "extract", "fetch", "funding", "gas", "http", "pdf", "portfolio", "pulse", "quote", "screenshot", "search", "signals", "x402_check", "yield"];
 
 let fail = 0;
 const ok = (c, msg) => { console.log(`${c ? "PASS" : "FAIL"} ${msg}`); if (!c) fail++; };
@@ -53,7 +53,7 @@ if (LIVE !== "skip") {
   ok(tools.find((t) => t.name === "http")?.inputSchema?.properties?.headers, "http tool uses POST body schema (headers)");
 
   const cat = JSON.parse((await c.callTool({ name: "catalog", arguments: {} })).content[0].text);
-  ok(cat.routes.length === 13 && cat.payment.mode.startsWith("quote-only") && cat.payment.buyerWallet === null, `catalog: 13 routes, quote-only, no wallet (source ${cat.catalogSource})`);
+  ok(cat.routes.length === 14 && cat.payment.mode.startsWith("quote-only") && cat.payment.buyerWallet === null, `catalog: 14 routes, quote-only, no wallet (source ${cat.catalogSource})`);
 
   const r = await c.callTool({ name: "pulse", arguments: {} });
   const m = meta(r);

@@ -30,24 +30,41 @@ export const CDP_TROUBLESHOOTING_URL =
 export const CDP_FACILITATOR = "https://api.cdp.coinbase.com/platform/v2/x402" as const;
 
 export const BC_PROBE_TIMEOUT_MS = 6_000;
-export const BC_TOTAL_BUDGET_MS = 22_000;
+/** The /.well-known fetch and all unpaid probes must finish within this many ms of the request start. */
+export const BC_PROBE_BUDGET_MS = 18_000;
+/**
+ * Hard deadline for the whole run (probes + CDP discovery + on-chain check),
+ * measured from the request start. The route's maxDuration is 30s; 26s leaves
+ * room for the paid rail and response. Every outbound timeout is
+ * min(its own timeout, deadline - now). If CDP discovery cannot finish before
+ * the deadline the run returns 502 cdp_unavailable (not billed), never a
+ * platform 504.
+ */
+export const BC_DEADLINE_MS = 26_000;
+/** At most this many distinct payTos are looked up in CDP /merchant (an info finding says when the cap is hit). */
+export const BC_MAX_PAYTOS = 4;
 export const BC_MAX_REDIRECTS = 3;
 export const BC_MAX_BODY_BYTES = 64_000;
 export const BC_MAX_ROUTES = 25;
 export const BC_PROBE_CONCURRENCY = 5;
 const CDP_TIMEOUT_MS = 8_000;
+const RPC_TIMEOUT_MS = 5_000;
+const CDP_PAGE_SIZE = 100;
+/** Generic message for any blocked target: the resolved address is never echoed. */
+export const BLOCKED_HOST_MESSAGE =
+  "Target host is blocked: it is not a public internet host (private, loopback, link-local, metadata and CGNAT addresses are refused) or its DNS lookup failed.";
 const CDP_MAX_BYTES = 2_000_000;
 const CDP_MAX_PAGES = 3;
 const MAX_DESCRIPTION_CHARS = 500;
 const UA = "HorizonPulseBazaarCheck/1.0 (+https://horizonpulse.dev)";
 
 export const BAZAAR_CHECK_METHODOLOGY = {
-  index: `CDP public discovery API (${CDP_DISCOVERY_URL}): /merchant?payTo=… for each payTo seen in the host's 402s (up to ${CDP_MAX_PAGES} pages of 100) and /search?query=<host>, filtered to resources on the host. Indexed networks come from each entry's accepts.`,
+  index: `CDP public discovery API (${CDP_DISCOVERY_URL}): /merchant?payTo=… for each payTo seen in the host's 402s (at most ${BC_MAX_PAYTOS} payTos, up to ${CDP_MAX_PAGES} pages of ${CDP_PAGE_SIZE}) and /search?query=<host>, filtered to resources on the host. Indexed networks come from each entry's accepts.`,
   lint: `GET https://<host>/.well-known/x402, then one unpaid request per listed route and method (GET with no body, POST with '{}'), up to ${BC_MAX_ROUTES} routes, ${BC_PROBE_CONCURRENCY} at a time. No payment header is ever sent; nothing is signed or paid.`,
   settleInference: `'Likely needs one CDP-facilitated paid settle' is inferred only when CDP discovery returns no resources for a payTo AND a read-only on-chain check (USDC balanceOf on Base, USDC token accounts on Solana) has run. CDP indexes an endpoint only after it settles a payment through the CDP facilitator: ${CDP_TROUBLESHOOTING_URL}. The on-chain check reports one boolean, never an amount.`,
-  limits: `https only; private/local targets blocked at every hop (DNS checked); ${BC_MAX_REDIRECTS} redirects; ${BC_PROBE_TIMEOUT_MS / 1000}s per request; ${BC_MAX_BODY_BYTES / 1000}KB body cap; ${BC_TOTAL_BUDGET_MS / 1000}s total budget. Routes on other hosts are listed, not probed.`,
+  limits: `https only; private/local targets blocked at every hop (DNS checked); ${BC_MAX_REDIRECTS} redirects; ${BC_PROBE_TIMEOUT_MS / 1000}s per request; ${BC_MAX_BODY_BYTES / 1000}KB body cap; ${BC_PROBE_BUDGET_MS / 1000}s for the unpaid probes; ${BC_DEADLINE_MS / 1000}s hard deadline for the whole run (CDP discovery that cannot finish in time returns 502 cdp_unavailable). Routes on other hosts are listed, not probed.`,
   billing:
-    "Billed when a report is returned. Not billed: missing/bad/http-only input, blocked private/local host, host unreachable (DNS/connection/timeout on every request), or CDP discovery unavailable; those return 400/502/504 and settlement is skipped.",
+    "Billed when a report is returned. Not billed: missing/bad/http-only input, blocked private/local host, host unreachable (DNS/connection/timeout on every request), or CDP discovery unavailable or not answering before the deadline; those return 400/502 and settlement is skipped.",
   notAdvice:
     "Technical facts only: no revenue, volume or customer claims. Fix lines reflect CDP's documented requirements and Horizon Pulse's own indexing experience, not a CDP guarantee.",
 } as const;
@@ -136,7 +153,17 @@ export type Deps = {
   /** SSRF guard; defaults to assertSafePublicUrl from lib/fetch-url. */
   assertSafe: (u: string) => Promise<{ url: URL } | { ok: false; error: string; code: string; status: number }>;
   now: () => number;
+  /** Test hook: shorter time limits (defaults BC_DEADLINE_MS / BC_PROBE_BUDGET_MS). */
+  limits?: { deadlineMs?: number; probeBudgetMs?: number };
 };
+
+/** Thrown when an outbound call cannot finish before the run's hard deadline. */
+export class DeadlineError extends Error {
+  constructor() {
+    super("time budget used");
+    this.name = "DeadlineError";
+  }
+}
 
 export const defaultDeps = (): Deps => ({ fetch: (...a) => fetch(...a), assertSafe: assertSafePublicUrl, now: () => Date.now() });
 
@@ -154,7 +181,7 @@ export async function safeFetch(
     if (remaining <= 0) return { error: `timed out after ${timeoutMs}ms`, code: "timeout" };
     if (!current.startsWith("https://")) return { error: "only https targets are fetched", code: "https_only" };
     const checked = await deps.assertSafe(current);
-    if ("ok" in checked && checked.ok === false) return { error: checked.error, code: "host_blocked" };
+    if ("ok" in checked && checked.ok === false) return { error: BLOCKED_HOST_MESSAGE, code: "host_blocked" };
     const url = (checked as { url: URL }).url;
     let res: Response;
     try {
@@ -440,19 +467,28 @@ export type IndexData = {
   searchError: string | null;
 };
 
-async function cdpGet(deps: Deps, path: string): Promise<Json> {
-  const res = await deps.fetch(`${CDP_DISCOVERY_URL}${path}`, {
-    headers: { accept: "application/json", "user-agent": UA },
-    signal: AbortSignal.timeout(CDP_TIMEOUT_MS),
-  });
-  if (res.status !== 200) {
-    await res.body?.cancel().catch(() => {});
-    throw new Error(`CDP discovery ${path.split("?")[0]} returned HTTP ${res.status}`);
+/** One CDP discovery GET, bounded by min(CDP_TIMEOUT_MS, deadline - now). */
+async function cdpGet(deps: Deps, path: string, deadline: number): Promise<Json> {
+  const budget = Math.min(CDP_TIMEOUT_MS, deadline - deps.now());
+  if (budget <= 0) throw new DeadlineError();
+  try {
+    const res = await deps.fetch(`${CDP_DISCOVERY_URL}${path}`, {
+      headers: { accept: "application/json", "user-agent": UA },
+      signal: AbortSignal.timeout(budget),
+    });
+    if (res.status !== 200) {
+      await res.body?.cancel().catch(() => {});
+      throw new Error(`CDP discovery ${path.split("?")[0]} returned HTTP ${res.status}`);
+    }
+    const text = await readCapped(res, CDP_MAX_BYTES);
+    const j = obj(JSON.parse(text));
+    if (!j) throw new Error("CDP discovery returned non-object JSON");
+    return j;
+  } catch (e) {
+    // Aborted (or cut off mid-body) because the run's deadline arrived.
+    if (budget < CDP_TIMEOUT_MS && deps.now() >= deadline - 50) throw new DeadlineError();
+    throw e;
   }
-  const text = await readCapped(res, CDP_MAX_BYTES);
-  const j = obj(JSON.parse(text));
-  if (!j) throw new Error("CDP discovery returned non-object JSON");
-  return j;
 }
 
 function absorb(byKey: Map<string, IndexEntry>, host: string, resources: unknown): number {
@@ -486,41 +522,62 @@ function absorb(byKey: Map<string, IndexEntry>, host: string, resources: unknown
   return n;
 }
 
-/** Throws if every CDP call fails (caller returns 502, not billed). */
-export async function queryIndex(deps: Deps, host: string, payTos: { network: string; payTo: string }[]): Promise<IndexData> {
+/**
+ * Throws if every CDP call fails (caller returns 502, not billed), and throws
+ * DeadlineError if any CDP call could not finish before `deadline` (also 502:
+ * a partial index would mislabel routes as not indexed). At most
+ * BC_MAX_PAYTOS distinct payTos are queried, in parallel with /search.
+ */
+export async function queryIndex(
+  deps: Deps,
+  host: string,
+  payTos: { network: string; payTo: string }[],
+  deadline: number = deps.now() + BC_DEADLINE_MS,
+): Promise<IndexData> {
   const byKey = new Map<string, IndexEntry>();
+  const seen = new Set<string>();
+  const unique = payTos.filter(({ payTo }) => (seen.has(payTo) ? false : (seen.add(payTo), true))).slice(0, BC_MAX_PAYTOS);
+
+  const merchant = unique.map(async ({ payTo, network }) => {
+    let total = 0;
+    let onHost = 0;
+    for (let page = 0; page < CDP_MAX_PAGES; page++) {
+      const j = await cdpGet(deps, `/merchant?payTo=${encodeURIComponent(payTo)}&limit=${CDP_PAGE_SIZE}&offset=${page * CDP_PAGE_SIZE}`, deadline);
+      const res = Array.isArray(j.resources) ? j.resources : [];
+      const reported = Number(obj(j.pagination)?.total);
+      const hasTotal = Number.isFinite(reported) && reported >= 0;
+      // A missing pagination.total must not read as "0 resources": count what we saw.
+      total = Math.max(hasTotal ? reported : 0, total, page * CDP_PAGE_SIZE + res.length);
+      onHost += absorb(byKey, host, res);
+      if (res.length === 0 || (hasTotal ? (page + 1) * CDP_PAGE_SIZE >= reported : res.length < CDP_PAGE_SIZE)) break;
+    }
+    return { payTo, network, totalForPayTo: total, onHost };
+  });
+  const search = cdpGet(deps, `/search?query=${encodeURIComponent(host)}`, deadline);
+  const [mSettled, sSettled] = await Promise.all([Promise.allSettled(merchant), Promise.allSettled([search])]);
+
+  const all = [...mSettled, ...sSettled];
+  const late = all.find((x) => x.status === "rejected" && x.reason instanceof DeadlineError);
+  if (late) throw new DeadlineError();
+
   const merchantTotals: IndexData["merchantTotals"] = [];
   let ok = 0;
   let lastErr: unknown = null;
-  const seen = new Set<string>();
-  for (const { payTo, network } of payTos) {
-    if (seen.has(payTo)) continue;
-    seen.add(payTo);
-    try {
-      let total = 0;
-      let onHost = 0;
-      for (let page = 0; page < CDP_MAX_PAGES; page++) {
-        const j = await cdpGet(deps, `/merchant?payTo=${encodeURIComponent(payTo)}&limit=100&offset=${page * 100}`);
-        total = Number(obj(j.pagination)?.total ?? 0) || 0;
-        const res = Array.isArray(j.resources) ? j.resources : [];
-        onHost += absorb(byKey, host, res);
-        if ((page + 1) * 100 >= total || res.length === 0) break;
-      }
-      merchantTotals.push({ payTo, network, totalForPayTo: total, onHost });
+  for (const m of mSettled) {
+    if (m.status === "fulfilled") {
+      merchantTotals.push(m.value);
       ok += 1;
-    } catch (e) {
-      lastErr = e;
-    }
+    } else lastErr = m.reason;
   }
   let searchHitsOnHost = 0;
   let searchError: string | null = null;
-  try {
-    const j = await cdpGet(deps, `/search?query=${encodeURIComponent(host)}`);
-    searchHitsOnHost = absorb(byKey, host, j.resources);
+  const sr = sSettled[0]!;
+  if (sr.status === "fulfilled") {
+    searchHitsOnHost = absorb(byKey, host, sr.value.resources);
     ok += 1;
-  } catch (e) {
-    searchError = e instanceof Error ? e.message : "search failed";
-    lastErr = e;
+  } else {
+    searchError = sr.reason instanceof Error ? sr.reason.message : "search failed";
+    lastErr = sr.reason;
   }
   if (ok === 0) throw lastErr instanceof Error ? lastErr : new Error("CDP discovery unavailable");
   return { byKey, merchantTotals, searchHitsOnHost, searchError };
@@ -534,14 +591,16 @@ const BASE_RPCS = [process.env.BASE_RPC_URL ?? "", "https://base.drpc.org", "htt
 
 export type OnchainCheck = { network: string; payTo: string; method: string; holdsUsdc: boolean | null };
 
-async function rpc(deps: Deps, urls: string[], body: unknown): Promise<Json | null> {
+async function rpc(deps: Deps, urls: string[], body: unknown, deadline: number): Promise<Json | null> {
   for (const u of urls) {
+    const budget = Math.min(RPC_TIMEOUT_MS, deadline - deps.now());
+    if (budget <= 0) return null;
     try {
       const res = await deps.fetch(u, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(5_000),
+        signal: AbortSignal.timeout(budget),
       });
       const j = obj(await res.json());
       if (j && "result" in j) return j;
@@ -552,11 +611,17 @@ async function rpc(deps: Deps, urls: string[], body: unknown): Promise<Json | nu
   return null;
 }
 
-export async function onchainCheck(deps: Deps, network: string, payTo: string): Promise<OnchainCheck | null> {
+/** holdsUsdc is null when no RPC answered (down, or the run's deadline arrived). */
+export async function onchainCheck(
+  deps: Deps,
+  network: string,
+  payTo: string,
+  deadline: number = deps.now() + BC_DEADLINE_MS,
+): Promise<OnchainCheck | null> {
   const label = networkLabel(network);
   if (label === "base" && /^0x[0-9a-fA-F]{40}$/.test(payTo)) {
     const data = `0x70a08231${payTo.slice(2).toLowerCase().padStart(64, "0")}`;
-    const j = await rpc(deps, BASE_RPCS, { jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: USDC_BASE, data }, "latest"] });
+    const j = await rpc(deps, BASE_RPCS, { jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: USDC_BASE, data }, "latest"] }, deadline);
     const r = typeof j?.result === "string" ? j.result : null;
     let holds: boolean | null = null;
     if (r && /^0x[0-9a-fA-F]*$/.test(r)) holds = r.replace(/^0x0*/, "") !== "";
@@ -568,7 +633,7 @@ export async function onchainCheck(deps: Deps, network: string, payTo: string): 
       id: 1,
       method: "getTokenAccountsByOwner",
       params: [payTo, { mint: USDC_SOLANA_MINT }, { encoding: "jsonParsed" }],
-    });
+    }, deadline);
     const val = obj(j?.result)?.value;
     let holds: boolean | null = null;
     if (Array.isArray(val))
@@ -646,14 +711,16 @@ async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Prom
 
 export async function checkBazaar(input: { url?: string }, deps: Deps = defaultDeps()): Promise<BazaarCheckResult | BazaarCheckError> {
   const started = deps.now();
+  const deadline = started + (deps.limits?.deadlineMs ?? BC_DEADLINE_MS);
+  const probeDeadline = Math.min(deadline, started + (deps.limits?.probeBudgetMs ?? BC_PROBE_BUDGET_MS));
   const t = parseTarget(input.url);
   if ("error" in t) return { ok: false, error: t.error, code: t.code, status: 400 };
   const gate = await deps.assertSafe(t.origin);
-  if ("ok" in gate && gate.ok === false) return { ok: false, error: gate.error, code: "host_blocked", status: 400 };
+  if ("ok" in gate && gate.ok === false) return { ok: false, error: BLOCKED_HOST_MESSAGE, code: "host_blocked", status: 400 };
 
   const hostFindings: Finding[] = [];
   const wkUrl = `${t.origin}/.well-known/x402`;
-  const wkRes = await safeFetch(deps, wkUrl, "GET", BC_PROBE_TIMEOUT_MS);
+  const wkRes = await safeFetch(deps, wkUrl, "GET", Math.max(1, Math.min(BC_PROBE_TIMEOUT_MS, probeDeadline - deps.now())));
   let listed: ListedRoute[] = [];
   const wellKnown = { url: wkUrl, httpStatus: null as number | null, found: false, entries: 0 };
   let reachable = false;
@@ -668,7 +735,7 @@ export async function checkBazaar(input: { url?: string }, deps: Deps = defaultD
       hostFindings.push(...parsed.findings);
     }
   } else if (wkRes.code === "host_blocked") {
-    return { ok: false, error: wkRes.error, code: "host_blocked", status: 400 };
+    return { ok: false, error: BLOCKED_HOST_MESSAGE, code: "host_blocked", status: 400 };
   }
   if (!wellKnown.found) {
     hostFindings.push({
@@ -724,9 +791,8 @@ export async function checkBazaar(input: { url?: string }, deps: Deps = defaultD
     }
     for (const m of r.methods) jobs.push({ route: r, method: m });
   }
-  const deadline = started + BC_TOTAL_BUDGET_MS;
   const probeResults = await pool(jobs, BC_PROBE_CONCURRENCY, async (j) => {
-    const budget = Math.min(BC_PROBE_TIMEOUT_MS, deadline - deps.now());
+    const budget = Math.min(BC_PROBE_TIMEOUT_MS, probeDeadline - deps.now());
     if (budget <= 0) return { job: j, lint: null as ProbeLint | null, err: "skipped: total time budget used" };
     const res = await safeFetch(deps, j.route.url, j.method, budget);
     if (!("status" in res)) return { job: j, lint: null, err: res.error };
@@ -737,32 +803,51 @@ export async function checkBazaar(input: { url?: string }, deps: Deps = defaultD
 
   const payTos: { network: string; payTo: string }[] = [];
   for (const pr of probeResults) for (const p of pr.lint?.payTos ?? []) if (!payTos.some((x) => x.payTo === p.payTo)) payTos.push(p);
+  if (payTos.length > BC_MAX_PAYTOS) {
+    hostFindings.push({
+      id: "paytos_capped",
+      level: "info",
+      message: `The host's 402s advertise ${payTos.length} distinct payTos; only the first ${BC_MAX_PAYTOS} were looked up in CDP /merchant. Routes paid only to the others are matched through /search by host.`,
+    });
+    payTos.splice(BC_MAX_PAYTOS);
+  }
 
-  // INDEX
+  // INDEX (bounded by the run's hard deadline)
   let index: IndexData;
   try {
-    index = await queryIndex(deps, t.host, payTos);
+    index = await queryIndex(deps, t.host, payTos, deadline);
   } catch (e) {
-    return { ok: false, error: `CDP discovery unavailable: ${e instanceof Error ? e.message : "error"}`, code: "cdp_unavailable", status: 502 };
+    const why = e instanceof DeadlineError ? "no answer before the request deadline" : e instanceof Error ? e.message : "error";
+    return { ok: false, error: `CDP discovery unavailable: ${why}`, code: "cdp_unavailable", status: 502 };
   }
   if (index.searchError)
     hostFindings.push({ id: "cdp_search_unavailable", level: "info", message: `CDP /search failed (${index.searchError}); index status is from /merchant only.` });
   if (!payTos.length)
     hostFindings.push({ id: "no_payto_found", level: "info", message: "No payTo was found in any 402, so CDP /merchant was not queried; index status is from /search only." });
 
-  // Settle inference: payTo with zero index entries + on-chain check.
+  // Settle inference: payTo with zero index entries + on-chain check (in parallel, deadline-bounded).
   const onchain: OnchainCheck[] = [];
-  for (const m of index.merchantTotals) {
-    if (m.totalForPayTo !== 0) continue;
-    const oc = await onchainCheck(deps, m.network, m.payTo);
-    if (!oc) continue;
+  const empty = index.merchantTotals.filter((m) => m.totalForPayTo === 0);
+  const checks = await Promise.all(empty.map((m) => onchainCheck(deps, m.network, m.payTo, deadline)));
+  empty.forEach((m, i) => {
+    const oc = checks[i];
+    if (!oc) return;
     onchain.push(oc);
+    if (oc.holdsUsdc === null) {
+      // No on-chain answer: do not infer a settle problem from the empty index alone.
+      hostFindings.push({
+        id: "cdp_index_empty_unverified",
+        level: "warn",
+        message: `CDP discovery has no resources at all for payTo ${m.payTo} (${networkLabel(m.network)}). The read-only on-chain check could not run (RPC unavailable or time budget used), so no settle inference is made.`,
+        fix: "Run the check again. CDP's docs say an endpoint is indexed only after a payment to it settles through the CDP facilitator.",
+        doc: CDP_TROUBLESHOOTING_URL,
+      });
+      return;
+    }
     const chainNote =
       oc.holdsUsdc === false
         ? "a read-only on-chain check finds no USDC held by it"
-        : oc.holdsUsdc === true
-          ? "it does hold USDC on-chain (amount not reported), but payments settled through other facilitators do not trigger CDP indexing"
-          : "the on-chain check was inconclusive (RPC unavailable)";
+        : "it does hold USDC on-chain (amount not reported), but payments settled through other facilitators do not trigger CDP indexing";
     hostFindings.push({
       id: "no_cdp_settle_likely",
       level: "fail",
@@ -770,7 +855,12 @@ export async function checkBazaar(input: { url?: string }, deps: Deps = defaultD
       fix: `Make one paid call to a route through the CDP facilitator (${CDP_FACILITATOR}), with extensions.bazaar and resource on the payment payload; indexing runs after the settle and can take up to 15 minutes.`,
       doc: CDP_TROUBLESHOOTING_URL,
     });
-  }
+  });
+  const emptyPayToRef = hostFindings.some((f) => f.id === "no_cdp_settle_likely")
+    ? "see no_cdp_settle_likely"
+    : hostFindings.some((f) => f.id === "cdp_index_empty_unverified")
+      ? "see cdp_index_empty_unverified"
+      : "CDP lists nothing for it";
 
   // Assemble per-route reports.
   const routes: RouteReport[] = listed.map((r) => {
@@ -803,7 +893,7 @@ export async function checkBazaar(input: { url?: string }, deps: Deps = defaultD
         message: lintFails
           ? "Not in CDP discovery. Fix the failures above first; CDP needs a public https route that returns valid Bazaar metadata on a 402."
           : payToEmpty
-            ? "Not in CDP discovery; see no_cdp_settle_likely (the payTo has no indexed resources)."
+            ? `Not in CDP discovery; ${emptyPayToRef} (the payTo has no indexed resources).`
             : "Not in CDP discovery, although other routes for this payTo are. Lint passed, so this route most likely has not settled a payment through the CDP facilitator since it was added or changed.",
         fix: lintFails
           ? "After fixing, make one CDP-facilitated paid call to this route; indexing can take up to 15 minutes."

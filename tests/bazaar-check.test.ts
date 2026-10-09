@@ -9,6 +9,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  BAZAAR_CHECK_METHODOLOGY,
+  BC_DEADLINE_MS,
+  BC_MAX_PAYTOS,
+  BC_PROBE_BUDGET_MS,
+  BLOCKED_HOST_MESSAGE,
   CDP_DISCOVERY_URL,
   CDP_TROUBLESHOOTING_URL,
   checkBazaar,
@@ -386,5 +391,204 @@ describe("checkBazaar (mocked network)", () => {
     void _m;
     const s = JSON.stringify(rest).toLowerCase();
     for (const w of ["revenue", "customer", "earned", "income", "cdp_api_key", "secret"]) expect(s).not.toContain(w);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Fix 1 (Odin Class A review): deadline, payTo cap, pagination,       */
+/* inconclusive on-chain check, 400/502 only, generic blocked message  */
+/* ------------------------------------------------------------------ */
+
+/** Resolves after `ms`, or rejects like fetch does when the request's signal aborts first. */
+function slow<T>(ms: number, signal: AbortSignal | null | undefined, value: () => T): Promise<T> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const t = setTimeout(() => resolve(value()), ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(t);
+      reject(signal.reason);
+    });
+  });
+}
+
+/** 5 routes x 10 accepts = 50 distinct Base payTos on many.example. */
+function fiftyPayTos() {
+  const pages: Record<string, Mock> = {};
+  const urls = Array.from({ length: 5 }, (_, i) => `https://many.example/api/r${i}`);
+  pages["GET https://many.example/.well-known/x402"] = { status: 200, body: JSON.stringify({ resources: urls.map((u) => `GET ${u}`) }) };
+  const payTos: string[] = [];
+  urls.forEach((u, i) => {
+    const c = clone(GOOD);
+    c.resource.url = u;
+    const base = c.accepts[0];
+    c.accepts = Array.from({ length: 10 }, (_, k) => {
+      const payTo = "0x" + (i * 10 + k + 1).toString(16).padStart(40, "0");
+      payTos.push(payTo);
+      return { ...base, payTo };
+    });
+    pages[`GET ${u}`] = { status: 402, headers: { "payment-required": b64(c) }, body: "{}" };
+  });
+  return { pages, payTos };
+}
+const merchantPayTos = (calls: string[]) =>
+  new Set(calls.filter((c) => c.includes("/discovery/merchant")).map((c) => new URL(c.split(" ")[1]!).searchParams.get("payTo")));
+
+describe("fix 1: time limits and caps", () => {
+  it("defaults: 26s hard deadline under the route's maxDuration 30, probes 18s, payTo cap 4", () => {
+    const route = readFileSync(path.join(__dirname, "..", "app", "api", "bazaar-check", "route.ts"), "utf8");
+    const maxDuration = Number(route.match(/export const maxDuration = (\d+)/)![1]);
+    expect(maxDuration).toBe(30);
+    expect(BC_DEADLINE_MS).toBe(26_000);
+    expect(BC_DEADLINE_MS).toBeLessThan(maxDuration * 1000);
+    expect(BC_PROBE_BUDGET_MS).toBeLessThan(BC_DEADLINE_MS);
+    expect(BC_MAX_PAYTOS).toBe(4);
+  });
+
+  it("50 payTos + a CDP that never answers: stops at the deadline with 502 cdp_unavailable, at most 4 payTos queried", async () => {
+    const { pages } = fiftyPayTos();
+    const deps = mockDeps({ pages });
+    const inner = deps.fetch;
+    deps.limits = { deadlineMs: 1_500, probeBudgetMs: 600 };
+    deps.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).startsWith(CDP_DISCOVERY_URL)) {
+        deps.calls.push(`GET ${String(input)}`);
+        return slow(60_000, init?.signal, () => Response.json({ resources: [] }));
+      }
+      return inner(input, init);
+    }) as typeof fetch;
+    const t0 = Date.now();
+    const r = await checkBazaar({ url: "many.example" }, deps);
+    const elapsed = Date.now() - t0;
+    expect(r).toMatchObject({ ok: false, status: 502, code: "cdp_unavailable" });
+    expect((r as { error: string }).error).toMatch(/deadline/);
+    expect(elapsed).toBeLessThan(1_500 + 250);
+    const queried = merchantPayTos(deps.calls);
+    expect(queried.size).toBeLessThanOrEqual(BC_MAX_PAYTOS);
+    expect(queried.size).toBe(4);
+  });
+
+  it("50 payTos + a slow CDP that answers in time: valid report, payTos capped at 4 with an info finding, under the deadline", async () => {
+    const { pages, payTos } = fiftyPayTos();
+    const deps = mockDeps({ pages });
+    const inner = deps.fetch;
+    deps.limits = { deadlineMs: 2_000, probeBudgetMs: 600 };
+    deps.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).startsWith(CDP_DISCOVERY_URL)) return slow(250, init?.signal, () => inner(input, init));
+      return inner(input, init);
+    }) as typeof fetch;
+    const t0 = Date.now();
+    const r = await checkBazaar({ url: "many.example" }, deps);
+    const elapsed = Date.now() - t0;
+    if (!r.ok) throw new Error(r.error);
+    expect(elapsed).toBeLessThan(2_000);
+    expect(r.index.payTos.map((p) => p.payTo)).toEqual(payTos.slice(0, 4));
+    const cap = r.findings.find((f) => f.id === "paytos_capped")!;
+    expect(cap.level).toBe("info");
+    expect(cap.message).toMatch(/50 distinct payTos; only the first 4/);
+    expect(merchantPayTos(deps.calls).size).toBe(4);
+  });
+
+  it("probe phase is bounded too: a host that hangs every probe still returns within the deadline", async () => {
+    const { pages } = fiftyPayTos();
+    const deps = mockDeps({ pages });
+    const inner = deps.fetch;
+    deps.limits = { deadlineMs: 1_200, probeBudgetMs: 500 };
+    deps.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const u = String(input);
+      if (u.startsWith("https://many.example/api/")) return slow(60_000, init?.signal, () => new Response("late"));
+      return inner(input, init);
+    }) as typeof fetch;
+    const t0 = Date.now();
+    const r = await checkBazaar({ url: "many.example" }, deps);
+    expect(Date.now() - t0).toBeLessThan(1_200);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.routes.every((x) => x.findings.some((f) => f.id === "probe_failed"))).toBe(true);
+  });
+});
+
+describe("fix 1: pagination total, inconclusive on-chain, status codes, blocked message", () => {
+  const one = (host: string, url: string) => {
+    const c = clone(GOOD);
+    c.resource.url = url;
+    return {
+      [`GET https://${host}/.well-known/x402`]: { status: 200, body: JSON.stringify({ resources: [`GET ${url}`] }) },
+      [`GET ${url}`]: { status: 402, headers: { "payment-required": b64(c) }, body: "{}" },
+    } as Record<string, Mock>;
+  };
+
+  it("pagination.total missing: total counts the resources seen, so no false 'needs one CDP settle'", async () => {
+    const pages = one("pg.example", "https://pg.example/api/a");
+    const merchant = () => ({ resources: [{ resource: "https://other.example/api/x", accepts: [{ network: "eip155:8453" }], lastUpdated: "x" }] });
+    const deps = mockDeps({ pages, merchant });
+    const r = await checkBazaar({ url: "pg.example" }, deps);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.index.payTos.every((p) => p.indexedTotalForPayTo === 1)).toBe(true);
+    expect(r.findings.map((f) => f.id)).not.toContain("no_cdp_settle_likely");
+    expect(r.onchain).toEqual([]);
+  });
+
+  it("pagination.total missing with a full page: keeps paging, total = page*100 + resources seen", async () => {
+    const pages = one("pg2.example", "https://pg2.example/api/a");
+    const full = Array.from({ length: 100 }, (_, i) => ({ resource: `https://other.example/api/${i}`, accepts: [{ network: "eip155:8453" }] }));
+    const deps = mockDeps({ pages });
+    const inner = deps.fetch;
+    deps.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const u = new URL(String(input));
+      if (u.pathname.endsWith("/merchant")) {
+        deps.calls.push(`GET ${u}`);
+        return Response.json({ resources: u.searchParams.get("offset") === "0" ? full : full.slice(0, 7) });
+      }
+      return inner(input, init);
+    }) as typeof fetch;
+    const r = await checkBazaar({ url: "pg2.example" }, deps);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.index.payTos[0]!.indexedTotalForPayTo).toBe(107);
+  });
+
+  it("holdsUsdc === null (RPC down): no fail-level settle inference; a warn says the read-only check could not run", async () => {
+    const deps = mockDeps({ pages: BAD.routes });
+    const inner = deps.fetch;
+    deps.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      if ((init?.method ?? "GET").toUpperCase() === "POST" && /base|solana/.test(String(input)) && !String(input).includes("bad-seller")) throw new TypeError("fetch failed");
+      return inner(input, init);
+    }) as typeof fetch;
+    const r = await checkBazaar({ url: "bad-seller.example" }, deps);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.onchain.map((o) => o.holdsUsdc)).toEqual([null]);
+    expect(r.findings.map((f) => f.id)).not.toContain("no_cdp_settle_likely");
+    const w = r.findings.find((f) => f.id === "cdp_index_empty_unverified")!;
+    expect(w.level).toBe("warn");
+    expect(w.message).toMatch(/could not run/);
+    expect(w.message).not.toMatch(/likely needs/);
+    const ok = r.routes.find((x) => x.url.endsWith("/api/ok"))!;
+    expect(ok.findings.find((f) => f.id === "not_indexed")!.message).toMatch(/cdp_index_empty_unverified/);
+  });
+
+  it("billing text says 400/502 (no 504 path exists in this route)", () => {
+    expect(BAZAAR_CHECK_METHODOLOGY.billing).toMatch(/400\/502/);
+    expect(BAZAAR_CHECK_METHODOLOGY.billing).not.toMatch(/504/);
+  });
+
+  it("blocked host: generic message, the resolved address is never echoed", async () => {
+    const deps = mockDeps({ pages: {} });
+    deps.assertSafe = async () => ({ ok: false as const, error: "Host internal.example resolves to a blocked address (10.1.2.3)", code: "host_blocked", status: 400 });
+    const r = await checkBazaar({ url: "internal.example" }, deps);
+    expect(r).toMatchObject({ ok: false, status: 400, code: "host_blocked", error: BLOCKED_HOST_MESSAGE });
+    expect(JSON.stringify(r)).not.toContain("10.1.2.3");
+    // redirect hop to a blocked host: same generic text in the probe finding
+    const pages: Record<string, Mock> = {
+      "GET https://h.example/.well-known/x402": { status: 200, body: JSON.stringify({ resources: ["GET https://h.example/api/a"] }) },
+      "GET https://h.example/api/a": { status: 302, headers: { location: "https://internal.example/x" }, body: "" },
+    };
+    const d2 = mockDeps({ pages });
+    d2.assertSafe = async (u: string) => {
+      const url = new URL(u);
+      if (url.hostname === "internal.example") return { ok: false as const, error: "Host internal.example resolves to a blocked address (10.1.2.3)", code: "host_blocked", status: 400 };
+      return { url };
+    };
+    const r2 = await checkBazaar({ url: "h.example" }, d2);
+    if (!r2.ok) throw new Error(r2.error);
+    expect(JSON.stringify(r2)).not.toContain("10.1.2.3");
+    expect(r2.routes[0]!.findings.find((f) => f.id === "probe_failed")!.message).toContain(BLOCKED_HOST_MESSAGE);
   });
 });
