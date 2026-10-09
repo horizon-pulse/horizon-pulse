@@ -371,10 +371,16 @@ export function lintProbe(p: ProbeInput): ProbeLint {
   };
 
   if (p.status !== 402) {
+    // Our POST probe sends an empty body. CDP's check sends the route's declared
+    // example input when there is one, so a 400/415/422 here may only mean the
+    // route validates its body before payment: WARN, not FAIL. Every other
+    // non-402 (and any GET) stays FAIL.
+    const inputCheck = p.status === 400 || p.status === 422 || p.status === 415;
+    const emptyBodyRejected = p.method === "POST" && inputCheck;
     f.push({
       id: "not_402",
-      level: "fail",
-      message: `Unpaid ${p.method} returned HTTP ${p.status}, not 402. x402 clients and CDP's indexer only see a payable route on a 402.${p.status === 405 ? " 405 suggests the route is listed with the wrong method." : ""}${p.status === 400 || p.status === 422 ? ` ${inputsBeforePaymentHint(p.method)} (it checked inputs before payment); this probe sent ${p.method === "POST" ? "an empty body" : "no query parameters"}, as CDP's check can.` : ""}`,
+      level: emptyBodyRejected ? "warn" : "fail",
+      message: `Unpaid ${p.method} returned HTTP ${p.status}, not 402. x402 clients and CDP's indexer only see a payable route on a 402.${p.status === 405 ? " 405 suggests the route is listed with the wrong method." : ""}${inputCheck ? ` ${inputsBeforePaymentHint(p.method)} (likely checks inputs before payment); this probe sent ${p.method === "POST" ? "an empty body" : "no query parameters"}, as CDP's check can.` : ""}${emptyBodyRejected ? " CDP's check sends the declared example input when the route has one, so the route may still index if that example gets a 402." : ""}`,
       fix: FIX.not402,
     });
     return out;

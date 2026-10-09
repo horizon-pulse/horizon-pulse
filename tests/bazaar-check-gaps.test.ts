@@ -73,18 +73,58 @@ describe("(a) POST probe body + inputs-before-payment hint", () => {
     expect(BAZAAR_CHECK_METHODOLOGY.lint).toMatch(/no body/);
   });
 
-  it("not_402 on 400/422 adds the hint; reuses x402-check's wording; other statuses do not", () => {
-    for (const status of [400, 422]) {
+  it("not_402 on 400/422/415 adds the hint; reuses x402-check's wording; other statuses do not", () => {
+    for (const status of [400, 422, 415]) {
       const post = lintProbe(probe(null, { status, method: "POST" })).findings[0]!;
       expect(post.id).toBe("not_402");
       expect(post.message).toContain(inputsBeforePaymentHint("POST"));
       expect(post.message).toContain("The endpoint may validate the body before returning 402");
-      expect(post.message).toMatch(/checked inputs before payment/);
+      expect(post.message).toContain("(likely checks inputs before payment)");
       expect(post.message).toMatch(/empty body/);
       const get = lintProbe(probe(null, { status, method: "GET" })).findings[0]!;
       expect(get.message).toContain("The endpoint may validate the query before returning 402");
     }
-    for (const status of [200, 401, 405, 500]) expect(lintProbe(probe(null, { status, method: "POST" })).findings[0]!.message).not.toMatch(/checked inputs/);
+    for (const status of [200, 401, 404, 405, 500]) expect(lintProbe(probe(null, { status, method: "POST" })).findings[0]!.message).not.toMatch(/checks inputs/);
+  });
+
+  it("v2: empty-body POST answered 400/422/415 is a WARN (CDP sends the declared example); other non-402s stay FAIL", () => {
+    for (const status of [400, 422, 415]) {
+      const f = lintProbe(probe(null, { status, method: "POST" })).findings;
+      expect(f.map((x) => x.id), String(status)).toEqual(["not_402"]);
+      expect(f[0]!.level, String(status)).toBe("warn");
+      expect(f[0]!.message).toMatch(/declared example input/);
+    }
+    for (const status of [500, 404, 405, 401, 403, 200, 503]) {
+      const f = lintProbe(probe(null, { status, method: "POST" })).findings;
+      expect(f[0]!.level, String(status)).toBe("fail");
+      expect(f[0]!.message).not.toMatch(/declared example input/);
+    }
+    // GET has no body: 400/422/415 on GET stays FAIL (query hint still shown for 400/422/415).
+    for (const status of [400, 422, 415]) {
+      const f = lintProbe(probe(null, { status, method: "GET" })).findings[0]!;
+      expect(f.level, String(status)).toBe("fail");
+      expect(f.message).toContain("The endpoint may validate the query before returning 402 (likely checks inputs before payment)");
+    }
+  });
+
+  it("v2: a WARN-only POST route does not count as a lint failure in the end-to-end report", async () => {
+    const NOW = Date.now();
+    const deps: Deps = {
+      now: () => NOW,
+      assertSafe: async (u) => ({ url: new URL(u) }),
+      fetch: (async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.startsWith(CDP_DISCOVERY_URL)) return Response.json(new URL(url).pathname.endsWith("/merchant") ? { pagination: { total: 0 }, resources: [] } : { resources: [] });
+        if (url === "https://s.example/.well-known/x402") return Response.json({ resources: ["POST https://s.example/api/p"] });
+        if (url === "https://s.example/api/p") return new Response("bad", { status: 422 });
+        return Response.json({ jsonrpc: "2.0", id: 1, result: "0x" + "0".repeat(64) });
+      }) as typeof fetch,
+    };
+    const r = await checkBazaar({ url: "s.example" }, deps, { arrivedAt: NOW });
+    if (!r.ok) throw new Error(r.error);
+    const nf = r.routes[0]!.findings.find((x) => x.id === "not_402")!;
+    expect(nf.level).toBe("warn");
+    expect(r.routes[0]!.findings.find((x) => x.id === "not_indexed")!.message).not.toMatch(/Fix the failures above/);
   });
 
   it("x402-check wording is unchanged (POST, no caller body, 422)", async () => {
