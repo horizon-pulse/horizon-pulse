@@ -1,0 +1,5 @@
+{
+  "type": "stdio",
+  "command": "npx",
+  "args": ["-y", "mcp-remote@0.14.3", "https://horizonpulse.dev/mcp"]
+}
