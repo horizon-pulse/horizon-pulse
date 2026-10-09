@@ -23,7 +23,7 @@ export const ROUTE_METADATA = {
   },
   "/api/signals": {
     description:
-      "Crypto technical analysis. Use when you need indicators for BTC, ETH and SOL rather than just prices. Call GET with no parameters. Returns JSON per asset: rsi14, macd {macd, signal, histogram} (null when there are too few candles), bollinger {upper, middle, lower, period}, lastClose and OKX perpetual funding {fundingRate, fundingTime}. Computed from CoinGecko OHLC closes (Coinbase candles fallback); methodology included. Descriptive only, not advice. Errors are not charged.",
+      "Crypto market data: technical indicators. Use when you need indicators for BTC, ETH and SOL rather than just prices. Call GET with no parameters. Returns JSON per asset: rsi14, macd {macd, signal, histogram} (null when there are too few candles), bollinger {upper, middle, lower, period}, lastClose and OKX perpetual funding {fundingRate, fundingTime}. Computed from CoinGecko OHLC closes (Coinbase candles fallback); methodology included. Descriptive only, not advice. Errors are not charged.",
     tags: ["crypto", "technical-analysis", "rsi-macd-bollinger", "indicators", "funding-rates"],
   },
   "/api/yield": {

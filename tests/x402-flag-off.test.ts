@@ -15,6 +15,11 @@
  * llms.txt) now names Base + Solana. golden.cdp and golden.local (every 402 /
  * OPTIONS byte) are untouched from main. The invariant tested here is
  * unchanged: discovery docs do not vary with the Solana flag.
+ *
+ * 2026-10-09 (branch bazaar-metadata): /api/signals discovery wording only
+ * ("Crypto technical analysis" -> "Crypto market data: technical indicators",
+ * output-schema label). Refreshed with UPDATE_GOLDEN=1; every accepts array
+ * (scheme, network, amount, asset, payTo, extra) is byte-identical to main.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

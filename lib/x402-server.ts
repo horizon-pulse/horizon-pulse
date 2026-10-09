@@ -335,7 +335,7 @@ export function signalsRouteConfig(): RoutesConfig {
       description: routeDescription("/api/signals"),
       mimeType: "application/json",
       ...serviceMetadata("/api/signals"),
-      extensions: discoveryExt("/api/signals", "Horizon Pulse technical signals"),
+      extensions: discoveryExt("/api/signals", "Horizon Pulse crypto market data (technical indicators)"),
     },
   };
 }
