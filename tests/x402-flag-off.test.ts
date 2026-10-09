@@ -51,6 +51,12 @@
  * line (openapi.json regenerated). Only the 26 search/http/pdf/screenshot
  * 402 / OPTIONS keys and 3 discovery keys changed; all 88 decoded challenges
  * are identical to main except resource.description.
+ *
+ * 2026-10-09 (branch http-desc-nits, on main 92278de): regenerated with
+ * UPDATE_GOLDEN=1 after an /api/http description-only edit (Odin's nits
+ * 'headers as JSON string' and 'Upstream 4xx/5xx come back as data (charged)'
+ * restored). Only the /api/http keys changed; every decoded challenge is
+ * identical to main except resource.description.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
