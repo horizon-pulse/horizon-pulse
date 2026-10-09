@@ -20,6 +20,15 @@
  * ("Crypto technical analysis" -> "Crypto market data: technical indicators",
  * output-schema label). Refreshed with UPDATE_GOLDEN=1; every accepts array
  * (scheme, network, amount, asset, payTo, extra) is byte-identical to main.
+ *
+ * 2026-10-09 (branch pulse-momentum-field, on top of bazaar-metadata):
+ * regenerated with UPDATE_GOLDEN=1 after text-only edits: /api/pulse
+ * description and Bazaar output example key (signal -> direction),
+ * /api/portfolio description and example message (rule findings),
+ * /api/x402-check description (what is billed), and the /.well-known/x402
+ * description ("technical signals" -> "technical indicators"). Every accepts
+ * block (scheme, network, amount, asset, payTo, maxTimeoutSeconds, extra),
+ * x402Version and status is byte-identical to main.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

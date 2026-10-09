@@ -48,7 +48,7 @@
           "Crypto market data"
         ],
         "summary": "BTC, ETH and SOL spot prices with 24h momentum (Coinbase Exchange, CoinGecko fallback)",
-        "description": "Crypto market data. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), signal (buy/sell/hold) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` on Base or Solana (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Crypto market data. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` on Base or Solana (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -104,7 +104,7 @@
                   "overall": {
                     "momentum": "neutral",
                     "sentiment": "neutral",
-                    "signal": "hold",
+                    "direction": "flat",
                     "avgChange24hPct": 0.09085346618753054
                   }
                 }
@@ -347,8 +347,8 @@
         "tags": [
           "Crypto market data"
         ],
-        "summary": "Base and Ethereum balances, rule-based risk score and rebalance flags (not financial advice)",
-        "description": "Crypto wallet analysis. Use when you need the token holdings and USD value of one EVM address. Call GET with required address=0x... (40 hex). Reads Base and Ethereum via RPC: native ETH, USDC, WETH, WBTC/cbBTC, DAI. Returns JSON: holdings (balance, priceUsd, valueUsd, weight), totals (valueUsd, stablecoinShare, max asset/chain weight), risk {score 0-100, band} and rule-based rebalance suggestions. Read-only; not advice. Invalid addresses return 400 and are not charged.\n\nPrice: $0.04 USDC per call (40000 atomic), paid with x402 v2 `exact` on Base or Solana (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "summary": "Base and Ethereum balances, risk score and allocation breakdown vs fixed thresholds (not financial advice)",
+        "description": "Crypto wallet analysis. Use when you need the token holdings and USD value of one EVM address. Call GET with required address=0x... (40 hex). Reads Base and Ethereum: ETH, USDC, WETH, WBTC/cbBTC, DAI. Returns JSON: holdings (balance, priceUsd, valueUsd, weight), totals (valueUsd, stablecoinShare, max asset/chain weight), risk {score 0-100, band} and allocation flags (asset, stablecoin and chain weights vs fixed thresholds). Read-only; not advice. Invalid addresses return 400, not charged.\n\nPrice: $0.04 USDC per call (40000 atomic), paid with x402 v2 `exact` on Base or Solana (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -1506,7 +1506,7 @@
           "Agent utilities"
         ],
         "summary": "Audit any x402 endpoint without paying it",
-        "description": "x402 developer tool. Use before paying an unknown x402 endpoint, or to debug your own. GET with required url (optional method GET/POST, body JSON for POST probes). Sends one unpaid request and never pays. Returns JSON: httpStatus, isX402, x402Version, decoded accepts (network, asset label, amount in USD, payTo and whether payTo is an EOA or contract), discovery metadata presence, and pass/warn/fail checks with a summary. Private targets are blocked. Errors are not charged.\n\nPrice: $0.01 USDC per call (10000 atomic), paid with x402 v2 `exact` on Base or Solana (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "x402 developer tool. Use before paying an unknown x402 endpoint, or to debug your own. GET with required url (optional method GET/POST, JSON body for POST). Sends one unpaid request and never pays. Returns JSON: httpStatus, isX402, x402Version, decoded accepts (network, asset, USD amount, payTo, EOA or contract), discovery metadata presence, and pass/warn/fail checks. Any HTTP answer from the target, even 4xx/5xx, is billed; bad input, blocked hosts, connection failures and timeouts are not.\n\nPrice: $0.01 USDC per call (10000 atomic), paid with x402 v2 `exact` on Base or Solana (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -2356,7 +2356,7 @@
               "sentiment": {
                 "type": "string"
               },
-              "signal": {
+              "direction": {
                 "type": "string"
               },
               "avgChange24hPct": {

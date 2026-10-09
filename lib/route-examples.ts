@@ -8,6 +8,10 @@
  * long arrays/bodies; truncated strings end in "…"); no value was invented
  * or edited. Live values change on every call. Raw recordings:
  * hp-tests/demo-samples-20261001/ (box only, not in the repo).
+ *
+ * 2026-10-09: in /api/pulse the recorded key overall.signal ("hold") is shown
+ * under its new name overall.direction ("flat"), same rule (see CHANGELOG.md).
+ * No other value changed.
  */
 
 export const EXAMPLES_RECORDED_AT = "2026-10-01T14:36Z" as const;
@@ -40,7 +44,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
     "overall": {
       "momentum": "neutral",
       "sentiment": "neutral",
-      "signal": "hold",
+      "direction": "flat",
       "avgChange24hPct": 0.09085346618753054
     }
   },

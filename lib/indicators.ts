@@ -101,7 +101,8 @@ export function bollinger(
 
 export type MomentumLabel = "bullish" | "bearish" | "neutral";
 export type SentimentLabel = "risk-on" | "risk-off" | "neutral";
-export type SignalLabel = "buy" | "sell" | "hold";
+/** Descriptive direction of the average 24h change (|avg| >= 2.5%). Not a recommendation. */
+export type DirectionLabel = "up" | "down" | "flat";
 
 export function momentumFromChange(change24hPct: number | null): MomentumLabel {
   if (change24hPct == null) return "neutral";
@@ -113,7 +114,7 @@ export function momentumFromChange(change24hPct: number | null): MomentumLabel {
 export function aggregatePulse(changes: Array<number | null>): {
   momentum: MomentumLabel;
   sentiment: SentimentLabel;
-  signal: SignalLabel;
+  direction: DirectionLabel;
   avgChange24hPct: number | null;
 } {
   const nums = changes.filter((c): c is number => c != null);
@@ -121,7 +122,7 @@ export function aggregatePulse(changes: Array<number | null>): {
     return {
       momentum: "neutral",
       sentiment: "neutral",
-      signal: "hold",
+      direction: "flat",
       avgChange24hPct: null,
     };
   }
@@ -134,9 +135,11 @@ export function aggregatePulse(changes: Array<number | null>): {
   if (avg >= 1) sentiment = "risk-on";
   else if (avg <= -1) sentiment = "risk-off";
 
-  let signal: SignalLabel = "hold";
-  if (avg >= 2.5) signal = "buy";
-  else if (avg <= -2.5) signal = "sell";
+  // Same thresholds as the former `signal` field (buy/sell/hold): renamed to a
+  // neutral description of the move, not a recommendation.
+  let direction: DirectionLabel = "flat";
+  if (avg >= 2.5) direction = "up";
+  else if (avg <= -2.5) direction = "down";
 
-  return { momentum, sentiment, signal, avgChange24hPct: avg };
+  return { momentum, sentiment, direction, avgChange24hPct: avg };
 }

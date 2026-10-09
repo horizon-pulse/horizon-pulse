@@ -44,7 +44,7 @@ export async function pulseHandler(_req: NextRequest): Promise<NextResponse> {
       overall: {
         momentum: overall.momentum,
         sentiment: overall.sentiment,
-        signal: overall.signal,
+        direction: overall.direction,
         avgChange24hPct: overall.avgChange24hPct,
       },
     });

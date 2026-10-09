@@ -18,7 +18,7 @@ export const MAX_DESCRIPTION_CHARS = 500;
 export const ROUTE_METADATA = {
   "/api/pulse": {
     description:
-      "Crypto market data. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), signal (buy/sell/hold) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
+      "Crypto market data. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
     tags: ["crypto", "market-data", "spot-prices", "btc-eth-sol", "momentum"],
   },
   "/api/signals": {
@@ -33,7 +33,7 @@ export const ROUTE_METADATA = {
   },
   "/api/portfolio": {
     description:
-      "Crypto wallet analysis. Use when you need the token holdings and USD value of one EVM address. Call GET with required address=0x... (40 hex). Reads Base and Ethereum via RPC: native ETH, USDC, WETH, WBTC/cbBTC, DAI. Returns JSON: holdings (balance, priceUsd, valueUsd, weight), totals (valueUsd, stablecoinShare, max asset/chain weight), risk {score 0-100, band} and rule-based rebalance suggestions. Read-only; not advice. Invalid addresses return 400 and are not charged.",
+      "Crypto wallet analysis. Use when you need the token holdings and USD value of one EVM address. Call GET with required address=0x... (40 hex). Reads Base and Ethereum: ETH, USDC, WETH, WBTC/cbBTC, DAI. Returns JSON: holdings (balance, priceUsd, valueUsd, weight), totals (valueUsd, stablecoinShare, max asset/chain weight), risk {score 0-100, band} and allocation flags (asset, stablecoin and chain weights vs fixed thresholds). Read-only; not advice. Invalid addresses return 400, not charged.",
     tags: ["crypto", "portfolio", "wallet", "evm-address", "risk"],
   },
   "/api/gas": {
@@ -63,7 +63,7 @@ export const ROUTE_METADATA = {
   },
   "/api/x402-check": {
     description:
-      "x402 developer tool. Use before paying an unknown x402 endpoint, or to debug your own. GET with required url (optional method GET/POST, body JSON for POST probes). Sends one unpaid request and never pays. Returns JSON: httpStatus, isX402, x402Version, decoded accepts (network, asset label, amount in USD, payTo and whether payTo is an EOA or contract), discovery metadata presence, and pass/warn/fail checks with a summary. Private targets are blocked. Errors are not charged.",
+      "x402 developer tool. Use before paying an unknown x402 endpoint, or to debug your own. GET with required url (optional method GET/POST, JSON body for POST). Sends one unpaid request and never pays. Returns JSON: httpStatus, isX402, x402Version, decoded accepts (network, asset, USD amount, payTo, EOA or contract), discovery metadata presence, and pass/warn/fail checks. Any HTTP answer from the target, even 4xx/5xx, is billed; bad input, blocked hosts, connection failures and timeouts are not.",
     tags: ["developer-tools", "x402", "audit", "payment-check", "discovery"],
   },
   "/api/screenshot": {
