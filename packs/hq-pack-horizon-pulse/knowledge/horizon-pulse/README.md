@@ -22,7 +22,7 @@
 
 - The hosted MCP endpoint takes payment in USDC on Base only.
 - An x402-capable MCP client signs the payment and retries the call.
-- Alternative: the open-source local stdio server in
+- Alternative: the local stdio server in
   https://github.com/horizon-pulse/horizon-pulse/tree/main/mcp signs payments
   from a wallet key you supply (`HP_PRIVATE_KEY`), with per-call and
   per-session spend caps. Use a dedicated low-balance wallet, never a main
