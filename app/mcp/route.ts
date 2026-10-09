@@ -1,4 +1,5 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import { isFatalStartupInitError } from "@x402/core/server";
 import { hasCdpCredentials } from "@/lib/config";
 import { buildMcpServer } from "@/lib/mcp-server";
 import { getResourceServer } from "@/lib/x402-server";
@@ -18,6 +19,7 @@ const CORS = {
  * Shared facilitator sync (lib/x402-server.ts: single-flight, retried, reset
  * on failure, so a failed sync is never cached). If it still fails, a 503 the
  * client can retry, not an unhandled 500. Nothing is verified or settled.
+ * Fatal capability/config errors are rethrown, same as the API routes.
  */
 function facilitatorUnavailable(): Response {
   return new Response(
@@ -35,6 +37,7 @@ export async function POST(req: Request): Promise<Response> {
     try {
       await getResourceServer().initialize();
     } catch (error) {
+      if (isFatalStartupInitError(error)) throw error;
       console.error(`[mcp] facilitator sync failed, serving 503: ${error}`);
       return facilitatorUnavailable();
     }

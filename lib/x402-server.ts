@@ -6,7 +6,7 @@ import {
   isFatalStartupInitError,
   x402ResourceServer,
 } from "@x402/core/server";
-import type { RouteConfig, RoutesConfig } from "@x402/core/server";
+import type { RouteConfig, RoutesConfig, SettleFailureContext } from "@x402/core/server";
 import { encodePaymentRequiredHeader } from "@x402/core/http";
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
@@ -40,15 +40,16 @@ import { handleSolanaPayment, isSolanaPaymentRequest, withSolanaAccept } from ".
 import { baseRail, runOnPaidRail } from "./paid-rail";
 
 /**
- * Coinbase CDP facilitator via @coinbase/x402.
- * list/discovery works without keys; verify+settle need CDP_API_KEY_ID/SECRET.
+ * Per-request CDP facilitator timeout (verify, settle, every /supported attempt).
+ * The @x402/core client default is 90 s, longer than the 30 s maxDuration set
+ * by pdf, screenshot, search, demo and mcp (the only routes that set one; the
+ * rest use the platform default), so a hung CDP call would outlive those
+ * functions instead of becoming a 503. 20 s, not 10 s, because the same
+ * timeout also covers settle: a settle that times out can still land on-chain,
+ * charging the buyer without returning the response, so only a real hang
+ * should trip it. Settle timeouts are logged by logSettleTimeout below.
  */
-/**
- * Per-request facilitator timeout (verify, settle, every /supported attempt).
- * The @x402/core client default is 90 s, longer than any route's maxDuration,
- * so a hung CDP call would outlive the function instead of becoming a 503.
- */
-export const FACILITATOR_TIMEOUT_MS = 10_000;
+export const FACILITATOR_TIMEOUT_MS = 20_000;
 
 function buildFacilitatorClient(): HTTPFacilitatorClient {
   const apiKeyId = process.env.CDP_API_KEY_ID?.trim() || undefined;
@@ -123,15 +124,48 @@ class SharedInitResourceServer extends x402ResourceServer {
   }
 }
 
+/**
+ * Route of the settle for logs: the server-side request route (method + path)
+ * when the HTTP layer passed it, else the path of the payload's resource URL.
+ * Never a query string, host, payment header or payload.
+ */
+function settleRoute(ctx: SettleFailureContext): string {
+  const req = (ctx.transportContext as { request?: { method?: unknown; path?: unknown; routePattern?: unknown } } | undefined)
+    ?.request;
+  const path = typeof req?.routePattern === "string" ? req.routePattern : typeof req?.path === "string" ? req.path : "";
+  if (path) return typeof req?.method === "string" && req.method ? `${req.method} ${path}` : path;
+  const url = ctx.paymentPayload?.resource?.url;
+  if (!url) return "unknown route";
+  try {
+    return new URL(url, "https://horizonpulse.dev").pathname;
+  } catch {
+    return "unknown route";
+  }
+}
+
+/**
+ * onSettleFailure hook: a settle that hit FACILITATOR_TIMEOUT_MS may still have
+ * settled on-chain (buyer charged, response withheld), so log it loudly to
+ * check the payer's transfer before any refund. Route, network and timeout
+ * only: no payload, signature, payer or keys. Never recovers the settle.
+ */
+export async function logSettleTimeout(ctx: SettleFailureContext): Promise<void> {
+  const timeout = getFacilitatorResponseError(ctx.error);
+  if (!(timeout instanceof FacilitatorTimeoutError) || timeout.operation !== "settle") return;
+  console.warn(
+    `[x402] settle timeout on ${settleRoute(ctx)} (${ctx.requirements?.network ?? "unknown network"}) ` +
+      `after ${timeout.timeoutMs} ms: the payment may still have settled on-chain; check the transfer before treating the call as unpaid`,
+  );
+}
+
 let cachedServer: x402ResourceServer | null = null;
 
 export function getResourceServer(): x402ResourceServer {
   if (cachedServer) return cachedServer;
   const network = getNetworkCaip2();
-  cachedServer = new SharedInitResourceServer(buildFacilitatorClient()).register(
-    network,
-    new ExactEvmScheme(),
-  );
+  cachedServer = new SharedInitResourceServer(buildFacilitatorClient())
+    .register(network, new ExactEvmScheme())
+    .onSettleFailure(logSettleTimeout);
   return cachedServer;
 }
 
