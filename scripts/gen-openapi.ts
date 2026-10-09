@@ -189,6 +189,9 @@ for (const r of LIVE_PAID_ROUTES) {
     const example = baz?.info?.output?.example;
     if (example && !schemas[respName]) {
       schemas[respName] = { ...widen(infer(example)), description: `Inferred from a real response recorded from GET /api/demo/${name} at ${EXAMPLES_RECORDED_AT} UTC (trimmed). Fields may be added; clients should ignore unknown fields.` };
+      // Closed value set (lib/indicators.ts DirectionLabel); not inferable from one example.
+      const dir = name === "pulse" ? schemas[respName]?.properties?.overall?.properties?.direction : undefined;
+      if (dir) dir.enum = ["up", "down", "flat"];
     }
     const responses: Json = {
       "200": {
