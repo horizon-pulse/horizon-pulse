@@ -13,7 +13,10 @@ import {
   BC_DEADLINE_MS,
   BC_MAX_PAYTOS,
   BC_PROBE_BUDGET_MS,
+  BC_PROBE_SHARE,
   BLOCKED_HOST_MESSAGE,
+  BC_MIN_START_MS,
+  checkBudget,
   payToKey,
   CDP_DISCOVERY_URL,
   CDP_TROUBLESHOOTING_URL,
@@ -435,11 +438,16 @@ const merchantPayTos = (calls: string[]) =>
   new Set(calls.filter((c) => c.includes("/discovery/merchant")).map((c) => new URL(c.split(" ")[1]!).searchParams.get("payTo")));
 
 describe("fix 1: time limits and caps", () => {
-  it("defaults: 26s hard deadline under the route's maxDuration 30, probes 18s, payTo cap 4", () => {
+  it("defaults: 18s hard deadline from arrival (Odin option c), probes end at 12s, payTo cap 4", () => {
     const route = readFileSync(path.join(__dirname, "..", "app", "api", "bazaar-check", "route.ts"), "utf8");
     const maxDuration = Number(route.match(/export const maxDuration = (\d+)/)![1]);
     expect(maxDuration).toBe(30);
-    expect(BC_DEADLINE_MS).toBe(26_000);
+    expect(BC_DEADLINE_MS).toBe(18_000);
+    expect(BC_PROBE_BUDGET_MS).toBe(12_000);
+    expect(BC_PROBE_SHARE).toBe(0.6);
+    // ≥ 6s left after the probes for CDP + on-chain + response; ≥ 12s of maxDuration left for settle
+    expect(BC_DEADLINE_MS - BC_PROBE_BUDGET_MS).toBeGreaterThanOrEqual(6_000);
+    expect(maxDuration * 1000 - BC_DEADLINE_MS).toBeGreaterThanOrEqual(12_000);
     expect(BC_DEADLINE_MS).toBeLessThan(maxDuration * 1000);
     expect(BC_PROBE_BUDGET_MS).toBeLessThan(BC_DEADLINE_MS);
     expect(BC_MAX_PAYTOS).toBe(4);
@@ -656,5 +664,37 @@ describe("rebase v2: deadline from request arrival, EVM payTo dedupe", () => {
     expect(r.index.payTos.map((p) => p.payTo)).toEqual([evm, solA, solB, "0x" + "cd".repeat(20)]);
     expect(r.findings.find((f) => f.id === "paytos_capped")!.message).toMatch(/5 distinct payTos/);
     expect(merchantPayTos(deps.calls).size).toBe(4);
+  });
+});
+
+describe("v3: 18s deadline from arrival, probes end at 12s (Odin option c)", () => {
+  // checkBudget(origin = arrival, started = handler start); times in ms from arrival.
+  const at = (verifyMs: number) => {
+    const b = checkBudget(0, verifyMs);
+    return { deadline: b.deadline, probeEnd: b.probeDeadline, cdpWindow: b.deadline - b.probeDeadline, tooLate: b.tooLate };
+  };
+  it("no verify delay: probes end at 12s, deadline 18s, 6s left for CDP + on-chain + response", () => {
+    expect(at(0)).toEqual({ deadline: 18_000, probeEnd: 12_000, cdpWindow: 6_000, tooLate: false });
+    expect(at(1_000)).toEqual({ deadline: 18_000, probeEnd: 12_000, cdpWindow: 6_000, tooLate: false });
+  });
+  it("slow verify: probes get 60% of what is left, CDP keeps 40%", () => {
+    expect(at(5_000)).toEqual({ deadline: 18_000, probeEnd: 12_800, cdpWindow: 5_200, tooLate: false });
+    expect(at(10_000)).toEqual({ deadline: 18_000, probeEnd: 14_800, cdpWindow: 3_200, tooLate: false });
+    expect(at(15_000)).toEqual({ deadline: 18_000, probeEnd: 16_800, cdpWindow: 1_200, tooLate: false });
+  });
+  it("under 3s left at handler start: tooLate (502 time_budget_used)", () => {
+    expect(BC_MIN_START_MS).toBe(3_000);
+    expect(at(15_001).tooLate).toBe(true);
+    expect(at(17_000).tooLate).toBe(true);
+  });
+  it("end to end with defaults: 16s already spent in verify → 502 time_budget_used, nothing fetched", async () => {
+    const deps = mockDeps({ pages: BAD.routes });
+    const r = await checkBazaar({ url: "bad-seller.example" }, deps, { arrivedAt: Date.now() - 16_000 });
+    expect(r).toMatchObject({ ok: false, status: 502, code: "time_budget_used" });
+    expect(deps.calls).toEqual([]);
+  });
+  it("end to end with defaults: 14s spent in verify still runs a full report", async () => {
+    const r = await checkBazaar({ url: "bad-seller.example" }, mockDeps({ pages: BAD.routes }), { arrivedAt: Date.now() - 14_000 });
+    expect(r.ok).toBe(true);
   });
 });

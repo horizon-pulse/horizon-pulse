@@ -465,7 +465,7 @@
             "description": "Missing, bad or http-only url, or a blocked private/local host"
           },
           "502": {
-            "description": "Host unreachable on every request, or CDP discovery unavailable or not answering before the 26s deadline counted from request arrival (code cdp_unavailable), or too little time left after payment verification (code time_budget_used). Not charged."
+            "description": "Host unreachable on every request, or CDP discovery unavailable or not answering before the 18s deadline counted from request arrival (code cdp_unavailable), or too little time left after payment verification (code time_budget_used). Not charged."
           }
         }
       }
