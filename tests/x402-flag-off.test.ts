@@ -43,6 +43,14 @@
  * plus the same line in skill.md and llms.txt (openapi.json regenerated). Only
  * the 14 fetch/extract 402 / OPTIONS keys and 3 discovery keys changed; every
  * accepts block, x402Version and status is byte-identical to main.
+ *
+ * 2026-10-09 (branch untrusted-content-docs-2, on main 5030ed8): regenerated with
+ * UPDATE_GOLDEN=1 after text-only edits: the same untrusted-content line added
+ * to the /api/search, /api/http, /api/pdf and /api/screenshot descriptions
+ * (existing wording trimmed to stay <= 500 chars) and to the skill.md / llms.txt
+ * line (openapi.json regenerated). Only the 26 search/http/pdf/screenshot
+ * 402 / OPTIONS keys and 3 discovery keys changed; all 88 decoded challenges
+ * are identical to main except resource.description.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
