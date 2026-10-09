@@ -1,6 +1,6 @@
 ---
 name: horizon-pulse
-description: Use Horizon Pulse when a task needs live web content or crypto market data from a pay-per-call tool. Covers web search with page contents, web page to markdown, PDF to text, page screenshots, an HTTP proxy, structured page extract, x402 endpoint checks, and crypto market data (BTC/ETH/SOL spot prices, technical indicators, perpetual funding rates, Base and Ethereum gas fees, DeFi yields, EVM wallet portfolios). Each tool call is paid over x402 in USDC on Base.
+description: Use Horizon Pulse when a task needs live web content or crypto market data from a pay-per-call tool. Covers web search with page contents, web page to markdown, PDF to text, page screenshots, an HTTP proxy, structured page extract, x402 endpoint checks, CDP Bazaar index checks, and crypto market data (BTC/ETH/SOL spot prices, technical indicators, perpetual funding rates, Base and Ethereum gas fees, DeFi yields, EVM wallet portfolios). Each tool call is paid over x402 in USDC on Base.
 ---
 
 # Horizon Pulse
@@ -35,6 +35,7 @@ that request.
 | How a page renders | `screenshot` |
 | Text of a public PDF | `pdf` |
 | Check an x402 endpoint before paying it (never pays) | `x402_check` |
+| Whether an x402 seller is listed in Coinbase CDP Bazaar, and why not (never pays the seller) | `bazaar_check` |
 | BTC, ETH, SOL spot prices in USD | `pulse` |
 | RSI, MACD, Bollinger bands for BTC, ETH, SOL | `signals` |
 | Perpetual futures funding rates (OKX) | `funding` |

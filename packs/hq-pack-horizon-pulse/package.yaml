@@ -2,7 +2,7 @@ name: hq-pack-horizon-pulse
 version: 0.1.0
 publisher: '@horizon-pulse'
 access: public
-description: 'Connects the hosted Horizon Pulse MCP server (https://horizonpulse.dev/mcp) to HQ: pay-per-call tools for web search, web fetch, PDF to text, page screenshots, an HTTP proxy, structured page extract, x402 endpoint checks and crypto market data. Paid tools return an x402 payment request (USDC on Base) instead of a result until the call is paid. No API key or signup.'
+description: 'Connects the hosted Horizon Pulse MCP server (https://horizonpulse.dev/mcp) to HQ: pay-per-call tools for web search, web fetch, PDF to text, page screenshots, an HTTP proxy, structured page extract, x402 endpoint checks, CDP Bazaar index checks and crypto market data. Paid tools return an x402 payment request (USDC on Base) instead of a result until the call is paid. No API key or signup.'
 requires:
   hqCore: '>=15.0.0'
   # Runtime prerequisites:
