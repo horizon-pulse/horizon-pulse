@@ -118,10 +118,13 @@ describe("pricedBlock helper", () => {
     expect(JSON.stringify(pricedBlock("$0.005", "5000"))).toBe(JSON.stringify(old));
   });
 
-  it("Base rail context: Base USDC + PAY_TO read at call time (as before)", async () => {
-    vi.stubEnv("PAY_TO", "0x3300000000000000000000000000000000000001");
+  it("Base rail context: Base USDC + the pinned Base payTo; a different PAY_TO fails closed", async () => {
+    // payto-pin-base: PAY_TO can no longer move the Base payTo (tests/payto-base-pin.test.ts).
+    vi.stubEnv("PAY_TO", BASE_PAYTO.toUpperCase().replace(/^0X/, "0x"));
     const got = await runOnPaidRail(baseRail, async () => NextResponse.json(pricedBlock("$0.01", "10000")))(null);
-    expect(await got.json()).toEqual({ amountUsd: "$0.01", amountAtomic: "10000", asset: USDC_BASE, network: "base", payTo: "0x3300000000000000000000000000000000000001" });
+    expect(await got.json()).toEqual({ amountUsd: "$0.01", amountAtomic: "10000", asset: USDC_BASE, network: "base", payTo: BASE_PAYTO });
+    vi.stubEnv("PAY_TO", "0x3300000000000000000000000000000000000001");
+    expect(() => runOnPaidRail(baseRail, async () => NextResponse.json(pricedBlock("$0.01", "10000")))(null)).toThrow(/pinned Base payTo/);
   });
 
   it("Solana rail context: Solana CAIP-2, canonical USDC mint, Solana payTo; key order unchanged", async () => {

@@ -1,10 +1,20 @@
 /**
  * Horizon Pulse — shared payment & network config.
- * payTo MUST remain the Coinbase treasury address below unless overridden by env.
+ * The Base payTo is PINNED to the address below (same rule as SOLANA_PAYTO in
+ * lib/solana-config.ts): the PAY_TO env var can only confirm it, never change it.
  */
 
+/**
+ * The ONLY Base payTo (lower-case, the exact form the 402 challenge carries).
+ * Moving Base revenue to any other address needs a code change here plus the
+ * literal in tests/payto-base-pin.test.ts, Class A review and Michael's
+ * approval. An env edit alone can no longer redirect it.
+ */
 export const DEFAULT_PAY_TO =
   "0x5b32c973596078a967562ca652761404f19be0e9" as const;
+
+/** Retired Base payTo (v1 host, keys lost). Must never be served. */
+const RETIRED_BASE_PAY_TO: string = "0xe16a1b12404cb2ebc6e783beca6e2a9253c3dc7e";
 
 /**
  * Basename (Base name service) for the Base payTo above: a human-readable
@@ -120,19 +130,30 @@ export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as c
 /** Canonical public host (custom domain). Prefer this in agent docs and clients. */
 export const PUBLIC_BASE_URL = "https://horizonpulse.dev" as const;
 
+/**
+ * The Base payTo for every 402 / settle. Fail closed:
+ *   - PAY_TO unset or empty  -> the pinned DEFAULT_PAY_TO
+ *   - PAY_TO equal to it (case-insensitive, surrounding whitespace ignored)
+ *                            -> the pinned DEFAULT_PAY_TO
+ *   - anything else          -> throws, so no 402 is ever built with another
+ *     address. Route configs call this at module load, so a bad env value fails
+ *     `next build` (Collecting page data) and any route import: a startup
+ *     error, the same pattern as the retired-address guard below.
+ */
 export function getPayTo(): `0x${string}` {
-  const fromEnv = process.env.PAY_TO?.trim();
-  const addr = (fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_PAY_TO).toLowerCase();
-  if (!/^0x[a-f0-9]{40}$/.test(addr)) {
-    throw new Error(`Invalid PAY_TO address: ${addr}`);
+  const pinned: `0x${string}` = DEFAULT_PAY_TO;
+  if (!/^0x[a-f0-9]{40}$/.test(pinned) || pinned === RETIRED_BASE_PAY_TO) {
+    // Code-level guard: only reachable if someone edits DEFAULT_PAY_TO badly.
+    throw new Error("Refusing to serve payments: pinned Base payTo is invalid or retired");
   }
-  // Guard: never silently fall back to the retired treasury
-  if (addr === "0xe16a1b12404cb2ebc6e783beca6e2a9253c3dc7e") {
+  const fromEnv = process.env.PAY_TO?.trim();
+  if (fromEnv && fromEnv.length > 0 && fromEnv.toLowerCase() !== pinned) {
     throw new Error(
-      "Refusing retired payTo 0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E — use the new treasury",
+      "Refusing to serve payments: PAY_TO env does not match the pinned Base payTo (lib/config.ts DEFAULT_PAY_TO). " +
+        "Unset PAY_TO or set it to the pinned address; changing the payTo is a code change.",
     );
   }
-  return addr as `0x${string}`;
+  return pinned;
 }
 
 /**
