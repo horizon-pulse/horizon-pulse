@@ -33,12 +33,18 @@ const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabiliti
 ok(init.status === 200 && init.json.result?.serverInfo?.name === "horizon-pulse", "initialize is free");
 const list = await rpc("tools/list", {});
 const names = (list.json.result?.tools || []).map((t) => t.name).sort();
-ok(JSON.stringify(names) === JSON.stringify(["bazaar_check","extract","fetch","funding","gas","http","pdf","portfolio","pulse","screenshot","search","signals","x402_check","yield"]), `tools/list free, 14 tools: ${names.join(",")}`);
+const EXPECTED = ["bazaar_check","extract","fetch","funding","gas","http","pdf","portfolio","pulse","screenshot","search","signals","x402_check","yield"];
+const missing = EXPECTED.filter((n) => !names.includes(n)), extra = names.filter((n) => !EXPECTED.includes(n));
+ok(!missing.length && !extra.length, `tools/list free, ${EXPECTED.length} tools expected, got ${names.length}${missing.length ? `; missing ${missing}` : ""}${extra.length ? `; not in this script (stale copy? update ARGS/Q/EXPECTED): ${extra}` : ""}`);
+const schemas = Object.fromEntries((list.json.result?.tools || []).map((t) => [t.name, t.inputSchema || {}]));
 
 for (const name of names) {
+  const need = (schemas[name].required || []).filter((k) => !(ARGS[name] && k in ARGS[name]));
+  if (need.length) { ok(false, `${name}: no test args for required ${need} (add to ARGS and Q; tool not known to this script copy)`); continue; }
   const r = await rpc("tools/call", { name, arguments: ARGS[name] || {} });
   const res = r.json.result || {};
   const text = (res.content || []).map((c) => c.text).join("");
+  if (/^MCP error -32602/.test(text)) { ok(false, `${name}: input validation error, not an x402 challenge (test ARGS invalid): ${text.slice(0, 160)}`); continue; }
   const sc = res.structuredContent || {};
   const pr = sc.accepts ? sc : (() => { try { return JSON.parse(text); } catch { return {}; } })();
   const noData = !/"ok"\s*:\s*true|"asOf"|"content"\s*:|"prices"/.test(text) && res.isError === true;
