@@ -43,6 +43,8 @@ import { handleSolanaPayment, isSolanaPaymentRequest, withSolanaAccept } from ".
 import { baseRail, runOnPaidRail } from "./paid-rail";
 import { getXrplRailConfig } from "./xrpl-config";
 import { handleXrplPayment, isXrplPaymentRequest, withXrplAccept } from "./xrpl-rail";
+import { getPolygonRailConfig } from "./polygon-config";
+import { handlePolygonPayment, isPolygonPaymentRequest, withPolygonAccept } from "./polygon-rail";
 
 /**
  * Per-request CDP facilitator timeout (verify, settle, every /supported attempt).
@@ -1013,8 +1015,12 @@ export async function discoveryOptionsResponse(opts: {
   // On → RLUSD entry appended last (after Base, and Solana if on); any XRPL
   // failure → `withSolana` unchanged.
   const xrpl = getXrplRailConfig();
-  if (!xrpl.enabled) return withSolana;
-  return withXrplAccept(withSolana, xrpl.config, opts.maxAmountRequired);
+  const withXrpl = xrpl.enabled ? await withXrplAccept(withSolana, xrpl.config, opts.maxAmountRequired) : withSolana;
+  // Polygon USDC rail (lib/polygon-config.ts): off unless HP_POLYGON_ENABLED=true
+  // (+ mainnet code lock). Off → `withXrpl`, unchanged. On → appended LAST.
+  const polygon = getPolygonRailConfig();
+  if (!polygon.enabled) return withXrpl;
+  return withPolygonAccept(withXrpl, polygon.config, opts.maxAmountRequired);
 }
 
 type AppRouteHandler = (req: NextRequest) => Promise<NextResponse>;
@@ -1098,6 +1104,11 @@ export function createX402GetHandler(
     // 402 (Base first, Solana second if on); XRPL-paid requests go to the
     // XRPL-only server; any XRPL failure → the 402 built without it.
     const xrpl = getXrplRailConfig();
+    // Polygon USDC rail (lib/polygon-config.ts), same contract: off (the
+    // default) → nothing below changes; on → Polygon entry appended LAST;
+    // Polygon-paid requests go to the Polygon-only server; any failure →
+    // the Base-only 402.
+    const polygon = getPolygonRailConfig();
     if (!hasPaymentHeader(req)) {
       // Library's JSON path always (it would otherwise serve its own HTML to
       // any Mozilla + text/html request); our HTML only for real navigations.
@@ -1107,6 +1118,9 @@ export function createX402GetHandler(
       }
       if (xrpl.enabled && challenge.status === 402) {
         challenge = await withXrplAccept(challenge, xrpl.config, paymentOpts.maxAmountRequired);
+      }
+      if (polygon.enabled && challenge.status === 402) {
+        challenge = await withPolygonAccept(challenge, polygon.config, paymentOpts.maxAmountRequired);
       }
       if (challenge.status === 402 && isBrowserNavigation(req)) {
         const accepts = Object.values(routes)[0]?.accepts;
@@ -1133,6 +1147,10 @@ export function createX402GetHandler(
       // XRPL unavailable / rejected / threw → the Base-only 402 (built from a
       // copy of the request WITHOUT the XRPL payment header, so the Base
       // server never even parses an XRPL payload).
+      return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
+    }
+    if (polygon.enabled && isPolygonPaymentRequest(req, polygon.config)) {
+      const paid = await handlePolygonPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, polygon.config);
       return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
     }
     if (!cdpReady) {
