@@ -65,6 +65,12 @@
  * byte-identical to main's golden (checked with a key-by-key compare).
  * golden.discovery refreshed (/.well-known/x402, skill.md, openapi.json,
  * llms.txt list the two new routes).
+ *
+ * 2026-10-12 (market-mvp Class A v2): regenerated again. Only the two CDP-mode
+ * GET /api/market/search keys changed (output example re-recorded on a query
+ * that returns only our own route); local mode unchanged. golden.discovery:
+ * skill.md, openapi.json and llms.txt (third-party payment rule, example).
+ * All 44 pre-existing keys per mode are still byte-identical to main's golden.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

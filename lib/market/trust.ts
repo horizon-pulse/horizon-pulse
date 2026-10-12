@@ -7,7 +7,8 @@
  * always a hard "do not pay" (verdict avoid, no ready buy plan). Pure
  * functions: no network.
  */
-import { payToKey } from "@/lib/bazaar-check";
+import { networkLabel, payToKey } from "@/lib/bazaar-check";
+import { SOLANA_MAINNET_CAIP2 } from "@/lib/solana-config";
 import { formatUnits, knownAsset } from "@/lib/x402-check";
 import { isTestnet, railForNetwork, type OfferAccept, type PayToCrossCheck } from "./offer";
 
@@ -55,7 +56,23 @@ export function minUsd(accepts: OfferAccept[]): number | null {
   return v.length ? Math.min(...v) : null;
 }
 
-const netKey = (n: string) => n.trim().toLowerCase();
+/**
+ * One form per network before any comparison (Odin B1): "base" and
+ * "eip155:8453" -> "eip155:8453"; "solana" and the Solana MAINNET genesis
+ * CAIP-2 -> SOLANA_MAINNET_CAIP2. Reuses bazaar-check's networkLabel for
+ * the aliases, but only the mainnet genesis is merged into "solana" here:
+ * a devnet/testnet solana:* id stays its own network (bazaar-check's label
+ * groups every solana:* for display only; a payTo comparison must not).
+ * Anything else: trimmed, lowercased (EVM CAIP-2 ids are case-insensitive).
+ */
+export function canonicalNetwork(n: string): string {
+  const t = n.trim();
+  if (t === SOLANA_MAINNET_CAIP2 || t.toLowerCase() === "solana") return SOLANA_MAINNET_CAIP2;
+  const label = networkLabel(t.toLowerCase());
+  if (label === "base") return "eip155:8453";
+  return t.toLowerCase();
+}
+const netKey = canonicalNetwork;
 
 /**
  * Compare payTos per network. EVM addresses compare case-insensitively
@@ -80,7 +97,7 @@ export function crossCheckPayTo(
   const put = (a: OfferAccept, side: "live" | "idx") => {
     if (!a.payTo) return;
     const k = netKey(a.network);
-    const cur = nets.get(k) ?? { network: a.network, live: new Set(), idx: new Set(), liveRaw: [], idxRaw: [] };
+    const cur = nets.get(k) ?? { network: k, live: new Set(), idx: new Set(), liveRaw: [], idxRaw: [] };
     const key = payToKey(a.payTo);
     if (!cur[side].has(key)) {
       cur[side].add(key);
@@ -118,13 +135,19 @@ export function crossCheckPayTo(
     return {
       status: "partial",
       networks,
-      message: "The live payTo matches the index on the networks both list; other networks appear on only one side (new network, dropped network or stale index).",
+      message:
+        "The live payTo matches the index only on the networks both list. Networks on one side only (a new network, a dropped one, or a stale index) are unverified: never pay them on this check.",
     };
   return {
-    status: "partial",
+    status: "no_common_network",
     networks,
-    message: "The live 402 and the index list no network in common, so no payTo could be compared.",
+    message: "The live 402 and the index list no network in common, so no payTo could be verified. Treat the seller as unverified.",
   };
+}
+
+/** Canonical networks on which the live payTo agrees with the index (partial plans are limited to these). */
+export function agreeingNetworks(cross: PayToCrossCheck): Set<string> {
+  return new Set(cross.networks.filter((n) => n.agree === true).map((n) => canonicalNetwork(n.network)));
 }
 
 /** Same network + same atomic amount + same asset on both sides, for every live network the index also lists. */

@@ -94,7 +94,7 @@ export type Offer = {
     lastCalledAt: string | null;
     lastUpdated: string | null;
     uniquePayers30d: number | null;
-    probe: null | { httpStatus: number | null; ms: number; findings: { id: string; level: string; message: string }[]; error: string | null };
+    probe: null | { httpStatus: number | null; ms: number; findings: { id: string; level: string; message: string }[]; error: string | null; cached: boolean };
   };
   trust: { paytoCrossCheck: PayToCrossCheck | null; paytoSigned: null; paytoStableSince: null };
   source: OfferSource[];
@@ -103,7 +103,7 @@ export type Offer = {
   ttlSeconds: number;
 };
 
-export type PayToCrossCheckStatus = "match" | "mismatch" | "partial" | "not_indexed" | "index_unavailable" | "not_checked";
+export type PayToCrossCheckStatus = "match" | "mismatch" | "partial" | "no_common_network" | "not_indexed" | "index_unavailable" | "not_checked";
 export type PayToCrossCheck = {
   status: PayToCrossCheckStatus;
   /** Per network: what the live 402 asks for vs what the index lists. */
@@ -145,9 +145,12 @@ export const MAX_TAGS = 8;
 export const MAX_TAG_CHARS = 40;
 
 /**
- * Instruction-like phrases aimed at an agent reading the listing. A match only
- * sets injectionSuspect (and blanks the title); it never changes ranking
- * inputs other than the listed fields being treated as data.
+ * Instruction-like phrases aimed at an agent reading the listing. A match sets
+ * injectionSuspect, replaces a flagged title and BLANKS the description (Odin's
+ * decision); it never changes ranking inputs. Patterns run on foldForDetection()
+ * output, so homoglyph, fullwidth, hidden-character and letter-spacing tricks
+ * fold back to plain ASCII first. A pattern list is a heuristic, not a filter:
+ * injectionSuspect:false is NOT a safety guarantee.
  */
 const INJECTION_PATTERNS: RegExp[] = [
   /\bignore\b[^.]{0,40}\b(instructions?|prompts?|rules?)\b/i,
@@ -158,23 +161,82 @@ const INJECTION_PATTERNS: RegExp[] = [
   /\b(private\s+key|seed\s+phrase|mnemonic|secret\s+key)\b/i,
   /<\s*\/?\s*(system|assistant|tool|instructions?)\s*>/i,
   /\bnew\s+instructions?\b/i,
+  /\b(forget|override|bypass)\b[^.]{0,40}\b(instructions?|prompts?|rules?|polic(y|ies)|guardrails?|everything)\b/i,
+  /(^|[.!?]\s+)(system|assistant|developer)\s*:/i,
+  /\[\s*\/?\s*(inst|system|sys)\s*\]/i,
+  /<<\s*\/?\s*sys\s*>>/i,
+  /<\|\s*(im_start|im_end|system|assistant)\s*\|>/i,
+  /#{2,}\s*(system|instructions?)\b/i,
 ];
 
-/** Strip control, zero-width and bidi-override characters; collapse whitespace; cap length. */
+/**
+ * Characters removed from every untrusted string (u flag, Odin B3): C0/C1
+ * controls handled separately; here zero-width, bidi overrides/isolates,
+ * Unicode TAG characters U+E0000-E007F (invisible ASCII smuggling), soft
+ * hyphen U+00AD, Arabic letter mark U+061C, Mongolian vowel separator
+ * U+180E, variation selectors U+FE00-FE0F and U+E0100-E01EF, and any other
+ * format character (\p{Cf}).
+ */
+const INVISIBLE_RE = /[\u{E0000}-\u{E007F}\u00AD\u061C\u180E\uFE00-\uFE0F\u{E0100}-\u{E01EF}\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF\p{Cf}]/gu;
+
+/** Common Cyrillic/Greek look-alikes of Latin letters (detection only; output text is not rewritten). */
+const HOMOGLYPHS: Record<string, string> = {
+  а: "a", в: "b", е: "e", ё: "e", к: "k", м: "m", н: "h", о: "o", р: "p", с: "c", т: "t", у: "y", х: "x", ѕ: "s", і: "i", ј: "j", ԁ: "d", ӏ: "l", ɡ: "g",
+  А: "a", В: "b", Е: "e", К: "k", М: "m", Н: "h", О: "o", Р: "p", С: "c", Т: "t", У: "y", Х: "x", Ѕ: "s", І: "i", Ј: "j",
+  α: "a", β: "b", ε: "e", ι: "i", κ: "k", ν: "v", ο: "o", ρ: "p", τ: "t", υ: "u", χ: "x", γ: "y",
+  Α: "a", Β: "b", Ε: "e", Ζ: "z", Η: "h", Ι: "i", Κ: "k", Μ: "m", Ν: "n", Ο: "o", Ρ: "p", Τ: "t", Υ: "y", Χ: "x",
+};
+
+/**
+ * Detection form: NFKC (fullwidth/compat letters -> ASCII), hidden characters
+ * removed, combining marks dropped, look-alikes mapped to Latin, and runs of
+ * single letters split by spaces/dots/dashes ("i g n o r e") joined.
+ */
+export function foldForDetection(t: string): string {
+  let s = t.normalize("NFKC").replace(INVISIBLE_RE, "");
+  s = s.normalize("NFD").replace(/\p{M}/gu, "");
+  s = [...s].map((c) => HOMOGLYPHS[c] ?? c).join("");
+  s = s.replace(/\b(?:[a-z][\s.\-_*]){3,}[a-z]\b/gi, (m) => m.replace(/[\s.\-_*]/g, ""));
+  return s.replace(/\s+/g, " ");
+}
+
+/** Strip control, hidden/format, tag, bidi and variation-selector characters; collapse whitespace; cap length. */
 export function cleanText(v: unknown, max: number): string | null {
   if (typeof v !== "string") return null;
   const s = v
     // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, " ")
-    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g, "")
+    .replace(INVISIBLE_RE, "")
     .replace(/\s+/g, " ")
     .trim();
   if (!s) return null;
-  return s.length > max ? `${s.slice(0, max - 1)}…` : s;
+  if (s.length <= max) return s;
+  // Cap by code points so a surrogate pair is never split.
+  const cps = [...s];
+  return cps.length > max ? `${cps.slice(0, max - 1).join("")}…` : s;
 }
 
+/** Heuristic only: false is NOT a safety guarantee. Raw text is checked too, so stripping can't hide a phrase. */
 export function looksLikeInjection(...texts: (string | null | undefined)[]): boolean {
-  return texts.some((t) => typeof t === "string" && INJECTION_PATTERNS.some((re) => re.test(t)));
+  return texts.some((t) => {
+    if (typeof t !== "string") return false;
+    const forms = [t, foldForDetection(t)];
+    return forms.some((f) => INJECTION_PATTERNS.some((re) => re.test(f)));
+  });
+}
+
+/**
+ * Unicode TAG characters spell invisible ASCII (U+E0020-E007E = space..~).
+ * Any run of 4+ is treated as smuggled text and flags the listing, whatever
+ * it decodes to.
+ */
+function hiddenTagPayload(strings: (string | null)[]): boolean {
+  for (const s of strings) {
+    if (!s) continue;
+    const runs = s.match(/[\u{E0020}-\u{E007E}]{4,}/gu);
+    if (runs?.length) return true;
+  }
+  return false;
 }
 
 /** Third-party name/description/tags → sanitized, labelled data. */
@@ -185,12 +247,17 @@ export function untrustedListing(raw: { title?: unknown; description?: unknown; 
     .slice(0, MAX_TAGS)
     .map((t) => cleanText(t, MAX_TAG_CHARS))
     .filter((t): t is string => Boolean(t));
-  const titleSuspect = looksLikeInjection(title);
-  const injectionSuspect = titleSuspect || looksLikeInjection(description, ...tags);
+  // Detection also runs on the raw (pre-strip) strings, so hidden TAG-character
+  // payloads that cleanText removes still flag the listing.
+  const rawStrings = [raw.title, raw.description, ...(Array.isArray(raw.tags) ? raw.tags.slice(0, MAX_TAGS) : [])].map((x) =>
+    typeof x === "string" ? x.slice(0, 4 * MAX_LISTING_DESCRIPTION_CHARS) : null,
+  );
+  const titleSuspect = looksLikeInjection(title) || looksLikeInjection(rawStrings[0]) || hiddenTagPayload([rawStrings[0]]);
+  const injectionSuspect = titleSuspect || looksLikeInjection(description, ...tags) || looksLikeInjection(...rawStrings.slice(1)) || hiddenTagPayload(rawStrings);
   return {
-    // Plan 2.5: instruction-like text is stripped from titles (description kept as labelled data).
+    // Plan 2.5 + Odin B3: a flagged title is replaced and, when anything is flagged, the description is blanked.
     title: titleSuspect ? "[removed: instruction-like text]" : title,
-    description,
+    description: injectionSuspect ? null : description,
     tags: tags.filter((t) => !looksLikeInjection(t)),
     injectionSuspect,
     note: UNTRUSTED_NOTE,

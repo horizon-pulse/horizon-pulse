@@ -145,6 +145,8 @@ describe("REST <-> hosted MCP parity", () => {
     };
 
     const a = await viaMcp("market_search", { q: "weather", n: 2, rail: "base" });
+    // Same probes on both sides: clear the 60s probe cache so REST doesn't get cached:true.
+    (await import("@/lib/market/engine")).resetMarketProbeState();
     const b = await rest(s.marketSearchHandler, "https://horizonpulse.dev/api/market/search?q=weather&n=2&rail=base");
     expect(a.isError).toBe(false);
     expect(b.status).toBe(200);

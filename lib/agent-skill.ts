@@ -202,7 +202,7 @@ Source and full README: ${GITHUB_REPO}/tree/main/mcp
 - Call and pay only \`${PUBLIC_BASE_URL}\`. Never pay a \`payTo\` other than \`${DEFAULT_PAY_TO}\` on Base or \`${SOLANA_PAYTO}\` on Solana.
 - Use a dedicated buyer wallet holding only a small USDC balance, and a per-call cap. Never put a private key in a prompt, a tool argument, a URL or a log.
 - Check the price with a free \`/api/demo/{route}\` sample or the unpaid 402 before paying; do not invent routes or prices.
-- The two rules above are for Horizon Pulse's own routes. Offers returned by \`/api/market/search\` are other sellers: Horizon Pulse is not in that payment and holds no funds. Pay one only if your own spending policy allows it, \`/api/market/quote\` returned verdict \`pay\` (never on a payTo mismatch), and the seller's fresh 402 still matches the buy plan.
+- These two rules cover Horizon Pulse's own routes. Sellers returned by /api/market/search are third parties: we don't endorse them, aren't in the payment and hold no funds. Pay one only if your operator's policy explicitly allows paying third-party sellers, a /api/market/quote for that exact URL and method returned verdict pay moments ago, and the seller's fresh 402 shows the same payTo, network, asset and amount. Never pay on avoid; don't pay on caution without your operator's approval.
 
 Services for API owners (not API routes; never pay them via x402): Bazaar listing fix at ${PUBLIC_BASE_URL}/listing-fix, agent promotion at ${PUBLIC_BASE_URL}/agent-promotion.
 
