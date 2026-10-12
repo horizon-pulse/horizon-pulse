@@ -103,6 +103,7 @@ export function termsBlock(year: number, rates: MmrRate[]) {
     terms_url: "https://www.newyorkfed.org/privacy/termsofuse",
     ...(rates.includes("SOFR") || rates.includes("BGCR") ? { dtcc_notice: DTCC_NOTICE } : {}),
     not_affiliated: NOT_AFFILIATED,
+    disclaimer: MMR_DISCLAIMER,
     pass_through:
       "NY Fed Content in this response is provided under the New York Fed Terms of Use. Horizon Pulse adds no restrictions on it; the same values are free at the source_url.",
   };

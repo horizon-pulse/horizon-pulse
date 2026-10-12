@@ -1,7 +1,7 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { isFatalStartupInitError } from "@x402/core/server";
 import { hasCdpCredentials } from "@/lib/config";
-import { buildMcpServer } from "@/lib/mcp-server";
+import { buildMcpServer, withMcpCaller } from "@/lib/mcp-server";
 import { withRequestArrival } from "@/lib/request-arrival";
 import { getResourceServer } from "@/lib/x402-server";
 
@@ -38,7 +38,7 @@ function facilitatorUnavailable(): Response {
  * count their deadline from request arrival (lib/request-arrival.ts).
  */
 export function POST(req: Request): Promise<Response> {
-  return withRequestArrival(() => handlePost(req));
+  return withRequestArrival(() => withMcpCaller(req, () => handlePost(req)));
 }
 
 async function handlePost(req: Request): Promise<Response> {

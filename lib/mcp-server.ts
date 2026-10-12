@@ -13,6 +13,7 @@
  *   settled (wrapper cancels settlement on isError).
  * - No Bazaar discovery extension on MCP tools (REST discovery unchanged).
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPaymentWrapper } from "@x402/mcp";
 import { NextRequest, type NextResponse } from "next/server";
@@ -43,13 +44,25 @@ type PaymentOpts = { maxAmountRequired: string; resource: string; description: s
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
 /** Build the internal request the REST handler expects. */
+/** Client IP of the incoming /mcp request (x-real-ip, else first x-forwarded-for entry), set by app/mcp/route.ts. */
+const mcpCaller = new AsyncLocalStorage<{ ip?: string }>();
+export function mcpClientIp(headers: Headers): string | undefined {
+  return headers.get("x-real-ip")?.trim() || headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
+}
+export function withMcpCaller<T>(req: Request, fn: () => T): T {
+  return mcpCaller.run({ ip: mcpClientIp(req.headers) }, fn);
+}
+
 function makeRequest(path: string, query: Record<string, string | undefined>, jsonBody?: unknown): NextRequest {
   const url = new URL(path, PUBLIC_BASE_URL);
   for (const [k, v] of Object.entries(query)) if (v != null && v !== "") url.searchParams.set(k, v);
-  if (jsonBody === undefined) return new NextRequest(url, { method: "GET" });
+  // Forward the MCP caller's IP so per-IP limits (e.g. money_market_rates) are per user, not one shared bucket.
+  const ip = mcpCaller.getStore()?.ip;
+  const fwd: Record<string, string> = ip ? { "x-real-ip": ip } : {};
+  if (jsonBody === undefined) return new NextRequest(url, { method: "GET", headers: fwd });
   return new NextRequest(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...fwd },
     body: JSON.stringify(jsonBody),
   });
 }

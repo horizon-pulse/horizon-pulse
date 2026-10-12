@@ -81,3 +81,32 @@ describe("hosted MCP", () => {
     expect(r.content[0].text).not.toMatch(/x402Version|accepts/);
   });
 });
+
+describe("Odin 10/12 9:20 fixes", () => {
+  it("response body (REST and MCP) carries the full disclaimer in terms", async () => {
+    const { termsBlock } = await import("@/lib/money-market-rates");
+    const body = JSON.stringify(termsBlock(2026, ["EFFR"]));
+    for (const s of ["Federal Reserve System", "may not be current", "free at"]) expect(body).toContain(s);
+    const { FREE_TOOLS } = await import("@/lib/mcp-server");
+    const { vi } = await import("vitest");
+    const mod = await import("@/lib/money-market-rates");
+    const spy = vi.spyOn(mod, "moneyMarketRates").mockImplementation(async (q) => ({ terms: mod.termsBlock(2026, q.rates) }) as never);
+    const r = await FREE_TOOLS[0].call({ rates: "EFFR" });
+    spy.mockRestore();
+    for (const s of ["Federal Reserve System", "may not be current", "free at"]) expect(r.content[0].text).toContain(s);
+  });
+  it("MCP forwards the caller IP (x-real-ip, else first XFF) to the route", async () => {
+    const { FREE_TOOLS, withMcpCaller, mcpClientIp } = await import("@/lib/mcp-server");
+    expect(mcpClientIp(new Headers({ "x-real-ip": "9.9.9.9", "x-forwarded-for": "1.1.1.1, 2.2.2.2" }))).toBe("9.9.9.9");
+    expect(mcpClientIp(new Headers({ "x-forwarded-for": "1.1.1.1, 2.2.2.2" }))).toBe("1.1.1.1");
+    expect(mcpClientIp(new Headers())).toBeUndefined();
+    const { vi } = await import("vitest");
+    const mod = await import("@/lib/money-market-rates");
+    const seen: (string | undefined)[] = [];
+    const spy = vi.spyOn(mod, "moneyMarketRates").mockImplementation(async (_q, d) => { seen.push(d.clientIp); return {} as never; });
+    await withMcpCaller(new Request("https://horizonpulse.dev/mcp", { headers: { "x-forwarded-for": "4.4.4.4, 10.0.0.1" } }), () => FREE_TOOLS[0].call({}));
+    await withMcpCaller(new Request("https://horizonpulse.dev/mcp", { headers: { "x-real-ip": "5.5.5.5" } }), () => FREE_TOOLS[0].call({}));
+    spy.mockRestore();
+    expect(seen).toEqual(["4.4.4.4", "5.5.5.5"]);
+  });
+});
