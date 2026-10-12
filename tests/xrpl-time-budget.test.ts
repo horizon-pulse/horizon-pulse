@@ -30,8 +30,8 @@ function paidRouteFiles(): string[] {
 }
 
 describe("XRPL time budget", () => {
-  it("deadlines: verify 6 s, settle 15 s, lookup 4 s, init cap 5 s; sum = XRPL_WORST_CASE_MS", () => {
-    expect([XRPL_VERIFY_TIMEOUT_MS, XRPL_SETTLE_TIMEOUT_MS, XRPL_TX_LOOKUP_DEADLINE_MS, XRPL_MAX_INIT_TIMEOUT_MS]).toEqual([6000, 15000, 4000, 5000]);
+  it("deadlines: verify 6 s, settle 20 s, lookup 4 s, init cap 5 s; sum = XRPL_WORST_CASE_MS", () => {
+    expect([XRPL_VERIFY_TIMEOUT_MS, XRPL_SETTLE_TIMEOUT_MS, XRPL_TX_LOOKUP_DEADLINE_MS, XRPL_MAX_INIT_TIMEOUT_MS]).toEqual([6000, 20000, 4000, 5000]);
     expect(XRPL_WORST_CASE_MS).toBe(XRPL_MAX_INIT_TIMEOUT_MS + XRPL_VERIFY_TIMEOUT_MS + XRPL_SETTLE_TIMEOUT_MS + XRPL_TX_LOOKUP_DEADLINE_MS);
     expect(XRPL_TX_LOOKUP_DELAYS_MS.reduce((a, b) => a + b, 0)).toBeLessThan(XRPL_TX_LOOKUP_DEADLINE_MS);
   });

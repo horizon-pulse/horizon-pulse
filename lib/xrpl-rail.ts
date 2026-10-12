@@ -123,7 +123,7 @@ export const LSF_DEPOSIT_AUTH = 0x01000000;
  * Solana rail's 12 s. A timeout here is the ambiguous 504 above.
  */
 export const XRPL_VERIFY_TIMEOUT_MS = 6_000;
-export const XRPL_SETTLE_TIMEOUT_MS = 15_000;
+export const XRPL_SETTLE_TIMEOUT_MS = 20_000; // testnet e2e 2026-10-12: settle p50 8.1 s, max 10.7 s (incl. its internal re-verify)
 /** Replay guard retention (≥ maxTimeoutSeconds; same 25 h as the Solana rail). */
 export const REPLAY_TTL_MS = 25 * 60 * 60_000;
 /** Cross-instance check: ledger close time must not be earlier than request start minus this. */
