@@ -225,6 +225,7 @@ export function resetXrplRailForTests(): void {
   paidHandlers = new WeakMap();
   replay = createReplayStore();
   replayWarned = false;
+  txLookupDelays = [0, 1, 1, 1]; // tests: same retry count, no real sleep
   attempts.clear();
   warnTimes = [];
   warnAlertedAt = 0;
@@ -778,6 +779,10 @@ async function buildXrplRequirement(rail: Rail, atomicUsdc: string): Promise<Pay
 export async function getXrplAccept(config: XrplRailConfig, atomicUsdc: string): Promise<PaymentRequirements | null> {
   try {
     // payTo readiness check and rail init run in parallel (cold start ≤ one initTimeoutMs).
+    if (!replayStoreOkFor(config)) {
+      warn("xrpl:0 refused: shared replay store (UPSTASH_REDIS_REST_URL/TOKEN) not configured");
+      return null;
+    }
     const [ready, rail] = await Promise.all([xrplPayToReady(config), getRail(config)]);
     if (!ready || !rail) return null;
     return await buildXrplRequirement(rail, atomicUsdc);
@@ -1101,28 +1106,100 @@ async function decide(key: string, att: Attempt, res: NextResponse | null, threw
 }
 
 /**
- * Cross-instance replay check with no shared store: a genuine settle's ledger
- * closes during this request; a replayed success closed earlier. Read-only
- * `tx` on the allow-listed RPC. Unknown → serve (fail open).
+ * Validated-tx lookup with bounded backoff. A settle that just returned
+ * tesSUCCESS can still read txnNotFound / validated:false on a public rippled
+ * for a ledger or two (load balancers, lagging nodes), so the read is retried
+ * on throw / error / not-yet-validated. Bounded: XRPL_TX_LOOKUP_DELAYS_MS
+ * (≤ 4 tries, ~2.5 s of sleep) AND a hard XRPL_TX_LOOKUP_DEADLINE_MS overall.
+ * Returns the validated result or null (unknown).
+ */
+export const XRPL_TX_LOOKUP_DELAYS_MS: readonly number[] = [0, 400, 800, 1300];
+export const XRPL_TX_LOOKUP_DEADLINE_MS = 5_000;
+let txLookupDelays: readonly number[] = XRPL_TX_LOOKUP_DELAYS_MS;
+/** Tests only: shrink the backoff (null = defaults). */
+export function __setXrplTxLookupDelaysForTests(d: readonly number[] | null): void {
+  txLookupDelays = d ?? XRPL_TX_LOOKUP_DELAYS_MS;
+}
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+export async function lookupValidatedTx(config: XrplRailConfig, hash: string | undefined): Promise<RpcResult | null> {
+  if (typeof hash !== "string" || !/^[0-9A-Fa-f]{64}$/.test(hash)) return null;
+  const deadline = Date.now() + XRPL_TX_LOOKUP_DEADLINE_MS;
+  for (const delay of txLookupDelays) {
+    if (delay > 0) {
+      if (Date.now() + delay >= deadline) break;
+      await sleep(delay);
+    }
+    const left = deadline - Date.now();
+    if (left <= 0) break;
+    try {
+      const r = asResult(await rpc(config.rpcUrl, "tx", { transaction: hash, binary: false }, Math.min(config.initTimeoutMs, left)), "tx");
+      if (r.status !== "error" && r.validated === true) return r;
+      // txnNotFound / not validated yet: retry. Any other rippled error: also retry (bounded).
+    } catch {
+      /* network / malformed: retry (bounded) */
+    }
+  }
+  return null;
+}
+
+/**
+ * Self-verification of a settled payment against the validated ledger
+ * (independent of what the facilitator reported):
+ *   - meta.TransactionResult === tesSUCCESS
+ *   - TransactionType Payment, Destination === payTo, no DestinationTag
+ *     unless we asked for one (we never do)
+ *   - meta.delivered_amount is EXACTLY the required RLUSD amount from the
+ *     pinned issuer (never trusts Amount: partial payments)
+ * "missing" = the result carries no meta/tx body to check.
+ */
+export function verifySettledTx(
+  r: RpcResult,
+  requirement: Pick<PaymentRequirements, "payTo" | "amount" | "asset"> & { extra?: Record<string, unknown> },
+  compareDecimal: (a: string, b: string) => number,
+): "ok" | "missing" | string {
+  const meta = r.meta as { TransactionResult?: unknown; delivered_amount?: unknown } | undefined;
+  const tx = ((r.tx_json as Record<string, unknown> | undefined) ?? r) as Record<string, unknown>;
+  if (!meta || typeof meta !== "object") return "missing";
+  if (meta.TransactionResult !== "tesSUCCESS") return "result_not_tessuccess";
+  if (tx.TransactionType !== "Payment") return "not_payment";
+  if (tx.Destination !== requirement.payTo) return "destination_mismatch";
+  if (tx.DestinationTag !== undefined) return "unexpected_destination_tag";
+  const d = meta.delivered_amount;
+  if (!isIssuedAmount(d)) return "delivered_not_issued";
+  if (d.currency !== requirement.asset) return "delivered_currency_mismatch";
+  if (d.issuer !== requirement.extra?.issuer) return "delivered_issuer_mismatch";
+  let cmp: number;
+  try {
+    cmp = compareDecimal(d.value, requirement.amount);
+  } catch {
+    return "delivered_value_unparseable";
+  }
+  if (cmp !== 0) return "delivered_amount_mismatch";
+  return "ok";
+}
+
+/**
+ * Cross-instance replay check: a genuine settle's ledger closes during this
+ * request; a replayed success closed earlier. Read-only `tx` on the
+ * allow-listed RPC, retried with bounded backoff. Unknown → caller decides.
  */
 async function settledBeforeRequest(
-  config: XrplRailConfig,
-  hash: string | undefined,
+  r: RpcResult | null,
   startedAt: number,
 ): Promise<"replay" | "fresh" | "unknown"> {
-  if (typeof hash !== "string" || !/^[0-9A-Fa-f]{64}$/.test(hash)) return "unknown";
-  try {
-    const r = asResult(await rpc(config.rpcUrl, "tx", { transaction: hash, binary: false }, config.initTimeoutMs), "tx");
-    if (r.status === "error" || r.validated !== true) return "unknown";
-    const date = typeof r.date === "number" ? r.date : (r.tx_json as { date?: unknown } | undefined)?.date ?? (r as { close_time_iso?: unknown }).close_time_iso;
-    let closedMs: number;
-    if (typeof date === "number" && Number.isFinite(date)) closedMs = RIPPLE_EPOCH_MS + date * 1000;
-    else if (typeof date === "string" && !Number.isNaN(Date.parse(date))) closedMs = Date.parse(date);
-    else return "unknown";
-    return closedMs < startedAt - REPLAY_CONFIRM_SKEW_MS ? "replay" : "fresh";
-  } catch {
-    return "unknown";
-  }
+  if (!r) return "unknown";
+  const date = typeof r.date === "number" ? r.date : (r.tx_json as { date?: unknown } | undefined)?.date ?? (r as { close_time_iso?: unknown }).close_time_iso;
+  let closedMs: number;
+  if (typeof date === "number" && Number.isFinite(date)) closedMs = RIPPLE_EPOCH_MS + date * 1000;
+  else if (typeof date === "string" && !Number.isNaN(Date.parse(date))) closedMs = Date.parse(date);
+  else return "unknown";
+  return closedMs < startedAt - REPLAY_CONFIRM_SKEW_MS ? "replay" : "fresh";
+}
+
+/** Mainnet needs the shared (Upstash) replay store; per-instance memory is testnet-only. */
+function replayStoreOkFor(config: XrplRailConfig): boolean {
+  return config.network !== XRPL_MAINNET_CAIP2 || replay.kind === "upstash";
 }
 
 /**
@@ -1148,6 +1225,10 @@ export async function handleXrplPayment(
   let decision: Decision;
   const startedAt = Date.now();
   try {
+    if (!replayStoreOkFor(config)) {
+      warn("xrpl:0 payment refused: shared replay store (UPSTASH_REDIS_REST_URL/TOKEN) not configured");
+      return null;
+    }
     const [ready, rail] = await Promise.all([xrplPayToReady(config), getRail(config)]);
     if (!ready || !rail) return null;
 
@@ -1227,7 +1308,16 @@ export async function handleXrplPayment(
       thrown = err;
     }
     if (att.settle?.outcome === "success" && res && res.status < 400) {
-      const when = await settledBeforeRequest(config, att.settle.transaction, startedAt);
+      const looked = await lookupValidatedTx(config, att.settle.transaction);
+      const when = await settledBeforeRequest(looked, startedAt);
+      // Self-verification against the validated ledger. Mainnet: must be
+      // checkable AND ok. Testnet: checked when the result carries meta.
+      const v = looked ? verifySettledTx(looked, requirement as never, rail.mods.compareDecimalStrings) : "missing";
+      if (v !== "ok" && (v !== "missing" || config.network === XRPL_MAINNET_CAIP2)) {
+        await replaySet(key, "settle_unconfirmed");
+        warn(`settled tx failed ledger self-check fp=${fp(key)} reason=${safeCode(v)}; client gets 502 settlement_unconfirmed`, undefined, false);
+        return jsonError(502, "settlement_unconfirmed");
+      }
       if (when === "replay") {
         await replaySet(key, "settled");
         warn(`cross-instance replay: ledger closed before this request fp=${fp(key)}; client gets 409`, undefined, false);

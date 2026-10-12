@@ -14,7 +14,8 @@
  *     BOTH UPSTASH_REDIS_REST_URL (https) and UPSTASH_REDIS_REST_TOKEN are set.
  *     Keys are namespaced `hp:xrpl:replay:<key>`; values are the state only.
  *   - MemoryReplayStore: per-instance Map (the previous behaviour). Used when
- *     Upstash env is absent. Cross-instance replays are then caught only by the
+ *     Upstash env is absent, TESTNET ONLY: xrpl:0 is refused without Upstash
+ *     (getXrplRailConfig + replayStoreOkFor in xrpl-rail.ts). Cross-instance replays are then caught only by the
  *     ledger-close-time check (settledBeforeRequest) in xrpl-rail.ts.
  *
  * Store errors fail CLOSED on claim (the XRPL payment is not accepted; the

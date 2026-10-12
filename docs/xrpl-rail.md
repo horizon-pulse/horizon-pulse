@@ -131,3 +131,9 @@ wallet, faucet, or network call is involved.
 - **Replay store.** `lib/xrpl-replay-store.ts`: atomic claim before verify. Upstash REST (`SET NX PX`) when `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` are set, else per-instance memory. A claim error fails closed.
 - **Testnet proof.** `/api/market/quote` was paid end-to-end via x402.org on `xrpl:1`. Replaying the same signature got 409 `duplicate_payment`.
 - **Flag.** `HP_XRPL_ENABLED` stays unset in every Vercel env. The rail is OFF and every 402 is byte-identical to main.
+
+## Mainnet finish (2026-10-12, branch xrpl-replay-store)
+
+- xrpl:0 fails closed unless UPSTASH_REDIS_REST_URL (https) and UPSTASH_REDIS_REST_TOKEN are set (config) and the active replay store is Upstash (runtime). Memory store = testnet only.
+- Validated-tx lookup after settle retries with bounded backoff (0/400/800/1300 ms, 5 s hard deadline).
+- Settled payments are self-verified on the validated ledger: tesSUCCESS, Payment, Destination = payTo, no DestinationTag, meta.delivered_amount exactly the RLUSD amount from the pinned issuer. Mainnet: unverifiable or mismatch → 502 settlement_unconfirmed (never a 402). Testnet: checked when meta is present.

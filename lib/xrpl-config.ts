@@ -312,6 +312,13 @@ function off(reason: string, misconfigured: boolean): XrplConfigResult {
   return { enabled: false, reason, misconfigured };
 }
 
+/** Both Upstash REST env vars present and the URL is https (mirrors createReplayStore's selection). */
+export function hasSharedReplayStoreEnv(env: Env): boolean {
+  const url = (env.UPSTASH_REDIS_REST_URL ?? "").trim();
+  const token = (env.UPSTASH_REDIS_REST_TOKEN ?? "").trim();
+  return url !== "" && token !== "" && /^https:\/\//.test(url);
+}
+
 /** Never throws. */
 export function getXrplRailConfig(env: Env = process.env): XrplConfigResult {
   try {
@@ -326,6 +333,9 @@ export function getXrplRailConfig(env: Env = process.env): XrplConfigResult {
     if (rawNet === undefined || rawNet === "" || rawNet === XRPL_TESTNET_CAIP2) network = XRPL_TESTNET_CAIP2;
     else if (rawNet === XRPL_MAINNET_CAIP2) {
       if (!XRPL_MAINNET_ALLOWED) return off("xrpl:0 (mainnet) is locked in code (XRPL_MAINNET_ALLOWED = false)", true);
+      // Mainnet fails closed without the shared replay store (per-instance
+      // memory cannot stop a cross-instance replay of a real payment).
+      if (!hasSharedReplayStoreEnv(env)) return off("xrpl:0 requires UPSTASH_REDIS_REST_URL (https) and UPSTASH_REDIS_REST_TOKEN (shared replay store)", true);
       network = XRPL_MAINNET_CAIP2;
     }
     else return off("HP_XRPL_NETWORK must be exactly xrpl:1 (testnet) or xrpl:0 (mainnet)", true);
