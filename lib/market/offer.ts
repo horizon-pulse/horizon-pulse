@@ -120,7 +120,7 @@ export function railForNetwork(network: string | null | undefined): OfferRail {
   if (n === BASE_MAINNET || n === "base") return "x402:base";
   if (n.startsWith("solana:") || n === "solana" || n === "solana-devnet") return "x402:solana";
   if (n.startsWith("eip155:") || n === "base-sepolia" || n === "ethereum" || n === "polygon" || n === "avalanche") return "x402:evm";
-  if (n === "xrpl:0" || n === "xrpl:1" || n === "xrpl:2" || n === "xrpl" || n === "xrpl-mainnet" || n === "xrpl-testnet" || n === "xrpl-devnet" || n === "xrp" || n === "ripple") return "x402:xrpl";
+  if (n === "xrpl:0" || n === "xrpl:1") return "x402:xrpl";
   if (n.startsWith("zcash:") || n === "zcash") return "x402:zcash";
   return "x402:other";
 }
@@ -129,7 +129,7 @@ export function isTestnet(network: string | null | undefined): boolean {
   const n = (network ?? "").toLowerCase();
   if (!n) return false;
   if (n === BASE_MAINNET || n === SOLANA_MAINNET.toLowerCase()) return false;
-  return /sepolia|devnet|testnet|goerli|fuji|amoy/.test(n) || n === "eip155:84532" || n === "solana:etwtrabzayq6imfeykouru166vu2xqa1" || n.trim() === "xrpl:1" || n.trim() === "xrpl:2";
+  return /sepolia|devnet|testnet|goerli|fuji|amoy/.test(n) || n === "eip155:84532" || n === "solana:etwtrabzayq6imfeykouru166vu2xqa1" || n.trim() === "xrpl:1";
 }
 
 /* ------------------------------------------------------------------ */

@@ -721,12 +721,12 @@ const iso = (ms: number) => new Date(ms).toISOString();
 
 /**
  * Network for evidence text: only a well-formed CAIP-2 value we can name
- * (eip155:<chain id>, solana:<base58 genesis>, or xrpl:0|1|2) after canonicalNetwork;
+ * (eip155:<chain id>, solana:<base58 genesis>, or xrpl:0 / xrpl:1) after canonicalNetwork;
  * anything else is printed as "unrecognized network", never the raw seller string.
  */
 export function evidenceNetwork(n: string): string {
   const c = canonicalNetwork(n);
-  return /^eip155:[1-9]\d{0,11}$/.test(c) || /^solana:[1-9A-HJ-NP-Za-km-z]{32}$/.test(c) || /^xrpl:[012]$/.test(c) ? c : "unrecognized network";
+  return /^eip155:[1-9]\d{0,11}$/.test(c) || /^solana:[1-9A-HJ-NP-Za-km-z]{32}$/.test(c) || c === "xrpl:0" || c === "xrpl:1" ? c : "unrecognized network";
 }
 
 /**

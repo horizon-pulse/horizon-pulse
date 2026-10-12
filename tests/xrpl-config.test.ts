@@ -7,6 +7,7 @@ import {
   RLUSD_MAINNET_ISSUER,
   RLUSD_TESTNET_ISSUER,
   XRPL_FACILITATOR_ALLOWLIST,
+  XRPL_MAINNET_ALLOWED,
   XRPL_PAYTO,
   XRPL_TESTNET_PAYTO,
   getXrplRailConfig,
@@ -75,18 +76,17 @@ describe("xrpl-config", () => {
   it("payTo always comes from the pinned constant, never from env content", () => {
     const r = getXrplRailConfig(ON);
     expect(r.enabled && r.config.payTo).toBe(XRPL_TESTNET_PAYTO);
-    const m = getXrplRailConfig({ ...ON_MAIN, HP_XRPL_FACILITATOR_URL: "https://xrpl-facilitator-mainnet.t54.ai" });
-    expect(m.enabled && m.config.payTo).toBe(XRPL_PAYTO);
   });
 
-  it("mainnet: requires an explicitly named, allow-listed facilitator; uses the mainnet issuer + xrplcluster RPC", () => {
-    expect(getXrplRailConfig({ ...ON_MAIN })).toMatchObject({ enabled: false, misconfigured: true });
-    const r = getXrplRailConfig({ ...ON_MAIN, HP_XRPL_FACILITATOR_URL: "https://xrpl-facilitator-mainnet.t54.ai/" });
-    expect(r).toMatchObject({
-      enabled: true,
-      config: { network: "xrpl:0", issuer: RLUSD_MAINNET_ISSUER, facilitatorUrl: "https://xrpl-facilitator-mainnet.t54.ai", rpcUrl: "https://xrplcluster.com/" },
-    });
-    expect(XRPL_FACILITATOR_ALLOWLIST["xrpl:0"]).toEqual(["https://xrpl-facilitator-mainnet.t54.ai"]);
+  it("mainnet is locked in code: XRPL_MAINNET_ALLOWED=false, empty xrpl:0 allowlist, xrpl:0 OFF/misconfigured with every env set", () => {
+    expect(XRPL_MAINNET_ALLOWED).toBe(false);
+    expect(XRPL_FACILITATOR_ALLOWLIST["xrpl:0"]).toEqual([]);
+    expect(JSON.stringify(XRPL_FACILITATOR_ALLOWLIST)).not.toContain("mainnet.t54.ai");
+    for (const fac of ["", "https://xrpl-facilitator-mainnet.t54.ai", "https://x402.org/facilitator"]) {
+      const r = getXrplRailConfig({ ...ON_MAIN, HP_XRPL_FACILITATOR_URL: fac, HP_XRPL_RPC_URL: "https://xrplcluster.com/" });
+      expect(r, fac).toMatchObject({ enabled: false, misconfigured: true });
+    }
+    expect(getXrplRailConfig({ ...ON_MAIN }) as { reason: string }).toMatchObject({ reason: expect.stringContaining("locked") });
   });
 
   it("network must be exactly xrpl:1 / xrpl:0", () => {

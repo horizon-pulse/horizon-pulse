@@ -1233,7 +1233,16 @@ export async function handleXrplPayment(
         warn(`cross-instance replay: ledger closed before this request fp=${fp(key)}; client gets 409`, undefined, false);
         return jsonError(409, "duplicate_payment");
       }
-      if (when === "unknown") warn(`could not read settled tx time fp=${fp(key)}; serving the paid response`, undefined, false);
+      if (when === "unknown") {
+        if (replay.kind === "memory") {
+          // No shared store and the ledger time can't be read: a cross-instance
+          // replay can't be ruled out, so don't deliver. Settled → never a 402.
+          await replaySet(key, "settle_unconfirmed");
+          warn(`could not read settled tx time fp=${fp(key)} on memory replay store; client gets 502 settlement_unconfirmed`, undefined, false);
+          return jsonError(502, "settlement_unconfirmed");
+        }
+        warn(`could not read settled tx time fp=${fp(key)}; serving the paid response (shared replay store)`, undefined, false);
+      }
     }
     decision = await decide(key, att, res, threw, thrown);
   } catch (err) {

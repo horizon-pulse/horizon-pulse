@@ -14,6 +14,7 @@
  */
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
@@ -22,6 +23,7 @@ import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import {
   __loadRealXrplModulesForTests,
   __setXrplModuleLoaderForTests,
+  setXrplReplayStoreForTests,
   __setXrplRpcForTests,
   resetXrplRailForTests,
   setXrplAlertHook,
@@ -537,20 +539,40 @@ describe("replay guard + cross-instance check", () => {
     expect(await res.text()).toBe('{"error":"duplicate_payment"}');
   });
 
-  it("cross-instance: closed during the request (or within the 30 s skew) => 200; RPC error / unvalidated => 200 (fail open)", async () => {
+  it("cross-instance: closed during the request (or within the 30 s skew) => 200; tx time unknown => 502 settlement_unconfirmed on the memory store", async () => {
     calls = installXrplFacilitators(behaviour());
     stubXrplOn();
     const accepts = await getAccepts();
     const run = makeHandler();
-    for (const tx of [
-      () => ({ validated: true, status: "success", date: Math.floor((Date.now() - 946_684_800_000) / 1000) - 10 }),
-      () => ({ validated: true, status: "success", close_time_iso: new Date().toISOString() }),
-      () => { throw new Error("rpc down"); },
-      () => ({ validated: false, status: "success" }),
-      () => ({ status: "error", error: "txnNotFound" }),
-    ]) {
+    const cases: [() => unknown, number][] = [
+      [() => ({ validated: true, status: "success", date: Math.floor((Date.now() - 946_684_800_000) / 1000) - 10 }), 200],
+      [() => ({ validated: true, status: "success", close_time_iso: new Date().toISOString() }), 200],
+      [() => { throw new Error("rpc down"); }, 502],
+      [() => ({ validated: false, status: "success" }), 502],
+      [() => ({ status: "error", error: "txnNotFound" }), 502],
+    ];
+    for (const [tx, want] of cases) {
       installXrplRpc("ready", tx);
-      expect((await run.handler(paid(xrplPayload(accepts[1])))).status).toBe(200);
+      const res = await run.handler(paid(xrplPayload(accepts[1])));
+      expect(res.status).toBe(want);
+      if (want === 502) expect(await res.json()).toEqual({ error: "settlement_unconfirmed" });
+    }
+  });
+
+  it("cross-instance: tx time unknown on a SHARED (Upstash) store => 200 (the store already rules out replays)", async () => {
+    calls = installXrplFacilitators(behaviour());
+    stubXrplOn();
+    const accepts = await getAccepts();
+    const run = makeHandler();
+    const mem = new MemoryReplayStore();
+    setXrplReplayStoreForTests({ kind: "upstash", claim: (k, t) => mem.claim(k, t), set: (k, st, t) => mem.set(k, st, t), release: (k) => mem.release(k) });
+    try {
+      for (const tx of [() => { throw new Error("rpc down"); }, () => ({ validated: false, status: "success" })]) {
+        installXrplRpc("ready", tx);
+        expect((await run.handler(paid(xrplPayload(accepts[1])))).status).toBe(200);
+      }
+    } finally {
+      setXrplReplayStoreForTests(null);
     }
   });
 

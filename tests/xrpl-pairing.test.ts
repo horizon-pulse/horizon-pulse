@@ -57,7 +57,7 @@ describe("XRPL network/issuer/payTo pairing", () => {
     const t = getXrplRailConfig({ ...base, HP_XRPL_PAYTO: XRPL_TESTNET_PAYTO });
     const m = getXrplRailConfig({ ...base, HP_XRPL_PAYTO: XRPL_PAYTO, HP_XRPL_NETWORK: "xrpl:0", HP_XRPL_FACILITATOR_URL: T54_MAIN });
     expect(t.enabled && [t.config.network, t.config.issuer, t.config.payTo]).toEqual(["xrpl:1", RLUSD_TESTNET_ISSUER, XRPL_TESTNET_PAYTO]);
-    expect(m.enabled && [m.config.network, m.config.issuer, m.config.payTo]).toEqual(["xrpl:0", RLUSD_MAINNET_ISSUER, XRPL_PAYTO]);
+    expect(m.enabled).toBe(false); // mainnet locked in code (XRPL_MAINNET_ALLOWED=false)
     // no env var can name an issuer
     const t2 = getXrplRailConfig({ ...base, HP_XRPL_PAYTO: XRPL_TESTNET_PAYTO, HP_XRPL_ISSUER: RLUSD_MAINNET_ISSUER } as never);
     expect(t2.enabled && t2.config.issuer).toBe(RLUSD_TESTNET_ISSUER);

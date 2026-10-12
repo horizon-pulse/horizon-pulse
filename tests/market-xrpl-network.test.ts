@@ -5,20 +5,17 @@ import { evidenceNetwork } from "@/lib/market/engine";
 import { isTestnet, railForNetwork } from "@/lib/market/offer";
 
 describe("canonicalNetwork: XRPL", () => {
-  it("fixed alias table", () => {
-    const t: Record<string, string> = {
-      "xrpl:0": "xrpl:0", "XRPL:0": "xrpl:0", " xrpl:0 ": "xrpl:0", xrpl: "xrpl:0", "xrpl-mainnet": "xrpl:0", xrp: "xrpl:0", ripple: "xrpl:0", XRP: "xrpl:0",
-      "xrpl:1": "xrpl:1", "xrpl-testnet": "xrpl:1", "xrpl:2": "xrpl:2", "xrpl-devnet": "xrpl:2",
-    };
+  it("only xrpl:0 and xrpl:1 (trim + ASCII lowercase normalisation only)", () => {
+    const t: Record<string, string> = { "xrpl:0": "xrpl:0", "XRPL:0": "xrpl:0", " xrpl:0 ": "xrpl:0", "xrpl:1": "xrpl:1", "Xrpl:1\t": "xrpl:1" };
     for (const [k, v] of Object.entries(t)) expect(canonicalNetwork(k), k).toBe(v);
   });
 
-  it("unknown xrpl-ish values are unrecognized, never passed through", () => {
-    for (const bad of ["xrpl:3", "xrpl:01", "xrpl:0x", "xrpl:-1", "xrpl:", "xrpl-main", "xrp:0", "ripple:mainnet", "xrpl_testnet", "xrpl:1\u200b", "xrpl:ｌ"]) {
+  it("everything else xrpl-ish is unrecognized, incl. former aliases and devnet", () => {
+    for (const bad of ["xrpl:2", "xrpl", "xrp", "ripple", "XRP", "xrpl-mainnet", "xrpl-testnet", "xrpl-devnet", "xrpl:3", "xrpl:01", "xrpl:0x", "xrpl:-1", "xrpl:", "xrp:0", "ripple:mainnet", "xrpl_testnet", "xrpl:1\u200b", "xrpl:ｌ"]) {
       expect(canonicalNetwork(bad), JSON.stringify(bad)).toBe(UNRECOGNIZED_NETWORK);
       expect(evidenceNetwork(bad), JSON.stringify(bad)).toBe("unrecognized network");
+      expect(railForNetwork(bad), JSON.stringify(bad)).not.toBe("x402:xrpl");
     }
-    // Unicode lookalike that does not even start with ascii "xrpl" stays a non-xrpl string and still never prints
     expect(evidenceNetwork("ｘrpl:0")).toBe("unrecognized network");
     expect(canonicalXrplNetwork("eip155:8453")).toBeNull();
   });
@@ -29,22 +26,19 @@ describe("canonicalNetwork: XRPL", () => {
     expect(canonicalNetwork("eip155:84532")).toBe("eip155:84532");
   });
 
-  it("evidence prints only xrpl:0|1|2", () => {
-    expect(evidenceNetwork("xrpl")).toBe("xrpl:0");
-    expect(evidenceNetwork("xrpl-testnet")).toBe("xrpl:1");
-  });
-
-  it("testnet/devnet flagged; mainnet not; rail only for table values", () => {
-    expect(isTestnet("xrpl:1")).toBe(true);
-    expect(isTestnet("xrpl:2")).toBe(true);
-    expect(isTestnet("xrpl:0")).toBe(false);
+  it("evidence, rail and testnet check use the same two values", () => {
+    expect(evidenceNetwork("xrpl:0")).toBe("xrpl:0");
+    expect(evidenceNetwork(" XRPL:1")).toBe("xrpl:1");
     expect(railForNetwork("xrpl:0")).toBe("x402:xrpl");
-    expect(railForNetwork("xrpl:9")).toBe("x402:other");
+    expect(railForNetwork("xrpl:1")).toBe("x402:xrpl");
+    expect(railForNetwork("xrpl:2")).toBe("x402:other");
+    expect(isTestnet("xrpl:1")).toBe(true);
+    expect(isTestnet("xrpl:0")).toBe(false);
   });
 
   it("payTo cross-check: XRPL addresses compare exactly (case-sensitive); testnet vs mainnet are different networks", () => {
     const A = "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf";
-    const live = [{ network: "xrpl", payTo: A }] as never;
+    const live = [{ network: "xrpl:0", payTo: A }] as never;
     expect(crossCheckPayTo(live, [{ network: "xrpl:0", payTo: A }] as never).status).toBe("match");
     const lc = crossCheckPayTo(live, [{ network: "xrpl:0", payTo: A.toLowerCase() }] as never);
     expect(lc.status).not.toBe("match");

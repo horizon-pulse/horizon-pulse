@@ -53,7 +53,7 @@ const OFF_VARIANTS: Record<string, Record<string, string>> = {
   "flag=true, payTo is the Base EVM payTo": { ...ON, HP_XRPL_PAYTO: "0x5b32c973596078a967562ca652761404f19be0e9" },
   "flag=true, network devnet xrpl:2": { ...ON, HP_XRPL_NETWORK: "xrpl:2" },
   "flag=true, network 'mainnet' (not CAIP-2)": { ...ON, HP_XRPL_NETWORK: "mainnet" },
-  "flag=true, mainnet without facilitator URL": { ...ON, HP_XRPL_NETWORK: "xrpl:0" },
+  "flag=true, mainnet locked (no facilitator URL)": { ...ON, HP_XRPL_NETWORK: "xrpl:0" },
   "flag=true, mainnet with the testnet x402.org facilitator": { ...ON, HP_XRPL_NETWORK: "xrpl:0", HP_XRPL_FACILITATOR_URL: "https://x402.org/facilitator" },
   "flag=true, facilitator not allow-listed": { ...ON, HP_XRPL_FACILITATOR_URL: "https://evil.example/facilitator" },
   "flag=true, facilitator http": { ...ON, HP_XRPL_FACILITATOR_URL: "http://x402.org/facilitator" },
@@ -78,6 +78,31 @@ describe("XRPL flag off: byte-identical to main", () => {
     __setXrplModuleLoaderForTests(null);
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
+  });
+
+  it("mainnet lock (XRPL_MAINNET_ALLOWED=false): all four mainnet env vars set → byte-identical to main, no XRPL facilitator/RPC call, @x402/xrpl never loaded", async () => {
+    const calls = installFacilitatorMock();
+    const rpc = installXrplRpc("ready");
+    let loads = 0;
+    __setXrplModuleLoaderForTests(async () => {
+      loads++;
+      throw new Error("@x402/xrpl must not load while mainnet is locked");
+    });
+    try {
+      const golden = readFileSync(GOLDEN, "utf8");
+      const all = await captureWith({
+        HP_XRPL_ENABLED: "true",
+        HP_XRPL_PAYTO: "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
+        HP_XRPL_NETWORK: "xrpl:0",
+        HP_XRPL_FACILITATOR_URL: T54_MAINNET,
+      });
+      expect(JSON.stringify(all, null, 1) + "\n").toBe(golden);
+      expect(calls.every((c) => c.url.startsWith("https://api.cdp.coinbase.com/"))).toBe(true);
+      expect(rpc).toEqual([]);
+      expect(loads).toBe(0);
+    } finally {
+      __setXrplModuleLoaderForTests(null);
+    }
   });
 
   for (const [name, env] of Object.entries(OFF_VARIANTS)) {

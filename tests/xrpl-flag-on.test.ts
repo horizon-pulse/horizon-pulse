@@ -108,13 +108,6 @@ describe("XRPL flag on", () => {
     expect(JSON.stringify(all.cdp)).not.toBe(JSON.stringify(golden.cdp));
   });
 
-  it("mainnet (xrpl:0 + named t54 mainnet facilitator): mainnet RLUSD issuer, mainnet pinned payTo", async () => {
-    installXrplFacilitators();
-    stubXrplOn({ HP_XRPL_NETWORK: "xrpl:0", HP_XRPL_FACILITATOR_URL: T54_MAINNET });
-    const all = await captureBoth();
-    expectShape(all, (_amt, route) => [xrplEntry(route, "xrpl:0", MAINNET_ISSUER)]);
-  });
-
   it("HP_XRPL_ASSET_TRANSFER_METHOD=ticketSequence is advertised in extra", async () => {
     installXrplFacilitators();
     stubXrplOn({ HP_XRPL_ASSET_TRANSFER_METHOD: "ticketSequence" });

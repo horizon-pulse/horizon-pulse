@@ -6,9 +6,9 @@
  * (oversight/streams/horizon-pulse/xrpl-rail-feasibility-2026-10-08.md):
  *   - settle in RLUSD only (not XRP: volatile, would need per-call FX);
  *   - CAIP-2 ids from the x402 exact-XRPL spec: xrpl:0 mainnet, xrpl:1 testnet;
- *   - testnet-first: the default network is xrpl:1 with the free x402.org
- *     facilitator; mainnet needs Michael's inputs (activated payTo + RLUSD
- *     trust line, facilitator choice) and is never a default;
+ *   - TESTNET ONLY for now: the default (and only usable) network is xrpl:1
+ *     with the free x402.org facilitator. xrpl:0 is locked in code
+ *     (XRPL_MAINNET_ALLOWED = false) and has no allow-listed facilitator;
  *   - Base stays the first `accepts` entry on every route.
  *
  * This module deliberately imports nothing from @x402/xrpl or xrpl, so a
@@ -19,10 +19,11 @@
  * The rail is ON only when ALL of these hold; anything else is OFF and every
  * route serves the exact 402 it served before this branch:
  *   - HP_XRPL_ENABLED is exactly the string "true"
- *   - HP_XRPL_PAYTO is exactly XRPL_PAYTO (character for character: no
- *     trimming, no case folding, no other address)
- *   - XRPL_PAYTO is a checksummed XRPL classic address (runtime check)
- *   - HP_XRPL_NETWORK, if set, is exactly "xrpl:1" (testnet) or "xrpl:0" (mainnet)
+ *   - HP_XRPL_NETWORK, if set, is exactly "xrpl:1" (testnet). "xrpl:0" is
+ *     refused while XRPL_MAINNET_ALLOWED is false.
+ *   - HP_XRPL_PAYTO is exactly the payTo pinned for that network
+ *     (xrplPayToFor; character for character, no trimming or case folding)
+ *   - the pinned payTos are checksummed XRPL classic addresses (runtime check)
  *   - the facilitator URL is on XRPL_FACILITATOR_ALLOWLIST for that network
  *     (testnet default: x402.org; mainnet has NO default and must be named)
  *   - HP_XRPL_RPC_URL, if set, is an https URL on the allow-listed read-only
@@ -31,8 +32,9 @@
  *   - HP_XRPL_ASSET_TRANSFER_METHOD, if set, is "sequence" or "ticketSequence"
  * Even when ON, the XRPL entry is only shown while the payTo account exists
  * on the configured network and holds an RLUSD trust line to the issuer
- * (lib/xrpl-rail.ts, read-only RPC). On 2026-10-08 the payTo is NOT activated
- * on mainnet or testnet, so the entry stays hidden.
+ * (lib/xrpl-rail.ts, read-only RPC). 2026-10-12: the testnet payTo has its
+ * testnet RLUSD trust line; r3Fbir is activated on mainnet but has NO RLUSD
+ * trust line (and mainnet is locked anyway).
  *
  * Moving the payout to any other address needs a code change to XRPL_PAYTO
  * plus a fresh passphrase from Michael; the env alone can only switch the
@@ -43,9 +45,9 @@
 import { createHash } from "node:crypto";
 
 /**
- * Michael's Ledger XRPL classic address. The ONLY XRPL payTo. UNACTIVATED on
- * mainnet as of 2026-10-08: activation (≥1 XRP reserve) and the RLUSD trust
- * line are Michael's own Ledger actions. Nothing in this repo funds it,
+ * Michael's Ledger XRPL classic address: the ONLY mainnet (xrpl:0) payTo.
+ * Activated on mainnet (1.43 XRP, read 2026-10-12 8:28 AM ET), NO RLUSD trust
+ * line yet; the trust line is Michael's own Ledger action. Nothing in this repo funds it,
  * sends to it, or creates trust lines.
  */
 export const XRPL_PAYTO = "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf" as const;
@@ -70,6 +72,13 @@ export const RLUSD_TESTNET_ISSUER = "rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV" as cons
 /** CAIP-2 ids from the x402 exact-XRPL spec (specs/schemes/exact/scheme_exact_xrpl.md). */
 export const XRPL_MAINNET_CAIP2 = "xrpl:0" as const;
 export const XRPL_TESTNET_CAIP2 = "xrpl:1" as const;
+/**
+ * Code-level mainnet lock (Odin, 2026-10-12). While false, xrpl:0 is OFF
+ * (misconfigured) no matter what env is set. Flipping it is a code change +
+ * Class A + Michael's yes, after his RLUSD trust line on r3Fbir exists.
+ */
+export const XRPL_MAINNET_ALLOWED = false as boolean;
+
 export type XrplRailNetwork = typeof XRPL_MAINNET_CAIP2 | typeof XRPL_TESTNET_CAIP2;
 
 /**
@@ -119,7 +128,9 @@ export const X402_ORG_FACILITATOR_URL = "https://x402.org/facilitator" as const;
  */
 export const XRPL_FACILITATOR_ALLOWLIST: Readonly<Record<XrplRailNetwork, readonly string[]>> = {
   [XRPL_TESTNET_CAIP2]: [X402_ORG_FACILITATOR_URL, "https://xrpl-facilitator-testnet.t54.ai"],
-  [XRPL_MAINNET_CAIP2]: ["https://xrpl-facilitator-mainnet.t54.ai"],
+  // Empty while XRPL_MAINNET_ALLOWED is false. t54 mainnet was removed: its
+  // testnet twin rejects spec-shaped @x402/xrpl payloads (missing_invoice_id).
+  [XRPL_MAINNET_CAIP2]: [],
 };
 
 /** Public read-only JSON-RPC per network (payTo readiness check + settled-tx time). */
@@ -313,7 +324,10 @@ export function getXrplRailConfig(env: Env = process.env): XrplConfigResult {
     const rawNet = env.HP_XRPL_NETWORK;
     let network: XrplRailNetwork;
     if (rawNet === undefined || rawNet === "" || rawNet === XRPL_TESTNET_CAIP2) network = XRPL_TESTNET_CAIP2;
-    else if (rawNet === XRPL_MAINNET_CAIP2) network = XRPL_MAINNET_CAIP2;
+    else if (rawNet === XRPL_MAINNET_CAIP2) {
+      if (!XRPL_MAINNET_ALLOWED) return off("xrpl:0 (mainnet) is locked in code (XRPL_MAINNET_ALLOWED = false)", true);
+      network = XRPL_MAINNET_CAIP2;
+    }
     else return off("HP_XRPL_NETWORK must be exactly xrpl:1 (testnet) or xrpl:0 (mainnet)", true);
 
     const payTo = env.HP_XRPL_PAYTO;
