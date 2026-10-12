@@ -9,10 +9,14 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
+      { url: "/brand/favicon-16.png", type: "image/png", sizes: "16x16" },
+      { url: "/brand/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/brand/hp-icon-dark.svg", type: "image/svg+xml" },
       { url: "/icon.png", type: "image/png", sizes: "256x256" },
     ],
-    apple: "/icon.png",
+    apple: { url: "/brand/apple-touch-icon.png", sizes: "180x180" },
   },
+  manifest: "/site.webmanifest",
   openGraph: {
     title: "Horizon Pulse",
     description: SERVICE_DESCRIPTION,
