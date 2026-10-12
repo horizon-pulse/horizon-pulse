@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { moneyMarketRates, parseHolidayPage, parseQuery, rateStatus, resetMmrCachesForTests, type Deps } from "@/lib/money-market-rates";
+import { cacheablePayload, mmrCacheSizesForTests, moneyMarketRates, parseHolidayPage, parseQuery, rateStatus, resetMmrCachesForTests, type Deps } from "@/lib/money-market-rates";
 
 const FX = path.join(__dirname, "fixtures", "mmr");
 const NY = readFileSync(path.join(FX, "nyfed-holiday-2026-10-12.html"), "utf8");
@@ -108,5 +108,84 @@ describe("route", () => {
     expect(res.status).toBe(400);
     expect(res.headers.get("payment-required")).toBeNull();
     expect(readFileSync(path.join(__dirname, "..", "app", "api", "money-market-rates", "route.ts"), "utf8")).not.toMatch(/withX402|x402-server|createX402/);
+  });
+});
+
+describe("Class A 10/12 fixes: bounded cache + upstream budget", () => {
+  const RANGE_ROWS = (d: string) => ({ refRates: ["SOFR", "EFFR", "OBFR", "TGCR", "BGCR"].map((type) => ({ type, effectiveDate: d, percentRate: 4.1 })) });
+  it("200 one-day ranges stay bounded in cache entries and upstream fetches", async () => {
+    const mod = await import("@/lib/money-market-rates");
+    let t = Date.parse("2026-10-13T15:00:00Z");
+    let fetches = 0;
+    const d: Deps = { now: () => new Date(t), fetchText: async (u) => (u.includes("newyorkfed") ? NY : K8), fetchJson: async (u) => { fetches++; return RANGE_ROWS(/startDate=([\d-]+)/.exec(u)![1]); } };
+    let ok = 0, limited = 0;
+    for (let i = 0; i < 200; i++) {
+      const day = new Date(Date.parse("2025-01-01T12:00:00Z") + i * 86_400_000).toISOString().slice(0, 10);
+      try { await moneyMarketRates({ kind: "range", rates: ["SOFR", "EFFR", "OBFR", "TGCR", "BGCR"], startDate: day, endDate: day }, { ...d, clientIp: `10.0.0.${i % 50}` }); ok++; }
+      catch (e) { expect(e).toBeInstanceOf(mod.MmrUpstreamLimited); limited++; }
+    }
+    expect(fetches).toBeLessThanOrEqual(mod.UPSTREAM_GLOBAL_PER_WINDOW);
+    expect(limited).toBeGreaterThan(0);
+    expect(ok).toBeGreaterThan(0);
+    // across many windows the cache never exceeds its cap
+    for (let i = 0; i < 400; i++) {
+      t += mod.UPSTREAM_WINDOW_MS / 10;
+      const day = new Date(Date.parse("2024-01-01T12:00:00Z") + i * 86_400_000).toISOString().slice(0, 10);
+      try { await moneyMarketRates({ kind: "range", rates: ["SOFR"], startDate: day, endDate: day }, { ...d, clientIp: `ip${i}` }); } catch { /* limited */ }
+      expect(mmrCacheSizesForTests().cache).toBeLessThanOrEqual(mod.CACHE_MAX_ENTRIES);
+    }
+    expect(mmrCacheSizesForTests().cache).toBe(mod.CACHE_MAX_ENTRIES);
+    expect(mmrCacheSizesForTests().lastGood).toBeLessThanOrEqual(5);
+  });
+
+  it("per-IP limit trips before global; other IPs still served", async () => {
+    const mod = await import("@/lib/money-market-rates");
+    const d = deps("2026-10-13T15:00:00Z", { fetchJson: async (u) => RANGE_ROWS(/startDate=([\d-]+)/.exec(u)![1]) });
+    let lim: unknown = null;
+    for (let i = 0; i < 20 && !lim; i++) {
+      const day = `2025-02-${String(i + 1).padStart(2, "0")}`;
+      try { await moneyMarketRates({ kind: "range", rates: ["SOFR"], startDate: day, endDate: day }, { ...d, clientIp: "1.1.1.1" }); } catch (e) { lim = e; }
+    }
+    expect((lim as InstanceType<typeof mod.MmrUpstreamLimited>).scope).toBe("ip");
+    const r = await moneyMarketRates({ kind: "range", rates: ["SOFR"], startDate: "2025-03-03", endDate: "2025-03-03" }, { ...d, clientIp: "2.2.2.2" });
+    expect(r.rates[0].observations.length).toBe(1);
+  });
+
+  it("serves STALE from cache (may not be current) when the budget is spent", async () => {
+    let t = Date.parse("2026-10-13T15:00:00Z");
+    const d: Deps = { now: () => new Date(t), fetchText: async (u) => (u.includes("newyorkfed") ? NY : K8), fetchJson: async () => LATEST, clientIp: "9.9.9.9" };
+    await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    t += 11 * 60_000; // cache expired
+    for (let i = 0; i < 20; i++) { try { await moneyMarketRates({ kind: "range", rates: ["SOFR"], startDate: `2025-04-${String(i + 1).padStart(2, "0")}`, endDate: `2025-04-${String(i + 1).padStart(2, "0")}` }, d); } catch { /* spend */ } }
+    const r = await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    expect(r.rates[0].status).toMatch(/^STALE as-of /);
+    expect(r.rates[0].status_note).toContain("may not be current");
+    expect(r.rates[0].observations.length).toBeGreaterThan(0);
+  });
+
+  it("never caches a bad latest.json payload", async () => {
+    let n = 0;
+    const bad = { refRates: [{ type: "SOFR", effectiveDate: "2026-10-08", percentRate: "4.1" }] };
+    const d = deps("2026-10-13T15:00:00Z", { fetchJson: async () => { n++; return n <= 2 ? bad : LATEST; } });
+    const r1 = await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    expect(r1.rates[0].status).toBe("unavailable");
+    expect(cacheablePayload("https://markets.newyorkfed.org/api/rates/all/latest.json", bad)).toBe(false);
+    const r2 = await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    expect(r2.rates[0].observations.length).toBeGreaterThan(0);
+    expect(n).toBe(3);
+  });
+
+  it("route: 429 when limited with nothing cached; s-maxage=60 on 200", async () => {
+    const mod = await import("@/lib/money-market-rates");
+    const { GET } = await import("@/app/api/money-market-rates/route");
+    const spy = vi.spyOn(mod, "moneyMarketRates");
+    spy.mockRejectedValueOnce(new mod.MmrUpstreamLimited("global"));
+    const res = await GET(new NextRequest("https://horizonpulse.dev/api/money-market-rates?startDate=2025-01-02&endDate=2025-01-02"));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("60");
+    spy.mockResolvedValueOnce({} as never);
+    const ok = await GET(new NextRequest("https://horizonpulse.dev/api/money-market-rates"));
+    expect(ok.headers.get("cache-control")).toContain("s-maxage=60");
+    spy.mockRestore();
   });
 });

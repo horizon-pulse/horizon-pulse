@@ -153,25 +153,73 @@ export type Deps = {
   fetchJson: (url: string, timeoutMs: number) => Promise<unknown>;
   fetchText: (url: string, timeoutMs: number) => Promise<string>;
   now: () => Date;
+  /** Caller IP for the per-IP upstream budget (route passes x-forwarded-for / x-real-ip). */
+  clientIp?: string;
 };
 
 let holidayCache: { closedBoth: Set<string>; readAt: number; years: number } | null = null;
 let lastHolidayAttempt = 0;
+/** LRU-capped upstream cache (Map keeps insertion order; a hit re-inserts). Odin Class A 10/12: unbounded keys per date range. */
+export const CACHE_MAX_ENTRIES = 200;
+export const LAST_GOOD_MAX = MMR_RATES.length;
+/** Upstream NY Fed fetch budget per rolling minute (holiday pages included). */
+export const UPSTREAM_WINDOW_MS = 60_000;
+export const UPSTREAM_GLOBAL_PER_WINDOW = 60;
+export const UPSTREAM_PER_IP_PER_WINDOW = 15;
 const cache = new Map<string, { at: number; payload: { refRates: unknown[] }; url: string }>();
 const lastGood = new Map<MmrRate, { obs: Record<string, unknown>[]; url: string; at: number }>();
-export function resetMmrCachesForTests() { holidayCache = null; lastHolidayAttempt = 0; cache.clear(); lastGood.clear(); }
+let globalFetches: number[] = [];
+const ipFetches = new Map<string, number[]>();
+export function resetMmrCachesForTests() { holidayCache = null; lastHolidayAttempt = 0; cache.clear(); lastGood.clear(); globalFetches = []; ipFetches.clear(); }
+export function mmrCacheSizesForTests() { return { cache: cache.size, lastGood: lastGood.size, ipKeys: ipFetches.size }; }
+
+function cacheGet(url: string) {
+  const c = cache.get(url);
+  if (c) { cache.delete(url); cache.set(url, c); }
+  return c;
+}
+function cacheSet(url: string, v: { at: number; payload: { refRates: unknown[] }; url: string }) {
+  cache.delete(url);
+  cache.set(url, v);
+  while (cache.size > CACHE_MAX_ENTRIES) cache.delete(cache.keys().next().value as string);
+}
+function lastGoodSet(rate: MmrRate, v: { obs: Record<string, unknown>[]; url: string; at: number }) {
+  lastGood.delete(rate);
+  lastGood.set(rate, v);
+  while (lastGood.size > LAST_GOOD_MAX) lastGood.delete(lastGood.keys().next().value as MmrRate);
+}
+
+export class MmrUpstreamLimited extends Error {
+  constructor(readonly scope: "global" | "ip") { super(`upstream fetch limit (${scope})`); }
+}
+/** Takes one upstream fetch slot or throws MmrUpstreamLimited. Per-IP map is pruned and capped too. */
+function takeSlot(ip: string | undefined, nowMs: number) {
+  const cut = nowMs - UPSTREAM_WINDOW_MS;
+  globalFetches = globalFetches.filter((t) => t > cut);
+  if (globalFetches.length >= UPSTREAM_GLOBAL_PER_WINDOW) throw new MmrUpstreamLimited("global");
+  const key = ip || "unknown";
+  const mine = (ipFetches.get(key) ?? []).filter((t) => t > cut);
+  if (mine.length >= UPSTREAM_PER_IP_PER_WINDOW) { ipFetches.set(key, mine); throw new MmrUpstreamLimited("ip"); }
+  mine.push(nowMs);
+  globalFetches.push(nowMs);
+  ipFetches.delete(key);
+  ipFetches.set(key, mine);
+  if (ipFetches.size > 1000) for (const [k, v] of ipFetches) { if (ipFetches.size <= 1000) break; if (!v.some((t) => t > cut) || k !== key) ipFetches.delete(k); }
+}
 
 async function readHolidays(deps: Deps): Promise<HolidayState> {
   const nowMs = deps.now().getTime();
   if (!holidayCache || nowMs - lastHolidayAttempt >= HOLIDAY_REFRESH_MS) {
     lastHolidayAttempt = nowMs;
     try {
+      takeSlot(deps.clientIp, nowMs); takeSlot(deps.clientIp, nowMs);
       const [a, b] = await Promise.all(HOLIDAY_SOURCES.map((u) => deps.fetchText(u, 10_000)));
       const ny = parseHolidayPage(a);
       const k8 = parseHolidayPage(b);
       if (ny.size && k8.size) {
         holidayCache = { closedBoth: new Set([...ny].filter((d) => k8.has(d))), readAt: nowMs, years: 0 };
-        // A date closed on one page only = disagreement; recorded so callers can mark UNVERIFIED.
+        // A date closed on one page only = disagreement -> status "UNVERIFIED holiday status" (rateStatus checks today, expected, P).
+        // Such a day is neither a closure nor a confirmed publication day (e.g. 2026-07-03: K.8 closed, NY Fed open -> UNVERIFIED).
         (holidayCache as { disagree?: Set<string> }).disagree = new Set([...ny, ...k8].filter((d) => !(ny.has(d) && k8.has(d))));
       }
     } catch { /* keep last good read */ }
@@ -220,12 +268,27 @@ function rowsFor(payload: unknown, rate: MmrRate): Record<string, unknown>[] | n
   return rows;
 }
 
-async function getPayload(url: string, deps: Deps): Promise<{ payload: unknown; at: number }> {
+/** A payload is cacheable only if every MMR row in it is well-formed; all/latest.json must carry all five rates. */
+export function cacheablePayload(url: string, payload: unknown): payload is { refRates: unknown[] } {
+  const rr = (payload as { refRates?: unknown })?.refRates;
+  if (!Array.isArray(rr) || !rr.length) return false;
+  const mine = rr.filter((r) => !!r && typeof r === "object" && (MMR_RATES as readonly string[]).includes((r as { type?: string }).type ?? ""));
+  if (mine.some((r) => typeof (r as Record<string, unknown>).effectiveDate !== "string" || typeof (r as Record<string, unknown>).percentRate !== "number")) return false;
+  if (url.endsWith("all/latest.json")) return MMR_RATES.every((x) => rowsFor(payload, x) !== null);
+  return mine.length > 0;
+}
+
+type Got = { payload: unknown; at: number; stale?: boolean };
+async function getPayload(url: string, deps: Deps): Promise<Got> {
   const nowMs = deps.now().getTime();
-  const c = cache.get(url);
+  const c = cacheGet(url);
   if (c && nowMs - c.at < CACHE_TTL_MS) return { payload: c.payload, at: c.at };
+  try { takeSlot(deps.clientIp, nowMs); } catch (e) {
+    if (c) return { payload: c.payload, at: c.at, stale: true };
+    throw e;
+  }
   const payload = await deps.fetchJson(url, ATTEMPT_TIMEOUT_MS);
-  cache.set(url, { at: nowMs, payload: payload as { refRates: unknown[] }, url });
+  if (cacheablePayload(url, payload)) cacheSet(url, { at: nowMs, payload, url });
   return { payload, at: nowMs };
 }
 
@@ -237,25 +300,32 @@ export async function moneyMarketRates(query: MmrQuery, deps: Deps) {
   const holidayVerified = hol !== null;
   let retrievedAt = 0;
   let sofraiToday = false;
-  const shared = new Map<string, Promise<{ payload: unknown; at: number } | null>>();
+  let limited: MmrUpstreamLimited | null = null;
+  const shared = new Map<string, Promise<Got | null>>();
   const attempt = (url: string) => {
-    if (!shared.has(url)) shared.set(url, getPayload(url, deps).catch(() => { cache.delete(url); return null; }));
+    if (!shared.has(url)) shared.set(url, getPayload(url, deps).catch((e) => {
+      if (e instanceof MmrUpstreamLimited) { limited ??= e; return null; }
+      cache.delete(url); return null;
+    }));
     return shared.get(url)!;
   };
   const rates = await Promise.all(query.rates.map(async (rate) => {
     const urls = [rateUrl(rate, query), rateUrl(rate, query, true)]; // 2 attempts; retry may use the per-rate endpoint
     let rows: Record<string, unknown>[] | null = null;
     let used = urls[0];
+    let staleAt = 0;
     for (const u of urls) {
       const got = await attempt(u);
       if (got && (rows = rowsFor(got.payload, rate)) !== null) {
         used = u; retrievedAt = Math.max(retrievedAt, got.at);
+        if (got.stale) staleAt = got.at;
         if (u.endsWith("all/latest.json")) {
           const sai = (got.payload as { refRates: { type?: string; effectiveDate?: string }[] }).refRates.find((r) => r?.type === "SOFRAI");
           if (sai?.effectiveDate === today) sofraiToday = true;
         }
         break;
       }
+      if (limited) break; // budget spent: no second attempt
       if (u === urls[0]) shared.delete(u); // second attempt on the same URL if both are equal
     }
     const base = { type: rate, source: SOURCE, notice: notice(rate) };
@@ -263,13 +333,18 @@ export async function moneyMarketRates(query: MmrQuery, deps: Deps) {
       const lg = lastGood.get(rate);
       if (lg && query.kind === "latest") {
         const latest = String(lg.obs[0]?.effectiveDate ?? "");
-        return { ...base, source_url: lg.url, status: `STALE as-of ${latest}`, status_note: "Two NY Fed fetch attempts failed; serving the last good published values, not current.", observations: lg.obs };
+        const why = limited ? "Upstream fetch limit reached" : "Two NY Fed fetch attempts failed";
+        return { ...base, source_url: lg.url, status: `STALE as-of ${latest}`, status_note: `${why}; serving the last good published values, which may not be current.`, observations: lg.obs };
       }
+      if (limited) throw limited; // no cached data for this rate: the route answers 429
       return { ...base, source_url: urls[0], status: "unavailable", status_note: "Two NY Fed fetch attempts failed for this rate.", observations: [] };
     }
     const obs = rows.map((r) => pickObs(rate, r)).sort((a, b) => String(b.effectiveDate).localeCompare(String(a.effectiveDate)));
-    if (query.kind === "latest") lastGood.set(rate, { obs, url: used, at: served.getTime() });
+    if (query.kind === "latest" && !staleAt) lastGoodSet(rate, { obs, url: used, at: served.getTime() });
     let st: Status;
+    if (staleAt) {
+      return { ...base, source_url: used, status: `STALE as-of ${String(obs[0].effectiveDate)}`, status_note: `Upstream fetch limit reached; serving cached published values retrieved ${etIso(new Date(staleAt))}, which may not be current.`, observations: obs };
+    }
     if (!holidayVerified) st = { status: "UNVERIFIED holiday status", status_note: "No good read of both holiday pages in the last 24 hours; no holiday or stale call is made." };
     else if (query.kind === "range") st = { status: "fresh", status_note: `Published observations for ${query.startDate} to ${query.endDate} as released.` };
     else st = rateStatus({ latest: String(obs[0].effectiveDate), today, minutes, closed, disagree: disagreeSet(), releaseMin: SECURED.has(rate) ? 480 : 540, secured: SECURED.has(rate), sofraiToday: false });
