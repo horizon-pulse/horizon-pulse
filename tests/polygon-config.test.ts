@@ -6,9 +6,12 @@ const PAYTO = "0x5b32c973596078a967562ca652761404f19be0e9";
 const CDP = { CDP_API_KEY_ID: "k", CDP_API_KEY_SECRET: "s" };
 
 describe("polygon config", () => {
-  it("mainnet is code-locked", () => {
-    expect(POLYGON_MAINNET_ALLOWED).toBe(false);
-    expect(getPolygonRailConfig({ HP_POLYGON_ENABLED: "true", HP_POLYGON_PAYTO: PAYTO, ...CDP }).enabled).toBe(false);
+  it("mainnet is unlocked (polygon-mainnet-unlock): default config enables eip155:137 native USDC with CDP keys", () => {
+    expect(POLYGON_MAINNET_ALLOWED).toBe(true);
+    const r = getPolygonRailConfig({ HP_POLYGON_ENABLED: "true", HP_POLYGON_NETWORK: "eip155:137", HP_POLYGON_PAYTO: PAYTO, ...CDP });
+    expect(r.enabled && r.config.network).toBe("eip155:137");
+    expect(r.enabled && r.config.asset).toBe(USDC_POLYGON);
+    expect(getPolygonRailConfig({ HP_POLYGON_ENABLED: "true", HP_POLYGON_PAYTO: PAYTO, ...CDP }, false).enabled).toBe(false);
   });
   it("mainnet (if unlocked) pins native USDC, never USDC.e, CDP facilitator", () => {
     const r = getPolygonRailConfig({ HP_POLYGON_ENABLED: "true", HP_POLYGON_PAYTO: PAYTO, ...CDP }, true);

@@ -1,7 +1,6 @@
 /**
  * Polygon flag-off byte-identity (same golden as x402-flag-off / xrpl-flag-off):
- * with the Polygon rail off (unset, malformed, or mainnet while
- * POLYGON_MAINNET_ALLOWED=false), every 402 / OPTIONS / discovery surface is
+ * with the Polygon rail off (unset or malformed env), every 402 / OPTIONS / discovery surface is
  * byte-identical to main and no non-CDP facilitator is contacted.
  */
 import { readFileSync } from "node:fs";
@@ -33,8 +32,8 @@ const OFF_VARIANTS: Record<string, Record<string, string>> = {
   "flag=TRUE": { ...ON, HP_POLYGON_ENABLED: "TRUE" },
   "flag=1": { ...ON, HP_POLYGON_ENABLED: "1" },
   "flag=' true'": { ...ON, HP_POLYGON_ENABLED: " true" },
-  "mainnet (default network) while code-locked": ON,
-  "mainnet explicit while code-locked": { ...ON, HP_POLYGON_NETWORK: "eip155:137" },
+  "mainnet explicit, payTo missing": { HP_POLYGON_ENABLED: "true", HP_POLYGON_NETWORK: "eip155:137" },
+  "mainnet explicit, flag=TRUE": { ...ON, HP_POLYGON_ENABLED: "TRUE", HP_POLYGON_NETWORK: "eip155:137" },
   "amoy without HP_POLYGON_TESTNET": { ...ON, HP_POLYGON_NETWORK: "eip155:80002" },
   "network 'polygon' (not CAIP-2)": { ...ON, HP_POLYGON_NETWORK: "polygon", HP_POLYGON_TESTNET: "true" },
   "amoy, payTo checksummed case": { ...ON, HP_POLYGON_NETWORK: "eip155:80002", HP_POLYGON_TESTNET: "true", HP_POLYGON_PAYTO: "0x5B32c973596078a967562ca652761404f19be0E9" },

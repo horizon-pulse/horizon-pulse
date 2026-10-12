@@ -31,7 +31,7 @@ export const USDC_E_POLYGON_REFUSED = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa8417
 export const USDC_AMOY = "0x41E94Eb019C0762f9Bfcf9Fb1E58725BfB0e7582" as const;
 
 /** Code-level mainnet lock. While false, eip155:137 is OFF whatever the env says. */
-export const POLYGON_MAINNET_ALLOWED: boolean = false;
+export const POLYGON_MAINNET_ALLOWED: boolean = true;
 
 export const POLYGON_AMOY_FACILITATOR_URL = "https://x402-amoy.polygon.technology" as const;
 
