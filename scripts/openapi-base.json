@@ -470,6 +470,127 @@
         }
       }
     },
+    "/api/market/search": {
+      "get": {
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10,
+              "default": 5
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "api_route",
+                "mcp_tool",
+                "data_feed",
+                "digital_good",
+                "physical_good",
+                "local_service",
+                "tokenized",
+                "service"
+              ]
+            }
+          },
+          {
+            "name": "rail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "max_price",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1000
+            }
+          },
+          {
+            "name": "min_health",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Missing or bad q, n, kind, rail, max_price or min_health"
+          },
+          "404": {
+            "description": "No offers matched the query and filters (code no_results). Not charged."
+          },
+          "502": {
+            "description": "CDP discovery unavailable or not answering before the deadline (code cdp_unavailable), or too little time left after payment verification (code time_budget_used). Not charged."
+          }
+        }
+      }
+    },
+    "/api/market/quote": {
+      "get": {
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Missing, bad or http-only url, bad method, or a blocked private/local host"
+          },
+          "502": {
+            "description": "Target unreachable over https (code unreachable), or too little time left after payment verification (code time_budget_used). Not charged."
+          },
+          "504": {
+            "description": "Target did not answer in time (code timeout). Not charged."
+          }
+        }
+      }
+    },
     "/api/screenshot": {
       "get": {
         "summary": "Screenshot a public URL",

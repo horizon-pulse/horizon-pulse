@@ -57,6 +57,14 @@
  * 'headers as JSON string' and 'Upstream 4xx/5xx come back as data (charged)'
  * restored). Only the /api/http keys changed; every decoded challenge is
  * identical to main except resource.description.
+ *
+ * 2026-10-12 (branch market-mvp, on main f59cdf8): regenerated with
+ * UPDATE_GOLDEN=1 after adding /api/market/search and /api/market/quote.
+ * golden.cdp and golden.local gained ONLY the six new market keys (GET json,
+ * GET browser, OPTIONS per route); all 44 pre-existing keys in each mode are
+ * byte-identical to main's golden (checked with a key-by-key compare).
+ * golden.discovery refreshed (/.well-known/x402, skill.md, openapi.json,
+ * llms.txt list the two new routes).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

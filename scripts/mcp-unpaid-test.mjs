@@ -9,7 +9,7 @@ async function rpc(method, params) {
   return { status: r.status, json: await r.json() };
 }
 function restChallenge(route, q = "") {
-  return fetch(`${BASE}/api/${route.replace(/_/g, "-")}${q}`).then((r) => {
+  return fetch(`${BASE}/api/${route.startsWith("market_") ? route.replace("_", "/") : route.replace(/_/g, "-")}${q}`).then((r) => {
     const h = r.headers.get("payment-required");
     return { status: r.status, pr: h ? JSON.parse(Buffer.from(h, "base64").toString()) : null };
   });
@@ -21,11 +21,13 @@ const ARGS = {
   extract: { url: "https://example.com" },
   x402_check: { url: "https://horizonpulse.dev/api/pulse" },
   bazaar_check: { url: "horizonpulse.dev" },
+  market_search: { q: "weather forecast" },
+  market_quote: { url: "https://horizonpulse.dev/api/pulse" },
   screenshot: { url: "https://example.com" },
   search: { q: "x402" },
   pdf: { url: "https://horizonpulse.dev/sample.pdf" },
 };
-const Q = { portfolio: "?address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", fetch: "?url=https://example.com", http: "?url=https://example.com", extract: "?url=https://example.com", x402_check: "?url=https://horizonpulse.dev/api/pulse", bazaar_check: "?url=horizonpulse.dev", screenshot: "?url=https://example.com", search: "?q=x402", pdf: "?url=https://horizonpulse.dev/sample.pdf" };
+const Q = { portfolio: "?address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", fetch: "?url=https://example.com", http: "?url=https://example.com", extract: "?url=https://example.com", x402_check: "?url=https://horizonpulse.dev/api/pulse", bazaar_check: "?url=horizonpulse.dev", market_search: "?q=weather%20forecast", market_quote: "?url=https://horizonpulse.dev/api/pulse", screenshot: "?url=https://example.com", search: "?q=x402", pdf: "?url=https://horizonpulse.dev/sample.pdf" };
 let fail = 0;
 const ok = (c, msg) => { console.log(`${c ? "PASS" : "FAIL"} ${msg}`); if (!c) fail++; };
 
@@ -33,7 +35,7 @@ const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabiliti
 ok(init.status === 200 && init.json.result?.serverInfo?.name === "horizon-pulse", "initialize is free");
 const list = await rpc("tools/list", {});
 const names = (list.json.result?.tools || []).map((t) => t.name).sort();
-const EXPECTED = ["bazaar_check","extract","fetch","funding","gas","http","pdf","portfolio","pulse","screenshot","search","signals","x402_check","yield"];
+const EXPECTED = ["bazaar_check","extract","fetch","funding","gas","http","market_quote","market_search","pdf","portfolio","pulse","screenshot","search","signals","x402_check","yield"];
 const missing = EXPECTED.filter((n) => !names.includes(n)), extra = names.filter((n) => !EXPECTED.includes(n));
 ok(!missing.length && !extra.length, `tools/list free, ${EXPECTED.length} tools expected, got ${names.length}${missing.length ? `; missing ${missing}` : ""}${extra.length ? `; not in this script (stale copy? update ARGS/Q/EXPECTED): ${extra}` : ""}`);
 const schemas = Object.fromEntries((list.json.result?.tools || []).map((t) => [t.name, t.inputSchema || {}]));

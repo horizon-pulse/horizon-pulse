@@ -27,6 +27,8 @@ import {
   SCREENSHOT_PRICE_USD,
   X402_CHECK_PRICE_USD,
   BAZAAR_CHECK_PRICE_USD,
+  MARKET_SEARCH_PRICE_USD,
+  MARKET_QUOTE_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -241,6 +243,11 @@ function routeDescription(path: string): string {
   return meta.description;
 }
 
+/** /api/demo/<name> for a route path: nested paths join with '-' (/api/market/search -> market-search). */
+export function demoName(path: string): string {
+  return path.replace(/^\/api\//, "").replace(/\//g, "-");
+}
+
 /** Recorded example (see lib/route-examples.ts) + a label saying it is an example. */
 function outputOf(path: string, what: string) {
   const example = OUTPUT_EXAMPLES[path];
@@ -249,7 +256,7 @@ function outputOf(path: string, what: string) {
     example,
     schema: {
       type: "object",
-      description: `${what}. The example is a trimmed real response recorded from GET /api/demo/${path.slice(5)} at ${exampleRecordedAt(path)} UTC; live values differ on every call.`,
+      description: `${what}. The example is a trimmed real response recorded from GET /api/demo/${demoName(path)} at ${exampleRecordedAt(path)} UTC; live values differ on every call.`,
     },
   };
 }
@@ -763,6 +770,82 @@ export function bazaarCheckRouteConfig(): RoutesConfig {
             required: ["url"],
           },
           output: outputOf("/api/bazaar-check", "Horizon Pulse CDP Bazaar index check with lint findings"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+/**
+ * Agent marketplace (MVP). Same rails, pinned payTo and Bazaar declaration
+ * pattern as every other GET route. Prices are UNTESTED (lib/config.ts).
+ */
+export function marketSearchRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/market/search": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: MARKET_SEARCH_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/market/search"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/market/search"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { q: "weather forecast", n: "3" },
+          inputSchema: {
+            properties: {
+              q: { type: "string", description: "What the agent needs, in words (required, <=200 chars)." },
+              n: { type: "string", description: "Offers to return, integer 1-10 (default 5). The top 3 are re-checked live." },
+              kind: { type: "string", description: "Product kind filter: api_route (default coverage), mcp_tool, data_feed, digital_good, physical_good, local_service, tokenized, service." },
+              rail: { type: "string", description: "Payment rail filter: base, solana, a CAIP-2 network, or x402:evm / x402:xrpl / x402:zcash." },
+              max_price: { type: "string", description: "Max USD price per call, e.g. 0.01." },
+              min_health: { type: "string", description: "Minimum health score 0-1." },
+            },
+            required: ["q"],
+          },
+          output: outputOf("/api/market/search", "Horizon Pulse agent marketplace search: ranked x402 offers with live re-check and buy plans"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+export function marketQuoteRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/market/quote": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: MARKET_QUOTE_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/market/quote"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/market/quote"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { url: "https://horizonpulse.dev/api/pulse" },
+          inputSchema: {
+            properties: {
+              url: { type: "string", description: "https URL of the x402 resource to quote (required). Private/localhost blocked." },
+              method: { type: "string", description: "Probe method GET or POST (default GET; one POST retry on 405)." },
+            },
+            required: ["url"],
+          },
+          output: outputOf("/api/market/quote", "Horizon Pulse pre-pay quote: live x402 terms, payTo cross-check and verdict"),
         } as DiscoveryDecl),
       },
     },

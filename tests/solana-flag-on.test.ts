@@ -24,6 +24,8 @@ const MAIN_PRICES: Record<string, string> = {
   pulse: "5000", signals: "15000", yield: "20000", portfolio: "40000", gas: "10000", funding: "10000",
   fetch: "20000", http: "10000", extract: "15000", "x402-check": "10000", "bazaar-check": "10000", screenshot: "20000",
   search: "30000", pdf: "20000",
+  // market-mvp: new routes, priced like every route (same atomic amount on both rails).
+  "market/search": "5000", "market/quote": "5000",
 };
 
 async function captureBoth() {
@@ -91,7 +93,7 @@ describe("flag on", () => {
         checked++;
       }
     }
-    expect(checked).toBe(88);
+    expect(checked).toBe(100); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local)
     expect(JSON.stringify(all.cdp)).not.toBe(JSON.stringify(golden.cdp));
   });
 

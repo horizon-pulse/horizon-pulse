@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-12 (branch market-mvp, not deployed): agent marketplace MVP, two new paid routes
+
+- **New:** `GET /api/market/search` ($0.005, untested price): x402 offers from CDP Bazaar discovery (plus our own catalog, no boost), ranked by relevance, the index's order, a live re-check, recency and distinct payers. No paid placement, no featured listings. The top 3 are re-checked live with one unpaid request each, and their live payTo is cross-checked against the index entry. Every result has a direct-pay buy plan; Horizon Pulse holds no funds and takes no fee.
+- **New:** `GET /api/market/quote` ($0.005, untested price): live 402 terms for one x402 resource (per network: USD price, asset, payTo; Base and Solana), the CDP Bazaar entry, a payTo cross-check and a `pay` / `caution` / `avoid` verdict. A payTo mismatch is always `avoid`, with no ready buy plan.
+- **MCP:** hosted `/mcp` and the stdio server gain `market_search` and `market_quote`, with the same payment terms and output as REST.
+- **Safety:** listing text is untrusted data. It is returned labelled; instruction-like text is flagged and removed from titles; links in listings are never followed. Only the listed resource URL is requested, https only, with the SSRF guard on every hop. The deadline counts from request arrival (18s, 3s-left rule).
+- **Unchanged:** every existing route's 402 / OPTIONS bytes, prices and payTo (golden fixture: 44/44 pre-existing keys per mode identical).
+
 ## BREAKING (response field): /api/pulse overall.signal removed, replaced by overall.direction
 
 - **Breaking:** `/api/pulse` responses no longer contain `overall.signal`. Clients that read it must switch to `overall.direction`. Nothing else in the response shape changed.

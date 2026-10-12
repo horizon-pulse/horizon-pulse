@@ -11,6 +11,8 @@ import { httpHandler } from "@/app/api/http/handler";
 import { extractHandler } from "@/app/api/extract/handler";
 import { x402CheckHandler } from "@/app/api/x402-check/handler";
 import { bazaarCheckHandler } from "@/app/api/bazaar-check/handler";
+import { marketSearchHandler } from "@/app/api/market/search/handler";
+import { marketQuoteHandler } from "@/app/api/market/quote/handler";
 import { screenshotHandler } from "@/app/api/screenshot/handler";
 import { searchHandler } from "@/app/api/search/handler";
 import { pdfHandler } from "@/app/api/pdf/handler";
@@ -22,7 +24,8 @@ export const maxDuration = 30;
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
 // bazaar-check: CDP discovery + ~15 outbound probes per run, so one sample per instance per 10 min.
-const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf", "bazaar-check"]);
+// market-search / market-quote: CDP discovery + live probes of third-party sellers, same 10 min reuse.
+const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf", "bazaar-check", "market-search", "market-quote"]);
 const HEAVY_TTL_MS = 10 * 60 * 1000;
 /** search spends paid provider quota: one sample per instance per day. */
 const TTL_MS: Record<string, number> = { search: 24 * 60 * 60 * 1000 };
@@ -43,6 +46,8 @@ const HANDLERS: Record<string, Handler> = {
   extract: extractHandler,
   "x402-check": x402CheckHandler,
   "bazaar-check": bazaarCheckHandler,
+  "market-search": marketSearchHandler,
+  "market-quote": marketQuoteHandler,
   screenshot: screenshotHandler,
   search: searchHandler,
   pdf: pdfHandler,
@@ -71,8 +76,10 @@ export async function GET(
   }
 
   const origin = req.nextUrl.origin;
+  // Demo names are flat; nested paid routes map back (market-search -> /api/market/search).
+  const paidPath = `/api/${route.replace(/^market-/, "market/")}`;
   const inner = new NextRequest(
-    `${origin}/api/${route}${demo.query ? `?${demo.query}` : ""}`,
+    `${origin}${paidPath}${demo.query ? `?${demo.query}` : ""}`,
     { method: "GET" },
   );
   // Expensive demos (headless Chromium; paid search quota) reuse one sample per
@@ -105,8 +112,8 @@ export async function GET(
   return NextResponse.json(
     {
       demo: true,
-      note: `Free fixed-input sample of real output. The paid route accepts your own input: /api/${route} (${demo.priceUsd} per call, x402 USDC on Base, no signup or API key).`,
-      paid_endpoint: `${origin}/api/${route}`,
+      note: `Free fixed-input sample of real output. The paid route accepts your own input: ${paidPath} (${demo.priceUsd} per call, x402 USDC on Base, no signup or API key).`,
+      paid_endpoint: `${origin}${paidPath}`,
       price: demo.priceUsd,
       fixed_input: demo.input,
       sample_status: status,

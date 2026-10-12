@@ -30,6 +30,8 @@ const BAD_REQUEST: Record<string, Json> = {
   "/api/extract": { ok: false, error: "url is required when html is not provided", code: "missing_input" },
   "/api/x402-check": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url" },
   "/api/bazaar-check": { ok: false, error: "Query param url is required (a host like example.com or an https URL)", code: "missing_url" },
+  "/api/market/search": { ok: false, error: "Query param q is required", code: "missing_query" },
+  "/api/market/quote": { ok: false, error: "Query param url is required (the https URL of an x402 resource)", code: "missing_url" },
   "/api/screenshot": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url" },
   "/api/search": { ok: false, error: "Query param q is required", code: "missing_query" },
   "/api/pdf": { ok: false, error: "Query param url is required (absolute http/https URL of a PDF)", code: "missing_url" },
@@ -148,6 +150,8 @@ for (const r of LIVE_PAID_ROUTES) {
         facilitator: CDP_FACILITATOR_URL,
         discovery: `${PUBLIC_BASE_URL}/.well-known/x402`,
       },
+      // Price not yet tested against demand (lib/live-catalog.ts priceStatus); absent on every other operation.
+      ...(r.priceStatus ? { "x-price-status": r.priceStatus } : {}),
     };
     if (m === "get") {
       const qp = inSchema.queryParams ?? { properties: {} };

@@ -29,6 +29,8 @@ import * as http from "@/app/api/http/handler";
 import * as extract from "@/app/api/extract/handler";
 import * as x402check from "@/app/api/x402-check/handler";
 import * as bazaarCheck from "@/app/api/bazaar-check/handler";
+import * as marketSearch from "@/app/api/market/search/handler";
+import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
 import * as pdf from "@/app/api/pdf/handler";
@@ -140,6 +142,39 @@ export const TOOLS: ToolDef[] = [
       url: z.string().describe("Seller host (e.g. example.com) or https URL to check against CDP Bazaar discovery"),
     },
     call: (a) => runHandler(bazaarCheck.bazaarCheckHandler, makeRequest("/api/bazaar-check", { url: s(a.url) })),
+  },
+  {
+    name: "market_search",
+    opts: marketSearch.paymentOpts,
+    schema: {
+      q: z.string().describe("What the agent needs, in words (<=200 chars)"),
+      n: z.number().int().optional().describe("Offers to return, 1-10 (default 5); the top 3 are re-checked live"),
+      kind: z.string().optional().describe("Product kind filter (api_route, mcp_tool, data_feed, ...)"),
+      rail: z.string().optional().describe("Payment rail filter: base, solana, a CAIP-2 network, or x402:evm / x402:xrpl / x402:zcash"),
+      max_price: z.number().optional().describe("Max USD price per call, e.g. 0.01"),
+      min_health: z.number().optional().describe("Minimum health score 0-1"),
+    },
+    call: (a) =>
+      runHandler(
+        marketSearch.marketSearchHandler,
+        makeRequest("/api/market/search", {
+          q: s(a.q),
+          n: a.n != null ? String(a.n) : undefined,
+          kind: s(a.kind),
+          rail: s(a.rail),
+          max_price: a.max_price != null ? String(a.max_price) : undefined,
+          min_health: a.min_health != null ? String(a.min_health) : undefined,
+        }),
+      ),
+  },
+  {
+    name: "market_quote",
+    opts: marketQuote.paymentOpts,
+    schema: {
+      url: z.string().describe("https URL of the x402 resource to quote before paying"),
+      method: z.string().optional().describe("Probe method GET (default; one POST retry on 405) or POST"),
+    },
+    call: (a) => runHandler(marketQuote.marketQuoteHandler, makeRequest("/api/market/quote", { url: s(a.url), method: s(a.method) })),
   },
   {
     name: "screenshot",

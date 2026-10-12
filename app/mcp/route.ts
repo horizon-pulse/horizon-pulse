@@ -34,7 +34,7 @@ function facilitatorUnavailable(): Response {
 
 /**
  * Stateless streamable-HTTP MCP: fresh server + transport per request.
- * The arrival time is stamped first so time-budgeted tools (bazaar_check)
+ * The arrival time is stamped first so time-budgeted tools (bazaar_check, market_search, market_quote)
  * count their deadline from request arrival (lib/request-arrival.ts).
  */
 export function POST(req: Request): Promise<Response> {

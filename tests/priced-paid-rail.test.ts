@@ -11,7 +11,7 @@
  * Facilitators and the Solana RPC are mocked (no network, no funds, nothing
  * signed). Upstream data sources of the representative routes are stubbed.
  */
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
@@ -144,14 +144,20 @@ describe("pricedBlock helper", () => {
   });
 });
 
-describe("all 14 paid handlers build `priced` with the rail-aware helper", () => {
+describe("all 16 paid handlers build `priced` with the rail-aware helper", () => {
   it("no handler hard-codes the Base network / USDC / payTo in its priced block", () => {
-    const dirs = readdirSync(path.join(ROOT, "app", "api"), { withFileTypes: true })
+    // market-mvp: nested route dirs (app/api/market/{search,quote}) count as routes; a dir with handler.ts is a route.
+    const api = path.join(ROOT, "app", "api");
+    const dirs = readdirSync(api, { withFileTypes: true })
       .filter((d) => d.isDirectory() && d.name !== "demo")
-      .map((d) => d.name)
+      .flatMap((d) =>
+        existsSync(path.join(api, d.name, "handler.ts"))
+          ? [d.name]
+          : readdirSync(path.join(api, d.name), { withFileTypes: true }).filter((c) => c.isDirectory()).map((c) => `${d.name}/${c.name}`),
+      )
       .sort();
     expect(dirs).toEqual([...PAID_ROUTES].sort());
-    expect(dirs).toHaveLength(14);
+    expect(dirs).toHaveLength(16);
     for (const d of dirs) {
       const src = readFileSync(path.join(ROOT, "app", "api", d, "handler.ts"), "utf8");
       expect(src.match(/priced: pricedBlock\(\w+_PRICE_USD, \w+_PRICE_ATOMIC\)/g), d).toHaveLength(1);

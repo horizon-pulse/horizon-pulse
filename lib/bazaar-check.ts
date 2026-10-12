@@ -328,7 +328,8 @@ export type ProbeLint = {
   findings: Finding[];
 };
 
-function decodeChallenge(v: string): Json | null {
+/** Exported for lib/market (same decoding as the lint). */
+export function decodeChallenge(v: string): Json | null {
   try {
     return obj(JSON.parse(Buffer.from(v, "base64").toString("utf8")));
   } catch {
@@ -609,8 +610,8 @@ export type IndexData = {
   searchError: string | null;
 };
 
-/** One CDP discovery GET, bounded by min(CDP_TIMEOUT_MS, deadline - now). */
-async function cdpGet(deps: Deps, path: string, deadline: number): Promise<Json> {
+/** One CDP discovery GET, bounded by min(CDP_TIMEOUT_MS, deadline - now). Exported for lib/market. */
+export async function cdpGet(deps: Deps, path: string, deadline: number): Promise<Json> {
   const budget = Math.min(CDP_TIMEOUT_MS, deadline - deps.now());
   if (budget <= 0) throw new DeadlineError();
   try {

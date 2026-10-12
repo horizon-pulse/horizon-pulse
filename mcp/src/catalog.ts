@@ -36,8 +36,10 @@ export function toolsFromOpenApi(spec: Json): RouteTool[] {
     if (!method) continue;
     const op = item[method.toLowerCase()];
     const pay = op["x-payment-info"];
-    const demo = p.replace(/^\/api\//, "");
-    const name = demo.replace(/[^a-zA-Z0-9]+/g, "_");
+    const rel = p.replace(/^\/api\//, "");
+    // Nested paths: demo names join with "-" (/api/market/search -> market-search), tool names with "_" (market_search).
+    const demo = rel.replace(/\//g, "-");
+    const name = rel.replace(/[^a-zA-Z0-9]+/g, "_");
 
     let inputSchema: RouteTool["inputSchema"];
     if (method === "GET") {

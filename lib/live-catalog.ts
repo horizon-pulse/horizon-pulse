@@ -30,6 +30,10 @@ import {
   X402_CHECK_PRICE_ATOMIC,
   BAZAAR_CHECK_PRICE_USD,
   BAZAAR_CHECK_PRICE_ATOMIC,
+  MARKET_SEARCH_PRICE_USD,
+  MARKET_SEARCH_PRICE_ATOMIC,
+  MARKET_QUOTE_PRICE_USD,
+  MARKET_QUOTE_PRICE_ATOMIC,
   SEARCH_PRICE_USD,
   SEARCH_PRICE_ATOMIC,
   PDF_PRICE_USD,
@@ -57,6 +61,8 @@ export type LiveRoute = {
   category: "crypto" | "web" | "agent";
   /** One-line landing-page description */
   blurb: string;
+  /** Set on routes whose price has not been tested against demand yet (plan D10). */
+  priceStatus?: "untested";
 };
 
 /** Live paid routes. Crypto six frozen; fetch + http + extract are non-crypto LIVE. */
@@ -168,6 +174,28 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     blurb: "Check whether an x402 seller is listed in CDP Bazaar, and why not",
   },
   {
+    path: "/api/market/search?q=…",
+    method: "GET",
+    priceUsd: MARKET_SEARCH_PRICE_USD,
+    priceAtomic: MARKET_SEARCH_PRICE_ATOMIC,
+    summary:
+      "Agent marketplace search: x402 offers from CDP Bazaar ranked (no paid placement), top 3 re-checked live, payTo cross-checked with the index, direct-pay buy plans (never pays)",
+    category: "agent",
+    blurb: "Find a paid x402 API for a task, re-checked live",
+    priceStatus: "untested",
+  },
+  {
+    path: "/api/market/quote?url=https://…",
+    method: "GET",
+    priceUsd: MARKET_QUOTE_PRICE_USD,
+    priceAtomic: MARKET_QUOTE_PRICE_ATOMIC,
+    summary:
+      "Pre-pay quote for one x402 resource: live terms per network (Base, Solana), CDP Bazaar entry, payTo cross-check and a pay/caution/avoid verdict (never pays)",
+    category: "agent",
+    blurb: "Check an x402 seller's live price and payTo before paying",
+    priceStatus: "untested",
+  },
+  {
     path: "/api/screenshot?url=https://…",
     method: "GET",
     priceUsd: SCREENSHOT_PRICE_USD,
@@ -208,7 +236,7 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text)." as const;
 
 export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
   crypto: "Crypto market data",
@@ -217,7 +245,7 @@ export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
 };
 
 /** Route name used by /api/demo/<name>, derived from the display path. */
-export const routeName = (r: LiveRoute) => r.path.replace(/^\/api\//, "").replace(/\?.*$/, "");
+export const routeName = (r: LiveRoute) => r.path.replace(/^\/api\//, "").replace(/\?.*$/, "").replace(/\//g, "-");
 
 const usd = (p: string) => Number(p.replace(/[^0-9.]/g, ""));
 /** Catalog-derived stats (never hardcoded). */

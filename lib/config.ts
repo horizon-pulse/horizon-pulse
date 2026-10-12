@@ -111,6 +111,21 @@ export const SEARCH_PRICE_ATOMIC = "30000" as const; // USDC 6 decimals
 export const PDF_PRICE_USD = "$0.02" as const;
 export const PDF_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
 
+/**
+ * /api/market/search — agent marketplace search (CDP Bazaar + live re-check of
+ * the top offers + payTo cross-check). $0.005 (5000 atomic). UNTESTED price
+ * (plan D10, review after 2 weeks of data).
+ */
+export const MARKET_SEARCH_PRICE_USD = "$0.005" as const;
+export const MARKET_SEARCH_PRICE_ATOMIC = "5000" as const; // USDC 6 decimals
+
+/**
+ * /api/market/quote — live 402 terms + index cross-check + pay/caution/avoid
+ * verdict for one x402 resource. $0.005 (5000 atomic). UNTESTED price (plan D10).
+ */
+export const MARKET_QUOTE_PRICE_USD = "$0.005" as const;
+export const MARKET_QUOTE_PRICE_ATOMIC = "5000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 
@@ -119,11 +134,11 @@ export const SERVICE_DESCRIPTION =
   "Pay-per-call APIs for AI agents, paid in USDC on Base or Solana with x402: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key." as const;
 
 /**
- * Service-level description for /.well-known/x402 (covers all 14 routes).
+ * Service-level description for /.well-known/x402 (covers every live paid route).
  * Facts only: no uptime, volume or popularity claims.
  */
 export const DISCOVERY_DESCRIPTION =
-  "Pay-per-call APIs for AI agents via x402 on Base and Solana (USDC, no API key): web search with page contents, web fetch to markdown, HTTP proxy, structured page extract, page screenshots, PDF to text, x402 endpoint checks, CDP Bazaar index checks, and crypto data (spot prices, technical indicators, perp funding, gas fees, DeFi yields, wallet portfolios)." as const;
+  "Pay-per-call APIs for AI agents via x402 on Base and Solana (USDC, no API key): web search with page contents, web fetch to markdown, HTTP proxy, structured page extract, page screenshots, PDF to text, x402 endpoint checks, CDP Bazaar index checks, an x402 marketplace search and pre-pay quote, and crypto data (spot prices, technical indicators, perp funding, gas fees, DeFi yields, wallet portfolios)." as const;
 
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 

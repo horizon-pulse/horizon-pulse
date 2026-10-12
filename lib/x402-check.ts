@@ -127,7 +127,8 @@ async function getCodeType(address: string, chain: "base" | "ethereum"): Promise
   return "unknown";
 }
 
-function formatUnits(atomic: string, decimals: number): string | null {
+/** Atomic integer string → decimal string (exported for lib/market). */
+export function formatUnits(atomic: string, decimals: number): string | null {
   if (!/^\d+$/.test(atomic)) return null;
   const s = atomic.padStart(decimals + 1, "0");
   const whole = s.slice(0, -decimals);
