@@ -2,7 +2,9 @@
  * Hosted MCP endpoint (POST /mcp): the paid routes as MCP tools.
  *
  * - Each tool calls the EXISTING route handler unchanged (same SSRF guards,
- *   caps and upstreams). No new data paths, no free/demo data via MCP.
+ *   caps and upstreams). No new data paths, no demo data via MCP. Exception:
+ *   FREE_TOOLS (money_market_rates) call the free REST route with no x402
+ *   wrapper; they are not paid tools and not in TOOLS.
  * - Payment uses the official @x402/mcp wrapper with the SAME accepts the REST
  *   routes advertise (buildPaymentRequirements: amount, payTo, network, asset).
  *   Same CDP facilitator via getResourceServer().
@@ -11,12 +13,15 @@
  *   settled (wrapper cancels settlement on isError).
  * - No Bazaar discovery extension on MCP tools (REST discovery unchanged).
  */
+import { AsyncLocalStorage } from "node:async_hooks";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPaymentWrapper } from "@x402/mcp";
 import { NextRequest, type NextResponse } from "next/server";
 import { z } from "zod";
 import { buildPaymentRequirements, getResourceServer } from "./x402-server";
 import { PUBLIC_BASE_URL } from "./config";
+import { MMR_DESCRIPTION } from "./money-market-rates";
+import { GET as moneyMarketRatesGET } from "@/app/api/money-market-rates/route";
 
 import * as pulse from "@/app/api/pulse/handler";
 import * as signals from "@/app/api/signals/handler";
@@ -39,13 +44,25 @@ type PaymentOpts = { maxAmountRequired: string; resource: string; description: s
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
 /** Build the internal request the REST handler expects. */
+/** Client IP of the incoming /mcp request (x-real-ip, else first x-forwarded-for entry), set by app/mcp/route.ts. */
+const mcpCaller = new AsyncLocalStorage<{ ip?: string }>();
+export function mcpClientIp(headers: Headers): string | undefined {
+  return headers.get("x-real-ip")?.trim() || headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
+}
+export function withMcpCaller<T>(req: Request, fn: () => T): T {
+  return mcpCaller.run({ ip: mcpClientIp(req.headers) }, fn);
+}
+
 function makeRequest(path: string, query: Record<string, string | undefined>, jsonBody?: unknown): NextRequest {
   const url = new URL(path, PUBLIC_BASE_URL);
   for (const [k, v] of Object.entries(query)) if (v != null && v !== "") url.searchParams.set(k, v);
-  if (jsonBody === undefined) return new NextRequest(url, { method: "GET" });
+  // Forward the MCP caller's IP so per-IP limits (e.g. money_market_rates) are per user, not one shared bucket.
+  const ip = mcpCaller.getStore()?.ip;
+  const fwd: Record<string, string> = ip ? { "x-real-ip": ip } : {};
+  if (jsonBody === undefined) return new NextRequest(url, { method: "GET", headers: fwd });
   return new NextRequest(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...fwd },
     body: JSON.stringify(jsonBody),
   });
 }
@@ -243,5 +260,25 @@ export function buildMcpServer(): McpServer {
       paid(async (args) => t.call(args as Record<string, unknown>)),
     );
   }
+  // FREE tools: no x402 wrapper, no challenge; counted as free, never in TOOLS (the paid list).
+  for (const f of FREE_TOOLS) server.tool(f.name, f.description, f.schema, async (args) => f.call(args as Record<string, unknown>));
   return server;
 }
+
+export const FREE_TOOLS = [
+  {
+    name: "money_market_rates",
+    description: MMR_DESCRIPTION,
+    schema: {
+      rates: z.string().optional().describe("Comma list from SOFR,EFFR,OBFR,TGCR,BGCR (default all five)"),
+      last: z.number().int().optional().describe("Last n observations per rate, 1-10 (exclusive with startDate/endDate)"),
+      startDate: z.string().optional().describe("YYYY-MM-DD, >= 2018-04-02; needs endDate; span <= 31 days"),
+      endDate: z.string().optional().describe("YYYY-MM-DD, >= startDate"),
+    },
+    call: (a: Record<string, unknown>) =>
+      runHandler(
+        moneyMarketRatesGET as unknown as Handler,
+        makeRequest("/api/money-market-rates", { rates: s(a.rates), last: a.last != null ? String(a.last) : undefined, startDate: s(a.startDate), endDate: s(a.endDate) }),
+      ),
+  },
+];

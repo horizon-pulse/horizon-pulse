@@ -12,6 +12,7 @@ import * as S from "../lib/x402-server";
 import { LIVE_PAID_ROUTES, CATEGORY_LABELS, routeName } from "../lib/live-catalog";
 import { USDC_BASE, CDP_FACILITATOR_URL, PUBLIC_BASE_URL, CONTACT_EMAIL, SERVICE_DESCRIPTION } from "../lib/config";
 import { exampleRecordedAt } from "../lib/route-examples";
+import * as M from "../lib/money-market-rates";
 import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "../lib/solana-config";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -233,6 +234,33 @@ for (const r of LIVE_PAID_ROUTES) {
     op.responses = responses;
     paths[p][m] = op;
   }
+}
+
+// FREE route (Markets spec v2): documented here but NOT a paid operation. No x-payment-info, security: [] (no x402),
+// no 402 response, so /docs paid tables, skill.md, the stdio MCP catalog and /.well-known/x402 (all keyed on
+// x-payment-info / the paid route list) skip it.
+{
+  paths["/api/money-market-rates"] = {
+    get: {
+      operationId: "getMoneyMarketRates",
+      summary: "Published NY Fed reference rates as released (FREE, no payment)",
+      description: M.MMR_DESCRIPTION,
+      tags: ["Free data"],
+      security: [],
+      "x-free": true,
+      parameters: [
+        { name: "rates", in: "query", required: false, description: "Comma list from SOFR,EFFR,OBFR,TGCR,BGCR (case-insensitive; default all five)", schema: { type: "string" } },
+        { name: "last", in: "query", required: false, description: "Last n observations per rate, 1-10. Exclusive with startDate/endDate.", schema: { type: "integer", minimum: 1, maximum: 10 } },
+        { name: "startDate", in: "query", required: false, description: "YYYY-MM-DD, >= 2018-04-02; requires endDate; span <= 31 calendar days", schema: { type: "string", format: "date" } },
+        { name: "endDate", in: "query", required: false, description: "YYYY-MM-DD, >= startDate; requires startDate", schema: { type: "string", format: "date" } },
+      ],
+      responses: {
+        "200": { description: `Rates as published, per-rate status and terms block. ${M.MMR_DISCLAIMER}`, content: { "application/json": { schema: { type: "object" } } } },
+        "400": { description: "Bad or unknown params (body lists the allowed params).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        "429": { description: "Upstream NY Fed fetch limit reached for every requested rate and nothing cached; Retry-After: 60. Per-rate limits otherwise show status rate_limited.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+      },
+    },
+  };
 }
 
 const spec = {

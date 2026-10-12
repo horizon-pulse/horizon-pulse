@@ -36,11 +36,20 @@ ok(init.status === 200 && init.json.result?.serverInfo?.name === "horizon-pulse"
 const list = await rpc("tools/list", {});
 const names = (list.json.result?.tools || []).map((t) => t.name).sort();
 const EXPECTED = ["bazaar_check","extract","fetch","funding","gas","http","market_quote","market_search","pdf","portfolio","pulse","screenshot","search","signals","x402_check","yield"];
+// FREE tools (no x402 wrapper): listed, never challenged; not part of the paid count.
+const FREE = ["money_market_rates"];
+EXPECTED.push(...FREE);
 const missing = EXPECTED.filter((n) => !names.includes(n)), extra = names.filter((n) => !EXPECTED.includes(n));
-ok(!missing.length && !extra.length, `tools/list free, ${EXPECTED.length} tools expected, got ${names.length}${missing.length ? `; missing ${missing}` : ""}${extra.length ? `; not in this script (stale copy? update ARGS/Q/EXPECTED): ${extra}` : ""}`);
+ok(!missing.length && !extra.length, `tools/list free, ${EXPECTED.length} tools expected (${EXPECTED.length - FREE.length} paid + ${FREE.length} free), got ${names.length}${missing.length ? `; missing ${missing}` : ""}${extra.length ? `; not in this script (stale copy? update ARGS/Q/EXPECTED): ${extra}` : ""}`);
 const schemas = Object.fromEntries((list.json.result?.tools || []).map((t) => [t.name, t.inputSchema || {}]));
 
 for (const name of names) {
+  if (FREE.includes(name)) {
+    const r = await rpc("tools/call", { name, arguments: { rates: "SOFR" } });
+    const text = ((r.json.result || {}).content || []).map((c) => c.text).join("");
+    ok(!/"x402Version"/.test(text) && !/"accepts"/.test(text), `${name}: free tool returns no x402 challenge`);
+    continue;
+  }
   const need = (schemas[name].required || []).filter((k) => !(ARGS[name] && k in ARGS[name]));
   if (need.length) { ok(false, `${name}: no test args for required ${need} (add to ARGS and Q; tool not known to this script copy)`); continue; }
   const r = await rpc("tools/call", { name, arguments: ARGS[name] || {} });
