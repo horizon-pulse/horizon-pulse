@@ -409,6 +409,33 @@ describe("searchMarket", () => {
     expect(r.results[0]!.health.status).toBe("failed");
   });
 
+  it("parse: polygon / eip155:137 -> exact network eip155:137 (no rail); evm -> x402:evm; xrpl -> x402:xrpl; xrpl:0 exact", () => {
+    for (const [r, rail, network] of [["polygon", null, "eip155:137"], ["Polygon", null, "eip155:137"], ["eip155:137", null, "eip155:137"], ["evm", "x402:evm", null], ["xrpl", "x402:xrpl", null], ["xrpl:0", null, "xrpl:0"]]) {
+      const p = parseSearchInput({ q: "x", rail: r } as never) as { rail?: string | null; network?: string | null };
+      expect(p.rail, r!).toBe(rail);
+      expect(p.network, r!).toBe(network);
+    }
+  });
+
+  it("Solana mainnet CAIP-2 (rail= or network=) returns the same results as rail=solana", async () => {
+    const deps = mockDeps({
+      search: () => ({
+        resources: [
+          listing(W(1), [acc(BASE, EVM_A, "5000")], { serviceName: "Weather base" }),
+          listing(W(2), [acc(SOL, SOL_A, "5000")], { serviceName: "Weather sol" }),
+          listing(W(3), [acc(BASE, EVM_A, "5000"), acc(SOL, SOL_A, "5000")], { serviceName: "Weather base+sol" }),
+          listing(W(4), [acc("eip155:137", EVM_A, "5000")], { serviceName: "Weather polygon" }),
+        ],
+      }),
+      pages: {},
+    });
+    const urls = async (i: Record<string, string>) => (ok(await searchMarket({ q: "weather", n: "10", ...i }, deps)) as MarketSearchResult).results.map((x) => x.url).sort();
+    const bySolana = await urls({ rail: "solana" });
+    expect(bySolana).toEqual([W(2), W(3)].sort());
+    expect(await urls({ rail: SOL })).toEqual(bySolana);
+    expect(await urls({ network: SOL })).toEqual(bySolana);
+  });
+
   it("rail=polygon / eip155:137 is exact: only eip155:137 sellers, never Ethereum or Avalanche; rail=evm is any non-Base EVM", async () => {
     const deps = mockDeps({
       search: () => ({

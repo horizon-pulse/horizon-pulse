@@ -21,13 +21,3 @@ describe("/api/demo/market/<op> slash alias", () => {
   });
 });
 
-import { parseSearchInput } from "../lib/market/engine";
-describe("market/search rail aliases", () => {
-  it("polygon / eip155:137 -> exact network eip155:137 (no rail); evm -> x402:evm; xrpl -> x402:xrpl; xrpl:0 exact", () => {
-    for (const [r, rail, network] of [["polygon", null, "eip155:137"], ["Polygon", null, "eip155:137"], ["eip155:137", null, "eip155:137"], ["evm", "x402:evm", null], ["xrpl", "x402:xrpl", null], ["xrpl:0", null, "xrpl:0"]]) {
-      const p = parseSearchInput({ q: "x", rail: r } as never) as { rail?: string | null; network?: string | null };
-      expect(p.rail, r!).toBe(rail);
-      expect(p.network, r!).toBe(network);
-    }
-  });
-});
