@@ -8,7 +8,7 @@ export function SiteHeader() {
       <div className="hp-wrap hp-header-in">
         <Link href="/" className="hp-brand">
           <span className="hp-mark" aria-hidden>
-            <svg viewBox="0 0 32 32" width="22" height="22"><g fill="none" stroke="currentColor"><path d="M5.5 5V27M26.5 5V27" strokeWidth="2.4" /><path d="M6 16.5H13.5L15.2 7.5L17.4 22.5L18.6 16.5H26" strokeWidth="2" strokeLinejoin="round" /></g></svg>
+            <svg viewBox="0 0 32 32" width="22" height="22"><g fill="none" stroke="currentColor"><path d="M7 4V28M25 4V28" strokeWidth="3" /><path d="M8.5 16.5H13.5L15.3 8L17.3 23L18.8 16.5H23.5" strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" /></g></svg>
           </span>
           Horizon Pulse
         </Link>
