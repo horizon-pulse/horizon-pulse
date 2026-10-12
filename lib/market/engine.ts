@@ -125,7 +125,8 @@ export type ParsedSearch = {
   minHealth: number | null;
 };
 
-const RAIL_ALIASES: Record<string, OfferRail> = { base: "x402:base", solana: "x402:solana", xrpl: "x402:xrpl", zcash: "x402:zcash" };
+// polygon/evm map to the coarse x402:evm rail (every non-Base EVM chain); there is no per-chain rail.
+const RAIL_ALIASES: Record<string, OfferRail> = { base: "x402:base", solana: "x402:solana", xrpl: "x402:xrpl", zcash: "x402:zcash", polygon: "x402:evm", evm: "x402:evm" };
 
 export function parseSearchInput(i: SearchInput): ParsedSearch | MarketError {
   const bad = (error: string, code = "bad_input"): MarketError => ({ ok: false, error, code, status: 400 });
@@ -149,7 +150,7 @@ export function parseSearchInput(i: SearchInput): ParsedSearch | MarketError {
     if (RAIL_ALIASES[lower]) rail = RAIL_ALIASES[lower]!;
     else if ((OFFER_RAILS as readonly string[]).includes(lower)) rail = lower as OfferRail;
     else if (/^[a-z0-9-]+:[A-Za-z0-9-]+$/.test(r)) rail = railForNetwork(r);
-    else return bad(`rail must be base, solana, a CAIP-2 network, or one of ${OFFER_RAILS.join(", ")}`);
+    else return bad(`rail must be base, solana, polygon, xrpl, a CAIP-2 network, or one of ${OFFER_RAILS.join(", ")}`);
   }
   let maxPrice: number | null = null;
   if (i.max_price !== undefined && i.max_price !== "") {

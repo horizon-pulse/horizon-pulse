@@ -36,7 +36,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 | GET | /api/x402-check?url=https://…[&method=POST][&body={json}] | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays; optional JSON body for POST probes, auto POST retry on 405) |
 | GET | /api/bazaar-check?url=… | $0.01 | 10000 | Is an x402 seller indexed in Coinbase CDP Bazaar, and if not, why: per-route index status and networks (Base, Solana) from CDP discovery, plus lint findings with a fix line each (never pays) |
 | GET | /api/market/search?q=…[&n=1-10][&kind=…][&rail=base\|solana][&max_price=…][&min_health=0-1] | $0.005 | 5000 | Agent marketplace search: x402 offers from CDP Bazaar ranked (no paid placement), top 3 re-checked live, payTo cross-checked with the index, direct-pay buy plans (never pays; untested price) |
-| GET | /api/market/quote?url=https://…[&method=POST] | $0.005 | 5000 | Pre-pay quote for one x402 resource: live terms per network (Base, Solana), CDP Bazaar entry, payTo cross-check, pay/caution/avoid verdict (never pays; untested price) |
+| GET | /api/market/quote?url=https://…[&method=POST] | $0.005 | 5000 | Pre-pay quote for one x402 resource: live terms per network (Base, Polygon and other EVM chains, Solana, XRP Ledger), CDP Bazaar entry, payTo cross-check, pay/caution/avoid verdict (never pays; untested price) |
 
 ## Input bounds
 
