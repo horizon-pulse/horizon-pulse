@@ -40,7 +40,7 @@ export function GET(): NextResponse {
       version: 1,
       resources: buildResources(),
       description: DISCOVERY_DESCRIPTION,
-      instructions: `x402 v2, scheme exact, USDC on Base mainnet (${BASE_CAIP2}, Coinbase CDP facilitator) or Solana mainnet (${SOLANA_MAINNET_CAIP2}, PayAI facilitator), same price on both networks. Unpaid requests return HTTP 402 with a PAYMENT-REQUIRED header listing one accepts entry per network; pay exactly one and retry with PAYMENT-SIGNATURE. payTo: Base ${DEFAULT_PAY_TO} (Basename ${BASE_PAY_TO_BASENAME}, a label for that address; compare the hex payTo in the challenge), Solana ${SOLANA_PAYTO}. Full schemas: ${PUBLIC_BASE_URL}/openapi.json and ${PUBLIC_BASE_URL}/llms.txt. Agent skill (step-by-step pay flow): ${PUBLIC_BASE_URL}/skill.md. MCP setup: ${PUBLIC_BASE_URL}/agents. Contact: ${CONTACT_EMAIL}.`,
+      instructions: `x402 v2, scheme exact, USDC on Base mainnet (${BASE_CAIP2}, Coinbase CDP facilitator) or Solana mainnet (${SOLANA_MAINNET_CAIP2}, PayAI facilitator), or RLUSD on the XRP Ledger mainnet (xrpl:0, issuer rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De, verified on the validated ledger), same price on every network. Unpaid requests return HTTP 402 with a PAYMENT-REQUIRED header listing one accepts entry per network; pay exactly one and retry with PAYMENT-SIGNATURE. payTo: Base ${DEFAULT_PAY_TO} (Basename ${BASE_PAY_TO_BASENAME}, a label for that address; compare the hex payTo in the challenge), Solana ${SOLANA_PAYTO}, XRP Ledger r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf. Full schemas: ${PUBLIC_BASE_URL}/openapi.json and ${PUBLIC_BASE_URL}/llms.txt. Agent skill (step-by-step pay flow): ${PUBLIC_BASE_URL}/skill.md. MCP setup: ${PUBLIC_BASE_URL}/agents. Contact: ${CONTACT_EMAIL}.`,
     },
     {
       headers: {

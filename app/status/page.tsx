@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Status | Horizon Pulse",
-  description: "Live on-chain USDC balance of the Horizon Pulse payTo on Base, the paid route catalog, and where to pay on Base and Solana.",
+  description: "Live on-chain USDC balance of the Horizon Pulse payTo on Base, the paid route catalog, and where to pay on Base, Solana and the XRP Ledger.",
 };
 
 const OLD_HOST = "horizon-pulse.vercel.app";
@@ -88,7 +88,7 @@ export default async function StatusPage() {
               </div>
               <div className="hp-stat">
                 <div className="k">Networks</div>
-                <div className="v">Base + Solana</div>
+                <div className="v">Base + Solana + XRP Ledger</div>
                 <div className="d"><code>{BASE_CAIP2}</code> · Solana mainnet</div>
               </div>
             </div>

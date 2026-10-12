@@ -96,12 +96,12 @@ export function buildSkillMarkdown(): string {
 
   return `---
 name: horizon-pulse
-description: Call Horizon Pulse pay-per-call APIs at ${PUBLIC_BASE_URL} and pay each request in USDC on Base or Solana with x402 v2 (no signup or API key). Use when you need web search with sources, a web page as clean text, structured page fields, a page screenshot, PDF text, a proxied HTTP request, an x402 endpoint audit, a search of other paid x402 APIs with a pre-pay quote, or crypto data (spot prices, indicators, perp funding, gas, DeFi yields, wallet holdings).
+description: Call Horizon Pulse pay-per-call APIs at ${PUBLIC_BASE_URL} and pay each request in USDC on Base or Solana, or RLUSD on the XRP Ledger, with x402 v2 (no signup or API key). Use when you need web search with sources, a web page as clean text, structured page fields, a page screenshot, PDF text, a proxied HTTP request, an x402 endpoint audit, a search of other paid x402 APIs with a pre-pay quote, or crypto data (spot prices, indicators, perp funding, gas, DeFi yields, wallet holdings).
 ---
 
-# Horizon Pulse: pay-per-call APIs for agents (x402 v2, USDC on Base or Solana)
+# Horizon Pulse: pay-per-call APIs for agents (x402 v2, USDC on Base or Solana, RLUSD on the XRP Ledger)
 
-${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call. Every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet or Solana mainnet, at the same price on both. No account, no API key.
+${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call. Every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet or Solana mainnet, or RLUSD on XRP Ledger mainnet, at the same price on each. No account, no API key.
 
 - Base URL: ${PUBLIC_BASE_URL} (call and pay this host only)
 - Amounts: USDC, 6 decimals on both networks (10000 atomic = $0.01)
@@ -142,6 +142,7 @@ Rules of thumb: research a question with sources → \`/api/search\`; read one p
 4. **Sign** for exactly \`amount\`, valid for at most \`maxTimeoutSeconds\`. Use an x402 client library rather than hand-rolling it.
    - **Base:** an EIP-3009 \`transferWithAuthorization\` to \`payTo\` (USDC EIP-712 domain: name "USD Coin", version "2", chainId 8453). Node: \`@x402/core\` + \`@x402/evm\`; Python: \`x402\`. The payer needs USDC on Base; no ETH or gas is needed.
    - **Solana:** a partially signed SPL Token \`TransferChecked\` from your USDC token account to the payTo's USDC token account, with \`extra.feePayer\` (PayAI) as the transaction fee payer; the facilitator co-signs and submits it. Node: \`@x402/core\` + \`@x402/svm\`. The payer needs USDC on Solana; no SOL is needed for fees.
+   - **XRP Ledger:** an RLUSD \`Payment\` on \`xrpl:0\` of exactly \`amount\` (an RLUSD decimal value such as \`0.005\`, not atomic units) to payTo \`r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf\`, issuer \`rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De\` (in \`extra.issuer\`), no DestinationTag, no Memos. Node: \`@x402/core\` + \`@x402/xrpl\`. The payer needs an RLUSD trust line and pays the small XRP network fee. Settlement is verified on the validated ledger. The entry is listed only while the XRP Ledger rail is on.
 5. **Retry** the identical request (same method, URL and body) with header \`PAYMENT-SIGNATURE: {base64 JSON payment payload}\`. This is the x402 v2 header; \`X-PAYMENT\` is the legacy v1 header and is not the settle path here.
 6. **Use the result**: \`200\` returns the route's JSON. The \`PAYMENT-RESPONSE\` header is a base64 JSON receipt \`{ success, transaction, network, payer }\`.
 7. **If you get 402 again**, decode \`PAYMENT-REQUIRED\` and read \`error\` (for example an insufficient USDC balance). Do not retry in a loop.

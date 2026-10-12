@@ -71,6 +71,11 @@
  * that returns only our own route); local mode unchanged. golden.discovery:
  * skill.md, openapi.json and llms.txt (third-party payment rule, example).
  * All 44 pre-existing keys per mode are still byte-identical to main's golden.
+ *
+ * 2026-10-12 (branch xrp-rail-copy): ONLY golden.discovery refreshed with
+ * UPDATE_GOLDEN=1 after copy-only edits naming RLUSD on the XRP Ledger as a
+ * rail (/.well-known/x402 instructions, skill.md, openapi.json, llms.txt).
+ * golden.cdp and golden.local (all 50 402 / OPTIONS keys) are unchanged.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

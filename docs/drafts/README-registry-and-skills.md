@@ -35,7 +35,7 @@ committed copy would drift):
 - Listing summary (draft): "Pay-per-call x402 tools for agents: BTC/ETH/SOL
   prices; gas and portfolio on Base/Ethereum; web fetch/extract/search/
   screenshot/PDF; x402 and Bazaar checks; and an agent marketplace quote with evidence and unknowns.
-  USDC on Base or Solana, no account or API key."
+  USDC on Base or Solana, or RLUSD on the XRP Ledger, no account or API key."
 - Badge (README, after listing exists): `[![skills.sh](https://skills.sh/b/horizon-pulse/horizon-pulse)](https://skills.sh/horizon-pulse/horizon-pulse/horizon-pulse)`
 - Unverified: skills.sh's exact submission/indexing rules (it appears to index
   public repos on install; confirm before relying on it).
