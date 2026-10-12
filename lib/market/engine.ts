@@ -121,12 +121,18 @@ export type ParsedSearch = {
   n: number;
   kind: OfferKind | null;
   rail: OfferRail | null;
+  /** Exact CAIP-2 network filter (canonical form); set instead of rail for polygon / CAIP-2 input. */
+  network: string | null;
   maxPrice: number | null;
   minHealth: number | null;
 };
 
-// polygon/evm map to the coarse x402:evm rail (every non-Base EVM chain); there is no per-chain rail.
-const RAIL_ALIASES: Record<string, OfferRail> = { base: "x402:base", solana: "x402:solana", xrpl: "x402:xrpl", zcash: "x402:zcash", polygon: "x402:evm", evm: "x402:evm" };
+// Rail filter. Family names match a rail (any network in that family):
+//   base = eip155:8453 only; solana; xrpl; zcash; evm = x402:evm = any EVM chain OTHER than Base.
+// Exact-network names match ONE CAIP-2 network only, never the rest of its family:
+//   polygon = eip155:137; any CAIP-2 id (eip155:137, eip155:1, solana:…, xrpl:0) = that network exactly.
+const RAIL_ALIASES: Record<string, OfferRail> = { base: "x402:base", solana: "x402:solana", xrpl: "x402:xrpl", zcash: "x402:zcash", evm: "x402:evm" };
+const NETWORK_ALIASES: Record<string, string> = { polygon: "eip155:137" };
 
 export function parseSearchInput(i: SearchInput): ParsedSearch | MarketError {
   const bad = (error: string, code = "bad_input"): MarketError => ({ ok: false, error, code, status: 400 });
@@ -144,13 +150,15 @@ export function parseSearchInput(i: SearchInput): ParsedSearch | MarketError {
     kind = i.kind as OfferKind;
   }
   let rail: OfferRail | null = null;
+  let network: string | null = null;
   const r = (i.rail || i.network || "").trim();
   if (r) {
     const lower = r.toLowerCase();
     if (RAIL_ALIASES[lower]) rail = RAIL_ALIASES[lower]!;
+    else if (NETWORK_ALIASES[lower]) network = NETWORK_ALIASES[lower]!;
     else if ((OFFER_RAILS as readonly string[]).includes(lower)) rail = lower as OfferRail;
-    else if (/^[a-z0-9-]+:[A-Za-z0-9-]+$/.test(r)) rail = railForNetwork(r);
-    else return bad(`rail must be base, solana, polygon, xrpl, a CAIP-2 network, or one of ${OFFER_RAILS.join(", ")}`);
+    else if (/^[a-z0-9-]+:[A-Za-z0-9-]+$/.test(r)) network = canonicalNetwork(r);
+    else return bad(`rail must be base, solana, xrpl, evm (any EVM chain except Base), polygon (eip155:137 only), an exact CAIP-2 network, or one of ${OFFER_RAILS.join(", ")}`);
   }
   let maxPrice: number | null = null;
   if (i.max_price !== undefined && i.max_price !== "") {
@@ -164,7 +172,7 @@ export function parseSearchInput(i: SearchInput): ParsedSearch | MarketError {
     if (!Number.isFinite(v) || v < 0 || v > 1) return bad("min_health must be a number 0-1");
     minHealth = v;
   }
-  return { q, n, kind, rail, maxPrice, minHealth };
+  return { q, n, kind, rail, network, maxPrice, minHealth };
 }
 
 export type QuoteTarget = { url: string; origin: string; host: string };
@@ -544,6 +552,11 @@ export type MarketSearchResult = {
   methodology: typeof MARKET_METHODOLOGY;
 };
 
+/** Exact network: some indexed accept is on exactly this CAIP-2 network (canonical form). Never matches by family. */
+function networkMatches(o: Offer, network: string): boolean {
+  return o.indexedAccepts.some((a) => canonicalNetwork(a.network) === network);
+}
+
 function railMatches(o: Offer, rail: OfferRail): boolean {
   return o.indexedAccepts.some((a) => a.rail === rail && !a.testnet);
 }
@@ -597,6 +610,7 @@ export async function searchMarket(
     if (o.indexedAccepts.length && o.indexedAccepts.every((a) => a.testnet)) return false;
     if (p.kind && o.kind !== p.kind) return false;
     if (p.rail && !railMatches(o, p.rail)) return false;
+    if (p.network && !networkMatches(o, p.network)) return false;
     if (p.maxPrice !== null) {
       const usd = minUsd(o.indexedAccepts);
       if (usd === null || usd > p.maxPrice) return false;

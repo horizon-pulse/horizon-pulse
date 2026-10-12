@@ -262,9 +262,9 @@ describe("input bounds", () => {
     expect(parseSearchInput({ q: "a", max_price: "-1" })).toMatchObject({ status: 400 });
     expect(parseSearchInput({ q: "a", min_health: "2" })).toMatchObject({ status: 400 });
     expect(parseSearchInput({ q: " a ", n: "3", rail: "solana", max_price: "$0.01", min_health: "0.5" })).toEqual({
-      q: "a", n: 3, kind: null, rail: "x402:solana", maxPrice: 0.01, minHealth: 0.5,
+      q: "a", n: 3, kind: null, rail: "x402:solana", network: null, maxPrice: 0.01, minHealth: 0.5,
     });
-    expect(parseSearchInput({ q: "a", network: SOL })).toMatchObject({ rail: "x402:solana" });
+    expect(parseSearchInput({ q: "a", network: SOL })).toMatchObject({ rail: null, network: SOL });
     expect(parseSearchInput({ q: "a", rail: "xrpl" })).toMatchObject({ rail: "x402:xrpl" });
   });
   it("quote", () => {
@@ -407,6 +407,33 @@ describe("searchMarket", () => {
     const r = ok(await searchMarket({ q: "weather" }, deps)) as MarketSearchResult;
     expect(deps.calls.some((c) => c.includes("10.0.0.5"))).toBe(false);
     expect(r.results[0]!.health.status).toBe("failed");
+  });
+
+  it("rail=polygon / eip155:137 is exact: only eip155:137 sellers, never Ethereum or Avalanche; rail=evm is any non-Base EVM", async () => {
+    const deps = mockDeps({
+      search: () => ({
+        resources: [
+          listing(W(1), [acc(BASE, EVM_A, "5000")], { serviceName: "Weather base" }),
+          listing(W(2), [acc("eip155:137", EVM_A, "5000")], { serviceName: "Weather polygon" }),
+          listing(W(3), [acc("eip155:1", EVM_A, "5000")], { serviceName: "Weather ethereum" }),
+          listing(W(4), [acc("eip155:43114", EVM_A, "5000")], { serviceName: "Weather avalanche" }),
+          listing(W(5), [acc(SOL, SOL_A, "5000")], { serviceName: "Weather sol" }),
+          listing(W(6), [acc(BASE, EVM_A, "5000"), acc("eip155:137", EVM_A, "5000")], { serviceName: "Weather base+polygon" }),
+        ],
+      }),
+      pages: {},
+    });
+    const urls = async (rail: string) => (ok(await searchMarket({ q: "weather", n: "10", rail }, deps)) as MarketSearchResult).results.map((x) => x.url).sort();
+    for (const r of ["polygon", "Polygon", "eip155:137"]) {
+      const got = await urls(r);
+      expect(got, r).toEqual([W(2), W(6)].sort());
+      expect(got, r).not.toContain(W(3));
+      expect(got, r).not.toContain(W(4));
+    }
+    expect(await urls("eip155:1")).toEqual([W(3)]);
+    expect(await urls("evm")).toEqual([W(2), W(3), W(4), W(6)].sort());
+    expect(await urls("x402:evm")).toEqual([W(2), W(3), W(4), W(6)].sort());
+    expect(await urls("base")).toEqual([W(1), W(6)].sort());
   });
 
   it("filters: rail, max_price, kind; testnet-only offers dropped", async () => {
