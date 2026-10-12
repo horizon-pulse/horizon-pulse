@@ -65,8 +65,36 @@ export function minUsd(accepts: OfferAccept[]): number | null {
  * groups every solana:* for display only; a payTo comparison must not).
  * Anything else: trimmed, lowercased (EVM CAIP-2 ids are case-insensitive).
  */
+/**
+ * XRPL networks (x402 exact-XRPL spec CAIP-2): a FIXED table. xrpl:0 mainnet,
+ * xrpl:1 testnet, xrpl:2 devnet, plus a fixed alias list. Any other xrpl-ish
+ * value (xrpl:3, xrpl:01, "xrpl:0 ", Unicode lookalikes after trim, …) is
+ * UNRECOGNIZED_NETWORK, never passed through (b381a16 rule).
+ */
+export const UNRECOGNIZED_NETWORK = "unrecognized network" as const;
+export const XRPL_NETWORKS: Readonly<Record<string, "xrpl:0" | "xrpl:1" | "xrpl:2">> = Object.freeze({
+  "xrpl:0": "xrpl:0",
+  "xrpl:1": "xrpl:1",
+  "xrpl:2": "xrpl:2",
+  xrpl: "xrpl:0",
+  "xrpl-mainnet": "xrpl:0",
+  xrp: "xrpl:0",
+  ripple: "xrpl:0",
+  "xrpl-testnet": "xrpl:1",
+  "xrpl-devnet": "xrpl:2",
+});
+/** Exact-match lookup (after trim + ASCII lowercase); anything xrpl-shaped that is not listed → unrecognized. */
+export function canonicalXrplNetwork(n: string): "xrpl:0" | "xrpl:1" | "xrpl:2" | typeof UNRECOGNIZED_NETWORK | null {
+  const t = n.trim().toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(XRPL_NETWORKS, t)) return XRPL_NETWORKS[t];
+  if (/^xrpl[:\-_]|^xrp[:\-_]|^ripple[:\-_]/.test(t)) return UNRECOGNIZED_NETWORK;
+  return null;
+}
+
 export function canonicalNetwork(n: string): string {
   const t = n.trim();
+  const x = canonicalXrplNetwork(t);
+  if (x) return x;
   if (t === SOLANA_MAINNET_CAIP2 || t.toLowerCase() === "solana") return SOLANA_MAINNET_CAIP2;
   const label = networkLabel(t.toLowerCase());
   if (label === "base") return "eip155:8453";

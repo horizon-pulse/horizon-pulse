@@ -22,6 +22,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { getPayTo, USDC_BASE } from "./config";
 import type { SolanaRailConfig } from "./solana-config";
+import type { XrplRailConfig } from "./xrpl-config";
 
 export type PaidRail = {
   /** Base keeps its existing label "base"; other rails use their CAIP-2 id. */
@@ -49,6 +50,15 @@ export function baseRail(): PaidRail {
 /** Solana USDC rail (PayAI): the same config the Solana-only server verifies/settles against. */
 export function solanaRail(config: Pick<SolanaRailConfig, "network" | "asset" | "payTo">): PaidRail {
   return { network: config.network, asset: config.asset, payTo: config.payTo };
+}
+
+/**
+ * XRPL RLUSD rail: network = xrpl:N, asset = RLUSD hex currency + issuer
+ * ("<hex>.<issuer>", so the issuer is always named), payTo = pinned per network.
+ * amountAtomic stays the 6-decimal USD atomic used on every rail.
+ */
+export function xrplRail(config: Pick<XrplRailConfig, "network" | "asset" | "issuer" | "payTo">): PaidRail {
+  return { network: config.network, asset: `${config.asset}.${config.issuer}`, payTo: config.payTo };
 }
 
 /** Wrap a route handler so it runs with `rail()` as its paid-rail context. */
