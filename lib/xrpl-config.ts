@@ -43,6 +43,7 @@
  * See docs/xrpl-rail.md.
  */
 import { createHash } from "node:crypto";
+import { resolveSharedReplayStoreEnv } from "./xrpl-replay-store";
 
 /**
  * Michael's Ledger XRPL classic address: the ONLY mainnet (xrpl:0) payTo.
@@ -341,11 +342,9 @@ function off(reason: string, misconfigured: boolean): XrplConfigResult {
   return { enabled: false, reason, misconfigured };
 }
 
-/** Both Upstash REST env vars present and the URL is https (mirrors createReplayStore's selection). */
+/** Shared replay store configured (see resolveSharedReplayStoreEnv: UPSTASH_REDIS_REST_*, else KV_REST_API_URL/TOKEN; https only). */
 export function hasSharedReplayStoreEnv(env: Env): boolean {
-  const url = (env.UPSTASH_REDIS_REST_URL ?? "").trim();
-  const token = (env.UPSTASH_REDIS_REST_TOKEN ?? "").trim();
-  return url !== "" && token !== "" && /^https:\/\//.test(url);
+  return resolveSharedReplayStoreEnv(env) !== null;
 }
 
 /** Never throws. */
@@ -364,7 +363,7 @@ export function getXrplRailConfig(env: Env = process.env): XrplConfigResult {
       if (!xrplMainnetAllowed(env)) return off("xrpl:0 (mainnet) is locked (XRPL_MAINNET_ALLOWED is not exactly 'true')", true);
       // Mainnet fails closed without the shared replay store (per-instance
       // memory cannot stop a cross-instance replay of a real payment).
-      if (!hasSharedReplayStoreEnv(env)) return off("xrpl:0 requires UPSTASH_REDIS_REST_URL (https) and UPSTASH_REDIS_REST_TOKEN (shared replay store)", true);
+      if (!hasSharedReplayStoreEnv(env)) return off("xrpl:0 requires a shared replay store (UPSTASH_REDIS_REST_URL/TOKEN, or KV_REST_API_URL/TOKEN; https)", true);
       network = XRPL_MAINNET_CAIP2;
     }
     else return off("HP_XRPL_NETWORK must be exactly xrpl:1 (testnet) or xrpl:0 (mainnet)", true);

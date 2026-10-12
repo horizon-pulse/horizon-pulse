@@ -887,7 +887,7 @@ export async function getXrplAccept(config: XrplRailConfig, atomicUsdc: string):
   try {
     // payTo readiness check and rail init run in parallel (cold start ≤ one initTimeoutMs).
     if (!replayStoreOkFor(config)) {
-      warn("xrpl:0 refused: shared replay store (UPSTASH_REDIS_REST_URL/TOKEN) not configured");
+      warn("xrpl:0 refused: shared replay store (UPSTASH_REDIS_REST_* or KV_REST_API_URL/TOKEN) not configured");
       return null;
     }
     const [ready, rail] = await Promise.all([xrplPayToReady(config), getRail(config)]);
@@ -1346,7 +1346,7 @@ export async function handleXrplPayment(
   const startedAt = Date.now();
   try {
     if (!replayStoreOkFor(config)) {
-      warn("xrpl:0 payment refused: shared replay store (UPSTASH_REDIS_REST_URL/TOKEN) not configured");
+      warn("xrpl:0 payment refused: shared replay store (UPSTASH_REDIS_REST_* or KV_REST_API_URL/TOKEN) not configured");
       return null;
     }
     const [ready, rail] = await Promise.all([xrplPayToReady(config), getRail(config)]);
@@ -1369,7 +1369,7 @@ export async function handleXrplPayment(
     }
     if (replay.kind === "memory" && !replayWarned) {
       replayWarned = true;
-      warn("XRPL replay store is per-instance memory (UPSTASH_REDIS_REST_URL/TOKEN not set); cross-instance replays rely on the ledger-close check", undefined, false);
+      warn("XRPL replay store is per-instance memory (UPSTASH_REDIS_REST_* / KV_REST_API_URL+TOKEN not set); cross-instance replays rely on the ledger-close check", undefined, false);
     }
     let seen: ReplayState | null;
     try {

@@ -132,13 +132,39 @@ export class UpstashReplayStore implements ReplayStore {
 
 type Env = Record<string, string | undefined>;
 
-/** Upstash when both env vars are set (https URL), else in-memory. Never throws. */
+/**
+ * Shared replay-store credentials, or null. Never throws.
+ *   1. UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN (both set);
+ *   2. only when NEITHER UPSTASH_REDIS_REST_* var is set: the Vercel
+ *      Marketplace Upstash names KV_REST_API_URL + KV_REST_API_TOKEN
+ *      (the read-write token). KV_REST_API_READ_ONLY_TOKEN is NEVER read:
+ *      claim needs SET NX.
+ * Fail closed: a half-set pair (either family), or a non-https URL → null,
+ * with no mixing across the two families.
+ */
+export function resolveSharedReplayStoreEnv(env: Env): { url: string; token: string; source: "upstash" | "vercel_kv" } | null {
+  const uUrl = (env.UPSTASH_REDIS_REST_URL ?? "").trim();
+  const uTok = (env.UPSTASH_REDIS_REST_TOKEN ?? "").trim();
+  let url: string, token: string, source: "upstash" | "vercel_kv";
+  if (uUrl || uTok) {
+    if (!uUrl || !uTok) return null;
+    [url, token, source] = [uUrl, uTok, "upstash"];
+  } else {
+    const kUrl = (env.KV_REST_API_URL ?? "").trim();
+    const kTok = (env.KV_REST_API_TOKEN ?? "").trim();
+    if (!kUrl || !kTok) return null;
+    [url, token, source] = [kUrl, kTok, "vercel_kv"];
+  }
+  if (!/^https:\/\//.test(url)) return null;
+  return { url, token, source };
+}
+
+/** Upstash when resolveSharedReplayStoreEnv finds credentials, else in-memory (testnet only; xrpl:0 refuses it). Never throws. */
 export function createReplayStore(env: Env = process.env, fetchFn?: FetchFn): ReplayStore {
-  const url = (env.UPSTASH_REDIS_REST_URL ?? "").trim();
-  const token = (env.UPSTASH_REDIS_REST_TOKEN ?? "").trim();
-  if (url && token) {
+  const c = resolveSharedReplayStoreEnv(env);
+  if (c) {
     try {
-      return new UpstashReplayStore(url, token, fetchFn);
+      return new UpstashReplayStore(c.url, c.token, fetchFn);
     } catch {
       /* bad URL → memory */
     }
