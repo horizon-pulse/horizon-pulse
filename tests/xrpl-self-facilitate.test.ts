@@ -58,6 +58,12 @@ describe("config", () => {
     // "self" is not a testnet option.
     expect(getXrplRailConfig({ HP_XRPL_ENABLED: "true", HP_XRPL_PAYTO: "rs2cF8jYDp4D7Ny2SrNV21xkNJRp3HiVTJ", HP_XRPL_FACILITATOR_URL: "self" }).enabled).toBe(false);
   });
+  it("testnet 'self' only with HP_XRPL_TESTNET_SELF=true (e2e switch), exact string", () => {
+    const t = { HP_XRPL_ENABLED: "true", HP_XRPL_PAYTO: "rs2cF8jYDp4D7Ny2SrNV21xkNJRp3HiVTJ", HP_XRPL_FACILITATOR_URL: "self" };
+    expect(getXrplRailConfig({ ...t, HP_XRPL_TESTNET_SELF: "true" })).toMatchObject({ enabled: true, config: { network: "xrpl:1", facilitatorUrl: "self" } });
+    expect(getXrplRailConfig({ ...t, HP_XRPL_TESTNET_SELF: "TRUE" }).enabled).toBe(false);
+    expect(getXrplRailConfig({ ...t, HP_XRPL_FACILITATOR_URL: " self", HP_XRPL_TESTNET_SELF: "true" }).enabled).toBe(false);
+  });
   it("self WS uses the same allow-listed mainnet host as the RPC", () => {
     expect(new URL(XRPL_SELF_WS_URL["xrpl:0"]).hostname).toBe("xrplcluster.com");
   });

@@ -382,7 +382,11 @@ export function getXrplRailConfig(env: Env = process.env): XrplConfigResult {
 
     const rawFac = env.HP_XRPL_FACILITATOR_URL ?? "";
     let facilitatorUrl: string;
-    if (rawFac.trim() !== "") {
+    if (rawFac === XRPL_SELF_FACILITATOR && network === XRPL_TESTNET_CAIP2 && env.HP_XRPL_TESTNET_SELF === "true") {
+      // Testnet-only e2e of the in-process facilitator (Odin C2). Needs an
+      // explicit second env; never applies to xrpl:0.
+      facilitatorUrl = XRPL_SELF_FACILITATOR;
+    } else if (rawFac.trim() !== "") {
       const checked = parseXrplFacilitatorUrl(rawFac, network);
       if (!checked.ok) return off(checked.reason, true);
       facilitatorUrl = checked.url;
