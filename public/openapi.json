@@ -2243,7 +2243,7 @@
                 "example": {
                   "ok": true,
                   "source": "market-quote",
-                  "asOf": "2026-10-12T03:43:39.904Z",
+                  "asOf": "2026-10-12T12:20:14.411Z",
                   "target": {
                     "url": "https://horizonpulse.dev/api/pulse",
                     "host": "horizonpulse.dev"
@@ -2260,27 +2260,33 @@
                       {
                         "rail": "x402:base",
                         "network": "eip155:8453",
+                        "scheme": "exact",
                         "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
                         "assetLabel": "USDC (Base)",
                         "amountAtomic": "5000",
                         "amountUsd": "$0.005",
-                        "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+                        "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+                        "maxTimeoutSeconds": 300,
+                        "testnet": false
                       },
                       {
                         "rail": "x402:solana",
                         "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+                        "scheme": "exact",
                         "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
                         "assetLabel": "USDC (Solana)",
                         "amountAtomic": "5000",
                         "amountUsd": "$0.005",
-                        "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz"
+                        "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+                        "maxTimeoutSeconds": 300,
+                        "testnet": false
                       }
                     ],
                     "rails": [
                       "x402:base",
                       "x402:solana"
                     ],
-                    "ms": 164
+                    "ms": 96
                   },
                   "index": {
                     "found": true,
@@ -2312,7 +2318,7 @@
                   "buyPlan": {
                     "mode": "direct_x402",
                     "ready": true,
-                    "reason": "Live 402 re-checked now; payTo agrees with the index where both list it.",
+                    "reason": "Live 402 re-checked now; every network's payTo matches the index exactly.",
                     "method": "GET",
                     "url": "https://horizonpulse.dev/api/pulse",
                     "payTo": [
@@ -2332,7 +2338,58 @@
                     "holdsFunds": false,
                     "takeRate": 0
                   },
-                  "elapsedMs": 625
+                  "evidence": [
+                    {
+                      "id": "live_probe",
+                      "at": "2026-10-12T12:20:13.950Z",
+                      "detail": "Fresh unpaid GET to https://horizonpulse.dev/api/pulse (not cached) answered HTTP 402 through the SSRF guard (duration in live.ms)."
+                    },
+                    {
+                      "id": "challenge_parsed",
+                      "at": "2026-10-12T12:20:13.950Z",
+                      "detail": "x402 challenge read from the PAYMENT-REQUIRED header (x402Version 2); 2 accepts entries parsed."
+                    },
+                    {
+                      "id": "live_networks",
+                      "at": "2026-10-12T12:20:13.950Z",
+                      "detail": "Live networks offered (CAIP-2; unrecognized values are not echoed): eip155:8453, solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp."
+                    },
+                    {
+                      "id": "index_entry",
+                      "at": "2026-10-12T12:20:14.407Z",
+                      "detail": "CDP Bazaar entry for this resource found (index lookup completed at this time)."
+                    },
+                    {
+                      "id": "payto_network_match",
+                      "at": "2026-10-12T12:20:14.407Z",
+                      "detail": "payTo on eip155:8453 matches the CDP Bazaar entry."
+                    },
+                    {
+                      "id": "payto_network_match",
+                      "at": "2026-10-12T12:20:14.407Z",
+                      "detail": "payTo on solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp matches the CDP Bazaar entry."
+                    },
+                    {
+                      "id": "price_matches_index",
+                      "at": "2026-10-12T12:20:14.407Z",
+                      "detail": "Live amount equals the CDP Bazaar amount on every shared network."
+                    }
+                  ],
+                  "unknowns": [
+                    {
+                      "id": "seller_delivery",
+                      "message": "Whether the seller delivers the paid response, and its quality, is not checked (we never pay)."
+                    },
+                    {
+                      "id": "seller_identity",
+                      "message": "Who operates the seller is not verified; listing text is untrusted."
+                    },
+                    {
+                      "id": "terms_after_probe",
+                      "message": "Terms can change after the live_probe time; re-check the seller's fresh 402 before paying."
+                    }
+                  ],
+                  "elapsedMs": 522
                 }
               }
             }
@@ -4396,6 +4453,9 @@
                     "network": {
                       "type": "string"
                     },
+                    "scheme": {
+                      "type": "string"
+                    },
                     "asset": {
                       "type": "string"
                     },
@@ -4410,6 +4470,12 @@
                     },
                     "payTo": {
                       "type": "string"
+                    },
+                    "maxTimeoutSeconds": {
+                      "type": "number"
+                    },
+                    "testnet": {
+                      "type": "boolean"
                     }
                   }
                 }
@@ -4525,9 +4591,6 @@
               }
             }
           },
-          "elapsedMs": {
-            "type": "number"
-          },
           "evidence": {
             "type": "array",
             "description": "What this call verified itself. Built only from what the call observed. The id list may grow; ignore ids you do not know.",
@@ -4591,9 +4654,12 @@
                 }
               }
             }
+          },
+          "elapsedMs": {
+            "type": "number"
           }
         },
-        "description": "Inferred from a real response recorded from GET /api/demo/market-quote at 2026-10-12T03:43Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
+        "description": "Inferred from a real response recorded from GET /api/demo/market-quote at 2026-10-12T12:20Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
       },
       "ScreenshotResponse": {
         "type": "object",

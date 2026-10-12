@@ -197,7 +197,7 @@ for (const r of LIVE_PAID_ROUTES) {
       // Closed value set (lib/indicators.ts DirectionLabel); not inferable from one example.
       const dir = name === "pulse" ? schemas[respName]?.properties?.overall?.properties?.direction : undefined;
       if (dir) dir.enum = ["up", "down", "flat"];
-      // evidence/unknowns were added after the quote example was recorded; declare them (no example values invented).
+      // evidence/unknowns: declared explicitly (id enums) on top of the schema inferred from the recorded example.
       if (p === "/api/market/quote" && schemas[respName]?.properties) {
         schemas[respName].properties.evidence = {
           type: "array",

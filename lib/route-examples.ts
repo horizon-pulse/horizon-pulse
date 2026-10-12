@@ -28,6 +28,11 @@
  * let alone as ready. Trimmed for size only (listing.description,
  * buyPlan.accepts and buyPlan.steps, policy, methodology, priced dropped);
  * no value was edited. Raw recordings: /workspace/hp-tmp/market/rec-*.json (box only).
+ * 2026-10-12 (branch quote-example-rerecord): /api/market/quote re-recorded from a
+ * free live GET https://horizonpulse.dev/api/demo/market-quote (production b381a16,
+ * nothing paid), now with evidence + unknowns; same trimming as before (priced,
+ * listing, policy, methodology, buyPlan.accepts/steps, live.findings, index.accepts
+ * dropped); no value was edited. Raw capture: /workspace/hp-tmp/rea-ship/demo-market-quote.json (box only).
  */
 
 export const EXAMPLES_RECORDED_AT = "2026-10-01T14:36Z" as const;
@@ -36,7 +41,7 @@ export const EXAMPLES_RECORDED_AT = "2026-10-01T14:36Z" as const;
 export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
   "/api/bazaar-check": "2026-10-09T16:38Z",
   "/api/market/search": "2026-10-12T04:09Z",
-  "/api/market/quote": "2026-10-12T03:43Z",
+  "/api/market/quote": "2026-10-12T12:20Z",
 };
 
 export function exampleRecordedAt(path: string): string {
@@ -724,7 +729,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
   "/api/market/quote": {
       "ok": true,
       "source": "market-quote",
-      "asOf": "2026-10-12T03:43:39.904Z",
+      "asOf": "2026-10-12T12:20:14.411Z",
       "target": {
           "url": "https://horizonpulse.dev/api/pulse",
           "host": "horizonpulse.dev"
@@ -741,27 +746,33 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
               {
                   "rail": "x402:base",
                   "network": "eip155:8453",
+                  "scheme": "exact",
                   "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
                   "assetLabel": "USDC (Base)",
                   "amountAtomic": "5000",
                   "amountUsd": "$0.005",
-                  "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+                  "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+                  "maxTimeoutSeconds": 300,
+                  "testnet": false
               },
               {
                   "rail": "x402:solana",
                   "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+                  "scheme": "exact",
                   "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
                   "assetLabel": "USDC (Solana)",
                   "amountAtomic": "5000",
                   "amountUsd": "$0.005",
-                  "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz"
+                  "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+                  "maxTimeoutSeconds": 300,
+                  "testnet": false
               }
           ],
           "rails": [
               "x402:base",
               "x402:solana"
           ],
-          "ms": 164
+          "ms": 96
       },
       "index": {
           "found": true,
@@ -793,7 +804,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
       "buyPlan": {
           "mode": "direct_x402",
           "ready": true,
-          "reason": "Live 402 re-checked now; payTo agrees with the index where both list it.",
+          "reason": "Live 402 re-checked now; every network's payTo matches the index exactly.",
           "method": "GET",
           "url": "https://horizonpulse.dev/api/pulse",
           "payTo": [
@@ -813,6 +824,57 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
           "holdsFunds": false,
           "takeRate": 0
       },
-      "elapsedMs": 625
+      "evidence": [
+          {
+              "id": "live_probe",
+              "at": "2026-10-12T12:20:13.950Z",
+              "detail": "Fresh unpaid GET to https://horizonpulse.dev/api/pulse (not cached) answered HTTP 402 through the SSRF guard (duration in live.ms)."
+          },
+          {
+              "id": "challenge_parsed",
+              "at": "2026-10-12T12:20:13.950Z",
+              "detail": "x402 challenge read from the PAYMENT-REQUIRED header (x402Version 2); 2 accepts entries parsed."
+          },
+          {
+              "id": "live_networks",
+              "at": "2026-10-12T12:20:13.950Z",
+              "detail": "Live networks offered (CAIP-2; unrecognized values are not echoed): eip155:8453, solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp."
+          },
+          {
+              "id": "index_entry",
+              "at": "2026-10-12T12:20:14.407Z",
+              "detail": "CDP Bazaar entry for this resource found (index lookup completed at this time)."
+          },
+          {
+              "id": "payto_network_match",
+              "at": "2026-10-12T12:20:14.407Z",
+              "detail": "payTo on eip155:8453 matches the CDP Bazaar entry."
+          },
+          {
+              "id": "payto_network_match",
+              "at": "2026-10-12T12:20:14.407Z",
+              "detail": "payTo on solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp matches the CDP Bazaar entry."
+          },
+          {
+              "id": "price_matches_index",
+              "at": "2026-10-12T12:20:14.407Z",
+              "detail": "Live amount equals the CDP Bazaar amount on every shared network."
+          }
+      ],
+      "unknowns": [
+          {
+              "id": "seller_delivery",
+              "message": "Whether the seller delivers the paid response, and its quality, is not checked (we never pay)."
+          },
+          {
+              "id": "seller_identity",
+              "message": "Who operates the seller is not verified; listing text is untrusted."
+          },
+          {
+              "id": "terms_after_probe",
+              "message": "Terms can change after the live_probe time; re-check the seller's fresh 402 before paying."
+          }
+      ],
+      "elapsedMs": 522
   },
 };
