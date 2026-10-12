@@ -109,6 +109,8 @@ export const RAIL_TTL_MS = 10 * 60_000;
 export const READY_TTL_MS = 10 * 60_000;
 /** RPC error → cached as "not ready" for this long before retrying. */
 const READY_ERROR_RETRY_MS = 60_000;
+/** Max age of a confirmed ready=true kept through transient RPC failures. */
+export const READY_STALE_MAX_MS = 60 * 60_000;
 /** Same default @x402/core applies to the Base entry. */
 export const MAX_TIMEOUT_SECONDS = 300;
 /** Upper bound on the signed blob we forward (a single-signed Payment is ~250 bytes; multisig more). */
@@ -746,7 +748,7 @@ async function getRail(config: XrplRailConfig): Promise<Rail | null> {
 // payTo readiness guard (read-only RPC, cached, stale-while-revalidate)
 // ---------------------------------------------------------------------------
 
-type ReadyState = { key: string; ready: boolean; until: number };
+type ReadyState = { key: string; ready: boolean; until: number; confirmedAt?: number };
 let readyCache: ReadyState | null = null;
 let readyRefresh: Promise<boolean> | null = null;
 
@@ -806,11 +808,22 @@ function refreshReady(config: XrplRailConfig, key: string): Promise<boolean> {
   const p: Promise<boolean> = (async () => {
     try {
       const ready = await checkPayToReady(config);
-      readyCache = { key, ready, until: Date.now() + READY_TTL_MS };
+      readyCache = { key, ready, until: Date.now() + READY_TTL_MS, ...(ready ? { confirmedAt: Date.now() } : {}) };
       return ready;
     } catch (err) {
+      // Transient RPC failure (timeout, 5xx). A definitive answer (actNotFound,
+      // no trust line, frozen, flags) never lands here. Keep the last CONFIRMED
+      // ready=true for up to READY_STALE_MAX_MS (same pattern as solana-rail),
+      // retrying every READY_ERROR_RETRY_MS; cold or never-confirmed stays hidden.
+      const prev = readyCache && readyCache.key === key ? readyCache : null;
+      const now = Date.now();
+      if (prev?.ready && prev.confirmedAt !== undefined && now - prev.confirmedAt < READY_STALE_MAX_MS) {
+        warn("payTo readiness RPC check failed; keeping last confirmed result (present)", err);
+        readyCache = { key, ready: true, until: now + READY_ERROR_RETRY_MS, confirmedAt: prev.confirmedAt };
+        return true;
+      }
       warn("payTo readiness RPC check failed", err);
-      readyCache = { key, ready: false, until: Date.now() + READY_ERROR_RETRY_MS };
+      readyCache = { key, ready: false, until: now + READY_ERROR_RETRY_MS };
       return false;
     }
   })().finally(() => {

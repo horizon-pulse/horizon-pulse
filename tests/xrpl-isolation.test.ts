@@ -184,6 +184,37 @@ describe("unpaid isolation: XRPL failures serve the exact main 402", () => {
     }
   });
 
+  it("transient RPC error after a confirmed ready keeps the entry (sticky ≤ 60 min); definitive not-ready still hides", async () => {
+    installXrplFacilitators();
+    let mode: ReadyMode = "ready";
+    stubXrplOn();
+    installXrplRpc(() => mode);
+    vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["Date"] });
+    try {
+      const h = makeHandler().handler;
+      const count = async () => decodePaymentRequiredHeader((await h(unpaid())).headers.get("payment-required")!).accepts.length;
+      const recheck = async () => { await count(); await new Promise((r) => setTimeout(r, 20)); };
+      expect(await count()).toBe(2);
+      mode = "error";
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
+      await recheck();
+      expect(await count()).toBe(2); // RPC timeout: last confirmed kept
+      vi.setSystemTime(Date.now() + 55 * 60_000);
+      await recheck();
+      expect(await count()).toBe(1); // > 60 min since last confirm: hidden
+      mode = "ready";
+      vi.setSystemTime(Date.now() + 60_001);
+      await recheck();
+      expect(await count()).toBe(2);
+      mode = "no_trustline";
+      vi.setSystemTime(Date.now() + 10 * 60_000 + 1);
+      await recheck();
+      expect(await count()).toBe(1); // definitive answer hides immediately
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("Solana on + XRPL failure: the Base+Solana 402 is left exactly as it is without XRPL", async () => {
     installXrplFacilitators();
     installSolanaRpc("present");
