@@ -5,6 +5,7 @@ import { requestArrivedAt } from "@/lib/request-arrival";
 import { MARKET_SEARCH_PRICE_ATOMIC, MARKET_SEARCH_PRICE_USD } from "@/lib/config";
 import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
+import { docGapEvent } from "@/lib/market/gap-signal";
 
 export const paymentOpts = {
   maxAmountRequired: MARKET_SEARCH_PRICE_ATOMIC,
@@ -25,6 +26,8 @@ export async function marketSearchHandler(req: NextRequest): Promise<NextRespons
     defaultDeps(),
     { arrivedAt: requestArrivedAt() },
   );
+  const gap = docGapEvent(get("q"), result);
+  if (gap) console.log(JSON.stringify(gap));
   if (!result.ok) {
     return NextResponse.json(
       { ok: false, error: result.error, code: result.code, charged: false, methodology: MARKET_METHODOLOGY },
