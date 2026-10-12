@@ -11,7 +11,7 @@ export function SiteFooter() {
           <div className="hp-foot-grid">
             <div>
               <h4>Horizon Pulse</h4>
-              <p style={{ color: "var(--text-2)", margin: 0, maxWidth: 300 }}>Pay-per-call APIs for AI agents, settled in USDC on Base or Solana, or RLUSD on the XRP Ledger, with x402.</p>
+              <p style={{ color: "var(--text-2)", margin: 0, maxWidth: 300 }}>Pay-per-call APIs for AI agents, settled in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, with x402.</p>
             </div>
             <div>
               <h4>Developers</h4>

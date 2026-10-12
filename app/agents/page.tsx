@@ -13,7 +13,7 @@ export const dynamic = "force-static";
 export const metadata: Metadata = {
   title: "For agents | Horizon Pulse",
   description:
-    "How an AI agent finds, pays and calls Horizon Pulse: discovery files, the x402 v2 pay flow in USDC on Base or Solana, or RLUSD on the XRP Ledger, a skill file at /skill.md and an MCP server that pays per call with spend caps.",
+    "How an AI agent finds, pays and calls Horizon Pulse: discovery files, the x402 v2 pay flow in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, a skill file at /skill.md and an MCP server that pays per call with spend caps.",
   alternates: { canonical: "/agents" },
 };
 
@@ -34,14 +34,14 @@ export default function AgentsPage() {
       <main>
         <section className="hp-hero">
           <div className="hp-wrap">
-            <span className="hp-chip">For agents · x402 v2 · USDC on Base + Solana · RLUSD on XRP Ledger</span>
+            <span className="hp-chip">For agents · x402 v2 · USDC on Base + Solana + Polygon · RLUSD on XRP Ledger</span>
             <h1>
               Find it, pay it,
               <br />
               <span>call it.</span>
             </h1>
             <p className="hp-sub">
-              {routes.length} paid routes. No signup or API key: each call is paid on its own in USDC on Base or Solana, or RLUSD on the XRP Ledger, at the same price. Give your agent the skill file, or plug in the MCP
+              {routes.length} paid routes. No signup or API key: each call is paid on its own in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, at the same price. Give your agent the skill file, or plug in the MCP
               server and set a spend cap.
             </p>
             <div className="hp-raw">

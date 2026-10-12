@@ -41,7 +41,7 @@ export default function HomePage() {
       <main>
         <section className="hp-hero">
           <div className="hp-wrap">
-            <span className="hp-chip">Live on Base + Solana + XRP Ledger · x402 v2</span>
+            <span className="hp-chip">Live on Base + Solana + Polygon + XRP Ledger · x402 v2</span>
             <h1>
               Pay-per-call APIs
               <br />
@@ -49,7 +49,7 @@ export default function HomePage() {
             </h1>
             <p className="hp-sub">
               {s.routes} routes for market data, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
-              {s.minPrice}–{s.maxPrice} per call in USDC on Base or Solana, or RLUSD on the XRP Ledger, and gets JSON back.
+              {s.minPrice}–{s.maxPrice} per call in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, and gets JSON back.
             </p>
             <div className="hp-ctas">
               <a className="hp-btn primary" href="/try">Try a free sample</a>
@@ -157,7 +157,7 @@ export default function HomePage() {
               <h2>
                 Plain HTTP. <span>Standard x402 v2.</span>
               </h2>
-              <p className="hp-lead">No accounts and nothing to sign up for. Any x402 v2 client can pay in USDC on Base or Solana, or RLUSD on the XRP Ledger, at the same price: the Coinbase CDP facilitator settles on Base, PayAI on Solana, and XRP Ledger payments are verified on the validated ledger.</p>
+              <p className="hp-lead">No accounts and nothing to sign up for. Any x402 v2 client can pay in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, at the same price: the Coinbase CDP facilitator settles on Base, PayAI on Solana, and XRP Ledger payments are verified on the validated ledger.</p>
             </div>
             <div className="hp-grid four">
               <div className="hp-tile" data-reveal>
@@ -171,7 +171,7 @@ export default function HomePage() {
                 <Ico d={ICONS[402]} />
                 <h3>Read the 402</h3>
                 <p>
-                  The <code>PAYMENT-REQUIRED</code> header lists one option per network (Base, Solana, XRP Ledger), each with the exact amount (USDC, or RLUSD on the XRP Ledger) and payTo.
+                  The <code>PAYMENT-REQUIRED</code> header lists one option per network (Base, Solana, Polygon, XRP Ledger), each with the exact amount (USDC, or RLUSD on the XRP Ledger) and payTo.
                 </p>
               </div>
               <div className="hp-tile" data-reveal>

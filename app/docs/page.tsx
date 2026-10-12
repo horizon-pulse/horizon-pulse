@@ -128,7 +128,7 @@ curl ${BASE}/api/demo/pulse
 # 2. Unpaid call: HTTP 402 with the price in PAYMENT-REQUIRED (base64 JSON)
 curl -si ${BASE}/api/pulse | grep -i '^payment-required' | cut -d' ' -f2 | base64 -d
 
-# 3. Pay: an x402 client signs a USDC payment on Base or Solana, or an RLUSD payment on the XRP Ledger (same price)
+# 3. Pay: an x402 client signs a USDC payment on Base, Solana or Polygon, or an RLUSD payment on the XRP Ledger (same price)
 #    and retries with PAYMENT-SIGNATURE. You get 200 plus a PAYMENT-RESPONSE receipt.`;
 
 export default function DocsPage() {
@@ -146,7 +146,7 @@ export default function DocsPage() {
               <span>One payment flow.</span>
             </h1>
             <p className="hp-sub">
-              {s.routes} paid routes and {s.ops} operations, paid per call in USDC on Base or Solana, or RLUSD on the XRP Ledger, with x402. No signup or API key. This page is
+              {s.routes} paid routes and {s.ops} operations, paid per call in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, with x402. No signup or API key. This page is
               rendered from <code>/openapi.json</code>, so prices and inputs always match what the API charges.
             </p>
             <div className="hp-raw">
