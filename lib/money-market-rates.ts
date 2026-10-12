@@ -169,6 +169,8 @@ export const LAST_GOOD_MAX = MMR_RATES.length;
  * All caches and limits here are PER SERVERLESS INSTANCE (in-process memory): N warm instances allow up to N x these
  * numbers against the NY Fed, and a cold start resets them. The CDN s-maxage=60 absorbs repeat URLs across instances. */
 export const HOLIDAY_LIMITED_RETRY_MS = 60_000;
+/** A holiday read that fails (fetch error, timeout, or a page with no parsed closed dates) is retried after 10 min, not 6h. */
+export const HOLIDAY_FAILED_RETRY_MS = 10 * 60_000;
 export const UPSTREAM_WINDOW_MS = 60_000;
 export const UPSTREAM_GLOBAL_PER_WINDOW = 60;
 export const UPSTREAM_PER_IP_PER_WINDOW = 15;
@@ -224,7 +226,9 @@ async function readHolidays(deps: Deps): Promise<HolidayState> {
     try { takeSlot(deps.clientIp, nowMs, 2); slots = true; } // both pages or neither
     catch { holidayRetryAt = nowMs + HOLIDAY_LIMITED_RETRY_MS; } // limited: retry in ~1 min, not 6h
     if (slots) {
+      const prevAttempt = lastHolidayAttempt;
       lastHolidayAttempt = nowMs;
+      let ok = false;
       try {
         const [a, b] = await Promise.all(HOLIDAY_SOURCES.map((u) => deps.fetchText(u, 10_000)));
         const ny = parseHolidayCoverage(a);
@@ -240,8 +244,15 @@ async function readHolidays(deps: Deps): Promise<HolidayState> {
             years,
             disagree: new Set([...ny.closed, ...k8.closed].filter((d) => !(ny.closed.has(d) && k8.closed.has(d)) && years.has(+d.slice(0, 4)))),
           };
+          ok = true;
         }
-      } catch { /* fetch failed: keep last good read; next try after HOLIDAY_REFRESH_MS */ }
+      } catch { /* fetch error or timeout: handled below */ }
+      if (!ok) {
+        // Failed read (fetch error, timeout, or no parsed closed dates on a page): keep the last good read, roll back
+        // lastHolidayAttempt so the read stays due, and retry once now >= holidayRetryAt (10 min).
+        lastHolidayAttempt = prevAttempt;
+        holidayRetryAt = nowMs + HOLIDAY_FAILED_RETRY_MS;
+      }
     }
   }
   if (!holidayCache || nowMs - holidayCache.readAt > HOLIDAY_MAX_AGE_MS) return null;
@@ -371,6 +382,9 @@ export async function moneyMarketRates(query: MmrQuery, deps: Deps) {
     const obs = rows.map((r) => pickObs(rate, r)).sort((a, b) => String(b.effectiveDate).localeCompare(String(a.effectiveDate)));
     if (query.kind === "latest" && !staleAt) lastGoodSet(rate, { obs, url: used, at: served.getTime() });
     let st: Status;
+    if (empty && staleAt) {
+      return { ...base, source_url: used, status: `STALE as-of ${etIso(new Date(staleAt))}`, status_note: `Upstream fetch limit reached; serving a cached empty result (no publications in range) retrieved ${etIso(new Date(staleAt))}, which may not be current.`, observations: obs };
+    }
     if (empty) {
       return { ...base, source_url: used, status: holidayVerified ? "fresh" : "UNVERIFIED holiday status", status_note: "no publications in range", observations: obs };
     }

@@ -261,3 +261,63 @@ const RANGE = (u: string) => {
   if (!m) return LATEST;
   return { refRates: [{ type: m[1].toUpperCase(), effectiveDate: m[2], percentRate: 4.1 }] };
 };
+
+describe("Class A 10/12 third review: failed holiday reads + stale empty range", () => {
+  for (const kind of ["fetch error", "empty page", "malformed page"] as const) {
+    it(`holiday read ${kind} retries after 10 min, not before`, async () => {
+      const mod = await import("@/lib/money-market-rates");
+      let t = Date.parse("2026-10-13T15:00:00Z");
+      let texts = 0, broken = true;
+      const d: Deps = {
+        now: () => new Date(t), fetchJson: async () => LATEST,
+        fetchText: async (u) => {
+          texts++;
+          if (broken) { if (kind === "fetch error") throw new Error("timeout"); return kind === "empty page" ? "" : "<table><tr><td>garbage</td></tr>"; }
+          return u.includes("newyorkfed") ? NY : K8;
+        },
+      };
+      const r1 = await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+      expect(texts).toBe(2);
+      expect(r1.calendar.holiday_checked_at).toBeNull();
+      broken = false;
+      t += mod.HOLIDAY_FAILED_RETRY_MS - 1000;
+      await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+      expect(texts).toBe(2); // not before 10 min
+      t += 1000;
+      const r3 = await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+      expect(texts).toBe(4);
+      expect(r3.calendar.holiday_checked_at).not.toBeNull();
+    });
+  }
+
+  it("failed refresh with a good cached read still retries after 10 min (not 6h)", async () => {
+    const mod = await import("@/lib/money-market-rates");
+    let t = Date.parse("2026-10-13T15:00:00Z");
+    let texts = 0, broken = false;
+    const d: Deps = { now: () => new Date(t), fetchJson: async () => LATEST, fetchText: async (u) => { texts++; if (broken) throw new Error("x"); return u.includes("newyorkfed") ? NY : K8; } };
+    await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    broken = true; t += mod.HOLIDAY_REFRESH_MS;
+    await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    expect(texts).toBe(4);
+    broken = false; t += mod.HOLIDAY_FAILED_RETRY_MS - 1000;
+    await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    expect(texts).toBe(4);
+    t += 1000;
+    await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    expect(texts).toBe(6);
+  });
+
+  it("expired cached empty range served under the limit = STALE, may not be current", async () => {
+    const mod = await import("@/lib/money-market-rates");
+    let t = Date.parse("2026-10-13T15:00:00Z");
+    const d: Deps = { now: () => new Date(t), clientIp: "5.5.5.5", fetchText: async (u) => (u.includes("newyorkfed") ? NY : K8), fetchJson: async () => ({ refRates: [] }) };
+    const q = { kind: "range" as const, rates: ["SOFR" as const], startDate: "2026-10-10", endDate: "2026-10-11" };
+    expect((await moneyMarketRates(q, d)).rates[0].status).toBe("fresh");
+    t += 11 * 60_000;
+    mod.mmrSpendSlotsForTests("5.5.5.5", mod.UPSTREAM_PER_IP_PER_WINDOW, t);
+    const r = await moneyMarketRates(q, d);
+    expect(r.rates[0].status).toMatch(/^STALE as-of 2026-10-13T11:00:00-04:00$/);
+    expect(r.rates[0].status_note).toContain("may not be current");
+    expect(r.rates[0].observations).toEqual([]);
+  });
+});
