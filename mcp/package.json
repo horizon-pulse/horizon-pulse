@@ -1,11 +1,12 @@
 {
-  "name": "horizon-pulse-mcp",
+  "name": "horizon-pulse",
   "version": "0.1.0",
   "private": true,
-  "description": "Local stdio MCP server that exposes every live Horizon Pulse paid route (horizonpulse.dev) as a tool and pays the x402 v2 challenge (USDC on Base) from a buyer wallet you configure, with per-call and per-session spend caps.",
+  "description": "Horizon Pulse for agents: `npx horizon-pulse setup` registers the hosted MCP server (horizonpulse.dev/mcp) with Claude Code, Codex, Cursor, Gemini CLI and Windsurf and installs the skill (diff preview, backups, asks first). Also a local stdio MCP server that pays x402 (USDC on Base) from a buyer wallet you configure, with per-call and per-session spend caps.",
   "license": "MIT",
   "type": "module",
   "bin": {
+    "horizon-pulse": "dist/cli.js",
     "horizon-pulse-mcp": "dist/index.js"
   },
   "main": "dist/index.js",
@@ -18,7 +19,8 @@
     "prepare": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/index.js",
-    "test": "npm run build && node test/unpaid-test.mjs"
+    "test": "npm run build && node --test test/setup.test.mjs && node test/unpaid-test.mjs",
+    "test:setup": "npm run build && node --test test/setup.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
@@ -32,5 +34,11 @@
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/horizon-pulse/horizon-pulse.git",
+    "directory": "mcp"
+  },
+  "mcpName": "io.github.horizon-pulse/horizon-pulse"
 }

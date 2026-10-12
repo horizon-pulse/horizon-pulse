@@ -6,6 +6,15 @@ An MCP server that gives your agent every live [Horizon Pulse](https://horizonpu
 - **Free helper tools:** `catalog` (routes, prices, caps, wallet status), `quote` (calls a route unpaid and decodes the 402, never pays), `demo` (the route's free fixed-input sample).
 - **Payment:** official x402 client libraries (`@x402/core` + `@x402/evm` 2.27.0, the same version family the site runs). Unpaid call → 402 → decode `PAYMENT-REQUIRED` → sign an EIP-3009 USDC authorization → retry once with `PAYMENT-SIGNATURE` → return the JSON plus the decoded `PAYMENT-RESPONSE` receipt. Screenshots come back as MCP image content.
 
+## Set up your agent clients (hosted MCP)
+
+```sh
+cd horizon-pulse/mcp && npm install
+node dist/cli.js setup            # once published: npx horizon-pulse setup
+```
+
+Registers the hosted server `https://horizonpulse.dev/mcp` with Claude Code, Codex CLI, Cursor, Gemini CLI and Windsurf (the ones it finds under your home folder, or `--client`/`--all`) and installs the Horizon Pulse skill. It prints a diff of every file it would change, backs up existing files, and writes nothing until you answer `y`. `--dry-run` shows the plan only; `--no-skill` skips the skill. Setup never pays, signs or reads keys. Paid tools on the hosted server answer with an x402 challenge your client must pay (or use the local stdio server below). Not published to npm yet.
+
 ## Use a dedicated, low-balance wallet
 
 The server signs USDC payments with the private key in `HP_PRIVATE_KEY`. **Use a separate wallet that holds only a few dollars of USDC on Base**, never a main or treasury wallet. The key stays on your machine (it is only read from the environment and never logged or sent anywhere; only the signed payment goes to horizonpulse.dev). No ETH is needed: the payment is a signed authorization and the facilitator pays the gas.

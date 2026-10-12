@@ -1,0 +1,47 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.horizon-pulse/horizon-pulse",
+  "title": "Horizon Pulse",
+  "description": "Pay-per-call x402 tools for agents: crypto data, web fetch/extract, x402 checks, marketplace.",
+  "websiteUrl": "https://horizonpulse.dev",
+  "repository": {
+    "url": "https://github.com/horizon-pulse/horizon-pulse",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "version": "0.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://horizonpulse.dev/mcp"
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "horizon-pulse",
+      "version": "0.1.0",
+      "runtimeHint": "npx",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "HP_PRIVATE_KEY",
+          "description": "Key of a dedicated, low-balance Base buyer wallet. Omit for quote-only mode (nothing is paid).",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "HP_MAX_USD_PER_CALL",
+          "description": "Per-call spend cap in USD",
+          "default": "0.05"
+        },
+        {
+          "name": "HP_MAX_USD_TOTAL",
+          "description": "Per-session spend cap in USD",
+          "default": "1"
+        }
+      ]
+    }
+  ]
+}
