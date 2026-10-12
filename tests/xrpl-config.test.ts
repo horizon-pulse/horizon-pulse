@@ -78,9 +78,9 @@ describe("xrpl-config", () => {
     expect(r.enabled && r.config.payTo).toBe(XRPL_TESTNET_PAYTO);
   });
 
-  it("mainnet is locked in code: XRPL_MAINNET_ALLOWED=false, empty xrpl:0 allowlist, xrpl:0 OFF/misconfigured with every env set", () => {
+  it("mainnet is locked in code: XRPL_MAINNET_ALLOWED=false, xrpl:0 allowlist = self only, xrpl:0 OFF/misconfigured with every env set", () => {
     expect(XRPL_MAINNET_ALLOWED).toBe(false);
-    expect(XRPL_FACILITATOR_ALLOWLIST["xrpl:0"]).toEqual([]);
+    expect(XRPL_FACILITATOR_ALLOWLIST["xrpl:0"]).toEqual(["self"]) // in-process self-facilitation only (branch xrpl-self-facilitate);
     expect(JSON.stringify(XRPL_FACILITATOR_ALLOWLIST)).not.toContain("mainnet.t54.ai");
     for (const fac of ["", "https://xrpl-facilitator-mainnet.t54.ai", "https://x402.org/facilitator"]) {
       const r = getXrplRailConfig({ ...ON_MAIN, HP_XRPL_FACILITATOR_URL: fac, HP_XRPL_RPC_URL: "https://xrplcluster.com/" });

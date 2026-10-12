@@ -125,6 +125,15 @@ export function assertXrplPairing(network: string, issuer: string, payTo?: strin
   if (!isLegalXrplPairing(network, issuer, payTo)) throw new Error("XRPL network/issuer/payTo mix refused");
 }
 
+/**
+ * Sentinel "facilitator URL" for in-process self-facilitation with the
+ * @x402/xrpl reference facilitator scheme (verify + submit against the
+ * allow-listed public rippled; no third party, no keys: the payer signs and
+ * pays the fee). The ONLY mainnet option: no hosted xrpl:0 facilitator accepts
+ * the standard @x402/xrpl payload (t54 needs its own invoice binding).
+ */
+export const XRPL_SELF_FACILITATOR = "self" as const;
+
 /** Public x402.org facilitator: the default for xrpl:1 (testnet) ONLY. */
 export const X402_ORG_FACILITATOR_URL = "https://x402.org/facilitator" as const;
 
@@ -140,7 +149,15 @@ export const XRPL_FACILITATOR_ALLOWLIST: Readonly<Record<XrplRailNetwork, readon
   [XRPL_TESTNET_CAIP2]: [X402_ORG_FACILITATOR_URL, "https://xrpl-facilitator-testnet.t54.ai"],
   // Empty while XRPL_MAINNET_ALLOWED is false. t54 mainnet was removed: its
   // testnet twin rejects spec-shaped @x402/xrpl payloads (missing_invoice_id).
-  [XRPL_MAINNET_CAIP2]: [],
+  // In-process self-facilitation only (branch xrpl-self-facilitate). Still
+  // behind XRPL_MAINNET_ALLOWED + the Upstash replay store + HP_XRPL_ENABLED.
+  [XRPL_MAINNET_CAIP2]: [XRPL_SELF_FACILITATOR],
+};
+
+/** Read/submit WebSocket for self-facilitation: same allow-listed host as the RPC. */
+export const XRPL_SELF_WS_URL: Readonly<Record<XrplRailNetwork, string>> = {
+  [XRPL_TESTNET_CAIP2]: "wss://testnet.xrpl-labs.com/",
+  [XRPL_MAINNET_CAIP2]: "wss://xrplcluster.com/",
 };
 
 /** Public read-only JSON-RPC per network (payTo readiness check + settled-tx time). */

@@ -87,6 +87,8 @@ import {
   RLUSD_MAINNET_ISSUER,
   RLUSD_TESTNET_ISSUER,
   XRPL_MAINNET_CAIP2,
+  XRPL_SELF_FACILITATOR,
+  XRPL_SELF_WS_URL,
   XRPL_TESTNET_CAIP2,
   assertXrplPairing,
   isLegalXrplPairing,
@@ -461,6 +463,7 @@ export class XrplOnlyFacilitatorClient implements FacilitatorClient {
   async getSupported(): Promise<SupportedResponse> {
     for (const c of [this.inner, this.settleInner]) {
       const url = (c as { url?: unknown }).url;
+      if (c instanceof LocalXrplFacilitatorClient) continue;
       if (typeof url !== "string" || !url.startsWith("https://")) {
         throw new Error("XRPL facilitator URL must be https");
       }
@@ -547,8 +550,63 @@ export class XrplOnlyFacilitatorClient implements FacilitatorClient {
   }
 }
 
+/** Minimal facilitator-side scheme surface used for self-facilitation (= @x402/xrpl/exact/facilitator ExactXrplScheme). */
+export type XrplFacilitatorScheme = {
+  getExtra(network: string): Record<string, unknown> | undefined;
+  verify(payload: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResponse>;
+  settle(payload: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResponse>;
+};
+
+/**
+ * In-process facilitator: the @x402/xrpl reference facilitator scheme
+ * (offline signature + signer authorization, NetworkID, exact amount, no
+ * partial payment / Paths / DeliverMin / Memos, fee cap, LastLedgerSequence,
+ * simulate; settle = submitAndWait, success only on validated tesSUCCESS).
+ * Cross-instance dedup is our Upstash claim BEFORE verify; the ledger
+ * self-check after settle re-reads delivered_amount independently.
+ * Deadlines as for the HTTP facilitator (a timeout = ambiguous 504).
+ */
+export class LocalXrplFacilitatorClient implements FacilitatorClient {
+  readonly url = XRPL_SELF_FACILITATOR;
+  constructor(
+    private readonly network: string,
+    private readonly scheme: XrplFacilitatorScheme,
+  ) {}
+  async getSupported(): Promise<SupportedResponse> {
+    return {
+      kinds: [{ x402Version: 2, scheme: "exact", network: this.network as `${string}:${string}`, extra: this.scheme.getExtra(this.network) }],
+      extensions: [],
+      signers: { "xrpl:*": [] },
+    } as SupportedResponse;
+  }
+  async verify(payload: PaymentPayload, requirements: PaymentRequirements): Promise<VerifyResponse> {
+    // Verify submits nothing: a throw/timeout means "not accepted" (Base-only 402).
+    return withTimeout(this.scheme.verify(payload, requirements), timeouts.verifyMs, "XRPL self verify");
+  }
+  async settle(payload: PaymentPayload, requirements: PaymentRequirements): Promise<SettleResponse> {
+    // A throw or timeout here is classified unconfirmed (the blob may have been submitted).
+    return withTimeout(this.scheme.settle(payload, requirements), timeouts.settleMs, "XRPL self settle").catch(() => {
+      throw new FacilitatorTimeoutError("settle", timeouts.settleMs);
+    });
+  }
+}
+
+async function defaultFacilitatorSchemeLoader(network: string): Promise<XrplFacilitatorScheme> {
+  const m = await import("@x402/xrpl/exact/facilitator");
+  return new m.ExactXrplScheme({ wsUrlByNetwork: { [network]: XRPL_SELF_WS_URL[network as typeof XRPL_MAINNET_CAIP2] } }) as unknown as XrplFacilitatorScheme;
+}
+let facilitatorSchemeLoader: (network: string) => Promise<XrplFacilitatorScheme> = defaultFacilitatorSchemeLoader;
+/** Tests only: swap the self-facilitation scheme (null = real @x402/xrpl facilitator). */
+export function __setXrplFacilitatorSchemeLoaderForTests(fn: ((network: string) => Promise<XrplFacilitatorScheme>) | null): void {
+  facilitatorSchemeLoader = fn ?? defaultFacilitatorSchemeLoader;
+}
+
 /** Build the facilitator client pair: verify/supported at XRPL_VERIFY_TIMEOUT_MS, settle at XRPL_SETTLE_TIMEOUT_MS. */
-export function createXrplFacilitator(config: XrplRailConfig, keyOf?: KeyFn): XrplOnlyFacilitatorClient {
+export function createXrplFacilitator(config: XrplRailConfig, keyOf?: KeyFn, local?: LocalXrplFacilitatorClient): XrplOnlyFacilitatorClient {
+  if (config.facilitatorUrl === XRPL_SELF_FACILITATOR) {
+    if (!local) throw new Error("self-facilitation needs the in-process XRPL facilitator");
+    return new XrplOnlyFacilitatorClient(local, config.network, config.issuer, keyOf, local);
+  }
   return new XrplOnlyFacilitatorClient(
     new HTTPFacilitatorClient({ url: config.facilitatorUrl, timeoutMs: timeouts.verifyMs }),
     config.network,
@@ -595,7 +653,11 @@ async function initRail(config: XrplRailConfig): Promise<Rail> {
     throw new Error("RLUSD issuer mismatch between repo constants and @x402/xrpl");
   }
   const keyOf = makeKeyFn(config.network, mods);
-  const server = new x402ResourceServer(createXrplFacilitator(config, keyOf)).register(config.network, new mods.ExactXrplScheme());
+  const local =
+    config.facilitatorUrl === XRPL_SELF_FACILITATOR
+      ? new LocalXrplFacilitatorClient(config.network, await facilitatorSchemeLoader(config.network))
+      : undefined;
+  const server = new x402ResourceServer(createXrplFacilitator(config, keyOf, local)).register(config.network, new mods.ExactXrplScheme());
   await server.initialize();
   return { config, server, mods, keyOf };
 }
