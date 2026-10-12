@@ -48,12 +48,12 @@ export default function HomePage() {
               <span>built for agents.</span>
             </h1>
             <p className="hp-sub">
-              {s.routes} routes for market data, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
+              {s.routes} paid services for market data, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
               {s.minPrice}–{s.maxPrice} per call in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, and gets JSON back.
             </p>
             <div className="hp-ctas">
               <a className="hp-btn primary" href="/try">Try a free sample</a>
-              <a className="hp-btn ghost" href="#catalog">See all {s.routes} routes</a>
+              <a className="hp-btn ghost" href="#catalog">See all {s.routes} paid services</a>
             </div>
             <CopyLine text="curl https://horizonpulse.dev/api/demo/pulse" />
             <p className="hp-proof">
