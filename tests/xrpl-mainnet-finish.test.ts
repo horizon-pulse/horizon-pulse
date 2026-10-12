@@ -20,6 +20,7 @@ import {
   resetXrplRailForTests,
   setXrplReplayStoreForTests,
   verifySettledTx,
+  xrplSignedTxHash,
   xrplReplayStoreKind,
 } from "@/lib/xrpl-rail";
 import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
@@ -34,6 +35,7 @@ const MAINNET: XrplRailConfig = {
   initTimeoutMs: 1000,
 };
 const HASH = "A".repeat(64);
+const PAYER = "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh";
 const cmp = (a: string, b: string) => {
   const x = Number(a), y = Number(b);
   if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("bad");
@@ -43,7 +45,7 @@ const REQ = { payTo: XRPL_PAYTO, amount: "0.005", asset: RLUSD_CURRENCY_HEX, ext
 const goodTx = (over: Record<string, unknown> = {}, meta: Record<string, unknown> = {}) => ({
   validated: true,
   status: "success",
-  tx_json: { TransactionType: "Payment", Destination: XRPL_PAYTO, ...over },
+  tx_json: { TransactionType: "Payment", Account: PAYER, Destination: XRPL_PAYTO, ...over },
   meta: { TransactionResult: "tesSUCCESS", delivered_amount: { currency: RLUSD_CURRENCY_HEX, issuer: RLUSD_MAINNET_ISSUER, value: "0.005" }, ...meta },
 });
 
@@ -115,6 +117,7 @@ describe("ledger self-verification of a settled payment", () => {
     ["missing", { validated: true }],
     ["result_not_tessuccess", goodTx({}, { TransactionResult: "tecPATH_PARTIAL" })],
     ["not_payment", goodTx({ TransactionType: "OfferCreate" })],
+    ["payer_mismatch", goodTx({ Account: "rs2cF8jYDp4D7Ny2SrNV21xkNJRp3HiVTJ" })],
     ["destination_mismatch", goodTx({ Destination: "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De" })],
     ["unexpected_destination_tag", goodTx({ DestinationTag: 1 })],
     ["delivered_not_issued", goodTx({}, { delivered_amount: "5000" })],
@@ -123,6 +126,16 @@ describe("ledger self-verification of a settled payment", () => {
     ["delivered_amount_mismatch", goodTx({}, { delivered_amount: { currency: RLUSD_CURRENCY_HEX, issuer: RLUSD_MAINNET_ISSUER, value: "0.004" } })],
     ["delivered_value_unparseable", goodTx({}, { delivered_amount: { currency: RLUSD_CURRENCY_HEX, issuer: RLUSD_MAINNET_ISSUER, value: "x" } })],
   ])("%s", (want, r) => {
-    expect(verifySettledTx(r as never, REQ, cmp)).toBe(want);
+    expect(verifySettledTx(r as never, REQ, cmp, PAYER)).toBe(want);
+  });
+  it("payer check: ledger tx Account must equal the claimed/verified payer", () => {
+    expect(verifySettledTx(goodTx() as never, REQ, cmp, PAYER)).toBe("ok");
+    expect(verifySettledTx(goodTx() as never, REQ, cmp, "rs2cF8jYDp4D7Ny2SrNV21xkNJRp3HiVTJ")).toBe("payer_mismatch");
+  });
+  it("xrplSignedTxHash = xrpl.js hashSignedTx", async () => {
+    const { encode, hashes } = await import("xrpl");
+    const blob = encode({ TransactionType: "Payment", Account: PAYER, Destination: XRPL_PAYTO, Amount: "1", Fee: "12", Sequence: 7, SigningPubKey: "", TxnSignature: "00" } as never);
+    expect(xrplSignedTxHash(blob)).toBe(hashes.hashSignedTx(blob));
+    expect(xrplSignedTxHash("zz")).toBeNull();
   });
 });

@@ -433,6 +433,50 @@ function makeKeyFn(network: string, mods: Pick<XrplModules, "decodeSignedTransac
 /** Short, non-reversible fingerprint for logs / reconciliation (16 hex of the key). */
 const fp = (key: string) => key.slice(0, 16);
 
+/** XRPL tx hash of a signed blob: SHA-512Half("TXN\0" || blob). */
+export function xrplSignedTxHash(blobHex: string): string | null {
+  if (!/^[0-9A-Fa-f]+$/.test(blobHex) || blobHex.length % 2) return null;
+  return createHash("sha512")
+    .update(Buffer.concat([Buffer.from("54584E00", "hex"), Buffer.from(blobHex, "hex")]))
+    .digest("hex")
+    .slice(0, 64)
+    .toUpperCase();
+}
+
+/** Everything a human needs to reconcile one ambiguous XRPL settlement. */
+export type ReconcileCtx = {
+  network: string;
+  route: string;
+  payer: string;
+  slot: string;
+  required: { currency: string; issuer: string; value: string };
+  /** Hash computed from the signed blob (known even when settle timed out). */
+  blobHash: string | null;
+};
+export const XRPL_RECONCILE_TAG = "XRPL_RECONCILE";
+
+/**
+ * One grep-able JSON line per settlement_unconfirmed (502/504) outcome.
+ * Not redacted on purpose: only public ledger data (hash, addresses,
+ * amounts), no payload, no facilitator text. See docs/xrpl-rail.md runbook.
+ */
+export function logXrplReconcile(ctx: ReconcileCtx, status: 502 | 504, reason: string, settledHash?: string, delivered?: unknown): void {
+  const rec = {
+    tag: XRPL_RECONCILE_TAG,
+    at: new Date().toISOString(),
+    status,
+    reason: safeCode(reason),
+    txHash: typeof settledHash === "string" && /^[0-9A-Fa-f]{64}$/.test(settledHash) ? settledHash.toUpperCase() : ctx.blobHash,
+    network: ctx.network,
+    route: ctx.route,
+    payer: ctx.payer,
+    slot: ctx.slot,
+    required: ctx.required,
+    delivered: delivered ?? null,
+  };
+  console.warn(`${LOG} ${XRPL_RECONCILE_TAG} ${JSON.stringify(rec)}`);
+}
+
 // ---------------------------------------------------------------------------
 // XRPL-only facilitator client
 // ---------------------------------------------------------------------------
@@ -1063,7 +1107,7 @@ function jsonError(status: number, error: string): NextResponse {
 
 type Decision = { kind: "response"; res: NextResponse } | { kind: "base" } | { kind: "rethrow"; err: unknown };
 
-async function decide(key: string, att: Attempt, res: NextResponse | null, threw: boolean, thrown: unknown): Promise<Decision> {
+async function decide(key: string, att: Attempt, res: NextResponse | null, threw: boolean, thrown: unknown, rc: ReconcileCtx): Promise<Decision> {
   const s = att.settle;
   if (s) {
     if (s.outcome === "success" && res && res.status < 400) {
@@ -1084,6 +1128,7 @@ async function decide(key: string, att: Attempt, res: NextResponse | null, threw
       undefined,
       false,
     );
+    logXrplReconcile(rc, timeout ? 504 : 502, s.outcome === "success" ? "settled_without_response" : s.reason, s.transaction);
     return { kind: "response", res: jsonError(timeout ? 504 : 502, "settlement_unconfirmed") };
   }
   // No settle attempted → nothing charged → release the key.
@@ -1157,12 +1202,15 @@ export function verifySettledTx(
   r: RpcResult,
   requirement: Pick<PaymentRequirements, "payTo" | "amount" | "asset"> & { extra?: Record<string, unknown> },
   compareDecimal: (a: string, b: string) => number,
+  /** Account of the signed tx we claimed + verified (the slot payer). */
+  payer?: string,
 ): "ok" | "missing" | string {
   const meta = r.meta as { TransactionResult?: unknown; delivered_amount?: unknown } | undefined;
   const tx = ((r.tx_json as Record<string, unknown> | undefined) ?? r) as Record<string, unknown>;
   if (!meta || typeof meta !== "object") return "missing";
   if (meta.TransactionResult !== "tesSUCCESS") return "result_not_tessuccess";
   if (tx.TransactionType !== "Payment") return "not_payment";
+  if (payer !== undefined && tx.Account !== payer) return "payer_mismatch";
   if (tx.Destination !== requirement.payTo) return "destination_mismatch";
   if (tx.DestinationTag !== undefined) return "unexpected_destination_tag";
   const d = meta.delivered_amount;
@@ -1264,6 +1312,24 @@ export async function handleXrplPayment(
       return jsonError(409, "duplicate_payment");
     }
     key = k;
+    const ticket = check.tx.TicketSequence;
+    const rc: ReconcileCtx = {
+      network: config.network,
+      route: (() => {
+        try {
+          return new URL(req.url).pathname;
+        } catch {
+          return "unknown";
+        }
+      })(),
+      payer: String(check.tx.Account),
+      slot: typeof ticket === "number" ? `ticket:${ticket}` : `sequence:${String(check.tx.Sequence)}`,
+      required: { currency: requirement.asset, issuer: String((requirement.extra as Record<string, unknown>).issuer), value: requirement.amount },
+      blobHash: (() => {
+        const b = blobOf(payload);
+        return b ? xrplSignedTxHash(b) : null;
+      })(),
+    };
     const att: Attempt = { handlerRan: false, handlerThrew: false };
     attempts.set(key, att);
 
@@ -1312,9 +1378,10 @@ export async function handleXrplPayment(
       const when = await settledBeforeRequest(looked, startedAt);
       // Self-verification against the validated ledger. Mainnet: must be
       // checkable AND ok. Testnet: checked when the result carries meta.
-      const v = looked ? verifySettledTx(looked, requirement as never, rail.mods.compareDecimalStrings) : "missing";
+      const v = looked ? verifySettledTx(looked, requirement as never, rail.mods.compareDecimalStrings, rc.payer) : "missing";
       if (v !== "ok" && (v !== "missing" || config.network === XRPL_MAINNET_CAIP2)) {
         await replaySet(key, "settle_unconfirmed");
+        logXrplReconcile(rc, 502, `self_check_${v}`, att.settle.transaction, (looked?.meta as { delivered_amount?: unknown } | undefined)?.delivered_amount);
         warn(`settled tx failed ledger self-check fp=${fp(key)} reason=${safeCode(v)}; client gets 502 settlement_unconfirmed`, undefined, false);
         return jsonError(502, "settlement_unconfirmed");
       }
@@ -1328,13 +1395,14 @@ export async function handleXrplPayment(
           // No shared store and the ledger time can't be read: a cross-instance
           // replay can't be ruled out, so don't deliver. Settled → never a 402.
           await replaySet(key, "settle_unconfirmed");
+          logXrplReconcile(rc, 502, "settled_tx_time_unreadable", att.settle.transaction);
           warn(`could not read settled tx time fp=${fp(key)} on memory replay store; client gets 502 settlement_unconfirmed`, undefined, false);
           return jsonError(502, "settlement_unconfirmed");
         }
         warn(`could not read settled tx time fp=${fp(key)}; serving the paid response (shared replay store)`, undefined, false);
       }
     }
-    decision = await decide(key, att, res, threw, thrown);
+    decision = await decide(key, att, res, threw, thrown, rc);
   } catch (err) {
     // Our own code threw before/around the facilitator: nothing was settled.
     if (key && !attempts.get(key)?.settle) await replayRelease(key);
