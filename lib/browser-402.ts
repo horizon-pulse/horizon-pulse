@@ -23,7 +23,7 @@ export function isBrowserNavigation(req: NextRequest): boolean {
 export function asJsonRequest(req: NextRequest): NextRequest {
   const headers = new Headers(req.headers);
   headers.set("accept", "application/json");
-  return new NextRequest(req.url, { method: req.method, headers });
+  return new NextRequest(req.url, { method: req.method === "HEAD" ? "GET" : req.method, headers });
 }
 
 const VARY = "Accept, Sec-Fetch-Mode";
