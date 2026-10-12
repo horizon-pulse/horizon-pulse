@@ -89,7 +89,8 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - GET `/.well-known/x402` — machine-readable x402 resource list
 - GET `/skill.md` — agent skill (markdown): when to use each route, prices, the pay flow step by step, errors, safety checks
 - GET `/agents` — agent guide: pay flow, skill, MCP setup
-- POST `/mcp` — hosted MCP (streamable HTTP, stateless); `initialize` and `tools/list` free, `tools/call` returns an x402 challenge for Base USDC (needs an x402-paying MCP client)
+- POST `/mcp` — hosted MCP (streamable HTTP, stateless); `initialize` and `tools/list` free, `tools/call` returns an x402 challenge for Base USDC (needs an x402-paying MCP client); the `money_market_rates` tool is free (no challenge)
+- GET `/api/money-market-rates` — FREE (no x402, no 402). Published NY Fed reference rates as released (SOFR, EFFR, OBFR, TGCR, BGCR); market data only, not a forecast, not a recommendation. Params: `rates`, `last` (1-10) or `startDate`+`endDate` (<=31 days). Per-rate status: fresh, PENDING, STALE, no publish, UNVERIFIED holiday status, rate_limited. Horizon Pulse is not affiliated with the New York Fed. The New York Fed does not sanction, endorse, or recommend any products or services offered by Horizon Pulse. Horizon Pulse is also not affiliated with the Federal Reserve System. Data are passed through unchanged from the NY Fed Markets Data API under the New York Fed Terms of Use and may not be current; the same values are free at markets.newyorkfed.org.
 
 ## Services for API owners (not x402 routes)
 

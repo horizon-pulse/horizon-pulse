@@ -90,6 +90,13 @@ export const DTCC_NOTICE =
 export const NOT_AFFILIATED =
   "Horizon Pulse is not affiliated with the New York Fed. The New York Fed does not sanction, endorse, or recommend any products or services offered by Horizon Pulse.";
 
+/** Disclaimer carried on every surface that names the rates (spec v2 §4 item 5, §7 not_affiliated wording + pass-through). */
+export const MMR_DISCLAIMER =
+  `${NOT_AFFILIATED} Horizon Pulse is also not affiliated with the Federal Reserve System. Data are passed through unchanged from the NY Fed Markets Data API under the New York Fed Terms of Use and may not be current; the same values are free at markets.newyorkfed.org.`;
+/** Route/tool description (free route: no x402, no 402). No stress read, no derived values. */
+export const MMR_DESCRIPTION =
+  `FREE (no x402, no payment). ${MMR_SCOPE} SOFR, EFFR, OBFR, TGCR and BGCR as published, with each rate's NY Fed source URL, terms notices and a holiday-aware status (fresh, PENDING, STALE, no publish, UNVERIFIED holiday status). Params: rates (comma list), last (1-10) or startDate+endDate (YYYY-MM-DD, <=31 days, >=2018-04-02). ${MMR_DISCLAIMER}`;
+
 export function termsBlock(year: number, rates: MmrRate[]) {
   return {
     credit: `© ${year} Federal Reserve Bank of New York. Content from the New York Fed subject to the Terms of Use at newyorkfed.org.`,

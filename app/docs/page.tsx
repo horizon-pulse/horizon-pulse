@@ -23,7 +23,9 @@ const BASE = spec.servers[0].url as string;
 type Op = { id: string; method: string; path: string; op: Json };
 const ops: Op[] = [];
 for (const [p, item] of Object.entries<Json>(spec.paths))
-  for (const [m, op] of Object.entries<Json>(item)) ops.push({ id: op.operationId, method: m.toUpperCase(), path: p, op });
+  for (const [m, op] of Object.entries<Json>(item)) if (op["x-payment-info"]) ops.push({ id: op.operationId, method: m.toUpperCase(), path: p, op }); // paid only; free routes below
+/** FREE routes (no x402) documented in /openapi.json without x-payment-info. */
+const freeOps = Object.entries<Json>(spec.paths).flatMap(([p, item]) => Object.entries<Json>(item).filter(([, op]) => op["x-free"]).map(([m, op]) => ({ id: op.operationId as string, method: m.toUpperCase(), path: p, op })));
 const groups = (spec.tags as { name: string; description: string }[]).map((t) => ({ ...t, ops: ops.filter((o) => o.op.tags[0] === t.name) }));
 
 const typeOf = (s: Json): string => {
@@ -130,7 +132,7 @@ curl -si ${BASE}/api/pulse | grep -i '^payment-required' | cut -d' ' -f2 | base6
 #    and retries with PAYMENT-SIGNATURE. You get 200 plus a PAYMENT-RESPONSE receipt.`;
 
 export default function DocsPage() {
-  const s = { ops: ops.length, routes: Object.keys(spec.paths).length };
+  const s = { ops: ops.length, routes: new Set(ops.map((o) => o.path)).size };
   return (
     <div className="hp">
       <SiteHeader />
@@ -220,6 +222,34 @@ export default function DocsPage() {
             </div>
           </section>
         ))}
+
+        <section className="hp-section" id="free-data">
+          <div className="hp-wrap">
+            <div>
+              <div className="hp-label">Reference</div>
+              <h2>Free data (no payment)</h2>
+              <p className="hp-lead">Free routes: no x402, no 402 challenge, no payment header. Not counted as paid routes.</p>
+            </div>
+            {freeOps.map((o) => (
+              <div className="hp-tile" key={o.id} id={o.id}>
+                <h3>
+                  <code>{o.method} {o.path}</code> · Free
+                </h3>
+                <p>{o.op.description}</p>
+                <ul>
+                  {(o.op.parameters ?? []).map((prm: Json) => (
+                    <li key={prm.name}>
+                      <code>{prm.name}</code>: {prm.description}
+                    </li>
+                  ))}
+                </ul>
+                <pre>
+                  <code>{`curl ${BASE}${o.path}?rates=SOFR,EFFR`}</code>
+                </pre>
+              </div>
+            ))}
+          </div>
+        </section>
       </main>
       <SiteFooter />
     </div>

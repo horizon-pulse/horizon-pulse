@@ -2,7 +2,9 @@
  * Hosted MCP endpoint (POST /mcp): the paid routes as MCP tools.
  *
  * - Each tool calls the EXISTING route handler unchanged (same SSRF guards,
- *   caps and upstreams). No new data paths, no free/demo data via MCP.
+ *   caps and upstreams). No new data paths, no demo data via MCP. Exception:
+ *   FREE_TOOLS (money_market_rates) call the free REST route with no x402
+ *   wrapper; they are not paid tools and not in TOOLS.
  * - Payment uses the official @x402/mcp wrapper with the SAME accepts the REST
  *   routes advertise (buildPaymentRequirements: amount, payTo, network, asset).
  *   Same CDP facilitator via getResourceServer().
@@ -17,6 +19,8 @@ import { NextRequest, type NextResponse } from "next/server";
 import { z } from "zod";
 import { buildPaymentRequirements, getResourceServer } from "./x402-server";
 import { PUBLIC_BASE_URL } from "./config";
+import { MMR_DESCRIPTION } from "./money-market-rates";
+import { GET as moneyMarketRatesGET } from "@/app/api/money-market-rates/route";
 
 import * as pulse from "@/app/api/pulse/handler";
 import * as signals from "@/app/api/signals/handler";
@@ -243,5 +247,25 @@ export function buildMcpServer(): McpServer {
       paid(async (args) => t.call(args as Record<string, unknown>)),
     );
   }
+  // FREE tools: no x402 wrapper, no challenge; counted as free, never in TOOLS (the paid list).
+  for (const f of FREE_TOOLS) server.tool(f.name, f.description, f.schema, async (args) => f.call(args as Record<string, unknown>));
   return server;
 }
+
+export const FREE_TOOLS = [
+  {
+    name: "money_market_rates",
+    description: MMR_DESCRIPTION,
+    schema: {
+      rates: z.string().optional().describe("Comma list from SOFR,EFFR,OBFR,TGCR,BGCR (default all five)"),
+      last: z.number().int().optional().describe("Last n observations per rate, 1-10 (exclusive with startDate/endDate)"),
+      startDate: z.string().optional().describe("YYYY-MM-DD, >= 2018-04-02; needs endDate; span <= 31 days"),
+      endDate: z.string().optional().describe("YYYY-MM-DD, >= startDate"),
+    },
+    call: (a: Record<string, unknown>) =>
+      runHandler(
+        moneyMarketRatesGET as unknown as Handler,
+        makeRequest("/api/money-market-rates", { rates: s(a.rates), last: a.last != null ? String(a.last) : undefined, startDate: s(a.startDate), endDate: s(a.endDate) }),
+      ),
+  },
+];

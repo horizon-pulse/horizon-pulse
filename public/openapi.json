@@ -2914,6 +2914,92 @@
           }
         }
       }
+    },
+    "/api/money-market-rates": {
+      "get": {
+        "operationId": "getMoneyMarketRates",
+        "summary": "Published NY Fed reference rates as released (FREE, no payment)",
+        "description": "FREE (no x402, no payment). Published NY Fed reference rates as released; market data only, not a forecast, not a recommendation. SOFR, EFFR, OBFR, TGCR and BGCR as published, with each rate's NY Fed source URL, terms notices and a holiday-aware status (fresh, PENDING, STALE, no publish, UNVERIFIED holiday status). Params: rates (comma list), last (1-10) or startDate+endDate (YYYY-MM-DD, <=31 days, >=2018-04-02). Horizon Pulse is not affiliated with the New York Fed. The New York Fed does not sanction, endorse, or recommend any products or services offered by Horizon Pulse. Horizon Pulse is also not affiliated with the Federal Reserve System. Data are passed through unchanged from the NY Fed Markets Data API under the New York Fed Terms of Use and may not be current; the same values are free at markets.newyorkfed.org.",
+        "tags": [
+          "Free data"
+        ],
+        "security": [],
+        "x-free": true,
+        "parameters": [
+          {
+            "name": "rates",
+            "in": "query",
+            "required": false,
+            "description": "Comma list from SOFR,EFFR,OBFR,TGCR,BGCR (case-insensitive; default all five)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "last",
+            "in": "query",
+            "required": false,
+            "description": "Last n observations per rate, 1-10. Exclusive with startDate/endDate.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            }
+          },
+          {
+            "name": "startDate",
+            "in": "query",
+            "required": false,
+            "description": "YYYY-MM-DD, >= 2018-04-02; requires endDate; span <= 31 calendar days",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "endDate",
+            "in": "query",
+            "required": false,
+            "description": "YYYY-MM-DD, >= startDate; requires startDate",
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rates as published, per-rate status and terms block. Horizon Pulse is not affiliated with the New York Fed. The New York Fed does not sanction, endorse, or recommend any products or services offered by Horizon Pulse. Horizon Pulse is also not affiliated with the Federal Reserve System. Data are passed through unchanged from the NY Fed Markets Data API under the New York Fed Terms of Use and may not be current; the same values are free at markets.newyorkfed.org.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad or unknown params (body lists the allowed params).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Upstream NY Fed fetch limit reached for every requested rate and nothing cached; Retry-After: 60. Per-rate limits otherwise show status rate_limited.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
