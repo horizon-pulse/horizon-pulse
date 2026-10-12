@@ -365,7 +365,21 @@ describe("paid isolation", () => {
       expect(calls.filter((c) => c.url.startsWith(CDP_URL_PREFIX) && c.op !== "supported")).toEqual([]);
       const logged = [...vi.mocked(console.warn).mock.calls, ...(vi.isMockFunction(console.error) ? vi.mocked(console.error).mock.calls : [])].flat().map(String).join("\n");
       expect(logged).not.toContain(MARKER);
-      expect(logged).not.toContain(XRPL_PAYER);
+      // The payer appears ONLY in the structured XRPL_RECONCILE record (A1).
+      const lines = logged.split("\n");
+      expect(lines.filter((l) => !l.includes("XRPL_RECONCILE ")).join("\n")).not.toContain(XRPL_PAYER);
+      const rec = lines.filter((l) => l.includes("XRPL_RECONCILE "));
+      if (expectStatus === 402) expect(rec).toEqual([]);
+      else {
+        expect(rec).toHaveLength(1);
+        const r = JSON.parse(rec[0].slice(rec[0].indexOf("{")));
+        expect(r).toMatchObject({ tag: "XRPL_RECONCILE", status: expectStatus, network: "xrpl:1", route: "/api/pulse", payer: XRPL_PAYER });
+        expect(r.txHash).toMatch(/^[0-9A-F]{64}$/);
+        expect(r.slot).toMatch(/^(sequence|ticket):\d+$/);
+        expect(r.required).toMatchObject({ currency: "524C555344000000000000000000000000000000", value: expect.any(String) });
+        expect(Date.parse(r.at)).not.toBeNaN();
+        expect(r.reason).toMatch(/^[a-z0-9_]+$/);
+      }
 
       calls.length = 0;
       const base = await run.handler(paid(basePayload(accepts[0])));
@@ -555,7 +569,12 @@ describe("replay guard + cross-instance check", () => {
       installXrplRpc("ready", tx);
       const res = await run.handler(paid(xrplPayload(accepts[1])));
       expect(res.status).toBe(want);
-      if (want === 502) expect(await res.json()).toEqual({ error: "settlement_unconfirmed" });
+      if (want === 502) {
+        expect(await res.json()).toEqual({ error: "settlement_unconfirmed" });
+        const rec = vi.mocked(console.warn).mock.calls.map((c) => String(c[0])).filter((l) => l.includes("XRPL_RECONCILE ")).pop()!;
+        const r = JSON.parse(rec.slice(rec.indexOf("{")));
+        expect(r).toMatchObject({ status: 502, reason: "settled_tx_time_unreadable", route: "/api/pulse", txHash: XRPL_TX_HASH });
+      }
     }
   });
 
