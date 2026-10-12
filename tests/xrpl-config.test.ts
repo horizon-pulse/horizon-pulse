@@ -114,3 +114,37 @@ describe("xrpl-config", () => {
     expect(getXrplRailConfig({ ...ON, HP_XRPL_ASSET_TRANSFER_METHOD: "batch" }).enabled).toBe(false);
   });
 });
+
+describe("XRPL_MAINNET_ALLOWED switch (branch xrpl-mainnet-allowed)", () => {
+  const MAIN = {
+    HP_XRPL_ENABLED: "true",
+    HP_XRPL_NETWORK: "xrpl:0",
+    HP_XRPL_PAYTO: "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
+    HP_XRPL_FACILITATOR_URL: "https://xrpl-facilitator-mainnet.t54.ai",
+    UPSTASH_REDIS_REST_URL: "https://x.upstash.io",
+    UPSTASH_REDIS_REST_TOKEN: "t",
+  };
+  it("default (unset) and anything but exactly 'true' keep xrpl:0 locked", async () => {
+    const { getXrplRailConfig, xrplMainnetAllowed } = await import("@/lib/xrpl-config");
+    expect(xrplMainnetAllowed({})).toBe(false);
+    for (const v of ["", "TRUE", "1", "yes", " true", "true "]) {
+      expect(xrplMainnetAllowed({ XRPL_MAINNET_ALLOWED: v })).toBe(false);
+      const r = getXrplRailConfig({ ...MAIN, XRPL_MAINNET_ALLOWED: v });
+      expect(r.enabled).toBe(false);
+      if (!r.enabled) expect(r.reason).toMatch(/locked/);
+    }
+    expect(getXrplRailConfig(MAIN).enabled).toBe(false);
+  });
+  it("'true' only lifts the lock: the other guards still refuse (empty mainnet facilitator allowlist, Upstash env)", async () => {
+    const { getXrplRailConfig, xrplMainnetAllowed } = await import("@/lib/xrpl-config");
+    expect(xrplMainnetAllowed({ XRPL_MAINNET_ALLOWED: "true" })).toBe(true);
+    const r = getXrplRailConfig({ ...MAIN, XRPL_MAINNET_ALLOWED: "true" });
+    expect(r.enabled).toBe(false);
+    if (!r.enabled) expect(r.reason).toMatch(/allow-list/);
+    const noKv = getXrplRailConfig({ ...MAIN, XRPL_MAINNET_ALLOWED: "true", UPSTASH_REDIS_REST_URL: "" });
+    expect(noKv.enabled).toBe(false);
+    if (!noKv.enabled) expect(noKv.reason).toMatch(/UPSTASH/);
+    const wrongPayTo = getXrplRailConfig({ ...MAIN, XRPL_MAINNET_ALLOWED: "true", HP_XRPL_PAYTO: "rs2cF8jYDp4D7Ny2SrNV21xkNJRp3HiVTJ" });
+    expect(wrongPayTo.enabled).toBe(false);
+  });
+});

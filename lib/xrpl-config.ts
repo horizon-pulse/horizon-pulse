@@ -79,6 +79,16 @@ export const XRPL_TESTNET_CAIP2 = "xrpl:1" as const;
  */
 export const XRPL_MAINNET_ALLOWED = false as boolean;
 
+/**
+ * Mainnet lock switch: xrpl:0 is permitted only when the env var
+ * XRPL_MAINNET_ALLOWED is exactly "true" (default: XRPL_MAINNET_ALLOWED,
+ * false). Every other guard below (pinned payTo, allow-listed facilitator and
+ * RPC, shared replay store, RLUSD trust line at runtime) still applies.
+ */
+export function xrplMainnetAllowed(env: Record<string, string | undefined>): boolean {
+  return env.XRPL_MAINNET_ALLOWED === undefined ? XRPL_MAINNET_ALLOWED : env.XRPL_MAINNET_ALLOWED === "true";
+}
+
 export type XrplRailNetwork = typeof XRPL_MAINNET_CAIP2 | typeof XRPL_TESTNET_CAIP2;
 
 /**
@@ -332,7 +342,7 @@ export function getXrplRailConfig(env: Env = process.env): XrplConfigResult {
     let network: XrplRailNetwork;
     if (rawNet === undefined || rawNet === "" || rawNet === XRPL_TESTNET_CAIP2) network = XRPL_TESTNET_CAIP2;
     else if (rawNet === XRPL_MAINNET_CAIP2) {
-      if (!XRPL_MAINNET_ALLOWED) return off("xrpl:0 (mainnet) is locked in code (XRPL_MAINNET_ALLOWED = false)", true);
+      if (!xrplMainnetAllowed(env)) return off("xrpl:0 (mainnet) is locked (XRPL_MAINNET_ALLOWED is not exactly 'true')", true);
       // Mainnet fails closed without the shared replay store (per-instance
       // memory cannot stop a cross-instance replay of a real payment).
       if (!hasSharedReplayStoreEnv(env)) return off("xrpl:0 requires UPSTASH_REDIS_REST_URL (https) and UPSTASH_REDIS_REST_TOKEN (shared replay store)", true);
