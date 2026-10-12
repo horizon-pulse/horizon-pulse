@@ -1,11 +1,15 @@
 /**
  * `npx horizon-pulse setup`: register the hosted Horizon Pulse MCP server
  * (https://horizonpulse.dev/mcp, streamable HTTP) with local agent clients and
- * install the Horizon Pulse skill. Pattern: show the plan + a diff of every
- * file it would touch, back up each existing file, write only after approval.
+ * install the Horizon Pulse skill. Shows a preview of our entry in every file
+ * it would touch (plus whole-file sha256 before/after), backs up each existing
+ * file, writes only after approval. `--uninstall` removes only our entries;
+ * `--restore` puts back the latest backup.
  *
- * Never touches wallets, keys or money. Writes only the files listed in the
- * plan, under $HOME. Formats follow each client's own docs (see CLIENTS).
+ * Never touches wallets, keys or money. Writes only the files in the plan.
+ * Config files can hold tokens: original file mode is kept, new files are 0600,
+ * symlinked configs are written through to their target, and the rest of each
+ * file keeps its formatting (indent style, minified, trailing newline).
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -15,23 +19,39 @@ import readline from "node:readline/promises";
 
 export const SERVER_NAME = "horizon-pulse";
 export const DEFAULT_MCP_URL = "https://horizonpulse.dev/mcp";
+/** The skill is fetched with one GET of this URL (free, static markdown) unless --skill-file is given. */
 export const DEFAULT_SKILL_URL = "https://horizonpulse.dev/skill.md";
 export const SKILL_DIR_NAME = "horizon-pulse";
+export const BACKUP_TAG = ".horizon-pulse-backup-";
+const PREVIEW_MAX = 2000;
 
 type Json = Record<string, unknown>;
-export type Edit = { file: string; before: string | null; after: string };
+export type Edit = { file: string; display: string; before: string | null; after: string | null; preview: string };
 export type Client = {
   id: string;
   label: string;
-  /** Where the client's docs put user-scope MCP config. */
   configPath: (home: string) => string;
-  /** Returns the new file text, or null when already up to date. */
-  apply: (before: string | null, url: string) => string;
-  /** User-scope skills folder, when the client documents one. */
+  format: "json" | "toml";
+  /** JSON entry per the client's docs. */
+  entry: (url: string) => Json;
   skillDir?: (home: string) => string;
-  /** Detected = its home folder exists. */
   detect: (home: string) => boolean;
 };
+
+const sha = (s: string | null) => (s == null ? "none" : crypto.createHash("sha256").update(s).digest("hex"));
+const cap = (s: string) => (s.length > PREVIEW_MAX ? s.slice(0, PREVIEW_MAX) + `… (${s.length - PREVIEW_MAX} more chars)` : s);
+const read = (f: string): string | null => (fs.existsSync(f) ? fs.readFileSync(f, "utf8") : null);
+
+/** Write through symlinks: the real target if the path exists, else the path itself. */
+export function resolveTarget(f: string): string {
+  try {
+    return fs.realpathSync(f);
+  } catch {
+    return f;
+  }
+}
+
+/* ---------------------------- JSON ---------------------------- */
 
 function parseJsonObject(text: string | null, file: string): Json {
   if (text == null || text.trim() === "") return {};
@@ -45,39 +65,72 @@ function parseJsonObject(text: string | null, file: string): Json {
   return v as Json;
 }
 
-/** Set obj.mcpServers[SERVER_NAME] = entry, keeping every other key. */
-function jsonMcp(entry: (url: string) => Json, key = "mcpServers") {
-  return (before: string | null, url: string, file = "config"): string => {
-    const o = parseJsonObject(before, file);
-    const cur = o[key];
-    if (cur !== undefined && (typeof cur !== "object" || cur === null || Array.isArray(cur))) throw new Error(`${file}: "${key}" is not an object; nothing was changed.`);
-    const servers = { ...((cur as Json) ?? {}) };
-    servers[SERVER_NAME] = entry(url);
-    return JSON.stringify({ ...o, [key]: servers }, null, 2) + "\n";
-  };
+/** Indent style of an existing file: undefined = minified (one line). */
+function jsonStyle(text: string | null): { indent: string | undefined; nl: string } {
+  if (text == null || text.trim() === "") return { indent: "  ", nl: "\n" };
+  const nl = text.endsWith("\r\n") ? "\r\n" : text.endsWith("\n") ? "\n" : "";
+  if (!text.trim().includes("\n")) return { indent: undefined, nl };
+  const m = /\n([ \t]+)\S/.exec(text);
+  return { indent: m ? m[1] : "  ", nl };
 }
 
-/** Codex ~/.codex/config.toml: replace or append the [mcp_servers.horizon-pulse] table only. */
-export function applyCodexToml(before: string | null, url: string): string {
-  const text = before ?? "";
-  const header = `[mcp_servers.${SERVER_NAME}]`;
-  const block = `${header}\nurl = ${JSON.stringify(url)}\n`;
-  const lines = text.split("\n");
-  const start = lines.findIndex((l) => l.trim() === header || l.trim() === `[mcp_servers."${SERVER_NAME}"]`);
-  if (start === -1) return (text && !text.endsWith("\n") ? text + "\n" : text) + (text.trim() ? "\n" : "") + block;
-  let end = start + 1;
-  // The table ends at the next header that is not one of its own sub-tables.
-  while (end < lines.length && !(/^\s*\[/.test(lines[end]!) && !lines[end]!.trim().startsWith(`[mcp_servers.${SERVER_NAME}.`))) end++;
-  const out = [...lines.slice(0, start), ...block.trimEnd().split("\n"), ...(end < lines.length ? ["", ...lines.slice(end)] : [""])];
-  return out.join("\n");
+/** Set (entry) or remove (null) mcpServers[SERVER_NAME]; every other key and the file's style are kept. */
+export function jsonEdit(before: string | null, entry: Json | null, file: string, key = "mcpServers"): { after: string; was: unknown; now: unknown } {
+  const o = parseJsonObject(before, file);
+  const cur = o[key];
+  if (cur !== undefined && (typeof cur !== "object" || cur === null || Array.isArray(cur))) throw new Error(`${file}: "${key}" is not an object; nothing was changed.`);
+  const servers = { ...((cur as Json) ?? {}) };
+  const was = servers[SERVER_NAME];
+  if (entry) servers[SERVER_NAME] = entry;
+  else delete servers[SERVER_NAME];
+  if (JSON.stringify(was) === JSON.stringify(entry ?? undefined) && before != null) return { after: before, was, now: was };
+  const { indent, nl } = jsonStyle(before);
+  let text = JSON.stringify({ ...o, [key]: servers }, null, indent) + nl;
+  if (nl === "\r\n") text = text.replace(/(?<!\r)\n/g, "\r\n");
+  return { after: text, was, now: entry ?? undefined };
 }
+
+/* ---------------------------- TOML (Codex) ---------------------------- */
+
+const OUR_HEADER = new RegExp(`^\\s*\\[\\s*mcp_servers\\s*\\.\\s*("?)${SERVER_NAME}\\1\\s*\\]\\s*(#.*)?$`);
+const OUR_SUBTABLE = new RegExp(`^\\s*\\[\\s*mcp_servers\\s*\\.\\s*("?)${SERVER_NAME}\\1\\s*\\.`);
+const ANY_HEADER = /^\s*\[/;
+
+/** Replace (url) or remove (null) the [mcp_servers.horizon-pulse] table and its sub-tables; all other lines untouched. */
+export function tomlEdit(before: string | null, url: string | null): { after: string; was: string | null; now: string | null } {
+  const text = before ?? "";
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => OUR_HEADER.test(l));
+  const block = url == null ? null : `[mcp_servers.${SERVER_NAME}]\nurl = ${JSON.stringify(url)}`;
+  if (start === -1) {
+    if (block == null) return { after: text, was: null, now: null };
+    const pre = text === "" ? "" : text.endsWith("\n") ? text + "\n" : text + "\n\n";
+    return { after: pre + block + "\n", was: null, now: block };
+  }
+  let end = start + 1;
+  while (end < lines.length && !(ANY_HEADER.test(lines[end]!) && !OUR_SUBTABLE.test(lines[end]!))) end++;
+  // keep trailing blank lines of our block out of the table so spacing to the next table survives
+  let bodyEnd = end;
+  while (bodyEnd > start + 1 && lines[bodyEnd - 1]!.trim() === "") bodyEnd--;
+  const was = lines.slice(start, bodyEnd).join("\n");
+  if (block != null && was === block) return { after: text, was, now: block };
+  let out: string[];
+  if (block == null) {
+    out = [...lines.slice(0, start), ...lines.slice(end)];
+    while (out.length > 1 && out[out.length - 1] === "" && out[out.length - 2] === "") out.pop();
+  } else out = [...lines.slice(0, start), ...block.split("\n"), ...lines.slice(bodyEnd)];
+  return { after: out.join("\n"), was, now: block };
+}
+
+/* ---------------------------- clients ---------------------------- */
 
 export const CLIENTS: Client[] = [
   {
     id: "claude-code",
     label: "Claude Code (user scope, ~/.claude.json)",
     configPath: (h) => path.join(h, ".claude.json"),
-    apply: (b, u) => jsonMcp((url) => ({ type: "http", url }))(b, u, "~/.claude.json"),
+    format: "json",
+    entry: (url) => ({ type: "http", url }),
     skillDir: (h) => path.join(h, ".claude", "skills"),
     detect: (h) => fs.existsSync(path.join(h, ".claude")) || fs.existsSync(path.join(h, ".claude.json")),
   },
@@ -85,7 +138,8 @@ export const CLIENTS: Client[] = [
     id: "codex",
     label: "Codex CLI (~/.codex/config.toml)",
     configPath: (h) => path.join(h, ".codex", "config.toml"),
-    apply: applyCodexToml,
+    format: "toml",
+    entry: (url) => ({ url }),
     skillDir: (h) => path.join(h, ".codex", "skills"),
     detect: (h) => fs.existsSync(path.join(h, ".codex")),
   },
@@ -93,7 +147,8 @@ export const CLIENTS: Client[] = [
     id: "cursor",
     label: "Cursor (global, ~/.cursor/mcp.json)",
     configPath: (h) => path.join(h, ".cursor", "mcp.json"),
-    apply: (b, u) => jsonMcp((url) => ({ url }))(b, u, "~/.cursor/mcp.json"),
+    format: "json",
+    entry: (url) => ({ url }),
     skillDir: (h) => path.join(h, ".cursor", "skills"),
     detect: (h) => fs.existsSync(path.join(h, ".cursor")),
   },
@@ -101,7 +156,8 @@ export const CLIENTS: Client[] = [
     id: "gemini",
     label: "Gemini CLI (~/.gemini/settings.json)",
     configPath: (h) => path.join(h, ".gemini", "settings.json"),
-    apply: (b, u) => jsonMcp((httpUrl) => ({ httpUrl }))(b, u, "~/.gemini/settings.json"),
+    format: "json",
+    entry: (httpUrl) => ({ httpUrl }),
     skillDir: (h) => path.join(h, ".gemini", "skills"),
     detect: (h) => fs.existsSync(path.join(h, ".gemini")),
   },
@@ -109,33 +165,30 @@ export const CLIENTS: Client[] = [
     id: "windsurf",
     label: "Windsurf (~/.codeium/windsurf/mcp_config.json)",
     configPath: (h) => path.join(h, ".codeium", "windsurf", "mcp_config.json"),
-    apply: (b, u) => jsonMcp((serverUrl) => ({ serverUrl }))(b, u, "~/.codeium/windsurf/mcp_config.json"),
+    format: "json",
+    entry: (serverUrl) => ({ serverUrl }),
     detect: (h) => fs.existsSync(path.join(h, ".codeium", "windsurf")),
   },
 ];
 
-const read = (f: string): string | null => (fs.existsSync(f) ? fs.readFileSync(f, "utf8") : null);
-const sha = (s: string) => crypto.createHash("sha256").update(s).digest("hex");
+const skillPath = (c: Client, home: string) => (c.skillDir ? path.join(c.skillDir(home), SKILL_DIR_NAME, "SKILL.md") : null);
 
-/** Minimal line diff (LCS) for the preview. */
-export function lineDiff(a: string | null, b: string): string {
-  const x = a == null ? [] : a.split("\n");
-  const y = b.split("\n");
-  const n = x.length, m = y.length;
-  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) dp[i]![j] = x[i] === y[j] ? dp[i + 1]![j + 1]! + 1 : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
-  const out: string[] = [];
-  let i = 0, j = 0;
-  while (i < n || j < m) {
-    if (i < n && j < m && x[i] === y[j]) { i++; j++; continue; }
-    if (i < n && (j >= m || dp[i + 1]![j]! >= dp[i]![j + 1]!)) out.push(`- ${x[i++]}`);
-    else out.push(`+ ${y[j++]}`);
-  }
-  return out.join("\n");
+/** Edit our entry (url) or remove it (null). */
+function configEdit(c: Client, home: string, url: string | null): Edit | null {
+  const display = c.configPath(home);
+  const file = resolveTarget(display);
+  const before = read(file);
+  if (before == null && url == null) return null;
+  const show = (v: unknown) => (v === undefined || v === null ? "(none)" : typeof v === "string" ? v : JSON.stringify(v));
+  let after: string, was: unknown, now: unknown;
+  if (c.format === "toml") ({ after, was, now } = tomlEdit(before, url));
+  else ({ after, was, now } = jsonEdit(before, url == null ? null : c.entry(url), display));
+  if (after === before) return null;
+  return { file, display, before, after, preview: `our entry before: ${cap(show(was))}\nour entry after:  ${cap(show(now))}` };
 }
 
 export function validateSkill(text: string): void {
-  if (!/^---\n[\s\S]*?\bname:\s*\S+[\s\S]*?\bdescription:\s*\S+[\s\S]*?\n---/.test(text)) throw new Error("Skill file has no name/description front matter; not installing it.");
+  if (!/^---\r?\n[\s\S]*?\bname:\s*\S+[\s\S]*?\bdescription:\s*\S+[\s\S]*?\r?\n---/.test(text)) throw new Error("Skill file has no name/description front matter; not installing it.");
 }
 
 export type Plan = { clients: Client[]; edits: Edit[]; unchanged: string[] };
@@ -144,51 +197,108 @@ export function buildPlan(home: string, clients: Client[], url: string, skill: s
   const edits: Edit[] = [];
   const unchanged: string[] = [];
   for (const c of clients) {
-    const file = c.configPath(home);
-    const before = read(file);
-    const after = c.apply(before, url);
-    if (before === after) unchanged.push(file);
-    else edits.push({ file, before, after });
-    if (skill != null && c.skillDir) {
-      const sf = path.join(c.skillDir(home), SKILL_DIR_NAME, "SKILL.md");
+    const e = configEdit(c, home, url);
+    if (e) edits.push(e);
+    else unchanged.push(c.configPath(home));
+    const sp = skillPath(c, home);
+    if (skill != null && sp) {
+      const sf = resolveTarget(sp);
       const sb = read(sf);
-      if (sb === skill) unchanged.push(sf);
-      else edits.push({ file: sf, before: sb, after: skill });
+      if (sb === skill) unchanged.push(sp);
+      else edits.push({ file: sf, display: sp, before: sb, after: skill, preview: `skill sha256 ${sha(skill)} (${skill.length} bytes)` });
     }
   }
   return { clients, edits, unchanged };
+}
+
+export function buildUninstallPlan(home: string, clients: Client[]): Plan {
+  const edits: Edit[] = [];
+  for (const c of clients) {
+    const e = configEdit(c, home, null);
+    if (e) edits.push(e);
+    const sp = skillPath(c, home);
+    if (sp && fs.existsSync(sp)) {
+      const sf = resolveTarget(sp);
+      edits.push({ file: sf, display: sp, before: read(sf), after: null, preview: "remove our skill file" });
+    }
+  }
+  return { clients, edits, unchanged: [] };
+}
+
+/** Latest backup written by setup for this file (by the stamp in its name). */
+export function latestBackup(file: string): string | null {
+  const dir = path.dirname(file);
+  if (!fs.existsSync(dir)) return null;
+  const base = path.basename(file) + BACKUP_TAG;
+  const all = fs.readdirSync(dir).filter((f) => f.startsWith(base)).sort();
+  return all.length ? path.join(dir, all[all.length - 1]!) : null;
+}
+
+export function buildRestorePlan(home: string, clients: Client[]): Plan {
+  const edits: Edit[] = [];
+  for (const c of clients) {
+    for (const p of [c.configPath(home), skillPath(c, home)]) {
+      if (!p) continue;
+      const file = resolveTarget(p);
+      const b = latestBackup(file);
+      if (!b) continue;
+      const before = read(file);
+      const after = fs.readFileSync(b, "utf8");
+      if (after === before) continue;
+      edits.push({ file, display: p, before, after, preview: `restore from ${path.basename(b)}` });
+    }
+  }
+  return { clients, edits, unchanged: [] };
 }
 
 export function renderPlan(p: Plan, home: string): string {
   const rel = (f: string) => (f.startsWith(home) ? "~" + f.slice(home.length) : f);
   const parts: string[] = [];
   for (const e of p.edits) {
-    const isSkill = e.file.endsWith("SKILL.md");
-    parts.push(`=== ${rel(e.file)} (${e.before == null ? "new file" : "modified; backup will be written first"})`);
-    parts.push(isSkill ? `skill sha256 ${sha(e.after)} (${e.after.length} bytes)${e.before != null ? `, replaces sha256 ${sha(e.before)}` : ""}` : lineDiff(e.before, e.after));
+    const kind = e.after == null ? "delete; backup written first" : e.before == null ? "new file, mode 0600" : "modified; backup written first, file mode kept";
+    parts.push(`=== ${rel(e.display)}${e.file !== e.display ? ` -> ${rel(e.file)} (symlink target)` : ""} (${kind})`);
+    parts.push(e.preview);
+    parts.push(`file sha256 before ${sha(e.before)}\nfile sha256 after  ${sha(e.after)}`);
   }
   for (const u of p.unchanged) parts.push(`=== ${rel(u)} (already up to date)`);
   return parts.join("\n");
 }
 
-/** Back up every existing file, then write. Returns backup paths. */
+/** Back up every existing file (same mode), then write (mode kept; new = 0600) or delete. Returns backup paths. */
 export function applyPlan(p: Plan, stamp = new Date().toISOString().replace(/[:.]/g, "-")): string[] {
   const backups: string[] = [];
+  const modes = new Map<string, number>();
   for (const e of p.edits) {
-    if (e.before != null) {
-      const b = `${e.file}.horizon-pulse-backup-${stamp}`;
-      fs.copyFileSync(e.file, b);
+    if (e.before != null && fs.existsSync(e.file)) {
+      const mode = fs.statSync(e.file).mode & 0o777;
+      modes.set(e.file, mode);
+      const b = `${e.file}${BACKUP_TAG}${stamp}`;
+      fs.writeFileSync(b, fs.readFileSync(e.file), { mode: 0o600 });
+      fs.chmodSync(b, 0o600); // backups may hold tokens: owner-only
       backups.push(b);
     }
   }
   for (const e of p.edits) {
-    fs.mkdirSync(path.dirname(e.file), { recursive: true });
-    const tmp = `${e.file}.horizon-pulse-tmp`;
-    fs.writeFileSync(tmp, e.after);
+    if (e.after == null) {
+      fs.rmSync(e.file, { force: true });
+      try {
+        fs.rmdirSync(path.dirname(e.file)); // only if empty
+      } catch {
+        /* not empty */
+      }
+      continue;
+    }
+    const mode = modes.get(e.file) ?? 0o600;
+    fs.mkdirSync(path.dirname(e.file), { recursive: true, mode: 0o700 });
+    const tmp = `${e.file}.horizon-pulse-tmp-${process.pid}`;
+    fs.writeFileSync(tmp, e.after, { mode });
+    fs.chmodSync(tmp, mode); // umask-independent
     fs.renameSync(tmp, e.file);
   }
   return backups;
 }
+
+/* ---------------------------- CLI ---------------------------- */
 
 export type SetupOpts = {
   home?: string;
@@ -199,6 +309,8 @@ export type SetupOpts = {
   noSkill?: boolean;
   dryRun?: boolean;
   yes?: boolean;
+  uninstall?: boolean;
+  restore?: boolean;
   fetchSkill?: (url: string) => Promise<string>;
   ask?: (q: string) => Promise<string>;
   log?: (s: string) => void;
@@ -221,23 +333,31 @@ export function parseArgs(argv: string[]): SetupOpts {
     else if (a === "--dry-run") o.dryRun = true;
     else if (a === "--yes" || a === "-y") o.yes = true;
     else if (a === "--home") o.home = val();
+    else if (a === "--uninstall") o.uninstall = true;
+    else if (a === "--restore") o.restore = true;
     else throw new Error(`unknown option ${a}`);
   }
+  if (o.uninstall && o.restore) throw new Error("--uninstall and --restore cannot be combined");
   return o;
 }
 
 export const HELP = `Usage: npx horizon-pulse setup [options]
 
 Registers the hosted Horizon Pulse MCP server (${DEFAULT_MCP_URL}) with your
-agent clients and installs the Horizon Pulse skill. Shows a diff first, backs
-up every file it changes, and writes nothing until you approve.
+agent clients and installs the Horizon Pulse skill (one GET of
+${DEFAULT_SKILL_URL}; its sha256 is printed). Shows our entry in each file
+plus whole-file sha256 before/after, backs up every file it changes, keeps
+file modes and formatting, and writes nothing until you approve.
 
   --client <ids>   comma list: ${CLIENTS.map((c) => c.id).join(", ")} (default: detected)
   --all            every supported client, detected or not
   --url <url>      MCP endpoint (default ${DEFAULT_MCP_URL}; https only)
-  --skill-file <f> install this skill file instead of fetching ${DEFAULT_SKILL_URL}
+  --skill-file <f> install this skill file instead of fetching it
   --no-skill       register the MCP server only
-  --dry-run        show the plan and diff, write nothing
+  --uninstall      remove only our entry and our skill file (backups first)
+  --restore        put back the latest backup setup made of each file
+  --home <dir>     treat <dir> as the home folder (default: your home)
+  --dry-run        show the plan, write nothing
   --yes, -y        approve without the prompt (for scripted installs)
 
 Paid tools answer with an x402 payment challenge; your client (or the local
@@ -266,35 +386,39 @@ export async function runSetup(opts: SetupOpts): Promise<number> {
       return 2;
     }
     chosen = CLIENTS.filter((c) => opts.clients!.includes(c.id));
-  } else chosen = opts.all ? CLIENTS : CLIENTS.filter((c) => c.detect(home));
+  } else chosen = opts.all || opts.uninstall || opts.restore ? CLIENTS : CLIENTS.filter((c) => c.detect(home));
   if (!chosen.length) {
     log(`No supported agent client found under ${home}. Pick one with --client (${CLIENTS.map((c) => c.id).join(", ")}) or use --all.`);
     return 1;
   }
 
-  let skill: string | null = null;
-  if (!opts.noSkill) {
-    try {
-      skill = opts.skillFile ? fs.readFileSync(opts.skillFile, "utf8") : await (opts.fetchSkill ?? defaultFetchSkill)(DEFAULT_SKILL_URL);
-      validateSkill(skill);
-    } catch (e) {
-      log(`Skill not available (${e instanceof Error ? e.message : String(e)}). Rerun with --skill-file <path> or --no-skill. Nothing was changed.`);
-      return 1;
-    }
-  }
-
   let plan: Plan;
   try {
-    plan = buildPlan(home, chosen, url, skill);
+    if (opts.uninstall) plan = buildUninstallPlan(home, chosen);
+    else if (opts.restore) plan = buildRestorePlan(home, chosen);
+    else {
+      let skill: string | null = null;
+      if (!opts.noSkill) {
+        try {
+          skill = opts.skillFile ? fs.readFileSync(opts.skillFile, "utf8") : await (opts.fetchSkill ?? defaultFetchSkill)(DEFAULT_SKILL_URL);
+          validateSkill(skill);
+        } catch (e) {
+          log(`Skill not available (${e instanceof Error ? e.message : String(e)}). Rerun with --skill-file <path> or --no-skill. Nothing was changed.`);
+          return 1;
+        }
+        log(`Skill: ${opts.skillFile ? `file ${opts.skillFile}` : `GET ${DEFAULT_SKILL_URL}`} sha256 ${sha(skill)}`);
+      }
+      plan = buildPlan(home, chosen, url, skill);
+      log(`MCP server "${SERVER_NAME}" -> ${url}`);
+    }
   } catch (e) {
     log(e instanceof Error ? e.message : String(e));
     return 1;
   }
   log(`Clients: ${chosen.map((c) => c.label).join("; ")}`);
-  log(`MCP server "${SERVER_NAME}" -> ${url}`);
   log(renderPlan(plan, home));
   if (!plan.edits.length) {
-    log("Everything is already set up. Nothing to write.");
+    log(opts.uninstall ? "Nothing of ours to remove." : opts.restore ? "No backups to restore." : "Everything is already set up. Nothing to write.");
     return 0;
   }
   if (opts.dryRun) {
@@ -303,7 +427,7 @@ export async function runSetup(opts: SetupOpts): Promise<number> {
   }
   if (!opts.yes) {
     const ask = opts.ask ?? defaultAsk;
-    const a = (await ask(`Write these ${plan.edits.length} file(s)? Existing files are backed up first. [y/N] `)).trim().toLowerCase();
+    const a = (await ask(`Apply these ${plan.edits.length} change(s)? Existing files are backed up first. [y/N] `)).trim().toLowerCase();
     if (a !== "y" && a !== "yes") {
       log("Not approved: nothing was written.");
       return 1;
@@ -311,7 +435,7 @@ export async function runSetup(opts: SetupOpts): Promise<number> {
   }
   const backups = applyPlan(plan);
   for (const b of backups) log(`backup: ${b}`);
-  log(`Wrote ${plan.edits.length} file(s). Restart your agent clients to load "${SERVER_NAME}".`);
+  log(`Applied ${plan.edits.length} change(s). Restart your agent clients.`);
   return 0;
 }
 

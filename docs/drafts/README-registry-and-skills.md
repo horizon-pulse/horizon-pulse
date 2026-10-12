@@ -9,12 +9,13 @@ horizon-pulse GitHub org).
 
 - Name `io.github.horizon-pulse/horizon-pulse` (GitHub namespace: auth by the
   `horizon-pulse` GitHub org via `mcp-publisher login github`).
-- `remotes`: the hosted streamable-HTTP endpoint `https://horizonpulse.dev/mcp`
-  (live today). `packages`: the npm package `horizon-pulse`, which is NOT
-  published yet. Drop the `packages` block if the registry entry goes out
-  before the npm package does (the registry validates that the npm package
-  exists and that its package.json `mcpName` equals the server name;
-  `mcp/package.json` already carries `"mcpName": "io.github.horizon-pulse/horizon-pulse"`).
+- `remotes` only: the hosted streamable-HTTP endpoint `https://horizonpulse.dev/mcp`
+  (live today). No `packages` block until the npm package `horizon-pulse`
+  exists (the registry validates the npm package and that its package.json
+  `mcpName` equals the server name; `mcp/package.json` already carries
+  `"mcpName": "io.github.horizon-pulse/horizon-pulse"`). Add then:
+  `{"registryType":"npm","registryBaseUrl":"https://registry.npmjs.org","identifier":"horizon-pulse","version":"<v>","runtimeHint":"npx","transport":{"type":"stdio"}}`
+  plus the HP_PRIVATE_KEY (optional, secret) / HP_MAX_USD_PER_CALL / HP_MAX_USD_TOTAL env vars.
 - Description is 93 chars (registry max 100).
 - Unverified: whether the npm name `horizon-pulse` is free (not checked by
   claiming anything); version numbers to bump on publish.
@@ -31,9 +32,9 @@ committed copy would drift):
   from `buildSkillMarkdown()` and checked by a test so it never drifts.
 - Install line: `npx skills add horizon-pulse/horizon-pulse --skill horizon-pulse`
 - Listing title: Horizon Pulse
-- Listing summary (draft): "Pay-per-call x402 tools for agents: crypto market
-  data on Base and Ethereum, web fetch/extract/search/screenshot/PDF, x402 and
-  Bazaar checks, and an agent marketplace quote with evidence and unknowns.
+- Listing summary (draft): "Pay-per-call x402 tools for agents: BTC/ETH/SOL
+  prices; gas and portfolio on Base/Ethereum; web fetch/extract/search/
+  screenshot/PDF; x402 and Bazaar checks; and an agent marketplace quote with evidence and unknowns.
   USDC on Base or Solana, no account or API key."
 - Badge (README, after listing exists): `[![skills.sh](https://skills.sh/b/horizon-pulse/horizon-pulse)](https://skills.sh/horizon-pulse/horizon-pulse/horizon-pulse)`
 - Unverified: skills.sh's exact submission/indexing rules (it appears to index
@@ -43,6 +44,9 @@ committed copy would drift):
 
 Prepped, not published (`"private": true` stays until the publish decision).
 `npm pack --dry-run` builds an 8-file, ~15 kB tarball.
+Preview shows only our entry before/after plus whole-file sha256 before/after
+(no whole-file diff). File mode kept (new files 0600, backups 0600), formatting
+kept, symlinks written through. `--uninstall` / `--restore` supported.
 Config targets (user scope, per each client's docs):
 
 | client | file | entry |
@@ -53,7 +57,7 @@ Config targets (user scope, per each client's docs):
 | Gemini CLI | `~/.gemini/settings.json` | `mcpServers.horizon-pulse = {httpUrl}` |
 | Windsurf | `~/.codeium/windsurf/mcp_config.json` | `mcpServers.horizon-pulse = {serverUrl}` |
 
-Skill (`SKILL.md` fetched from https://horizonpulse.dev/skill.md, or
+Skill (`SKILL.md` from one GET of https://horizonpulse.dev/skill.md, sha256 printed, or
 `--skill-file`) goes to `~/.claude/skills`, `~/.codex/skills`,
 `~/.cursor/skills`, `~/.gemini/skills` under `horizon-pulse/`. To verify
 before publish: Codex remote-HTTP support needs a recent Codex; Cursor and

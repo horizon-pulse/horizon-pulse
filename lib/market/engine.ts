@@ -720,6 +720,16 @@ export type QuoteEvidence = { id: string; at: string; detail: string };
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /**
+ * Network for evidence text: only a well-formed CAIP-2 value we can name
+ * (eip155:<chain id> or solana:<base58 genesis>) after canonicalNetwork;
+ * anything else is printed as "unrecognized network", never the raw seller string.
+ */
+export function evidenceNetwork(n: string): string {
+  const c = canonicalNetwork(n);
+  return /^eip155:[1-9]\d{0,11}$/.test(c) || /^solana:[1-9A-HJ-NP-Za-km-z]{32}$/.test(c) ? c : "unrecognized network";
+}
+
+/**
  * evidence/unknowns for one quote. Built only from values this call observed
  * (probe result, index lookup, payTo cross-check); never filled from guesses.
  */
@@ -737,16 +747,22 @@ export function quoteEvidence(a: {
   const ev: QuoteEvidence[] = [];
   const un: { id: string; message: string }[] = [];
   const pAt = iso(a.probedAt);
-  ev.push({
-    id: "live_probe",
-    at: pAt,
-    detail: `Fresh unpaid ${live.method} to ${a.url} (not cached) answered HTTP ${live.httpStatus} through the SSRF guard (duration in live.ms).`,
-  });
+  if (!live.reachable) {
+    const code = live.errorCode ?? "unreachable";
+    ev.push({ id: "live_probe", at: pAt, detail: `Fresh unpaid ${live.method} to ${a.url} (not cached) failed: ${code}. No HTTP answer was received.` });
+    un.push({ id: "live_probe_failed", message: `The seller could not be probed (${code}); its live terms, payTo and network are unknown.` });
+  } else {
+    ev.push({
+      id: "live_probe",
+      at: pAt,
+      detail: `Fresh unpaid ${live.method} to ${a.url} (not cached) answered HTTP ${live.httpStatus} through the SSRF guard (duration in live.ms).`,
+    });
+  }
   if (live.httpStatus === 402) {
     if (live.challengeSource)
       ev.push({ id: "challenge_parsed", at: pAt, detail: `x402 challenge read from the ${live.challengeSource === "header" ? "PAYMENT-REQUIRED header" : "response body"}${live.x402Version ? ` (x402Version ${live.x402Version})` : ""}; ${live.accepts.length} accepts entr${live.accepts.length === 1 ? "y" : "ies"} parsed.` });
-    const nets = [...new Set(live.accepts.map((x) => canonicalNetwork(x.network)))];
-    if (nets.length) ev.push({ id: "live_networks", at: pAt, detail: `Live networks offered (canonical form): ${nets.join(", ")}.` });
+    const nets = [...new Set(live.accepts.map((x) => evidenceNetwork(x.network)))];
+    if (nets.length) ev.push({ id: "live_networks", at: pAt, detail: `Live networks offered (CAIP-2; unrecognized values are not echoed): ${nets.join(", ")}.` });
   }
   const iAt = iso(a.indexCheckedAt);
   if (a.idxFound) ev.push({ id: "index_entry", at: iAt, detail: "CDP Bazaar entry for this resource found (index lookup completed at this time)." });
@@ -754,8 +770,8 @@ export function quoteEvidence(a: {
   if (cross.status !== "not_checked" && cross.status !== "index_unavailable" && cross.status !== "not_indexed") {
     for (const n of cross.networks) {
       const agree = n.agree;
-      if (agree === true) ev.push({ id: "payto_network_match", at: iAt, detail: `payTo on ${n.network} matches the CDP Bazaar entry.` });
-      else if (agree === false) ev.push({ id: "payto_network_mismatch", at: iAt, detail: `payTo on ${n.network} differs from the CDP Bazaar entry.` });
+      if (agree === true) ev.push({ id: "payto_network_match", at: iAt, detail: `payTo on ${evidenceNetwork(n.network)} matches the CDP Bazaar entry.` });
+      else if (agree === false) ev.push({ id: "payto_network_mismatch", at: iAt, detail: `payTo on ${evidenceNetwork(n.network)} differs from the CDP Bazaar entry.` });
     }
   }
   if (a.priceMatch === true && a.idxFound) ev.push({ id: "price_matches_index", at: iAt, detail: "Live amount equals the CDP Bazaar amount on every shared network." });
@@ -764,8 +780,8 @@ export function quoteEvidence(a: {
   if (a.idxError && !a.idxFound) un.push({ id: "index_unavailable", message: `CDP Bazaar could not be read (${a.idxError}); payTo is not cross-checked.` });
   if (!a.idxFound && !a.idxError) un.push({ id: "not_indexed", message: "No CDP Bazaar entry, so there is no independent record to compare payTo or price against." });
   if (cross.status === "not_checked") un.push({ id: "payto_not_checked", message: "No live payTo to compare (no payable 402 challenge)." });
-  for (const n of cross.networks) {
-    if (n.agree == null) un.push({ id: "payto_one_sided", message: `payTo on ${n.network} appears on only one side (live or index), so it is unverified.` });
+  for (const n of a.idxFound ? cross.networks : []) {
+    if (n.agree == null) un.push({ id: "payto_one_sided", message: `payTo on ${evidenceNetwork(n.network)} appears on only one side (live or index), so it is unverified.` });
   }
   if (live.httpStatus === 402 && live.accepts.length && live.accepts.every((x) => !x.amountUsd))
     un.push({ id: "asset_unrecognized", message: "No accepts entry is in a USDC deployment we recognize; the USD value is unknown." });

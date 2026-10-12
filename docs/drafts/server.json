@@ -15,33 +15,5 @@
       "type": "streamable-http",
       "url": "https://horizonpulse.dev/mcp"
     }
-  ],
-  "packages": [
-    {
-      "registryType": "npm",
-      "registryBaseUrl": "https://registry.npmjs.org",
-      "identifier": "horizon-pulse",
-      "version": "0.1.0",
-      "runtimeHint": "npx",
-      "transport": { "type": "stdio" },
-      "environmentVariables": [
-        {
-          "name": "HP_PRIVATE_KEY",
-          "description": "Key of a dedicated, low-balance Base buyer wallet. Omit for quote-only mode (nothing is paid).",
-          "isRequired": false,
-          "isSecret": true
-        },
-        {
-          "name": "HP_MAX_USD_PER_CALL",
-          "description": "Per-call spend cap in USD",
-          "default": "0.05"
-        },
-        {
-          "name": "HP_MAX_USD_TOTAL",
-          "description": "Per-session spend cap in USD",
-          "default": "1"
-        }
-      ]
-    }
   ]
 }
