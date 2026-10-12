@@ -127,7 +127,7 @@ describe("REST <-> hosted MCP parity", () => {
   });
 
   const strip = (text: string) =>
-    JSON.parse(text, (k, v) => (["asOf", "elapsedMs", "fetchedAt", "ms"].includes(k) ? "<volatile>" : v));
+    JSON.parse(text, (k, v) => (["asOf", "elapsedMs", "fetchedAt", "ms", "at"].includes(k) ? "<volatile>" : v));
 
   it("same input → same output from the MCP tool and the REST handler (search, quote, and errors)", async () => {
     installNetwork();

@@ -835,3 +835,52 @@ describe("search probe cache (60s per method + URL) and per-host probe limit", (
     expect(b[0]!.live.httpStatus).toBe(402);
   });
 });
+
+describe("quoteOffer evidence + unknowns", () => {
+  const indexed = (accepts: unknown[]) => ({ resources: [listing(Q, accepts, { serviceName: "Data" })] });
+  const isoRe = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
+
+  it("full match: evidence lists the fresh probe, challenge, networks, index entry, per-network payTo match and price, all timestamped", async () => {
+    const deps = mockDeps({ search: () => indexed([acc(BASE, EVM_A), acc(SOL, SOL_A)]), pages: { [`GET ${Q}`]: page402(Q, [acc(BASE, EVM_A), acc(SOL, SOL_A)]) } });
+    const r = ok(await quoteOffer({ url: Q }, deps)) as MarketQuoteResult;
+    const ids = r.evidence.map((e) => e.id);
+    expect(ids).toEqual(expect.arrayContaining(["live_probe", "challenge_parsed", "live_networks", "index_entry", "payto_network_match", "price_matches_index"]));
+    expect(r.evidence.filter((e) => e.id === "payto_network_match")).toHaveLength(2);
+    for (const e of r.evidence) expect(e.at).toMatch(isoRe);
+    expect(r.evidence.find((e) => e.id === "live_probe")!.detail).toContain("not cached");
+    const un = r.unknowns.map((u) => u.id);
+    expect(un).toEqual(["seller_delivery", "seller_identity", "terms_after_probe"]);
+    expect(ids).not.toContain("payto_network_mismatch");
+  });
+
+  it("mismatch: evidence records the differing network; never a match claim", async () => {
+    const deps = mockDeps({ search: () => indexed([acc(BASE, EVM_A)]), pages: { [`GET ${Q}`]: page402(Q, [acc(BASE, EVM_B)]) } });
+    const r = ok(await quoteOffer({ url: Q }, deps)) as MarketQuoteResult;
+    const ids = r.evidence.map((e) => e.id);
+    expect(ids).toContain("payto_network_mismatch");
+    expect(ids).not.toContain("payto_network_match");
+  });
+
+  it("not indexed / index down / no 402: gaps go to unknowns, nothing invented in evidence", async () => {
+    const notIdx = ok(await quoteOffer({ url: Q }, mockDeps({ pages: { [`GET ${Q}`]: page402(Q, [acc(BASE, EVM_A)]) } }))) as MarketQuoteResult;
+    expect(notIdx.evidence.map((e) => e.id)).toContain("index_absent");
+    expect(notIdx.unknowns.map((u) => u.id)).toContain("not_indexed");
+    expect(notIdx.evidence.map((e) => e.id)).not.toContain("payto_network_match");
+
+    const down = ok(await quoteOffer({ url: Q }, mockDeps({ cdpDown: true, pages: { [`GET ${Q}`]: page402(Q, [acc(BASE, EVM_A)]) } }))) as MarketQuoteResult;
+    expect(down.unknowns.map((u) => u.id)).toContain("index_unavailable");
+    expect(down.evidence.map((e) => e.id)).not.toContain("index_entry");
+    expect(down.evidence.map((e) => e.id)).not.toContain("index_absent");
+
+    const no402 = ok(await quoteOffer({ url: Q }, mockDeps({ pages: { [`GET ${Q}`]: { status: 200, body: "{}" } } }))) as MarketQuoteResult;
+    expect(no402.evidence.map((e) => e.id)).not.toContain("challenge_parsed");
+    expect(no402.unknowns.map((u) => u.id)).toContain("payto_not_checked");
+  });
+
+  it("partial: one-sided network is listed as unknown", async () => {
+    const deps = mockDeps({ search: () => indexed([acc(BASE, EVM_A)]), pages: { [`GET ${Q}`]: page402(Q, [acc(BASE, EVM_A), acc(SOL, SOL_A)]) } });
+    const r = ok(await quoteOffer({ url: Q }, deps)) as MarketQuoteResult;
+    expect(r.unknowns.map((u) => u.id)).toContain("payto_one_sided");
+    expect(r.buyPlan.ready).toBe(false);
+  });
+});

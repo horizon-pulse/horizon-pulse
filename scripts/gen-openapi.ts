@@ -197,6 +197,19 @@ for (const r of LIVE_PAID_ROUTES) {
       // Closed value set (lib/indicators.ts DirectionLabel); not inferable from one example.
       const dir = name === "pulse" ? schemas[respName]?.properties?.overall?.properties?.direction : undefined;
       if (dir) dir.enum = ["up", "down", "flat"];
+      // evidence/unknowns were added after the quote example was recorded; declare them (no example values invented).
+      if (p === "/api/market/quote" && schemas[respName]?.properties) {
+        schemas[respName].properties.evidence = {
+          type: "array",
+          description: "What this call verified itself. Built only from what the call observed.",
+          items: { type: "object", required: ["id", "at", "detail"], properties: { id: { type: "string", enum: ["live_probe", "challenge_parsed", "live_networks", "index_entry", "index_absent", "payto_network_match", "payto_network_mismatch", "price_matches_index"] }, at: { type: "string", format: "date-time" }, detail: { type: "string" } } },
+        };
+        schemas[respName].properties.unknowns = {
+          type: "array",
+          description: "What this call could not confirm. An empty list is not a safety guarantee.",
+          items: { type: "object", required: ["id", "message"], properties: { id: { type: "string", enum: ["index_unavailable", "not_indexed", "payto_not_checked", "payto_one_sided", "asset_unrecognized", "seller_delivery", "seller_identity", "terms_after_probe"] }, message: { type: "string" } } },
+        };
+      }
     }
     const responses: Json = {
       "200": {

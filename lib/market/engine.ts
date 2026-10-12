@@ -706,10 +706,74 @@ export type MarketQuoteResult = {
   paytoCrossCheck: PayToCrossCheck;
   listing: ReturnType<typeof untrustedListing> | null;
   buyPlan: BuyPlan;
+  /** What this call verified itself, with timestamps (ISO, server clock). Only facts observed in this call. */
+  evidence: QuoteEvidence[];
+  /** What this call could not confirm. An empty list is not a safety guarantee. */
+  unknowns: { id: string; message: string }[];
   policy: typeof MARKET_POLICY;
   elapsedMs: number;
   methodology: typeof MARKET_METHODOLOGY;
 };
+
+export type QuoteEvidence = { id: string; at: string; detail: string };
+
+const iso = (ms: number) => new Date(ms).toISOString();
+
+/**
+ * evidence/unknowns for one quote. Built only from values this call observed
+ * (probe result, index lookup, payTo cross-check); never filled from guesses.
+ */
+export function quoteEvidence(a: {
+  url: string;
+  live: LiveProbe;
+  probedAt: number;
+  indexCheckedAt: number;
+  idxFound: boolean;
+  idxError: string | null;
+  cross: PayToCrossCheck;
+  priceMatch: boolean | null;
+}): { evidence: QuoteEvidence[]; unknowns: { id: string; message: string }[] } {
+  const { live, cross } = a;
+  const ev: QuoteEvidence[] = [];
+  const un: { id: string; message: string }[] = [];
+  const pAt = iso(a.probedAt);
+  ev.push({
+    id: "live_probe",
+    at: pAt,
+    detail: `Fresh unpaid ${live.method} to ${a.url} (not cached) answered HTTP ${live.httpStatus} through the SSRF guard (duration in live.ms).`,
+  });
+  if (live.httpStatus === 402) {
+    if (live.challengeSource)
+      ev.push({ id: "challenge_parsed", at: pAt, detail: `x402 challenge read from the ${live.challengeSource === "header" ? "PAYMENT-REQUIRED header" : "response body"}${live.x402Version ? ` (x402Version ${live.x402Version})` : ""}; ${live.accepts.length} accepts entr${live.accepts.length === 1 ? "y" : "ies"} parsed.` });
+    const nets = [...new Set(live.accepts.map((x) => canonicalNetwork(x.network)))];
+    if (nets.length) ev.push({ id: "live_networks", at: pAt, detail: `Live networks offered (canonical form): ${nets.join(", ")}.` });
+  }
+  const iAt = iso(a.indexCheckedAt);
+  if (a.idxFound) ev.push({ id: "index_entry", at: iAt, detail: "CDP Bazaar entry for this resource found (index lookup completed at this time)." });
+  else if (!a.idxError) ev.push({ id: "index_absent", at: iAt, detail: "CDP Bazaar was read and has no entry for this resource." });
+  if (cross.status !== "not_checked" && cross.status !== "index_unavailable" && cross.status !== "not_indexed") {
+    for (const n of cross.networks) {
+      const agree = n.agree;
+      if (agree === true) ev.push({ id: "payto_network_match", at: iAt, detail: `payTo on ${n.network} matches the CDP Bazaar entry.` });
+      else if (agree === false) ev.push({ id: "payto_network_mismatch", at: iAt, detail: `payTo on ${n.network} differs from the CDP Bazaar entry.` });
+    }
+  }
+  if (a.priceMatch === true && a.idxFound) ev.push({ id: "price_matches_index", at: iAt, detail: "Live amount equals the CDP Bazaar amount on every shared network." });
+
+  // unknowns
+  if (a.idxError && !a.idxFound) un.push({ id: "index_unavailable", message: `CDP Bazaar could not be read (${a.idxError}); payTo is not cross-checked.` });
+  if (!a.idxFound && !a.idxError) un.push({ id: "not_indexed", message: "No CDP Bazaar entry, so there is no independent record to compare payTo or price against." });
+  if (cross.status === "not_checked") un.push({ id: "payto_not_checked", message: "No live payTo to compare (no payable 402 challenge)." });
+  for (const n of cross.networks) {
+    if (n.agree == null) un.push({ id: "payto_one_sided", message: `payTo on ${n.network} appears on only one side (live or index), so it is unverified.` });
+  }
+  if (live.httpStatus === 402 && live.accepts.length && live.accepts.every((x) => !x.amountUsd))
+    un.push({ id: "asset_unrecognized", message: "No accepts entry is in a USDC deployment we recognize; the USD value is unknown." });
+  un.push({ id: "seller_delivery", message: "Whether the seller delivers the paid response, and its quality, is not checked (we never pay)." });
+  un.push({ id: "seller_identity", message: "Who operates the seller is not verified; listing text is untrusted." });
+  un.push({ id: "terms_after_probe", message: `Terms can change after the live_probe time; re-check the seller's fresh 402 before paying.` });
+  return { evidence: ev, unknowns: un };
+}
 
 /** Find the index entry for `key` (resourceKey) in CDP /search by host and /merchant by each live payTo. */
 async function indexEntryFor(
@@ -768,12 +832,15 @@ export async function quoteOffer(
   // Index search by host runs alongside the probe.
   const searchP = cdpGet(deps, `/search?query=${encodeURIComponent(t.host)}`, deadline);
   searchP.catch(() => {});
+  let probedAt = deps.now();
   let live = await probeLive(deps, t.url, (explicit as "GET" | "POST") ?? "GET", Math.min(BC_PROBE_TIMEOUT_MS, probeDeadline - deps.now()));
   const notes: MarketQuoteResult["reasons"] = [];
   if (!explicit && live.reachable && live.httpStatus === 405) {
+    const retryAt = deps.now();
     const retry = await probeLive(deps, t.url, "POST", Math.min(BC_PROBE_TIMEOUT_MS, probeDeadline - deps.now()));
     if (retry.reachable) {
       live = retry;
+      probedAt = retryAt;
       notes.push({ id: "method_retry", level: "info", message: "GET returned 405, so the probe was retried once with POST (empty body)." });
     }
   }
@@ -786,6 +853,7 @@ export async function quoteOffer(
 
   const keys = [resourceKey(t.url), live.resourceUrl ? resourceKey(live.resourceUrl) : null].filter((k): k is string => Boolean(k));
   const idx = await indexEntryFor(deps, t.host, keys, live.accepts.map((a) => a.payTo!).filter(Boolean), deadline, searchP);
+  const indexCheckedAt = deps.now();
   const indexAccepts = idx.entry ? normalizeAccepts(idx.entry.accepts) : [];
   const cross = live.accepts.length
     ? crossCheckPayTo(live.accepts, idx.entry ? indexAccepts : null, { indexUnavailable: Boolean(idx.error) && !idx.entry })
@@ -806,7 +874,8 @@ export async function quoteOffer(
   if (cross.status === "index_unavailable") reasons.push({ id: "index_unavailable", level: "caution", message: `${cross.message} (${idx.error})` });
   if (cross.status === "partial") reasons.push({ id: "payto_partial", level: "caution", message: cross.message });
   if (cross.status === "no_common_network") reasons.push({ id: "payto_not_verified", level: "caution", message: cross.message });
-  if (idx.entry && live.accepts.length && priceMatchesIndex(live.accepts, indexAccepts) === false)
+  const priceMatch = idx.entry && live.accepts.length ? priceMatchesIndex(live.accepts, indexAccepts) : null;
+  if (priceMatch === false)
     reasons.push({ id: "price_changed", level: "caution", message: "The live amount differs from the index entry on at least one network. Confirm the price you expect before paying." });
   if (live.accepts.length && live.accepts.every((a) => !a.amountUsd))
     reasons.push({ id: "unknown_asset", level: "caution", message: "No accepts entry is in a USDC deployment we recognize; the price is shown in atomic units only." });
@@ -850,6 +919,7 @@ export async function quoteOffer(
     paytoCrossCheck: cross,
     listing: idx.entry ? untrustedListing({ title: idx.entry.serviceName, description: idx.entry.description, tags: idx.entry.tags }) : null,
     buyPlan: plan,
+    ...quoteEvidence({ url: t.url, live, probedAt, indexCheckedAt, idxFound: Boolean(idx.entry), idxError: idx.error, cross, priceMatch: priceMatch ?? null }),
     policy: MARKET_POLICY,
     elapsedMs: deps.now() - started,
     methodology: MARKET_METHODOLOGY,
