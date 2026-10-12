@@ -136,6 +136,7 @@ describe("Class A 10/12 fixes: bounded cache + upstream budget", () => {
     }
     expect(mmrCacheSizesForTests().cache).toBe(mod.CACHE_MAX_ENTRIES);
     expect(mmrCacheSizesForTests().lastGood).toBeLessThanOrEqual(5);
+    expect(mmrCacheSizesForTests().ipKeys).toBeLessThanOrEqual(mod.IP_KEYS_MAX);
   });
 
   it("per-IP limit trips before global; other IPs still served", async () => {
@@ -189,3 +190,74 @@ describe("Class A 10/12 fixes: bounded cache + upstream budget", () => {
     spy.mockRestore();
   });
 });
+
+describe("Class A 10/12 re-review fixes", () => {
+  const page = (years: number[], rows: [string, string[]][]) =>
+    `<table><tr><th>Holiday</th>${years.map((y) => `<th>${y}</th>`).join("")}</tr>${rows.map(([n, ds]) => `<tr><td>${n}</td>${ds.map((d) => `<td>${d}</td>`).join("")}</tr>`).join("")}</table>`;
+
+  it("empty range (weekend) = fresh, observations [], cached, no retry", async () => {
+    const urls: string[] = [];
+    const d = deps("2026-10-13T15:00:00Z", { fetchJson: async (u) => { urls.push(u); return { refRates: [] }; } });
+    const q = { kind: "range" as const, rates: ["SOFR" as const], startDate: "2026-10-10", endDate: "2026-10-11" };
+    const r = await moneyMarketRates(q, d);
+    expect(r.rates[0]).toMatchObject({ status: "fresh", status_note: "no publications in range", observations: [] });
+    expect(urls.length).toBe(1);
+    await moneyMarketRates(q, d);
+    expect(urls.length).toBe(1); // served from cache
+  });
+
+  it("disagreement only inside years both pages cover; outside = not verified", async () => {
+    const { mmrHolidayForTests, rateStatus: rs } = await import("@/lib/money-market-rates");
+    const yrsNy = [2026, 2027, 2028, 2029], yrsK8 = [2026, 2027, 2028, 2029, 2030];
+    const ny = page(yrsNy, [["New Year", ["January 1", "January 1", "January 1", "January 1"]], ["Columbus", ["October 12", "October 11", "October 9", "October 8"]]]);
+    const k8 = page(yrsK8, [["New Year", ["January 1", "January 1", "January 1", "January 1", "January 1"]], ["Columbus", ["October 12", "October 11", "October 9", "October 8", "October 14"]], ["Extra", ["", "March 3", "", "", ""]]]);
+    const d = deps("2026-10-13T15:00:00Z", { fetchText: async (u) => (u.includes("newyorkfed") ? ny : k8) });
+    await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    const h = mmrHolidayForTests()!;
+    expect([...h.years].sort()).toEqual([2026, 2027, 2028, 2029]);
+    expect(h.disagree.has("2027-03-03")).toBe(true); // both cover 2027, only K.8 closes it
+    expect(h.disagree.has("2030-10-14")).toBe(false); // only K.8 covers 2030: not a conflict
+    expect(h.closedBoth.has("2030-10-14")).toBe(false);
+    const st = rs({ latest: "2030-10-11", today: "2030-10-15", minutes: 600, closed: h.closedBoth, disagree: h.disagree, coveredYears: h.years, releaseMin: 480, secured: true });
+    expect(st.status).toBe("UNVERIFIED holiday status");
+    expect(st.status_note).toContain("not verified");
+    expect(st.status_note).not.toContain("disagree");
+  });
+
+  it("holiday read when limited: no slot half-taken, retried after ~1 min (not 6h)", async () => {
+    const mod = await import("@/lib/money-market-rates");
+    let t = Date.parse("2026-10-13T15:00:00Z");
+    let texts = 0;
+    const base: Deps = { now: () => new Date(t), clientIp: "7.7.7.7", fetchText: async (u) => { texts++; return u.includes("newyorkfed") ? NY : K8; }, fetchJson: async (u) => RANGE(u) };
+    mod.mmrSpendSlotsForTests("7.7.7.7", mod.UPSTREAM_PER_IP_PER_WINDOW - 1, t); // 1 slot left; holidays need 2
+    texts = 0;
+    const r1 = await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, base);
+    expect(texts).toBe(0); // 1 slot left: neither page fetched, nothing half-taken
+    expect(r1.calendar.holiday_checked_at).toBeNull();
+    t += 30_000;
+    await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, base);
+    expect(texts).toBe(0); // inside the ~1 min back-off
+    t += mod.UPSTREAM_WINDOW_MS + mod.HOLIDAY_LIMITED_RETRY_MS;
+    const r3 = await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, base);
+    expect(texts).toBe(2);
+    expect(r3.calendar.holiday_checked_at).not.toBeNull();
+  });
+
+  it("only some rates limited -> per-rate rate_limited, not a whole-request 429", async () => {
+    const mod = await import("@/lib/money-market-rates");
+    const d = deps("2026-10-13T15:00:00Z", { fetchJson: async (u) => RANGE(u), clientIp: "3.3.3.3" });
+    await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d); // holiday read (2 slots) + 1
+    // per-IP budget 15: 3 used; 10 one-rate ranges -> 13 used; then a 5-rate range has 2 slots left
+    for (let i = 0; i < 10; i++) await moneyMarketRates({ kind: "range", rates: ["SOFR"], startDate: `2025-05-${String(i + 1).padStart(2, "0")}`, endDate: `2025-05-${String(i + 1).padStart(2, "0")}` }, d);
+    const r = await moneyMarketRates({ kind: "range", rates: ["SOFR", "EFFR", "OBFR", "TGCR", "BGCR"], startDate: "2025-06-02", endDate: "2025-06-02" }, d);
+    const st = r.rates.map((x) => x.status);
+    expect(st.filter((x) => x === "fresh").length).toBe(2);
+    expect(st.filter((x) => x === "rate_limited").length).toBe(3);
+    await expect(moneyMarketRates({ kind: "range", rates: ["SOFR"], startDate: "2025-06-03", endDate: "2025-06-03" }, d)).rejects.toBeInstanceOf(mod.MmrUpstreamLimited);
+  });
+});
+const RANGE = (u: string) => {
+  const m = /\/(sofr|effr|obfr|tgcr|bgcr)\/search\.json\?startDate=([\d-]+)/.exec(u);
+  if (!m) return LATEST;
+  return { refRates: [{ type: m[1].toUpperCase(), effectiveDate: m[2], percentRate: 4.1 }] };
+};

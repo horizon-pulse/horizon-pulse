@@ -10,7 +10,8 @@ export async function GET(req: NextRequest) {
   const p = parseQuery(req.nextUrl.searchParams);
   if (!p.ok) return NextResponse.json({ ok: false, code: "bad_request", error: p.error }, { status: 400 });
   console.log(JSON.stringify({ evt: "free_call", route: "/api/money-market-rates", paid: false, kind: p.query.kind }));
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || req.headers.get("x-real-ip") || undefined;
+  // Vercel sets x-real-ip to the client address (what @vercel/functions ipAddress() reads); XFF first entry is the fallback.
+  const ip = req.headers.get("x-real-ip")?.trim() || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
   try {
     const body = await moneyMarketRates(p.query, { ...defaultMmrDeps(), clientIp: ip });
     return NextResponse.json(body, { status: 200, headers: { "cache-control": "public, max-age=60, s-maxage=60" } });
