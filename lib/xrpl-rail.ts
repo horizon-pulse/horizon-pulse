@@ -87,6 +87,7 @@ import {
   RLUSD_MAINNET_ISSUER,
   RLUSD_TESTNET_ISSUER,
   XRPL_MAINNET_CAIP2,
+  XRPL_MAX_INIT_TIMEOUT_MS,
   XRPL_SELF_FACILITATOR,
   XRPL_SELF_WS_URL,
   XRPL_TESTNET_CAIP2,
@@ -121,8 +122,8 @@ export const LSF_DEPOSIT_AUTH = 0x01000000;
  * §Settlement; ledgers close every ~3-5 s), so settle gets more room than the
  * Solana rail's 12 s. A timeout here is the ambiguous 504 above.
  */
-export const XRPL_VERIFY_TIMEOUT_MS = 10_000;
-export const XRPL_SETTLE_TIMEOUT_MS = 20_000;
+export const XRPL_VERIFY_TIMEOUT_MS = 6_000;
+export const XRPL_SETTLE_TIMEOUT_MS = 15_000;
 /** Replay guard retention (≥ maxTimeoutSeconds; same 25 h as the Solana rail). */
 export const REPLAY_TTL_MS = 25 * 60 * 60_000;
 /** Cross-instance check: ledger close time must not be earlier than request start minus this. */
@@ -1217,11 +1218,20 @@ async function decide(key: string, att: Attempt, res: NextResponse | null, threw
  * tesSUCCESS can still read txnNotFound / validated:false on a public rippled
  * for a ledger or two (load balancers, lagging nodes), so the read is retried
  * on throw / error / not-yet-validated. Bounded: XRPL_TX_LOOKUP_DELAYS_MS
- * (≤ 4 tries, ~2.5 s of sleep) AND a hard XRPL_TX_LOOKUP_DEADLINE_MS overall.
+ * (≤ 4 tries, 2.5 s of sleep) AND a hard XRPL_TX_LOOKUP_DEADLINE_MS overall.
  * Returns the validated result or null (unknown).
  */
 export const XRPL_TX_LOOKUP_DELAYS_MS: readonly number[] = [0, 400, 800, 1300];
-export const XRPL_TX_LOOKUP_DEADLINE_MS = 5_000;
+export const XRPL_TX_LOOKUP_DEADLINE_MS = 4_000;
+/**
+ * Odin C1: worst-case XRPL time inside one paid request = init/readiness
+ * (≤ XRPL_MAX_INIT_TIMEOUT_MS) + verify + settle + validated-tx lookup.
+ * Must stay well below the maxDuration of every route that can take XRPL
+ * (XRPL_ROUTE_MAX_DURATION_S, asserted in tests/xrpl-time-budget.test.ts),
+ * leaving the rest for the route handler itself.
+ */
+export const XRPL_ROUTE_MAX_DURATION_S = 60;
+export const XRPL_WORST_CASE_MS = XRPL_MAX_INIT_TIMEOUT_MS + XRPL_VERIFY_TIMEOUT_MS + XRPL_SETTLE_TIMEOUT_MS + XRPL_TX_LOOKUP_DEADLINE_MS;
 let txLookupDelays: readonly number[] = XRPL_TX_LOOKUP_DELAYS_MS;
 /** Tests only: shrink the backoff (null = defaults). */
 export function __setXrplTxLookupDelaysForTests(d: readonly number[] | null): void {

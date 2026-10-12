@@ -334,6 +334,8 @@ export function parseXrplFacilitatorUrl(raw: string, network: XrplRailNetwork): 
 type Env = Record<string, string | undefined>;
 
 const DEFAULT_INIT_TIMEOUT_MS = 2500;
+/** Cap on HP_XRPL_INIT_TIMEOUT_MS (time budget, Odin C1). */
+export const XRPL_MAX_INIT_TIMEOUT_MS = 5_000;
 
 function off(reason: string, misconfigured: boolean): XrplConfigResult {
   return { enabled: false, reason, misconfigured };
@@ -409,7 +411,7 @@ export function getXrplRailConfig(env: Env = process.env): XrplConfigResult {
 
     const rawTimeout = Number((env.HP_XRPL_INIT_TIMEOUT_MS ?? "").trim() || DEFAULT_INIT_TIMEOUT_MS);
     const initTimeoutMs =
-      Number.isInteger(rawTimeout) && rawTimeout > 0 && rawTimeout <= 30_000 ? rawTimeout : DEFAULT_INIT_TIMEOUT_MS;
+      Number.isInteger(rawTimeout) && rawTimeout > 0 && rawTimeout <= XRPL_MAX_INIT_TIMEOUT_MS ? rawTimeout : DEFAULT_INIT_TIMEOUT_MS;
 
     const config: XrplRailConfig = {
       network,

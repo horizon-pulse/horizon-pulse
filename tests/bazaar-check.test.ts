@@ -441,7 +441,7 @@ describe("fix 1: time limits and caps", () => {
   it("defaults: 18s hard deadline from arrival (Odin option c), probes end at 12s, payTo cap 4", () => {
     const route = readFileSync(path.join(__dirname, "..", "app", "api", "bazaar-check", "route.ts"), "utf8");
     const maxDuration = Number(route.match(/export const maxDuration = (\d+)/)![1]);
-    expect(maxDuration).toBe(30);
+    expect(maxDuration).toBe(60); // XRPL time budget (Odin C1) raised every paid route to 60;
     expect(BC_DEADLINE_MS).toBe(18_000);
     expect(BC_PROBE_BUDGET_MS).toBe(12_000);
     expect(BC_PROBE_SHARE).toBe(0.6);

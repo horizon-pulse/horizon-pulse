@@ -32,3 +32,6 @@ export async function OPTIONS() {
   res.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   return res;
 }
+
+// XRPL time budget (Odin C1): >= XRPL_ROUTE_MAX_DURATION_S (lib/xrpl-rail.ts).
+export const maxDuration = 60;

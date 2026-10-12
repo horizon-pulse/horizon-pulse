@@ -24,3 +24,5 @@ export async function OPTIONS() {
   return discoveryOptionsResponse(paymentOpts);
 }
 
+// XRPL time budget (Odin C1): >= XRPL_ROUTE_MAX_DURATION_S (lib/xrpl-rail.ts).
+export const maxDuration = 60;
