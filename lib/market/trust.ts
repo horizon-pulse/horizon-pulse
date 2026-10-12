@@ -65,8 +65,26 @@ export function minUsd(accepts: OfferAccept[]): number | null {
  * groups every solana:* for display only; a payTo comparison must not).
  * Anything else: trimmed, lowercased (EVM CAIP-2 ids are case-insensitive).
  */
+/**
+ * XRPL networks (x402 exact-XRPL spec CAIP-2): ONLY xrpl:0 (mainnet) and
+ * xrpl:1 (testnet). Normalisation is trim + ASCII lowercase only ("XRPL:1 "
+ * → xrpl:1). No aliases, no devnet. Any other xrpl/xrp/ripple-shaped value
+ * is UNRECOGNIZED_NETWORK, never passed through (b381a16 rule).
+ */
+export const UNRECOGNIZED_NETWORK = "unrecognized network" as const;
+export const XRPL_NETWORKS = Object.freeze(["xrpl:0", "xrpl:1"] as const);
+export type XrplCaip2 = (typeof XRPL_NETWORKS)[number];
+export function canonicalXrplNetwork(n: string): XrplCaip2 | typeof UNRECOGNIZED_NETWORK | null {
+  const t = n.trim().toLowerCase();
+  if (t === "xrpl:0" || t === "xrpl:1") return t;
+  if (/^(xrpl|xrp|ripple)([:\-_]|$)/.test(t)) return UNRECOGNIZED_NETWORK;
+  return null;
+}
+
 export function canonicalNetwork(n: string): string {
   const t = n.trim();
+  const x = canonicalXrplNetwork(t);
+  if (x) return x;
   if (t === SOLANA_MAINNET_CAIP2 || t.toLowerCase() === "solana") return SOLANA_MAINNET_CAIP2;
   const label = networkLabel(t.toLowerCase());
   if (label === "base") return "eip155:8453";

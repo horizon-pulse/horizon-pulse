@@ -41,6 +41,8 @@ import { exampleRecordedAt, OUTPUT_EXAMPLES } from "./route-examples";
 import { getSolanaRailConfig } from "./solana-config";
 import { handleSolanaPayment, isSolanaPaymentRequest, withSolanaAccept } from "./solana-rail";
 import { baseRail, runOnPaidRail } from "./paid-rail";
+import { getXrplRailConfig } from "./xrpl-config";
+import { handleXrplPayment, isXrplPaymentRequest, withXrplAccept } from "./xrpl-rail";
 
 /**
  * Per-request CDP facilitator timeout (verify, settle, every /supported attempt).
@@ -1005,13 +1007,19 @@ export async function discoveryOptionsResponse(opts: {
   // + HP_SOLANA_PAYTO equal to the pinned payTo. Off → `res` above, unchanged.
   // On → Solana entry appended after Base; any Solana failure → `res` unchanged.
   const solana = getSolanaRailConfig();
-  if (!solana.enabled) return res;
-  return withSolanaAccept(res, solana.config, opts.maxAmountRequired);
+  const withSolana = solana.enabled ? await withSolanaAccept(res, solana.config, opts.maxAmountRequired) : res;
+  // XRPL RLUSD rail (lib/xrpl-config.ts): off unless HP_XRPL_ENABLED=true +
+  // HP_XRPL_PAYTO equal to the pinned payTo. Off → `withSolana`, unchanged.
+  // On → RLUSD entry appended last (after Base, and Solana if on); any XRPL
+  // failure → `withSolana` unchanged.
+  const xrpl = getXrplRailConfig();
+  if (!xrpl.enabled) return withSolana;
+  return withXrplAccept(withSolana, xrpl.config, opts.maxAmountRequired);
 }
 
 type AppRouteHandler = (req: NextRequest) => Promise<NextResponse>;
 
-/** Copy of req minus x402 payment headers (used only on the Solana fallback path). */
+/** Copy of req minus x402 payment headers (used only on the Solana / XRPL fallback paths). */
 function withoutPaymentHeaders(req: NextRequest): NextRequest {
   const headers = new Headers(req.headers);
   headers.delete("payment-signature");
@@ -1085,12 +1093,20 @@ export function createX402GetHandler(
     // Base-only 402. Base payments never touch Solana code: they take the
     // unchanged CDP path at the bottom.
     const solana = getSolanaRailConfig();
+    // XRPL RLUSD rail (lib/xrpl-config.ts), same contract: off (the default)
+    // → nothing below changes; on → RLUSD entry appended LAST on the unpaid
+    // 402 (Base first, Solana second if on); XRPL-paid requests go to the
+    // XRPL-only server; any XRPL failure → the 402 built without it.
+    const xrpl = getXrplRailConfig();
     if (!hasPaymentHeader(req)) {
       // Library's JSON path always (it would otherwise serve its own HTML to
       // any Mozilla + text/html request); our HTML only for real navigations.
       let challenge: NextResponse = await baseChallenge(req, cdpReady);
       if (solana.enabled && challenge.status === 402) {
         challenge = await withSolanaAccept(challenge, solana.config, paymentOpts.maxAmountRequired);
+      }
+      if (xrpl.enabled && challenge.status === 402) {
+        challenge = await withXrplAccept(challenge, xrpl.config, paymentOpts.maxAmountRequired);
       }
       if (challenge.status === 402 && isBrowserNavigation(req)) {
         const accepts = Object.values(routes)[0]?.accepts;
@@ -1110,6 +1126,13 @@ export function createX402GetHandler(
       // Solana unavailable / rejected / threw → the Base-only 402 (built from
       // a copy of the request WITHOUT the Solana payment header, so the Base
       // server never even parses a Solana payload).
+      return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
+    }
+    if (xrpl.enabled && isXrplPaymentRequest(req)) {
+      const paid = await handleXrplPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, xrpl.config);
+      // XRPL unavailable / rejected / threw → the Base-only 402 (built from a
+      // copy of the request WITHOUT the XRPL payment header, so the Base
+      // server never even parses an XRPL payload).
       return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
     }
     if (!cdpReady) {
