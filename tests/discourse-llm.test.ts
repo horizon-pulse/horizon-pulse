@@ -7,7 +7,7 @@ const env = { DISCOURSE_LLM_API_KEY: FAKE_KEY };
 const now = () => new Date("2026-10-13T12:00:00Z");
 const caps = { dailyUsd: 1, monthlyUsd: 15 };
 const ok = (labels: number[], pt = 1000, ct = 50) =>
-  new Response(JSON.stringify({ usage: { prompt_tokens: pt, completion_tokens: ct }, choices: [{ message: { content: JSON.stringify({ labels }) } }] }), { status: 200 });
+  new Response(JSON.stringify({ usage: { prompt_tokens: pt, completion_tokens: ct }, choices: [{ message: { content: JSON.stringify({ labels: labels.map((l, i) => [i, l]) }) } }] }), { status: 200 });
 
 describe("price table + reservation", () => {
   it("gpt-6-luna worst case x1.25 = $0.0034375", () => {
@@ -57,7 +57,7 @@ describe("reservation + reconcile", () => {
   });
   it("missing usage keeps the full reservation", async () => {
     const s = new MemorySpendStore(caps);
-    const f = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"labels":[0]}' } }] }), { status: 200 });
+    const f = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"labels":[[0,0]]}' } }] }), { status: 200 });
     await createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: s, now }).classify("q", ["a", "b"], ["x"]);
     expect(s.v.get(spendKeys(now()).day)).toBeCloseTo(reservationUsd(PRIMARY_MODEL), 12);
   });
@@ -69,7 +69,7 @@ describe("reservation + reconcile", () => {
   });
   it("N parallel reservations never exceed the daily cap", async () => {
     const s = new MemorySpendStore(caps);
-    const f = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"labels":[0]}' } }] }), { status: 200 });
+    const f = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"labels":[[0,0]]}' } }] }), { status: 200 });
     const c = createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: s, now });
     const rs = await Promise.allSettled(Array.from({ length: 400 }, () => c.classify("q", ["a", "b"], ["x"])));
     const okN = rs.filter((r) => r.status === "fulfilled").length;
@@ -99,7 +99,7 @@ describe("fallback + errors", () => {
     expect(String(e.message)).toBe("llm_unavailable");
     expect(String(e.stack)).not.toContain(FAKE_KEY);
   });
-  it("wrong label count -> bad output", async () => {
+  it("out-of-range post number -> bad output", async () => {
     const f = async () => ok([0, 1]);
     await expect(createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: new MemorySpendStore(caps), now }).classify("q", ["a"], ["x"])).rejects.toThrow("llm_bad_output");
   });
@@ -219,5 +219,42 @@ describe("F2: failed post-call adjust is counted and logged, key-free", () => {
     await createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: new MemorySpendStore(caps), now, log: (l) => lines.push(l) }).classify("q", ["a"], ["x"]);
     expect(lines).toEqual([]);
     expect(adjustFailureCount()).toBe(before);
+  });
+});
+
+describe("label alignment (repro 2026-10-13: 105 labels for 106 posts -> 503 classifier_unavailable)", () => {
+  const body = (labels: unknown) => new Response(JSON.stringify({ usage: { prompt_tokens: 5658, completion_tokens: 221 }, choices: [{ message: { content: JSON.stringify({ labels }) } }] }), { status: 200 });
+  const texts = Array.from({ length: 106 }, (_, i) => `post ${i}`);
+  const run = (labels: unknown) => createOpenAiClassifier({ env, fetchFn: (async () => body(labels)) as unknown as typeof fetch, store: new MemorySpendStore(caps), now }).classify("tabs spaces", ["yes", "no"], texts);
+  it("old positional format with one label dropped is rejected (the production failure)", async () => {
+    await expect(run(Array.from({ length: 105 }, () => 0))).rejects.toThrow("llm_bad_output");
+  });
+  it("keyed pairs with one post skipped -> succeeds, skipped post neutral, no shift", async () => {
+    const pairs = texts.map((_, i) => [i, i % 2]).filter(([i]) => i !== 50);
+    const r = await run(pairs);
+    expect(r.labels).toHaveLength(106);
+    expect(r.labels[50]).toBe(-1);
+    expect(r.labels[51]).toBe(1);
+    expect(r.labels[105]).toBe(1);
+  });
+  it("too many skipped, duplicates, malformed pairs -> bad output", async () => {
+    await expect(run(texts.slice(0, 90).map((_, i) => [i, 0]))).rejects.toThrow("llm_bad_output");
+    await expect(run([[0, 0], [0, 1], ...texts.slice(2).map((_, i) => [i + 2, 0])])).rejects.toThrow("llm_bad_output");
+    await expect(run(texts.map((_, i) => [i]))).rejects.toThrow("llm_bad_output");
+  });
+  it("request schema asks for [post, side] integer pairs", async () => {
+    const f = vi.fn(async () => body([[0, 0]]));
+    await createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: new MemorySpendStore(caps), now }).classify("q", ["a", "b"], ["x"]);
+    const sent = JSON.parse(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(sent.response_format.json_schema.schema.properties.labels).toEqual({ type: "array", items: { type: "array", items: { type: "integer" } } });
+  });
+});
+
+describe("engine failure reason log", () => {
+  it("known codes pass through; anything else is store_or_other (no error text)", async () => {
+    const { classifierFailReason } = await import("@/lib/discourse/engine");
+    expect(classifierFailReason(new Error("llm_bad_output"))).toBe("llm_bad_output");
+    expect(classifierFailReason(new Error(`spend_store 500 ${FAKE_KEY}`))).toBe("store_or_other");
+    expect(classifierFailReason("x")).toBe("store_or_other");
   });
 });

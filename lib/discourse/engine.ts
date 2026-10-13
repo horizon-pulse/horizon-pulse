@@ -341,6 +341,13 @@ const err = (status: number, code: string, error: string, extra: Partial<SplitEr
 export type Deps = { fetch: Fetcher; now: () => number };
 export const defaultDeps = (): Deps => ({ fetch: (u, i) => fetch(u, { ...i, headers: { "user-agent": "HorizonPulse/1.0 (+https://horizonpulse.dev)" } }), now: () => Date.now() });
 
+const FAIL_REASONS = new Set(["not_configured", "model_budget_reached", "llm_network", "llm_bad_output", "llm_unavailable"]);
+/** Known ClassifierError code, else "store_or_other" (e.g. spend store unreachable). Never echoes error text. */
+export function classifierFailReason(e: unknown): string {
+  const m = e instanceof Error ? e.message : "";
+  return FAIL_REASONS.has(m) ? m : "store_or_other";
+}
+
 export async function discourseSplit(input: SplitInput, deps: Deps): Promise<SplitResult> {
   const refusal = refusalFor(input.q);
   if (refusal) return err(422, refusal.code, refusal.reason);
@@ -382,8 +389,10 @@ export async function discourseSplit(input: SplitInput, deps: Deps): Promise<Spl
   let labels: StanceLabel[];
   try {
     ({ labels } = await classifier.classify(input.q, input.sides, posts.map((p) => p.text.slice(0, MAX_POST_CHARS))));
-  } catch {
-    // Classifier/provider failure (timeout, 5xx, cap reached): 503, never settled, never cached.
+  } catch (e) {
+    // Classifier/provider failure (timeout, 5xx, cap reached, bad output): 503, never settled, never cached.
+    // One fixed key-free line; the reason is only ever a known code, never error text or a body.
+    console.warn(`discourse_classifier_failed reason=${classifierFailReason(e)}`);
     return err(503, "classifier_unavailable", "Stance classifier failed for this request. Not charged. Free sample: /api/demo/discourse/split");
   }
   const counts = input.sides.map(() => 0);
