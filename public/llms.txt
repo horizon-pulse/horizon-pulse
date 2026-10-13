@@ -15,7 +15,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
   - XRP Ledger: network XRP Ledger mainnet CAIP-2 `xrpl:0`; asset RLUSD (currency `524C555344000000000000000000000000000000`, issuer `rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De` in `extra.issuer`); amount is the same USD price as an RLUSD decimal value (for example `0.005`); payTo `r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf`; payment verified on the validated XRP Ledger
   - Polygon: network Polygon PoS mainnet CAIP-2 `eip155:137`; asset native USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` (not bridged USDC.e `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`; never pay USDC.e); payTo `0x5b32c973596078a967562ca652761404f19be0e9` (the same address as Base); `extra: { name: "USD Coin", version: "2" }`; facilitator: Coinbase CDP
 - If a challenge lists only the Base entry, the Solana, XRP Ledger and Polygon rails are temporarily unavailable: pay on Base. Any rail not listed in a challenge is unavailable for that call.
-- Retry the same request with `PAYMENT-SIGNATURE` (v2). On success the settlement receipt is in the `PAYMENT-RESPONSE` header. Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.
+- Retry the same request with `PAYMENT-SIGNATURE` (v2). On success the settlement receipt is in the `PAYMENT-RESPONSE` header: base64 JSON `{ success, transaction, network, payer }` (transaction = the on-chain tx hash on the network you paid; `X-PAYMENT-RESPONSE` is not sent). A HEAD request is never charged: a HEAD carrying a payment header gets the same 402 as an unpaid HEAD; pay with GET. Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.
 
 ## Live paid routes
 
@@ -34,7 +34,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 | GET | /api/search?q=…[&n=1-5] | $0.03 | 30000 | Web search → top 1-5 pages as clean markdown with URL, title, rank and per-source status (Google results via Serper) |
 | GET | /api/pdf?url=https://…[&pages=1-50] | $0.02 | 20000 | PDF URL → clean text per page + title/author metadata (text layer, no OCR; up to 10MB, 50 pages) |
 | GET | /api/x402-check?url=https://…[&method=POST][&body={json}] | $0.01 | 10000 | Audit any x402 endpoint: 402 validity, v1/v2, decoded price, payTo EOA vs contract, discovery hints (never pays; optional JSON body for POST probes, auto POST retry on 405) |
-| GET | /api/bazaar-check?url=… | $0.01 | 10000 | Is an x402 seller indexed in Coinbase CDP Bazaar, and if not, why: per-route index status and networks (Base, Solana) from CDP discovery, plus lint findings with a fix line each (never pays) |
+| GET | /api/bazaar-check?url=… | $0.01 | 10000 | Is an x402 seller indexed in Coinbase CDP Bazaar, and if not, why: per-route index status and networks (Base, Solana, Polygon, XRP Ledger) from CDP discovery, plus lint findings with a fix line each (never pays) |
 | GET | /api/market/search?q=…[&n=1-10][&kind=…][&rail=base\|solana\|xrpl\|evm\|polygon\|<CAIP-2>][&max_price=…][&min_health=0-1] | $0.005 | 5000 | Agent marketplace search: x402 offers from CDP Bazaar ranked (no paid placement), top 3 re-checked live, payTo cross-checked with the index, direct-pay buy plans (never pays; untested price) |
 | GET | /api/market/quote?url=https://…[&method=POST] | $0.005 | 5000 | Pre-pay quote for one x402 resource: live terms per network (Base, Polygon and other EVM chains, Solana, XRP Ledger), CDP Bazaar entry, payTo cross-check, pay/caution/avoid verdict (never pays; untested price) |
 

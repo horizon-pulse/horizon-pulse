@@ -25,6 +25,8 @@
 import { assertSafePublicUrl } from "@/lib/fetch-url";
 import { USDC_BASE } from "@/lib/config";
 import { DEFAULT_SOLANA_RPC_URL, USDC_SOLANA_MINT } from "@/lib/solana-config";
+import { USDC_POLYGON } from "@/lib/polygon-config";
+import { RLUSD_CURRENCY_HEX, RLUSD_MAINNET_ISSUER } from "@/lib/xrpl-config";
 import { inputsBeforePaymentHint } from "@/lib/x402-check";
 
 export const CDP_DISCOVERY_URL = "https://api.cdp.coinbase.com/platform/v2/x402/discovery" as const;
@@ -91,7 +93,7 @@ const UA = "HorizonPulseBazaarCheck/1.0 (+https://horizonpulse.dev)";
 export const BAZAAR_CHECK_METHODOLOGY = {
   index: `CDP public discovery API (${CDP_DISCOVERY_URL}): /merchant?payTo=… for each payTo seen in the host's 402s (at most ${BC_MAX_PAYTOS} payTos, up to ${CDP_MAX_PAGES} pages of ${CDP_PAGE_SIZE}) and /search?query=<host>, filtered to resources on the host. Indexed networks come from each entry's accepts.`,
   lint: `GET https://<host>/.well-known/x402, then one unpaid request per listed route and method (GET and POST both with no body), up to ${BC_MAX_ROUTES} routes, ${BC_PROBE_CONCURRENCY} at a time. No payment header is ever sent; nothing is signed or paid.`,
-  settleInference: `'Likely needs one CDP-facilitated paid settle' is inferred only when CDP discovery returns no resources for a payTo AND a read-only on-chain check (USDC balanceOf on Base, USDC token accounts on Solana) has run. CDP indexes an endpoint only after it settles a payment through the CDP facilitator: ${CDP_TROUBLESHOOTING_URL}. The on-chain check reports one boolean, never an amount.`,
+  settleInference: `'Likely needs one CDP-facilitated paid settle' is inferred only when CDP discovery returns no resources for a payTo AND a read-only on-chain check (USDC balanceOf on Base, USDC token accounts on Solana, native USDC balanceOf on Polygon PoS, RLUSD trust-line balance on the XRP Ledger) has run. CDP indexes an endpoint only after it settles a payment through the CDP facilitator: ${CDP_TROUBLESHOOTING_URL}. The on-chain check reports one boolean, never an amount.`,
   limits: `https only; private/local targets blocked at every hop (DNS checked); ${BC_MAX_REDIRECTS} redirects; ${BC_PROBE_TIMEOUT_MS / 1000}s per request; ${BC_MAX_BODY_BYTES / 1000}KB body cap; unpaid probes end ${BC_PROBE_BUDGET_MS / 1000}s after request arrival (or use ${BC_PROBE_SHARE * 100}% of the time left if payment verification was slow); ${BC_DEADLINE_MS / 1000}s hard deadline counted from request arrival, payment verification included (CDP discovery that cannot finish in time returns 502 cdp_unavailable). Routes on other hosts are listed, not probed.`,
   billing:
     "Billed when a report is returned. Not billed: missing/bad/http-only input, blocked private/local host, host unreachable (DNS/connection/timeout on every request), CDP discovery unavailable or not answering before the deadline, or too little time left after payment verification; those return 400/502 and settlement is skipped.",
@@ -106,10 +108,18 @@ type Json = Record<string, unknown>;
 const obj = (v: unknown): Json | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : null);
 const str = (v: unknown): string | null => (typeof v === "string" && v.length ? v : null);
 
-export type NetworkLabel = "base" | "solana" | string;
+/**
+ * Display label per network. base / solana / polygon (eip155:137 only) /
+ * xrpl (xrpl:0 mainnet only); any other network (testnets, other EVM chains)
+ * stays its raw CAIP-2 id. F4 (2026-10-13): polygon and xrpl labels added;
+ * before, eip155:137 and xrpl:0 came back as their raw CAIP-2 ids.
+ */
+export type NetworkLabel = "base" | "solana" | "polygon" | "xrpl" | string;
 export function networkLabel(n: string): NetworkLabel {
   if (n === "eip155:8453" || n === "base") return "base";
   if (n.startsWith("solana:") || n === "solana") return "solana";
+  if (n === "eip155:137" || n === "polygon") return "polygon";
+  if (n === "xrpl:0" || n === "xrpl") return "xrpl";
   return n;
 }
 
@@ -742,6 +752,8 @@ export async function queryIndex(
 /* ------------------------------------------------------------------ */
 
 const BASE_RPCS = [process.env.BASE_RPC_URL ?? "", "https://base.drpc.org", "https://mainnet.base.org"].filter(Boolean);
+const POLYGON_RPCS = ["https://polygon-rpc.com", "https://polygon.drpc.org"];
+const XRPL_RPCS = ["https://xrplcluster.com/", "https://s1.ripple.com:51234/"];
 
 export type OnchainCheck = { network: string; payTo: string; method: string; holdsUsdc: boolean | null };
 
@@ -797,6 +809,30 @@ export async function onchainCheck(
       });
     return { network, payTo, method: "USDC token accounts on Solana (getTokenAccountsByOwner)", holdsUsdc: holds };
   }
+  if (label === "polygon" && /^0x[0-9a-fA-F]{40}$/.test(payTo)) {
+    const data = `0x70a08231${payTo.slice(2).toLowerCase().padStart(64, "0")}`;
+    const j = await rpc(deps, POLYGON_RPCS, { jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: USDC_POLYGON, data }, "latest"] }, deadline);
+    const r = typeof j?.result === "string" ? j.result : null;
+    let holds: boolean | null = null;
+    if (r && /^0x[0-9a-fA-F]*$/.test(r)) holds = r.replace(/^0x0*/, "") !== "";
+    return { network, payTo, method: "native USDC balanceOf on Polygon PoS (eth_call)", holdsUsdc: holds };
+  }
+  if (label === "xrpl" && /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(payTo)) {
+    // holdsUsdc here means "holds RLUSD" (the XRPL rail's asset); field name kept for a stable contract.
+    const j = await rpc(deps, XRPL_RPCS, {
+      method: "account_lines",
+      params: [{ account: payTo, peer: RLUSD_MAINNET_ISSUER, ledger_index: "validated" }],
+    }, deadline);
+    const res = obj(j?.result);
+    let holds: boolean | null = null;
+    if (res && res.error === "actNotFound") holds = false;
+    else if (res && Array.isArray(res.lines))
+      holds = res.lines.some((l) => {
+        const line = obj(l);
+        return line?.currency === RLUSD_CURRENCY_HEX && typeof line.balance === "string" && Number(line.balance) > 0;
+      });
+    return { network, payTo, method: "RLUSD trust-line balance on the XRP Ledger (account_lines, validated)", holdsUsdc: holds };
+  }
   return null;
 }
 
@@ -831,6 +867,9 @@ export type BazaarCheckResult = {
     notIndexed: number;
     indexedOnBase: number;
     indexedOnSolana: number;
+    /** F4 (2026-10-13), additive. */
+    indexedOnPolygon: number;
+    indexedOnXrpl: number;
     fail: number;
     warn: number;
   };
@@ -1148,6 +1187,8 @@ export async function checkBazaar(
       notIndexed: considered.length - nIndexed,
       indexedOnBase: considered.filter((r) => r.indexedNetworks.includes("base")).length,
       indexedOnSolana: considered.filter((r) => r.indexedNetworks.includes("solana")).length,
+      indexedOnPolygon: considered.filter((r) => r.indexedNetworks.includes("polygon")).length,
+      indexedOnXrpl: considered.filter((r) => r.indexedNetworks.includes("xrpl")).length,
       fail: all.filter((x) => x.level === "fail").length,
       warn: all.filter((x) => x.level === "warn").length,
     },

@@ -22,6 +22,8 @@ import {
   CDP_TROUBLESHOOTING_URL,
   checkBazaar,
   lintProbe,
+  networkLabel,
+  onchainCheck,
   parseTarget,
   parseWellKnown,
   resourceKey,
@@ -209,6 +211,8 @@ function mockDeps(opts: {
   search?: () => unknown;
   cdpDown?: boolean;
   usdcBalanceHex?: string;
+  polygonBalanceHex?: string;
+  xrplLines?: unknown;
   blocked?: string[];
 }): Deps & { calls: string[] } {
   const calls: string[] = [];
@@ -238,6 +242,12 @@ function mockDeps(opts: {
       }
       if (url.includes("solana") && method === "POST") {
         return Response.json({ jsonrpc: "2.0", id: 1, result: { value: [] } });
+      }
+      if (url.includes("polygon") && method === "POST") {
+        return Response.json({ jsonrpc: "2.0", id: 1, result: opts.polygonBalanceHex ?? "0x" + "0".repeat(64) });
+      }
+      if ((url.includes("xrplcluster") || url.includes("ripple")) && method === "POST") {
+        return Response.json({ result: opts.xrplLines ?? { lines: [], status: "success", validated: true } });
       }
       const m = opts.pages[`${method} ${url}`];
       if (!m) return new Response("not found", { status: 404 });
@@ -696,5 +706,79 @@ describe("v3: 18s deadline from arrival, probes end at 12s (Odin option c)", () 
   it("end to end with defaults: 14s spent in verify still runs a full report", async () => {
     const r = await checkBazaar({ url: "bad-seller.example" }, mockDeps({ pages: BAD.routes }), { arrivedAt: Date.now() - 14_000 });
     expect(r.ok).toBe(true);
+  });
+});
+
+describe("four rails (F4: Polygon + XRP Ledger)", () => {
+  const POLY = { scheme: "exact", network: "eip155:137", amount: "10000", asset: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", payTo: "0x5b32c973596078a967562ca652761404f19be0e9", maxTimeoutSeconds: 300, extra: { name: "USD Coin", version: "2" } };
+  const XRPL = { scheme: "exact", network: "xrpl:0", amount: "0.01", asset: "524C555344000000000000000000000000000000", payTo: "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf", maxTimeoutSeconds: 300, extra: { issuer: "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De", areFeesSponsored: false } };
+  const FOUR = ["eip155:8453", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "xrpl:0", "eip155:137"];
+
+  function fourRailHost(merchantNets: string[]) {
+    const c = clone(GOOD);
+    c.resource.url = "https://s.example/api/a";
+    c.accepts.push(XRPL, POLY);
+    const pages: Record<string, Mock> = {
+      "GET https://s.example/.well-known/x402": { status: 200, body: JSON.stringify({ resources: ["GET https://s.example/api/a"] }) },
+      "GET https://s.example/api/a": { status: 402, headers: { "payment-required": b64(c) }, body: "{}" },
+    };
+    return mockDeps({ pages, merchant: () => indexedFor("s.example", ["/api/a"], merchantNets) });
+  }
+
+  it("networkLabel: polygon = eip155:137 only, xrpl = xrpl:0 only; testnets and other EVM chains stay raw CAIP-2", () => {
+    expect(networkLabel("eip155:137")).toBe("polygon");
+    expect(networkLabel("xrpl:0")).toBe("xrpl");
+    expect(networkLabel("xrpl:1")).toBe("xrpl:1");
+    expect(networkLabel("eip155:80002")).toBe("eip155:80002");
+    expect(networkLabel("eip155:1")).toBe("eip155:1");
+    expect(networkLabel("eip155:8453")).toBe("base");
+  });
+
+  it("lint: a four-rail 402 advertises base, solana, xrpl, polygon with no findings", () => {
+    const c = clone(GOOD);
+    c.accepts.push(XRPL, POLY);
+    const r = lintProbe(probe(c));
+    expect(r.findings).toEqual([]);
+    expect(r.advertisedNetworks).toEqual(["base", "solana", "xrpl", "polygon"]);
+  });
+
+  it("network_not_indexed: four-rail 402, Base + Solana index entry (the 2026-10-13 audit case)", async () => {
+    const r = await checkBazaar({ url: "s.example" }, fourRailHost(FOUR.slice(0, 2)));
+    if (!r.ok) throw new Error(r.error);
+    const f = r.routes[0]!.findings;
+    expect(f.map((x) => x.id)).toEqual(["network_not_indexed"]);
+    expect(f[0]!.message).toMatch(/advertises xrpl, polygon/);
+    expect(r.summary).toMatchObject({ indexedOnBase: 1, indexedOnSolana: 1, indexedOnPolygon: 0, indexedOnXrpl: 0 });
+  });
+
+  it("fully indexed on all four rails: no findings, every per-rail count is 1", async () => {
+    const r = await checkBazaar({ url: "s.example" }, fourRailHost(FOUR));
+    if (!r.ok) throw new Error(r.error);
+    expect(r.routes[0]!.findings).toEqual([]);
+    expect(r.routes[0]!.indexedNetworks).toEqual(["base", "solana", "xrpl", "polygon"]);
+    expect(r.summary).toMatchObject({ indexedOnBase: 1, indexedOnSolana: 1, indexedOnPolygon: 1, indexedOnXrpl: 1, fail: 0, warn: 0 });
+  });
+
+  it("onchainCheck Polygon: native USDC balanceOf, boolean only", async () => {
+    const deps = mockDeps({ pages: {}, polygonBalanceHex: "0x" + "0".repeat(60) + "2710" });
+    const o = await onchainCheck(deps, "eip155:137", POLY.payTo);
+    expect(o).toEqual({ network: "eip155:137", payTo: POLY.payTo, method: "native USDC balanceOf on Polygon PoS (eth_call)", holdsUsdc: true });
+    expect(deps.calls.some((c) => c.startsWith("POST https://polygon"))).toBe(true);
+    const none = await onchainCheck(mockDeps({ pages: {} }), "eip155:137", POLY.payTo);
+    expect(none!.holdsUsdc).toBe(false);
+  });
+
+  it("onchainCheck XRPL: RLUSD trust-line balance (holdsUsdc = holds RLUSD), unactivated = false, RPC down = null", async () => {
+    const line = { account: "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De", currency: "524C555344000000000000000000000000000000", balance: "0.04", limit: "1000" };
+    const yes = await onchainCheck(mockDeps({ pages: {}, xrplLines: { lines: [line], status: "success" } }), "xrpl:0", XRPL.payTo);
+    expect(yes).toEqual({ network: "xrpl:0", payTo: XRPL.payTo, method: "RLUSD trust-line balance on the XRP Ledger (account_lines, validated)", holdsUsdc: true });
+    const zero = await onchainCheck(mockDeps({ pages: {}, xrplLines: { lines: [{ ...line, balance: "0" }] } }), "xrpl:0", XRPL.payTo);
+    expect(zero!.holdsUsdc).toBe(false);
+    const unact = await onchainCheck(mockDeps({ pages: {}, xrplLines: { error: "actNotFound", status: "error" } }), "xrpl:0", XRPL.payTo);
+    expect(unact!.holdsUsdc).toBe(false);
+    const down = { ...mockDeps({ pages: {} }), fetch: (async () => { throw new Error("down"); }) as typeof fetch };
+    expect((await onchainCheck(down, "xrpl:0", XRPL.payTo))!.holdsUsdc).toBeNull();
+    // testnet stays out of scope
+    expect(await onchainCheck(mockDeps({ pages: {} }), "xrpl:1", XRPL.payTo)).toBeNull();
   });
 });
