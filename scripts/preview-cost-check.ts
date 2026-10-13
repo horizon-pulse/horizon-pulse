@@ -5,7 +5,7 @@
  */
 import { buildPreview } from "@/lib/preview/engine";
 import { createOpenAiLlm } from "@/lib/preview/llm";
-import { MemoryPreviewStore } from "@/lib/preview/store";
+import { getPreviewStore } from "@/lib/preview/store";
 
 const SAMPLES = [
   "https://horizonpulse.dev/openapi.json",
@@ -18,7 +18,8 @@ async function main() {
     console.error("OPENAI_API_KEY is not set; nothing run.");
     process.exit(2);
   }
-  const store = new MemoryPreviewStore();
+  const store = getPreviewStore();
+  if (!store) { console.error("Shared store not configured; nothing run."); process.exit(2); }
   const llm = createOpenAiLlm();
   let total = 0;
   for (const url of SAMPLES) {

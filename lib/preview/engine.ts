@@ -6,15 +6,15 @@ import { randomUUID } from "node:crypto";
 import { fetchPublicUrl } from "@/lib/fetch-url";
 import { DEMO_OUTPUT } from "@/lib/agent-demo";
 import { USDC_BASE } from "@/lib/config";
-import { priceUsage, maxCallUsd, spendCaps, type CostRecord } from "./cost";
-import { PREVIEW_MODEL, MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS, MAX_INPUT_CHARS, type LlmFn } from "./llm";
+import { priceUsage, spendCaps, type CostRecord } from "./cost";
+import { PREVIEW_MODEL, MAX_OUTPUT_TOKENS, MAX_INPUT_BYTES, inputTokenUpperBound, truncateBytes, LlmError, type LlmFn } from "./llm";
 import { DISCLAIMERS, EXAMPLE_LABEL, EXAMPLE_PAY_TO, PRICE_LABEL, TEST_LABEL } from "./labels";
-import type { PreviewStore } from "./store";
+import type { Contact, PreviewStore } from "./store";
 
 export const MAX_PROBES = 5;
-export const MAX_PASTED_DOCS_CHARS = 50_000;
+export const MAX_PASTED_DOCS_CHARS = MAX_INPUT_BYTES; // capped in UTF-8 bytes
 
-export type PreviewInput = { url?: string; docs?: string };
+export type PreviewInput = { url?: string; docs?: string; contact?: Contact };
 type FetchFn = typeof fetchPublicUrl;
 export type Deps = { llm: LlmFn; store: PreviewStore; fetchUrl?: FetchFn; env?: Record<string, string | undefined>; now?: Date };
 
@@ -66,11 +66,11 @@ export async function buildPreview(input: PreviewInput, deps: Deps) {
   const env = deps.env ?? process.env;
   let docs = "";
   let base: URL | null = null;
-  if (input.docs && input.docs.trim()) docs = input.docs.slice(0, MAX_PASTED_DOCS_CHARS);
+  if (input.docs && input.docs.trim()) docs = truncateBytes(input.docs, MAX_INPUT_BYTES);
   else if (input.url) {
     const r = await fetchUrl(input.url); // SSRF-guarded, size + time capped
     if (!r.ok) throw new PreviewError("fetch_failed", r.error);
-    docs = r.content.slice(0, MAX_INPUT_CHARS);
+    docs = truncateBytes(r.content, MAX_INPUT_BYTES);
     base = new URL(r.finalUrl);
   } else throw new PreviewError("bad_input", "Provide a URL or pasted docs");
 
@@ -83,21 +83,25 @@ export async function buildPreview(input: PreviewInput, deps: Deps) {
     }
   }
 
-  // Spend guard: refuse if the worst-case call would cross the daily or monthly cap.
-  const caps = spendCaps(env);
-  const spent = await deps.store.getSpend(deps.now);
-  const worst = maxCallUsd(PREVIEW_MODEL, MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS);
-  if (spent.day + worst > caps.dailyUsd || spent.month + worst > caps.monthlyUsd)
-    throw new PreviewError("spend_cap", "Daily or monthly preview budget reached");
+  // Spend guard (Odin blocker 1): atomically RESERVE the worst case for this exact
+  // request in the shared store before calling; refuse if a cap would be crossed.
+  const probeText = probes.map((p) => `${p.path}: ${p.result}`).join("\n");
+  const worst = priceUsage(PREVIEW_MODEL, { inputTokens: inputTokenUpperBound(docs, probeText), outputTokens: MAX_OUTPUT_TOKENS });
+  const resv = await deps.store.reserveSpend(worst.usd, spendCaps(env), deps.now);
+  if (!resv.ok) throw new PreviewError("spend_cap", "Daily or monthly preview budget reached");
 
   let llm;
   try {
-    llm = await deps.llm(docs, probes.map((p) => `${p.path}: ${p.result}`).join("\n"));
+    llm = await deps.llm(docs, probeText);
   } catch (e) {
+    // Blocker 2: reconcile to known usage; keep the worst case if billed but usage unknown;
+    // release only when the provider was never billed.
+    if (e instanceof LlmError && !e.billed) await deps.store.adjustSpend(resv.slot, -resv.usd);
+    else if (e instanceof LlmError && e.usage) await deps.store.adjustSpend(resv.slot, priceUsage(PREVIEW_MODEL, e.usage).usd - resv.usd);
     throw new PreviewError("llm_failed", e instanceof Error ? e.message.replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]") : "llm error");
   }
-  const cost: CostRecord = priceUsage(llm.model, llm.usage);
-  await deps.store.addSpend(cost.usd, deps.now);
+  const cost: CostRecord = { ...priceUsage(llm.model, llm.usage), ...(llm.usageMissing ? { usageMissing: true } : {}) };
+  await deps.store.adjustSpend(resv.slot, cost.usd - resv.usd);
 
   const routes = llm.output.candidateRoutes.map((r) => ({ ...r, priceLabel: PRICE_LABEL }));
   const report = {
@@ -114,6 +118,6 @@ export async function buildPreview(input: PreviewInput, deps: Deps) {
     reviewFlags: llm.output.instructionLikeTextSeen ? ["instruction-like text in submitted docs"] : [],
     cost,
   };
-  await deps.store.putReport({ id: report.id, createdAt: (deps.now ?? new Date()).getTime(), status: "pending_review", report });
+  await deps.store.putReport({ id: report.id, createdAt: (deps.now ?? new Date()).getTime(), status: "pending_review", ...(input.contact ? { contact: input.contact } : {}), report });
   return report;
 }
