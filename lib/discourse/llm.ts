@@ -10,6 +10,11 @@
  *   block -> the full reservation is kept (conservative). Cap reached or store
  *   unreachable -> throws -> engine answers 503 classifier_unavailable, never
  *   settled, never cached.
+ * - Input bound: tokens <= UTF-8 bytes of everything sent as input (system +
+ *   user message + response schema) + framing overhead. The reservation uses
+ *   max(20k, that byte bound), so CJK/emoji-heavy input cannot overshoot it.
+ * - A failed post-call adjust is counted and logged as the fixed line
+ *   "discourse_spend_adjust_failed" (model + phase only; never key/body/error text).
  */
 import type { Classifier, StanceLabel } from "./engine";
 import { createSpendStore, type SpendStore } from "./spend";
@@ -37,9 +42,29 @@ export function costUsd(model: string, inputTokens: number, outputTokens: number
   return (inputTokens * p.inPerM + outputTokens * p.outPerM) / 1e6;
 }
 
-/** gpt-6-luna: (20k x 0.10 + 1.5k x 0.50)/1e6 x 1.25 = $0.0034375. */
-export function reservationUsd(model: string): number {
-  return costUsd(model, MAX_INPUT_TOKENS, MAX_OUTPUT_TOKENS) * RESERVE_MARGIN;
+/** Per-request framing tokens (roles, separators, schema wrapper); generous. */
+export const INPUT_OVERHEAD_TOKENS = 256;
+
+const ENC = new TextEncoder();
+const utf8Bytes = (s: string) => ENC.encode(s).length;
+
+/** Upper bound on input tokens: every BPE token covers >= 1 UTF-8 byte. */
+export function inputTokenBound(userMessage: string): number {
+  return utf8Bytes(SYSTEM) + utf8Bytes(userMessage) + utf8Bytes(JSON.stringify(SCHEMA)) + INPUT_OVERHEAD_TOKENS;
+}
+
+/**
+ * gpt-6-luna at the 20k floor: (20k x 0.10 + 1.5k x 0.50)/1e6 x 1.25 = $0.0034375.
+ * With inputTokens given, reserves max(20k, inputTokens) instead.
+ */
+export function reservationUsd(model: string, inputTokens = 0): number {
+  return costUsd(model, Math.max(MAX_INPUT_TOKENS, inputTokens), MAX_OUTPUT_TOKENS) * RESERVE_MARGIN;
+}
+
+let adjustFailures = 0;
+/** Count of failed post-call spend adjustments since process start (metric). */
+export function adjustFailureCount(): number {
+  return adjustFailures;
 }
 
 export class ClassifierError extends Error {}
@@ -68,15 +93,28 @@ const SCHEMA = {
 
 type Attempt = { status: "http_error" } | { status: "ok"; labels: StanceLabel[]; inputTokens: number; outputTokens: number };
 
-export function createOpenAiClassifier(opts: { env?: Env; fetchFn?: FetchFn; store: SpendStore; now?: () => Date }): Classifier {
+export function createOpenAiClassifier(opts: { env?: Env; fetchFn?: FetchFn; store: SpendStore; now?: () => Date; log?: (line: string) => void }): Classifier {
   const env = opts.env ?? process.env;
   const fetchFn = opts.fetchFn ?? fetch;
   const now = opts.now ?? (() => new Date());
 
+  const log = opts.log ?? ((line: string) => console.warn(line));
+
+  /** Adjust never throws; failures are counted and logged key-free. */
+  async function safeAdjust(model: string, phase: "release" | "reconcile", delta: number, at: Date): Promise<void> {
+    try {
+      await opts.store.adjust(delta, at);
+    } catch {
+      adjustFailures += 1;
+      log(`discourse_spend_adjust_failed model=${model} phase=${phase} count=${adjustFailures}`);
+    }
+  }
+
   async function attempt(model: string, question: string, sides: string[], texts: string[]): Promise<Attempt> {
     const key = env.DISCOURSE_LLM_API_KEY;
     if (!key) throw new ClassifierError("not_configured");
-    const reserved = reservationUsd(model);
+    const userMessage = buildUserMessage(question, sides, texts);
+    const reserved = reservationUsd(model, inputTokenBound(userMessage));
     const at = now();
     if (!(await opts.store.reserve(reserved, at))) throw new ClassifierError("model_budget_reached");
     let res: Response;
@@ -93,7 +131,7 @@ export function createOpenAiClassifier(opts: { env?: Env; fetchFn?: FetchFn; sto
           response_format: { type: "json_schema", json_schema: SCHEMA },
           messages: [
             { role: "system", content: SYSTEM },
-            { role: "user", content: buildUserMessage(question, sides, texts) },
+            { role: "user", content: userMessage },
           ],
         }),
         signal: ctl.signal,
@@ -106,7 +144,7 @@ export function createOpenAiClassifier(opts: { env?: Env; fetchFn?: FetchFn; sto
     }
     if (!res.ok) {
       // Error responses carry no output; release the reservation. Body never echoed.
-      await opts.store.adjust(-reserved, at).catch(() => undefined);
+      await safeAdjust(model, "release", -reserved, at);
       return { status: "http_error" };
     }
     const body = (await res.json().catch(() => null)) as {
@@ -115,7 +153,7 @@ export function createOpenAiClassifier(opts: { env?: Env; fetchFn?: FetchFn; sto
     } | null;
     const pt = body?.usage?.prompt_tokens, ct = body?.usage?.completion_tokens;
     if (typeof pt === "number" && pt >= 0 && typeof ct === "number" && ct >= 0) {
-      await opts.store.adjust(costUsd(model, pt, ct) - reserved, at).catch(() => undefined);
+      await safeAdjust(model, "reconcile", costUsd(model, pt, ct) - reserved, at);
     }
     let labels: unknown;
     try {

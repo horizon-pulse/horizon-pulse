@@ -11,22 +11,20 @@ import { resolveSharedReplayStoreEnv } from "@/lib/xrpl-replay-store";
 type Env = Record<string, string | undefined>;
 type FetchFn = typeof fetch;
 
-/** Hard ceilings: env may lower the caps, never raise them past these. */
-export const DAILY_CEILING_USD = 5;
-export const MONTHLY_CEILING_USD = 20;
+/** Caps: $1/day, $15/month. Env vars can only LOWER them (Math.min(env, default)), never raise. */
 export const DEFAULT_DAILY_CAP_USD = 1;
 export const DEFAULT_MONTHLY_CAP_USD = 15;
 
-function capFrom(raw: string | undefined, dflt: number, ceiling: number): number {
+function capFrom(raw: string | undefined, dflt: number): number {
   const n = raw === undefined || raw.trim() === "" ? dflt : Number(raw);
   if (!Number.isFinite(n) || n < 0) return dflt;
-  return Math.min(n, ceiling);
+  return Math.min(n, dflt);
 }
 
 export function spendCaps(env: Env = process.env): { dailyUsd: number; monthlyUsd: number } {
   return {
-    dailyUsd: capFrom(env.DISCOURSE_DAILY_USD_CAP, DEFAULT_DAILY_CAP_USD, DAILY_CEILING_USD),
-    monthlyUsd: capFrom(env.DISCOURSE_MONTHLY_USD_CAP, DEFAULT_MONTHLY_CAP_USD, MONTHLY_CEILING_USD),
+    dailyUsd: capFrom(env.DISCOURSE_DAILY_USD_CAP, DEFAULT_DAILY_CAP_USD),
+    monthlyUsd: capFrom(env.DISCOURSE_MONTHLY_USD_CAP, DEFAULT_MONTHLY_CAP_USD),
   };
 }
 
