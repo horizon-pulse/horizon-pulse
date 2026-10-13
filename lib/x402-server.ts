@@ -496,6 +496,8 @@ export function fetchRouteConfig(): RoutesConfig {
  * HEAD gets the same config as GET because Next serves HEAD from the GET
  * handler; without a HEAD key a HEAD request would run the handler unpaid
  * (F2 strips payment headers on HEAD, so HEAD only ever gets the unpaid 402).
+ * GET and HEAD share ONE config object: never mutate a returned RouteConfig in
+ * place (copy it first), or the edit silently applies to both verbs.
  */
 function keyGetHead(routes: Record<string, RouteConfig>): RoutesConfig {
   const out: RoutesConfig = {};
