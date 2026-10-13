@@ -31,6 +31,7 @@ const MAIN_PRICES: Record<string, [string, string]> = {
   search: ["30000", "0.03"], pdf: ["20000", "0.02"],
   // landed on main after rail-xrpl bef2ab6 (rebased onto 82ce1c3):
   "bazaar-check": ["10000", "0.01"], "market/search": ["5000", "0.005"], "market/quote": ["5000", "0.005"],
+  "discourse/split": ["30000", "0.03"], // discourse-split 2026-10-13
 };
 
 const RLUSD = "524C555344000000000000000000000000000000";
@@ -76,7 +77,7 @@ function expectShape(
       checked++;
     }
   }
-  expect(checked).toBe(100); // as tests/solana-flag-on: 88 on main + 12 market-mvp
+  expect(checked).toBe(106); // as tests/solana-flag-on: 88 on main + 12 market-mvp + 6 discourse-split
 }
 
 const xrplEntry = (route: string, network = "xrpl:1", issuer = TESTNET_ISSUER, extra: Record<string, unknown> = {}) => ({

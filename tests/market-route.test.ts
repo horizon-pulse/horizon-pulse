@@ -123,7 +123,7 @@ describe("REST <-> hosted MCP parity", () => {
       expect({ amount: mcp.amount, payTo: mcp.payTo, asset: mcp.asset, network: mcp.network }).toEqual({ amount: rest.amount, payTo: rest.payTo, asset: rest.asset, network: rest.network });
     }
     expect(TOOLS.map((t) => t.name)).toEqual(expect.arrayContaining(["market_search", "market_quote", "bazaar_check"]));
-    expect(TOOLS).toHaveLength(16);
+    expect(TOOLS).toHaveLength(17); // + discourse_split (2026-10-13)
   });
 
   const strip = (text: string) =>
@@ -195,7 +195,7 @@ describe("demo + self catalog", () => {
     const { selfOffers } = await import("@/lib/market/engine");
     const { rankScore } = await import("@/lib/market/rank");
     const offers = selfOffers("2026-10-12T00:00:00Z");
-    expect(offers).toHaveLength(16);
+    expect(offers).toHaveLength(17); // + /api/discourse/split (2026-10-13)
     for (const o of offers) {
       expect(o.seller.isHorizonPulse).toBe(true);
       expect(o.source).toEqual(["self"]);
