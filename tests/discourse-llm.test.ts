@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createOpenAiClassifier, reservationUsd, costUsd, classifierFromEnv, inputTokenBound, buildUserMessage, adjustFailureCount, PRIMARY_MODEL, FALLBACK_MODEL, MAX_OUTPUT_TOKENS, MAX_INPUT_TOKENS } from "@/lib/discourse/llm";
+import { alignLabels, createOpenAiClassifier, reservationUsd, costUsd, classifierFromEnv, inputTokenBound, buildUserMessage, adjustFailureCount, PRIMARY_MODEL, FALLBACK_MODEL, MAX_OUTPUT_TOKENS, MAX_INPUT_TOKENS } from "@/lib/discourse/llm";
 import { MemorySpendStore, spendCaps, spendKeys, RESERVE_LUA, UpstashSpendStore } from "@/lib/discourse/spend";
 
 const FAKE_KEY = "sk-test-DO-NOT-LEAK-0123456789";
@@ -7,12 +7,13 @@ const env = { DISCOURSE_LLM_API_KEY: FAKE_KEY };
 const now = () => new Date("2026-10-13T12:00:00Z");
 const caps = { dailyUsd: 1, monthlyUsd: 15 };
 const ok = (labels: number[], pt = 1000, ct = 50) =>
-  new Response(JSON.stringify({ usage: { prompt_tokens: pt, completion_tokens: ct }, choices: [{ message: { content: JSON.stringify({ labels }) } }] }), { status: 200 });
+  new Response(JSON.stringify({ usage: { prompt_tokens: pt, completion_tokens: ct }, choices: [{ message: { content: JSON.stringify({ labels: labels.map((l, i) => [i, l]) }) } }] }), { status: 200 });
 
 describe("price table + reservation", () => {
-  it("gpt-6-luna worst case x1.25 = $0.0034375", () => {
-    expect(reservationUsd(PRIMARY_MODEL)).toBeCloseTo(0.0034375, 10);
-    expect(reservationUsd(FALLBACK_MODEL)).toBeCloseTo(0.00725, 10);
+  it("gpt-6-luna worst case x1.25 = $0.004375 (20k in / 3k out); fallback $0.0095", () => {
+    expect(MAX_OUTPUT_TOKENS).toBe(3_000);
+    expect(reservationUsd(PRIMARY_MODEL)).toBeCloseTo(0.004375, 10);
+    expect(reservationUsd(FALLBACK_MODEL)).toBeCloseTo(0.0095, 10);
   });
   it("unpriced model throws", () => expect(() => costUsd("gpt-x", 1, 1)).toThrow());
   it("caps default $1/$15; env can only lower (Math.min(env, default))", () => {
@@ -33,7 +34,7 @@ describe("price table + reservation", () => {
 });
 
 describe("request shape", () => {
-  it("gpt-6-luna, reasoning none, max 1500 output, key only in Authorization", async () => {
+  it("gpt-6-luna, reasoning none, max 3000 output, key only in Authorization", async () => {
     const f = vi.fn(async () => ok([0, 1, -1]));
     const c = createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: new MemorySpendStore(caps), now });
     const r = await c.classify("q?", ["yes", "no"], ["a", "b", "c"]);
@@ -57,7 +58,7 @@ describe("reservation + reconcile", () => {
   });
   it("missing usage keeps the full reservation", async () => {
     const s = new MemorySpendStore(caps);
-    const f = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"labels":[0]}' } }] }), { status: 200 });
+    const f = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"labels":[[0,0]]}' } }] }), { status: 200 });
     await createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: s, now }).classify("q", ["a", "b"], ["x"]);
     expect(s.v.get(spendKeys(now()).day)).toBeCloseTo(reservationUsd(PRIMARY_MODEL), 12);
   });
@@ -69,7 +70,7 @@ describe("reservation + reconcile", () => {
   });
   it("N parallel reservations never exceed the daily cap", async () => {
     const s = new MemorySpendStore(caps);
-    const f = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"labels":[0]}' } }] }), { status: 200 });
+    const f = async () => new Response(JSON.stringify({ choices: [{ message: { content: '{"labels":[[0,0]]}' } }] }), { status: 200 });
     const c = createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: s, now });
     const rs = await Promise.allSettled(Array.from({ length: 400 }, () => c.classify("q", ["a", "b"], ["x"])));
     const okN = rs.filter((r) => r.status === "fulfilled").length;
@@ -99,7 +100,7 @@ describe("fallback + errors", () => {
     expect(String(e.message)).toBe("llm_unavailable");
     expect(String(e.stack)).not.toContain(FAKE_KEY);
   });
-  it("wrong label count -> bad output", async () => {
+  it("out-of-range post number -> bad output", async () => {
     const f = async () => ok([0, 1]);
     await expect(createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: new MemorySpendStore(caps), now }).classify("q", ["a"], ["x"])).rejects.toThrow("llm_bad_output");
   });
@@ -136,9 +137,9 @@ describe("F1: reservation sized from input bytes", () => {
   const emoji = Array.from({ length: 200 }, () => "\u{1F600}".repeat(140)); // 4 bytes, 280 UTF-16 units
   const bound = (t: string[]) => inputTokenBound(buildUserMessage("q?", ["yes", "no"], t));
 
-  it("small Latin input stays at the 20k floor ($0.0034375)", () => {
+  it("small Latin input stays at the 20k floor ($0.004375)", () => {
     expect(bound(["hi"])).toBeLessThan(MAX_INPUT_TOKENS);
-    expect(reservationUsd(PRIMARY_MODEL, bound(["hi"]))).toBeCloseTo(0.0034375, 10);
+    expect(reservationUsd(PRIMARY_MODEL, bound(["hi"]))).toBeCloseTo(0.004375, 10);
   });
   it("bound >= UTF-8 bytes of the user message (tokens <= bytes)", () => {
     for (const t of [latin, cjk, emoji]) {
@@ -219,5 +220,81 @@ describe("F2: failed post-call adjust is counted and logged, key-free", () => {
     await createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: new MemorySpendStore(caps), now, log: (l) => lines.push(l) }).classify("q", ["a"], ["x"]);
     expect(lines).toEqual([]);
     expect(adjustFailureCount()).toBe(before);
+  });
+});
+
+describe("label alignment (repro 2026-10-13: 105 labels for 106 posts -> 503 classifier_unavailable)", () => {
+  const body = (labels: unknown) => new Response(JSON.stringify({ usage: { prompt_tokens: 5658, completion_tokens: 221 }, choices: [{ message: { content: JSON.stringify({ labels }) } }] }), { status: 200 });
+  const texts = Array.from({ length: 106 }, (_, i) => `post ${i}`);
+  const run = (labels: unknown) => createOpenAiClassifier({ env, fetchFn: (async () => body(labels)) as unknown as typeof fetch, store: new MemorySpendStore(caps), now }).classify("tabs spaces", ["yes", "no"], texts);
+  it("old positional format with one label dropped is rejected (the production failure)", async () => {
+    await expect(run(Array.from({ length: 105 }, () => 0))).rejects.toThrow("llm_bad_output");
+  });
+  it("keyed pairs with one post skipped -> succeeds, skipped post neutral, no shift", async () => {
+    const pairs = texts.map((_, i) => [i, i % 2]).filter(([i]) => i !== 50);
+    const r = await run(pairs);
+    expect(r.labels).toHaveLength(106);
+    expect(r.labels[50]).toBe(-1);
+    expect(r.labels[51]).toBe(1);
+    expect(r.labels[105]).toBe(1);
+  });
+  it("too many skipped, duplicates, malformed pairs -> bad output", async () => {
+    await expect(run(texts.slice(0, 90).map((_, i) => [i, 0]))).rejects.toThrow("llm_bad_output");
+    await expect(run([[0, 0], [0, 1], ...texts.slice(2).map((_, i) => [i + 2, 0])])).rejects.toThrow("llm_bad_output");
+    await expect(run(texts.map((_, i) => [i]))).rejects.toThrow("llm_bad_output");
+  });
+  it("side out of range (side < -1 or side >= nSides) -> bad output, fails closed (Odin 10/13)", async () => {
+    const withSide = (s: number) => texts.map((_, i) => [i, i === 7 ? s : 0]);
+    await expect(run(withSide(2))).rejects.toThrow("llm_bad_output");
+    await expect(run(withSide(7))).rejects.toThrow("llm_bad_output");
+    await expect(run(withSide(-2))).rejects.toThrow("llm_bad_output");
+    const r = await run(withSide(-1));
+    expect(r.labels[7]).toBe(-1);
+    expect((await run(withSide(1))).labels[7]).toBe(1);
+  });
+  it("alignLabels takes nSides directly", () => {
+    expect(alignLabels([[0, 2]], 1, 3)).toEqual([2]);
+    expect(alignLabels([[0, 3]], 1, 3)).toBeNull();
+    expect(alignLabels([[0, -2]], 1, 3)).toBeNull();
+  });
+  it("request schema asks for [post, side] integer pairs", async () => {
+    const f = vi.fn(async () => body([[0, 0]]));
+    await createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: new MemorySpendStore(caps), now }).classify("q", ["a", "b"], ["x"]);
+    const sent = JSON.parse(String((f.mock.calls[0] as unknown as [string, RequestInit])[1].body));
+    expect(sent.response_format.json_schema.schema.properties.labels).toEqual({ type: "array", items: { type: "array", items: { type: "integer" } } });
+  });
+});
+
+describe("engine failure reason log", () => {
+  it("known codes pass through; anything else is store_or_other (no error text)", async () => {
+    const { classifierFailReason } = await import("@/lib/discourse/engine");
+    expect(classifierFailReason(new Error("llm_bad_output"))).toBe("llm_bad_output");
+    expect(classifierFailReason(new Error(`spend_store 500 ${FAKE_KEY}`))).toBe("store_or_other");
+    expect(classifierFailReason("x")).toBe("store_or_other");
+  });
+});
+
+describe("output cap fits 200 keyed pairs (Odin 10/13: max_completion_tokens 3,000)", () => {
+  // Worst-case 200-post response: every index 3 digits where possible, side index 1 digit.
+  const pairs = Array.from({ length: 200 }, (_, i) => [i, 9]);
+  const content = JSON.stringify({ labels: pairs });
+  it("200-post pairs response fits within MAX_OUTPUT_TOKENS (tokens <= UTF-8 bytes) with headroom", () => {
+    const bytes = new TextEncoder().encode(content).length;
+    expect(bytes).toBeLessThan(MAX_OUTPUT_TOKENS * 0.75); // >=25% headroom even at 1 token per byte
+  });
+  it("classifier accepts a full 200-post pairs response", async () => {
+    const texts = Array.from({ length: 200 }, (_, i) => `post ${i}`);
+    const resp = new Response(JSON.stringify({ usage: { prompt_tokens: 9000, completion_tokens: 1200 }, choices: [{ message: { content: JSON.stringify({ labels: texts.map((_, i) => [i, i % 2]) }) } }] }), { status: 200 });
+    const r = await createOpenAiClassifier({ env, fetchFn: (async () => resp) as unknown as typeof fetch, store: new MemorySpendStore(caps), now }).classify("q", ["yes", "no"], texts);
+    expect(r.labels).toHaveLength(200);
+    expect(r.labels[199]).toBe(1);
+  });
+  it("reservation stays well under $1/day: max-size Latin 200x280 request, primary + fallback both reserved", () => {
+    const b = inputTokenBound(buildUserMessage("q?", ["yes", "no"], Array.from({ length: 200 }, () => "a".repeat(280))));
+    const perCall = reservationUsd(PRIMARY_MODEL, b) + reservationUsd(FALLBACK_MODEL, b);
+    expect(perCall).toBeLessThan(0.05);
+    expect(reservationUsd(PRIMARY_MODEL)).toBeLessThan(0.01);
+    expect(reservationUsd(FALLBACK_MODEL)).toBeLessThan(0.01);
+    expect(Math.floor(1 / (reservationUsd(PRIMARY_MODEL) + reservationUsd(FALLBACK_MODEL)))).toBeGreaterThanOrEqual(70);
   });
 });
