@@ -575,7 +575,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
     "sample": [],
     "window": { "days": 30, "from": "2026-09-13T05:00:00.000Z", "to": "2026-10-13T05:00:00.000Z" },
     "classifier": "none (illustrative)",
-    "method": "Keyword search of public Hacker News comments (Algolia) and Bluesky posts within the window; one post per account, at most 10 per thread; each post (truncated to 280 chars, never returned) is labeled with one side or neutral by a stance classifier; shares are over decided posts with Wilson 95% intervals. Deleted posts are dropped, also when a cached answer is served.",
+    "method": "Keyword search of public Hacker News comments (Algolia) and Bluesky posts within the window; one post per account, at most 10 per thread; each post (truncated to 280 chars, never returned) is labeled with one side or neutral by a stance classifier; shares are over decided posts with Wilson 95% intervals. Deleted links are removed from the sample, also when a cached answer is served (shares and n are not recomputed).",
     "caveats": [
       "Not a poll: self-selected posters on two tech-leaning, US-heavy networks; not representative of any population.",
       "Keyword search misses posts that use other words and can include off-topic posts.",

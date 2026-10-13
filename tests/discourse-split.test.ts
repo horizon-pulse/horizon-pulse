@@ -154,6 +154,19 @@ describe("under 30: insufficient data, not charged (status >= 400 → no settle 
     expect(src.calls).toHaveLength(0);
   });
 
+  it("classifier throws → 503 classifier_unavailable, not charged, not cached", async () => {
+    let calls = 0;
+    setClassifierForTests({ name: "boom", classify: async () => { calls++; throw new Error("provider down"); } });
+    const src = fakeSources({ hnYes: 20, bskyNo: 20 });
+    const res = await discourseSplitHandler(req("q=classifier%20throws%20case"), src.deps());
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ ok: false, code: "classifier_unavailable", charged: false });
+    setClassifierForTests(keywordStubClassifier);
+    const again = await discourseSplitHandler(req("q=classifier%20throws%20case"), src.deps());
+    expect(again.status).toBe(200);
+    expect(calls).toBe(1);
+  });
+
   it("both sources down → 502, not charged", async () => {
     const deps: Deps = { fetch: async () => new Response("x", { status: 500 }), now: () => 0 };
     const res = await discourseSplitHandler(req("q=tabs%20or%20spaces"), deps);
