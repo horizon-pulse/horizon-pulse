@@ -83,7 +83,7 @@ export const ROUTE_METADATA = {
   },
   "/api/discourse/split": {
     description:
-      "Online discourse sample, NOT a poll. Use to see how public Hacker News and Bluesky posts split on a question. GET with required q; optional sides (2-4, default yes,no), window (1-30d). Returns JSON: per-side share with 95% interval and n, counts per source, links only (no text or usernames), caveats. Refuses elections, health and a named person's conduct. Under 30 decided posts, refusals and errors: not charged.",
+      "Online discourse sample, NOT a poll. Use to see how public Hacker News and Bluesky posts split on a question. GET with required q; optional sides (2-4, default yes,no), window (1-30d). Returns JSON: per-side share with 95% interval and n, counts per source, links only (no text or usernames; Bluesky links include the account's public ID, DID), caveats. Refuses elections, health and a named person's conduct. Under 30 decided posts, refusals and errors: not charged.",
     tags: ["research", "discourse", "opinion-split", "hacker-news-bluesky", "not-a-poll"],
   },
   "/api/screenshot": {

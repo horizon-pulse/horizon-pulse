@@ -38,7 +38,7 @@ export const HN_ITEM_URL = "https://hacker-news.firebaseio.com/v0/item";
 export const BSKY_APPVIEW = "https://api.bsky.app/xrpc";
 
 export const METHOD =
-  "Keyword search of public Hacker News comments (Algolia) and Bluesky posts within the window; one post per account, at most 10 per thread; each post (truncated to 280 chars, never returned) is labeled with one side or neutral by a stance classifier; shares are over decided posts with Wilson 95% intervals. Deleted posts are dropped, also when a cached answer is served." as const;
+  "Keyword search of public Hacker News comments (Algolia) and Bluesky posts within the window; one post per account, at most 10 per thread; each post (truncated to 280 chars, never returned) is labeled with one side or neutral by a stance classifier; shares are over decided posts with Wilson 95% intervals. Deleted links are removed from the sample, also when a cached answer is served (shares and n are not recomputed)." as const;
 
 export const CAVEATS = [
   "Not a poll: self-selected posters on two tech-leaning, US-heavy networks; not representative of any population.",
@@ -377,7 +377,13 @@ export async function discourseSplit(input: SplitInput, deps: Deps): Promise<Spl
     return store(err(422, "insufficient_data", `Only ${posts.length} usable posts found (need ${MIN_DECIDED} decided). Not charged.`, { n_fetched: posts.length, n_classified: 0 }));
   }
 
-  const { labels } = await classifier.classify(input.q, input.sides, posts.map((p) => p.text.slice(0, MAX_POST_CHARS)));
+  let labels: StanceLabel[];
+  try {
+    ({ labels } = await classifier.classify(input.q, input.sides, posts.map((p) => p.text.slice(0, MAX_POST_CHARS))));
+  } catch {
+    // Classifier/provider failure (timeout, 5xx, cap reached): 503, never settled, never cached.
+    return err(503, "classifier_unavailable", "Stance classifier failed for this request. Not charged. Free sample: /api/demo/discourse/split");
+  }
   const counts = input.sides.map(() => 0);
   let neutral = 0;
   labels.forEach((l) => (l >= 0 && l < counts.length ? counts[l]++ : neutral++));

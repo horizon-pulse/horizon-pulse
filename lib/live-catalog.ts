@@ -203,7 +203,7 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: DISCOURSE_SPLIT_PRICE_USD,
     priceAtomic: DISCOURSE_SPLIT_PRICE_ATOMIC,
     summary:
-      "Online discourse sample, NOT a poll: how public Hacker News and Bluesky posts split on a question, per-side share with 95% interval, counts and links only (no text or usernames); <30 decided posts not charged",
+      "Online discourse sample, NOT a poll: how public Hacker News and Bluesky posts split on a question, per-side share with 95% interval, counts and links only (no text or usernames; Bluesky links include the account's public ID, DID); <30 decided posts not charged",
     category: "agent",
     blurb: "How Hacker News and Bluesky posts split on a question (not a poll)",
     priceStatus: "untested",
