@@ -1,6 +1,10 @@
 "use client";
 import { useState } from "react";
 
+/** Pasted docs cap: 50 KB = 50,000 UTF-8 bytes (matches MAX_INPUT_BYTES and the route body limit). */
+export const MAX_DOCS_BYTES = 50_000;
+const utf8Len = (t: string) => new TextEncoder().encode(t).length;
+
 export function PreviewForm() {
   const [url, setUrl] = useState("");
   const [docs, setDocs] = useState("");
@@ -32,7 +36,7 @@ export function PreviewForm() {
       </label>
       <label>
         <span>Or paste an OpenAPI spec (JSON) or docs <em>max 50 KB</em></span>
-        <textarea rows={6} maxLength={50000} value={docs} onChange={(e) => setDocs(e.target.value)} />
+        <textarea rows={6} maxLength={MAX_DOCS_BYTES} value={docs} onChange={(e) => { const v = e.target.value; if (utf8Len(v) <= MAX_DOCS_BYTES) setDocs(v); }} />
       </label>
       <label>
         <span>Email <em>optional</em></span>

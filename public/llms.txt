@@ -75,6 +75,10 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - Need DeFi yields, gas timing, or perp funding: `/api/yield`, `/api/gas`, `/api/funding`
 - Need a wallet risk snapshot: `/api/portfolio?address=0x…`
 
+## x402 Preview (DRAFT, disabled)
+
+`POST /api/preview` is a draft intake for making an API payable by AI agents: send `{ "openapi": {...} }`, `{ "docs": "..." }` or `{ "url": "..." }` (max 50 KB) and a person reviews a drafted x402 preview (candidate pay-per-call routes, UNTESTED prices, an EXAMPLE 402). It is not open yet: every call returns 503 until launch. It is not a paid route; do not pay or retry it.
+
 ## Free samples (no payment)
 
 `GET /api/demo/{route}` runs the real handler on a fixed input and returns `demo: true`. Use it to check the response shape before paying. Inputs cannot be changed.

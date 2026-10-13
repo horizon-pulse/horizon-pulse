@@ -11,5 +11,5 @@ export const PREVIEW_COPY = {
     "Agent-readiness gaps to fix before listing",
   ],
   limits:
-    "We read only what you submit plus at most 5 unpaid GET probes. We never ask for keys. Submissions, including any email you leave, are deleted automatically after 30 days. We make no promise of calls, income or directory placement.",
+    "We read only what you submit plus at most 5 unpaid GET probes. We never ask for keys. Submissions, including any email you leave, are deleted automatically after 30 days. Submissions are processed by OpenAI, a third-party AI provider; the 30-day deletion covers our storage only. We make no promise of calls, income or directory placement.",
 } as const;

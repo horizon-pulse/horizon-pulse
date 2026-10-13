@@ -9,6 +9,8 @@ export const maxDuration = 60;
 
 export const PER_IP_PER_HOUR = 3;
 export const GLOBAL_PER_DAY = 20;
+/** Explicit request body limit: 50 KB docs + JSON/url/email overhead. Larger bodies get 413 before parsing. */
+export const MAX_BODY_BYTES = 64 * 1024;
 const EMAIL_RE = /^[^\s@<>"]{1,64}@[^\s@<>"]{1,190}\.[A-Za-z]{2,}$/;
 
 /** Client IP: Vercel's x-real-ip (set by the platform, not client-controlled). */
@@ -36,7 +38,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "store_unavailable" }, { status: 503 });
   }
 
-  const body = (await req.json().catch(() => null)) as
+  const declared = Number(req.headers.get("content-length") ?? "0");
+  if (declared > MAX_BODY_BYTES) return NextResponse.json({ error: "too_large" }, { status: 413 });
+  const raw = await req.text().catch(() => "");
+  if (new TextEncoder().encode(raw).length > MAX_BODY_BYTES) return NextResponse.json({ error: "too_large" }, { status: 413 });
+  const body = (() => { try { return JSON.parse(raw); } catch { return null; } })() as
     | { url?: unknown; docs?: unknown; openapi?: unknown; email?: unknown; consent?: unknown }
     | null;
   const url = typeof body?.url === "string" && body.url.trim() ? body.url.trim().slice(0, 2048) : undefined;
