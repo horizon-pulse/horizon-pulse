@@ -10,9 +10,10 @@ const ok = (labels: number[], pt = 1000, ct = 50) =>
   new Response(JSON.stringify({ usage: { prompt_tokens: pt, completion_tokens: ct }, choices: [{ message: { content: JSON.stringify({ labels: labels.map((l, i) => [i, l]) }) } }] }), { status: 200 });
 
 describe("price table + reservation", () => {
-  it("gpt-6-luna worst case x1.25 = $0.0034375", () => {
-    expect(reservationUsd(PRIMARY_MODEL)).toBeCloseTo(0.0034375, 10);
-    expect(reservationUsd(FALLBACK_MODEL)).toBeCloseTo(0.00725, 10);
+  it("gpt-6-luna worst case x1.25 = $0.004375 (20k in / 3k out); fallback $0.0095", () => {
+    expect(MAX_OUTPUT_TOKENS).toBe(3_000);
+    expect(reservationUsd(PRIMARY_MODEL)).toBeCloseTo(0.004375, 10);
+    expect(reservationUsd(FALLBACK_MODEL)).toBeCloseTo(0.0095, 10);
   });
   it("unpriced model throws", () => expect(() => costUsd("gpt-x", 1, 1)).toThrow());
   it("caps default $1/$15; env can only lower (Math.min(env, default))", () => {
@@ -33,7 +34,7 @@ describe("price table + reservation", () => {
 });
 
 describe("request shape", () => {
-  it("gpt-6-luna, reasoning none, max 1500 output, key only in Authorization", async () => {
+  it("gpt-6-luna, reasoning none, max 3000 output, key only in Authorization", async () => {
     const f = vi.fn(async () => ok([0, 1, -1]));
     const c = createOpenAiClassifier({ env, fetchFn: f as unknown as typeof fetch, store: new MemorySpendStore(caps), now });
     const r = await c.classify("q?", ["yes", "no"], ["a", "b", "c"]);
@@ -136,9 +137,9 @@ describe("F1: reservation sized from input bytes", () => {
   const emoji = Array.from({ length: 200 }, () => "\u{1F600}".repeat(140)); // 4 bytes, 280 UTF-16 units
   const bound = (t: string[]) => inputTokenBound(buildUserMessage("q?", ["yes", "no"], t));
 
-  it("small Latin input stays at the 20k floor ($0.0034375)", () => {
+  it("small Latin input stays at the 20k floor ($0.004375)", () => {
     expect(bound(["hi"])).toBeLessThan(MAX_INPUT_TOKENS);
-    expect(reservationUsd(PRIMARY_MODEL, bound(["hi"]))).toBeCloseTo(0.0034375, 10);
+    expect(reservationUsd(PRIMARY_MODEL, bound(["hi"]))).toBeCloseTo(0.004375, 10);
   });
   it("bound >= UTF-8 bytes of the user message (tokens <= bytes)", () => {
     for (const t of [latin, cjk, emoji]) {
@@ -256,5 +257,30 @@ describe("engine failure reason log", () => {
     expect(classifierFailReason(new Error("llm_bad_output"))).toBe("llm_bad_output");
     expect(classifierFailReason(new Error(`spend_store 500 ${FAKE_KEY}`))).toBe("store_or_other");
     expect(classifierFailReason("x")).toBe("store_or_other");
+  });
+});
+
+describe("output cap fits 200 keyed pairs (Odin 10/13: max_completion_tokens 3,000)", () => {
+  // Worst-case 200-post response: every index 3 digits where possible, side index 1 digit.
+  const pairs = Array.from({ length: 200 }, (_, i) => [i, 9]);
+  const content = JSON.stringify({ labels: pairs });
+  it("200-post pairs response fits within MAX_OUTPUT_TOKENS (tokens <= UTF-8 bytes) with headroom", () => {
+    const bytes = new TextEncoder().encode(content).length;
+    expect(bytes).toBeLessThan(MAX_OUTPUT_TOKENS * 0.75); // >=25% headroom even at 1 token per byte
+  });
+  it("classifier accepts a full 200-post pairs response", async () => {
+    const texts = Array.from({ length: 200 }, (_, i) => `post ${i}`);
+    const resp = new Response(JSON.stringify({ usage: { prompt_tokens: 9000, completion_tokens: 1200 }, choices: [{ message: { content: JSON.stringify({ labels: texts.map((_, i) => [i, i % 2]) }) } }] }), { status: 200 });
+    const r = await createOpenAiClassifier({ env, fetchFn: (async () => resp) as unknown as typeof fetch, store: new MemorySpendStore(caps), now }).classify("q", ["yes", "no"], texts);
+    expect(r.labels).toHaveLength(200);
+    expect(r.labels[199]).toBe(1);
+  });
+  it("reservation stays well under $1/day: max-size Latin 200x280 request, primary + fallback both reserved", () => {
+    const b = inputTokenBound(buildUserMessage("q?", ["yes", "no"], Array.from({ length: 200 }, () => "a".repeat(280))));
+    const perCall = reservationUsd(PRIMARY_MODEL, b) + reservationUsd(FALLBACK_MODEL, b);
+    expect(perCall).toBeLessThan(0.05);
+    expect(reservationUsd(PRIMARY_MODEL)).toBeLessThan(0.01);
+    expect(reservationUsd(FALLBACK_MODEL)).toBeLessThan(0.01);
+    expect(Math.floor(1 / (reservationUsd(PRIMARY_MODEL) + reservationUsd(FALLBACK_MODEL)))).toBeGreaterThanOrEqual(70);
   });
 });

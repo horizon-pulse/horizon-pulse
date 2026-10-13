@@ -1,7 +1,7 @@
 /**
  * OpenAI stance classifier for /api/discourse/split (plan v2, Odin PASS).
  *
- * - Model gpt-6-luna, reasoning off, max 1,500 output tokens; fallback
+ * - Model gpt-6-luna, reasoning off, max 3,000 output tokens (Odin 10/13: room for 200 keyed pairs); fallback
  *   gpt-5.6-luna only when the primary returns an HTTP error (no output billed).
  * - Key: DISCOURSE_LLM_API_KEY, read at call time; never logged, returned,
  *   cached or put into error text.
@@ -24,7 +24,7 @@ type FetchFn = typeof fetch;
 
 export const PRIMARY_MODEL = "gpt-6-luna";
 export const FALLBACK_MODEL = "gpt-5.6-luna";
-export const MAX_OUTPUT_TOKENS = 1_500;
+export const MAX_OUTPUT_TOKENS = 3_000;
 /** Worst-case input bound: 200 posts x 280 chars + prompt, rounded up (plan v2). */
 export const MAX_INPUT_TOKENS = 20_000;
 export const RESERVE_MARGIN = 1.25;
@@ -54,7 +54,8 @@ export function inputTokenBound(userMessage: string): number {
 }
 
 /**
- * gpt-6-luna at the 20k floor: (20k x 0.10 + 1.5k x 0.50)/1e6 x 1.25 = $0.0034375.
+ * gpt-6-luna at the 20k floor: (20k x 0.10 + 3k x 0.50)/1e6 x 1.25 = $0.004375
+ * (gpt-5.6-luna: (20k x 0.20 + 3k x 1.20)/1e6 x 1.25 = $0.0095).
  * With inputTokens given, reserves max(20k, inputTokens) instead.
  */
 export function reservationUsd(model: string, inputTokens = 0): number {
