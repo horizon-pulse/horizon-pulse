@@ -313,7 +313,7 @@ function discoveryExt(path: string, what: string) {
 export function pulseRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/pulse": {
       accepts: [
         {
@@ -328,13 +328,13 @@ export function pulseRouteConfig(): RoutesConfig {
       ...serviceMetadata("/api/pulse"),
       extensions: discoveryExt("/api/pulse", "Horizon Pulse market snapshot"),
     },
-  };
+  });
 }
 
 export function signalsRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/signals": {
       accepts: [
         {
@@ -349,13 +349,13 @@ export function signalsRouteConfig(): RoutesConfig {
       ...serviceMetadata("/api/signals"),
       extensions: discoveryExt("/api/signals", "Horizon Pulse crypto market data (technical indicators)"),
     },
-  };
+  });
 }
 
 export function yieldRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/yield": {
       accepts: [
         {
@@ -370,13 +370,13 @@ export function yieldRouteConfig(): RoutesConfig {
       ...serviceMetadata("/api/yield"),
       extensions: discoveryExt("/api/yield", "Horizon Pulse yield rankings"),
     },
-  };
+  });
 }
 
 export function portfolioRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/portfolio": {
       accepts: [
         {
@@ -407,13 +407,13 @@ export function portfolioRouteConfig(): RoutesConfig {
         } as DiscoveryDecl),
       },
     },
-  };
+  });
 }
 
 export function gasRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/gas": {
       accepts: [
         {
@@ -428,13 +428,13 @@ export function gasRouteConfig(): RoutesConfig {
       ...serviceMetadata("/api/gas"),
       extensions: discoveryExt("/api/gas", "Horizon Pulse gas snapshot"),
     },
-  };
+  });
 }
 
 export function fundingRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/funding": {
       accepts: [
         {
@@ -449,14 +449,14 @@ export function fundingRouteConfig(): RoutesConfig {
       ...serviceMetadata("/api/funding"),
       extensions: discoveryExt("/api/funding", "Horizon Pulse funding snapshot"),
     },
-  };
+  });
 }
 
 
 export function fetchRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/fetch": {
       accepts: [
         {
@@ -487,7 +487,24 @@ export function fetchRouteConfig(): RoutesConfig {
         } as DiscoveryDecl),
       },
     },
-  };
+  });
+}
+
+/**
+ * Verb-keyed routes (Odin 10/13 hygiene b): x402/core matches a bare path key on
+ * EVERY method, so single-verb paid routes are keyed explicitly by verb.
+ * HEAD gets the same config as GET because Next serves HEAD from the GET
+ * handler; without a HEAD key a HEAD request would run the handler unpaid
+ * (F2 strips payment headers on HEAD, so HEAD only ever gets the unpaid 402).
+ */
+function keyGetHead(routes: Record<string, RouteConfig>): RoutesConfig {
+  const out: RoutesConfig = {};
+  for (const [path, config] of Object.entries(routes)) {
+    if (/\s/.test(path)) throw new Error(`keyGetHead expects a bare path, got "${path}"`);
+    out[`GET ${path}`] = config;
+    out[`HEAD ${path}`] = config;
+  }
+  return out;
 }
 
 /**
@@ -699,7 +716,7 @@ export function extractRouteConfig(): RoutesConfig {
 export function x402CheckRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/x402-check": {
       accepts: [
         {
@@ -740,13 +757,13 @@ export function x402CheckRouteConfig(): RoutesConfig {
         } as DiscoveryDecl),
       },
     },
-  };
+  });
 }
 
 export function bazaarCheckRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/bazaar-check": {
       accepts: [
         {
@@ -777,7 +794,7 @@ export function bazaarCheckRouteConfig(): RoutesConfig {
         } as DiscoveryDecl),
       },
     },
-  };
+  });
 }
 
 /**
@@ -787,7 +804,7 @@ export function bazaarCheckRouteConfig(): RoutesConfig {
 export function marketSearchRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/market/search": {
       accepts: [
         {
@@ -819,13 +836,13 @@ export function marketSearchRouteConfig(): RoutesConfig {
         } as DiscoveryDecl),
       },
     },
-  };
+  });
 }
 
 export function marketQuoteRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/market/quote": {
       accepts: [
         {
@@ -853,13 +870,13 @@ export function marketQuoteRouteConfig(): RoutesConfig {
         } as DiscoveryDecl),
       },
     },
-  };
+  });
 }
 
 export function screenshotRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/screenshot": {
       accepts: [
         {
@@ -893,7 +910,7 @@ export function screenshotRouteConfig(): RoutesConfig {
         } as DiscoveryDecl),
       },
     },
-  };
+  });
 }
 
 /**
@@ -1171,7 +1188,7 @@ export function createX402GetHandler(
 export function searchRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/search": {
       accepts: [
         {
@@ -1199,13 +1216,13 @@ export function searchRouteConfig(): RoutesConfig {
         } as DiscoveryDecl),
       },
     },
-  };
+  });
 }
 
 export function pdfRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
-  return {
+  return keyGetHead({
     "/api/pdf": {
       accepts: [
         {
@@ -1233,5 +1250,5 @@ export function pdfRouteConfig(): RoutesConfig {
         } as DiscoveryDecl),
       },
     },
-  };
+  });
 }
