@@ -15,23 +15,21 @@ import { SOLANA_MAINNET_CAIP2, SOLANA_PAYTO } from "@/lib/solana-config";
  *
  * Format: x402scan discovery spec (Merit-Systems/x402scan docs/DISCOVERY.md,
  * section B): { version: 1, resources: string[] } with optional
- * `instructions` / `ownershipProofs`. Each resource string may be prefixed
- * with its HTTP method ("GET https://…"), as parsed by @agentcash/discovery
- * (entries without a method default to POST, so we always prefix).
+ * `instructions` / `ownershipProofs`. Each resource is a plain absolute URL,
+ * exactly the spec's form. (Until 2026-10-13 entries were "GET https://…";
+ * Agent402's crawler only splits "VERB /path", so it indexed 16 junk rows like
+ * "/GET%20https://…". Verbs live in openapi.json and in each 402's bazaar
+ * extension, which is where x402scan (@agentcash/discovery 1.7.x, OpenAPI-first)
+ * and Agent402 read them.)
  *
  * Generated from lib/live-catalog.ts (single source of truth), so it lists
- * exactly the live paid routes; GET|POST routes appear once per method.
+ * exactly the live paid routes; a GET|POST route appears once.
  * Free route, no payment logic.
  */
 export const dynamic = "force-static";
 
 function buildResources(): string[] {
-  return LIVE_PAID_ROUTES.flatMap((route) => {
-    const path = route.path.split("?")[0];
-    return route.method
-      .split("|")
-      .map((method) => `${method} ${PUBLIC_BASE_URL}${path}`);
-  });
+  return [...new Set(LIVE_PAID_ROUTES.map((route) => `${PUBLIC_BASE_URL}${route.path.split("?")[0]}`))];
 }
 
 export function GET(): NextResponse {

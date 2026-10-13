@@ -54,12 +54,12 @@ describe("openapi + docs + llms", () => {
 });
 
 describe("x402 discovery excludes it", () => {
-  it("/.well-known/x402 resources do not list money-market-rates (18 stay)", async () => {
+  it("/.well-known/x402 resources do not list money-market-rates (16 paid paths stay; plain URLs since hygiene a)", async () => {
     const { GET } = await import("@/app/.well-known/x402/route");
     const res = await (GET as unknown as () => Promise<Response>)();
     const j = await res.json();
     expect(j.resources.some((x: string) => x.includes("money-market"))).toBe(false);
-    expect(j.resources).toHaveLength(18);
+    expect(j.resources).toHaveLength(16);
   });
 });
 

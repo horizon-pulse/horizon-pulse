@@ -83,6 +83,11 @@
  * PAYMENT-REQUIRED, the same text in browser-402 HTML and OPTIONS bodies, and
  * the openapi.json sha. Every accepts array, status and other header is
  * byte-identical (checked by decoding each challenge).
+ *
+ * 2026-10-13 (branch hygiene-keying-1013, Odin hygiene a): regenerated with
+ * UPDATE_GOLDEN=1 after /.well-known/x402 resources became plain absolute URLs
+ * (16, was 18 "VERB URL" strings). Only discovery["GET /.well-known/x402"].body
+ * changed; golden.cdp and golden.local are byte-identical.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
