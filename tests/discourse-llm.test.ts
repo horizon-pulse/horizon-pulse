@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { createOpenAiClassifier, reservationUsd, costUsd, classifierFromEnv, inputTokenBound, buildUserMessage, adjustFailureCount, PRIMARY_MODEL, FALLBACK_MODEL, MAX_OUTPUT_TOKENS, MAX_INPUT_TOKENS } from "@/lib/discourse/llm";
+import { alignLabels, createOpenAiClassifier, reservationUsd, costUsd, classifierFromEnv, inputTokenBound, buildUserMessage, adjustFailureCount, PRIMARY_MODEL, FALLBACK_MODEL, MAX_OUTPUT_TOKENS, MAX_INPUT_TOKENS } from "@/lib/discourse/llm";
 import { MemorySpendStore, spendCaps, spendKeys, RESERVE_LUA, UpstashSpendStore } from "@/lib/discourse/spend";
 
 const FAKE_KEY = "sk-test-DO-NOT-LEAK-0123456789";
@@ -242,6 +242,20 @@ describe("label alignment (repro 2026-10-13: 105 labels for 106 posts -> 503 cla
     await expect(run(texts.slice(0, 90).map((_, i) => [i, 0]))).rejects.toThrow("llm_bad_output");
     await expect(run([[0, 0], [0, 1], ...texts.slice(2).map((_, i) => [i + 2, 0])])).rejects.toThrow("llm_bad_output");
     await expect(run(texts.map((_, i) => [i]))).rejects.toThrow("llm_bad_output");
+  });
+  it("side out of range (side < -1 or side >= nSides) -> bad output, fails closed (Odin 10/13)", async () => {
+    const withSide = (s: number) => texts.map((_, i) => [i, i === 7 ? s : 0]);
+    await expect(run(withSide(2))).rejects.toThrow("llm_bad_output");
+    await expect(run(withSide(7))).rejects.toThrow("llm_bad_output");
+    await expect(run(withSide(-2))).rejects.toThrow("llm_bad_output");
+    const r = await run(withSide(-1));
+    expect(r.labels[7]).toBe(-1);
+    expect((await run(withSide(1))).labels[7]).toBe(1);
+  });
+  it("alignLabels takes nSides directly", () => {
+    expect(alignLabels([[0, 2]], 1, 3)).toEqual([2]);
+    expect(alignLabels([[0, 3]], 1, 3)).toBeNull();
+    expect(alignLabels([[0, -2]], 1, 3)).toBeNull();
   });
   it("request schema asks for [post, side] integer pairs", async () => {
     const f = vi.fn(async () => body([[0, 0]]));

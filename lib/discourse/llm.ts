@@ -100,15 +100,17 @@ export const MAX_MISSING_SHARE = 0.1;
  * cannot be trusted: on 2026-10-13 gpt-6-luna returned 105 labels for 106
  * posts, so every label after the gap would be shifted onto the wrong post.
  * Missing posts -> -1 (neutral). Null (bad output) on malformed pairs,
- * out-of-range or duplicate post numbers, or more than MAX_MISSING_SHARE missing.
+ * out-of-range or duplicate post numbers, side values outside [-1, nSides), or more than MAX_MISSING_SHARE missing.
  */
-export function alignLabels(raw: unknown, n: number): StanceLabel[] | null {
+export function alignLabels(raw: unknown, n: number, nSides: number): StanceLabel[] | null {
+  if (!Number.isInteger(nSides) || nSides < 1) return null;
   if (!Array.isArray(raw)) return null;
   const out: (number | undefined)[] = new Array(n).fill(undefined);
   for (const pair of raw) {
     if (!Array.isArray(pair) || pair.length !== 2 || !pair.every((x) => Number.isInteger(x))) return null;
     const [i, side] = pair as [number, number];
     if (i < 0 || i >= n || out[i] !== undefined) return null;
+    if (side < -1 || side >= nSides) return null;
     out[i] = side;
   }
   const missing = out.filter((x) => x === undefined).length;
@@ -186,7 +188,7 @@ export function createOpenAiClassifier(opts: { env?: Env; fetchFn?: FetchFn; sto
     } catch {
       throw new ClassifierError("llm_bad_output");
     }
-    const aligned = alignLabels(labels, texts.length);
+    const aligned = alignLabels(labels, texts.length, sides.length);
     if (!aligned) throw new ClassifierError("llm_bad_output");
     return { status: "ok", labels: aligned, inputTokens: pt as number, outputTokens: ct as number };
   }
