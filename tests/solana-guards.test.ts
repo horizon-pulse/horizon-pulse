@@ -7,6 +7,7 @@
  *   (e) Bazaar stripped from incoming Solana payloads; never declared on PayAI.
  *   (f) fee payer must be on PayAI's live HTTPS signer list; else fail closed.
  */
+import { expectRejectedGolden } from "./helpers/reject-header";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -159,7 +160,7 @@ describe("(b) token-account guard", () => {
     resetSolanaRailForTests();
     const res = await handler().handler(paid(solPayload(accept)));
     expect(res.status).toBe(402);
-    expect(res.headers.get("payment-required")).toBe(header(golden.cdp["GET /api/pulse json"]));
+    expectRejectedGolden(res.headers.get("payment-required"), header(golden.cdp["GET /api/pulse json"]), "rail_unavailable");
     expect(calls.some((c) => c.url === PAYAI && c.op !== "supported")).toBe(false);
   });
 });
@@ -219,7 +220,7 @@ describe("(c) PayAI rejection: logged server-side, client gets main's Base-only 
       calls.length = 0;
       const res = await handler().handler(paid(solPayload(solAccept)));
       expect(res.status).toBe(402);
-      expect(res.headers.get("payment-required")).toBe(header(golden.cdp["GET /api/pulse json"]));
+      expectRejectedGolden(res.headers.get("payment-required"), header(golden.cdp["GET /api/pulse json"]), ({ "verify invalid": "invalid_exact_svm_payload_transaction_simulation_failed", "verify throws": "verification_failed", "settle failed": "transaction_failed" } as Record<string, string>)[name]);
       expect(await res.text()).toBe(golden.cdp["GET /api/pulse json"].body);
       expect(calls.filter((c) => c.url.startsWith(CDP_URL_PREFIX) && c.op !== "supported")).toEqual([]);
       const lines = warnLines().filter((l) => l.startsWith("[solana-rail]"));

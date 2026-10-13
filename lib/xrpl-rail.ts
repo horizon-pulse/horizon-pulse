@@ -62,6 +62,7 @@
  */
 import { createHash } from "node:crypto";
 import type { NextRequest } from "next/server";
+import { RAIL_REJECT, reasonFromRailResponse, settleFailReason, type OnReject } from "./rail-reject";
 import { NextRequest as NextRequestCtor, NextResponse } from "next/server";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import type { FacilitatorClient, RouteConfig, RoutesConfig } from "@x402/core/server";
@@ -1181,7 +1182,7 @@ function jsonError(status: number, error: string): NextResponse {
 // Paid path
 // ---------------------------------------------------------------------------
 
-type Decision = { kind: "response"; res: NextResponse } | { kind: "base" } | { kind: "rethrow"; err: unknown };
+type Decision = { kind: "response"; res: NextResponse } | { kind: "base"; reason: string } | { kind: "rethrow"; err: unknown };
 
 async function decide(key: string, att: Attempt, res: NextResponse | null, threw: boolean, thrown: unknown, rc: ReconcileCtx): Promise<Decision> {
   const s = att.settle;
@@ -1193,7 +1194,7 @@ async function decide(key: string, att: Attempt, res: NextResponse | null, threw
     if (s.outcome === "failed") {
       // Definitive: nothing landed. Key kept (the same tx would fail again).
       await replaySet(key, "settle_failed");
-      return { kind: "base" };
+      return { kind: "base", reason: settleFailReason(s.reason) };
     }
     // Ambiguous (or settled but no deliverable response): the tx may have
     // landed. Never a 402 (would invite a second payment); no facilitator text.
@@ -1213,6 +1214,7 @@ async function decide(key: string, att: Attempt, res: NextResponse | null, threw
   if (att.handlerRan && res && res.status >= 400) return { kind: "response", res }; // route's own error, as on Base
   if (threw) {
     warn("XRPL payment path threw", thrown);
+    return { kind: "base", reason: RAIL_REJECT.error };
   } else {
     let reason = "";
     try {
@@ -1223,7 +1225,7 @@ async function decide(key: string, att: Attempt, res: NextResponse | null, threw
     }
     warn(`XRPL payment not accepted (status ${res?.status ?? "none"} from XRPL server${reason})`);
   }
-  return { kind: "base" };
+  return { kind: "base", reason: reasonFromRailResponse(res, RAIL_REJECT.verifyFailed) };
 }
 
 /**
@@ -1353,17 +1355,26 @@ export async function handleXrplPayment(
   routes: RoutesConfig,
   atomicUsdc: string,
   config: XrplRailConfig,
+  onReject?: OnReject,
 ): Promise<NextResponse | null> {
+  const reject = (reason: string): null => {
+    try {
+      onReject?.(reason);
+    } catch {
+      /* never let a reporter break the paid path */
+    }
+    return null;
+  };
   let key: string | null = null;
   let decision: Decision;
   const startedAt = Date.now();
   try {
     if (!replayStoreOkFor(config)) {
       warn("xrpl:0 payment refused: shared replay store (UPSTASH_REDIS_REST_* or KV_REST_API_URL/TOKEN) not configured");
-      return null;
+      return reject(RAIL_REJECT.unavailable);
     }
     const [ready, rail] = await Promise.all([xrplPayToReady(config), getRail(config)]);
-    if (!ready || !rail) return null;
+    if (!ready || !rail) return reject(RAIL_REJECT.unavailable);
 
     const requirement = await buildXrplRequirement(rail, atomicUsdc);
     const received = decodePaymentSignatureHeader(req.headers.get("payment-signature")!.trim()) as PaymentPayload;
@@ -1371,14 +1382,16 @@ export async function handleXrplPayment(
     const check = validateXrplPaymentPayload(payload, requirement, rail.mods);
     if (!check.ok) {
       warn(`rejected XRPL payload before facilitator (${check.reason})`);
-      return null;
+      return reject(RAIL_REJECT.invalidPayload);
     }
 
     // Replay guard: BEFORE verify.
     const k = xrplPaymentKeyFromTx(config.network, check.tx);
     if (!k) {
+      // Reason code (Odin F4): no Sequence/TicketSequence means the signed tx is
+      // malformed for us, so this is the buyer's payload problem → invalid_payload.
       warn("rejected XRPL payload before facilitator (no payment slot)");
-      return null;
+      return reject(RAIL_REJECT.invalidPayload);
     }
     if (replay.kind === "memory" && !replayWarned) {
       replayWarned = true;
@@ -1389,8 +1402,10 @@ export async function handleXrplPayment(
       seen = await replay.claim(k, REPLAY_TTL_MS);
     } catch (err) {
       // Fail closed: nothing verified or charged; caller serves the Base-only 402.
+      // Reason code (Odin F4): our replay store is down, not the buyer's fault →
+      // rail_unavailable (retry later or pay on Base), never invalid_payload.
       warn(`replay store claim failed fp=${fp(k)}; XRPL payment not accepted`, err);
-      return null;
+      return reject(RAIL_REJECT.unavailable);
     }
     if (seen) {
       warn(`duplicate XRPL payment rejected before verify fp=${fp(k)} state=${seen}; client gets 409`, undefined, false);
@@ -1492,10 +1507,10 @@ export async function handleXrplPayment(
     // Our own code threw before/around the facilitator: nothing was settled.
     if (key && !attempts.get(key)?.settle) await replayRelease(key);
     warn("XRPL payment path threw", err);
-    return null;
+    return reject(RAIL_REJECT.error);
   } finally {
     if (key) attempts.delete(key);
   }
   if (decision.kind === "rethrow") throw decision.err;
-  return decision.kind === "response" ? decision.res : null;
+  return decision.kind === "response" ? decision.res : reject(decision.reason);
 }
