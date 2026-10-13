@@ -44,6 +44,7 @@ import { baseRail, runOnPaidRail } from "./paid-rail";
 import { getXrplRailConfig } from "./xrpl-config";
 import { handleXrplPayment, isXrplPaymentRequest, withXrplAccept } from "./xrpl-rail";
 import { getPolygonRailConfig } from "./polygon-config";
+import { withRejectReason } from "./rail-reject";
 import { handlePolygonPayment, isPolygonPaymentRequest, withPolygonAccept } from "./polygon-rail";
 
 /**
@@ -1163,22 +1164,34 @@ export function createX402GetHandler(
       return withVary(challenge) as NextResponse;
     }
     if (solana.enabled && isSolanaPaymentRequest(req)) {
-      const paid = await handleSolanaPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, solana.config);
+      let rejected: string | null = null;
+      const paid = await handleSolanaPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, solana.config, (r) => {
+        rejected = r;
+      });
       // Solana unavailable / rejected / threw → the Base-only 402 (built from
       // a copy of the request WITHOUT the Solana payment header, so the Base
       // server never even parses a Solana payload).
-      return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
+      // Rejected (nothing charged, no body): Base-only 402 + PAYMENT-REQUIRED.error = reason, as Base does.
+      return withVary(paid ?? (await withRejectReason(await baseChallenge(withoutPaymentHeaders(req), cdpReady), rejected))) as NextResponse;
     }
     if (xrpl.enabled && isXrplPaymentRequest(req)) {
-      const paid = await handleXrplPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, xrpl.config);
+      let rejected: string | null = null;
+      const paid = await handleXrplPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, xrpl.config, (r) => {
+        rejected = r;
+      });
       // XRPL unavailable / rejected / threw → the Base-only 402 (built from a
       // copy of the request WITHOUT the XRPL payment header, so the Base
       // server never even parses an XRPL payload).
-      return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
+      // Rejected (nothing charged, no body): Base-only 402 + PAYMENT-REQUIRED.error = reason, as Base does.
+      return withVary(paid ?? (await withRejectReason(await baseChallenge(withoutPaymentHeaders(req), cdpReady), rejected))) as NextResponse;
     }
     if (polygon.enabled && isPolygonPaymentRequest(req, polygon.config)) {
-      const paid = await handlePolygonPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, polygon.config);
-      return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
+      let rejected: string | null = null;
+      const paid = await handlePolygonPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, polygon.config, (r) => {
+        rejected = r;
+      });
+      // Rejected (nothing charged, no body): Base-only 402 + PAYMENT-REQUIRED.error = reason, as Base does.
+      return withVary(paid ?? (await withRejectReason(await baseChallenge(withoutPaymentHeaders(req), cdpReady), rejected))) as NextResponse;
     }
     if (!cdpReady) {
       return settlementUnavailableResponse();

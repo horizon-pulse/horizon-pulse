@@ -3,6 +3,7 @@
  * should-fixes 4-9. Mocked facilitators / stubbed fetch and RPC only: no
  * network, no keys, no wallets, no money.
  */
+import { expectRejectedGolden } from "./helpers/reject-header";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -179,7 +180,7 @@ describe("fix 1: PayAI timeout / malformed response never leaks; ambiguous settl
       const run = handler();
       const res = await run.handler(paid(solPayload(sol)));
       expect(res.status).toBe(402);
-      expect(res.headers.get("payment-required")).toBe(goldenHeader);
+      expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
       const body = await res.text();
       expect(body).toBe(GOLDEN_PULSE.body);
       expectNoPayaiText(body);
@@ -197,7 +198,7 @@ describe("fix 1: PayAI timeout / malformed response never leaks; ambiguous settl
     const run = handler();
     const res = await run.handler(paid(solPayload(sol)));
     expect(res.status).toBe(402);
-    expect(res.headers.get("payment-required")).toBe(goldenHeader);
+    expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
     expect(run.ran.count).toBe(0);
     expect(hits).toEqual([`${PAYAI}/verify`]);
     expect(warnLines().some((l) => l.includes("PayAI verify threw (FacilitatorTimeoutError)"))).toBe(true);
@@ -210,7 +211,7 @@ describe("fix 1: PayAI timeout / malformed response never leaks; ambiguous settl
     const [, sol] = await accepts();
     const res = await handler().handler(paid(solPayload(sol)));
     expect(res.status).toBe(402);
-    expect(res.headers.get("payment-required")).toBe(goldenHeader);
+    expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
     expectNoPayaiText(await res.text());
   });
 
@@ -296,7 +297,7 @@ describe("fix 1: PayAI timeout / malformed response never leaks; ambiguous settl
       const [, sol] = await accepts();
       const res = await handler().handler(paid(solPayload(sol)));
       expect(res.status).toBe(402);
-      expect(res.headers.get("payment-required")).toBe(goldenHeader);
+      expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
       expect(await res.text()).toBe(GOLDEN_PULSE.body);
     });
   }
@@ -598,7 +599,7 @@ describe("should-fixes 4-9", () => {
     setSolanaAlertHook((a) => alerts.push(a));
     const res = await handler().handler(paid(solPayload(sol)));
     expect(res.status).toBe(402);
-    expect(res.headers.get("payment-required")).toBe(goldenHeader);
+    expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
     expect(alerts).toEqual([expect.objectContaining({ kind: "payai_allowance", source: "free_tier_exhausted" })]);
   });
 });

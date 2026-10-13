@@ -27,6 +27,7 @@ import { decodePaymentSignatureHeader, encodePaymentSignatureHeader } from "@x40
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { withX402 } from "@x402/next";
 import { runOnPaidRail, type PaidRail } from "./paid-rail";
+import { RAIL_REJECT, reasonFromRailResponse, type OnReject } from "./rail-reject";
 import { appendAccept, stripBazaar } from "./solana-rail";
 import type { PolygonRailConfig } from "./polygon-config";
 
@@ -170,16 +171,25 @@ export async function handlePolygonPayment(
   routes: RoutesConfig,
   atomicUsdc: string,
   config: PolygonRailConfig,
+  onReject?: OnReject,
 ): Promise<NextResponse | null> {
+  const reject = (reason: string): null => {
+    try {
+      onReject?.(reason);
+    } catch {
+      /* never let a reporter break the paid path */
+    }
+    return null;
+  };
   try {
     const s = await ensureReady(config);
-    if (!s) return null;
+    if (!s) return reject(RAIL_REJECT.unavailable);
     const requirement = buildPolygonRequirement(config, atomicUsdc);
     const payload = stripBazaar(decodePaymentSignatureHeader(req.headers.get("payment-signature")!.trim()) as PaymentPayload);
     const check = validatePolygonPaymentPayload(payload, requirement);
     if (!check.ok) {
       warn(`rejected Polygon payload before facilitator (${check.reason})`);
-      return null;
+      return reject(RAIL_REJECT.invalidPayload);
     }
     const key = `${config.network}|${config.facilitator}|${atomicUsdc}`;
     let entry = handlers.get(routes as object);
@@ -200,11 +210,12 @@ export async function handlePolygonPayment(
     const res = await entry.handler(withPaymentSignature(req, payload));
     if (res.status === 402) {
       warn("Polygon verify/settle refused; serving Base 402");
-      return null;
+      // Verify refusal → PAYMENT-REQUIRED.error; settle refusal → PAYMENT-RESPONSE.errorReason.
+      return reject(reasonFromRailResponse(res, RAIL_REJECT.verifyFailed));
     }
     return res;
   } catch (err) {
     warn("Polygon paid path threw; serving Base 402", err);
-    return null;
+    return reject(RAIL_REJECT.error);
   }
 }

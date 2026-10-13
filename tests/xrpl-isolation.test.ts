@@ -12,6 +12,7 @@
  *     generic 502/504 (never 402); replay guard; cross-instance replay check;
  *     reason-codes-only logging.
  */
+import { expectRejectedGolden } from "./helpers/reject-header";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
@@ -387,7 +388,10 @@ describe("paid isolation", () => {
       expect(run.ran.count).toBe(handlerRuns);
       const body = await res.text();
       if (expectStatus === 402) {
-        expect(res.headers.get("payment-required")).toBe(goldenPulseHeader());
+        // 1b: machine-readable reason (facilitator code when it is one), no handler body.
+        const code = ({ "verify says invalid": "insufficient_funds", "settle definitive failure (tefPAST_SEQ, no tx)": "tef_past_seq" } as Record<string, string>)[name];
+        expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader(), code ?? /^[a-z0-9_]+$/);
+        expect(body).not.toContain('"ok":true');
       } else {
         expect(res.headers.get("payment-required")).toBeNull();
         expect(body).toBe('{"error":"settlement_unconfirmed"}');
@@ -438,7 +442,7 @@ describe("paid isolation", () => {
       const res = await run.handler(paid(xrplPayload(accepts[1], txOver as Record<string, unknown>, acceptedOver as Partial<PaymentRequirements>)));
       expect(res.status).toBe(402);
       expect(run.ran.count).toBe(0);
-      expect(res.headers.get("payment-required")).toBe(goldenPulseHeader());
+      expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader(), "invalid_payload");
       expect(nonSupported()).toEqual([]);
     });
   }
@@ -453,7 +457,7 @@ describe("paid isolation", () => {
     const run = makeHandler();
     const res = await run.handler(paid(xrplPayload(accepts[1])));
     expect(res.status).toBe(402);
-    expect(res.headers.get("payment-required")).toBe(goldenPulseHeader());
+    expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader());
     expect(nonSupported()).toEqual([]);
   });
 
@@ -465,7 +469,7 @@ describe("paid isolation", () => {
     const run = makeHandler();
     const res = await run.handler(paid(xrplPayload(accepts[1], {}, {}, blobOf(specTx(accepts[1])))));
     expect(res.status).toBe(402);
-    expect(res.headers.get("payment-required")).toBe(goldenPulseHeader());
+    expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader());
     expect((await run.handler(paid(basePayload(accepts[0])))).status).toBe(200);
     expect(run.ran.count).toBe(1);
   });
@@ -476,7 +480,7 @@ describe("paid isolation", () => {
     const accepts = await getAccepts();
     const res = await makeHandler().handler(paid(xrplPayload(accepts[1])));
     expect(res.status).toBe(402);
-    expect(res.headers.get("payment-required")).toBe(goldenPulseHeader("local"));
+    expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader("local"));
   });
 
   it("flag off: an XRPL-looking payload never reaches an XRPL facilitator; it takes main's CDP path", async () => {
