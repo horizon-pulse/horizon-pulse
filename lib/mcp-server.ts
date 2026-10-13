@@ -167,7 +167,7 @@ export const TOOLS: ToolDef[] = [
       q: z.string().describe("What the agent needs, in words (<=200 chars)"),
       n: z.number().int().optional().describe("Offers to return, 1-10 (default 5); the top 3 are re-checked live"),
       kind: z.string().optional().describe("Product kind filter (api_route, mcp_tool, data_feed, ...)"),
-      rail: z.string().optional().describe("Payment rail filter: base, solana, a CAIP-2 network, or x402:evm / x402:xrpl / x402:zcash"),
+      rail: z.string().optional().describe("Payment rail filter: base | solana | xrpl | evm (any EVM chain except Base) | polygon (eip155:137 only) | an exact CAIP-2 network (e.g. eip155:137, xrpl:0)"),
       max_price: z.number().optional().describe("Max USD price per call, e.g. 0.01"),
       min_health: z.number().optional().describe("Minimum health score 0-1"),
     },
