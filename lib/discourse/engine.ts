@@ -15,6 +15,7 @@
  * insufficient samples, source failures and a missing classifier all return
  * >= 400 with charged:false. Only a 200 answer is billed.
  */
+import { classifierFromEnv } from "./llm";
 
 export const DISCOURSE_LABEL = "online discourse sample, NOT a poll" as const;
 
@@ -254,14 +255,15 @@ export function setClassifierForTests(c: Classifier | null | undefined): void {
 }
 
 /**
- * No LLM provider is configured for this repo or its Vercel env (checked
- * 2026-10-13): the production classifier is null, so the paid route answers
- * 503 classifier_unavailable (not charged) until a key is approved.
- * A provider must batch (<= 50 posts per request), use a small model and
- * keep the per-call cost under $0.02 (see estimateCostUsd).
+ * Production classifier (plan v2, Odin PASS): OpenAI gpt-6-luna via
+ * DISCOURSE_LLM_API_KEY with an atomic Redis spend reservation
+ * ($1/day, $15/month). Missing key or spend store -> null -> 503
+ * classifier_unavailable (not charged). Tests never reach the env path.
  */
 export function getClassifier(): Classifier | null {
-  return classifierOverride === undefined ? null : classifierOverride;
+  if (classifierOverride !== undefined) return classifierOverride;
+  if (process.env.VITEST) return null;
+  return classifierFromEnv(process.env);
 }
 
 /**
