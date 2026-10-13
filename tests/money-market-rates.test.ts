@@ -176,7 +176,7 @@ describe("Class A 10/12 fixes: bounded cache + upstream budget", () => {
     expect(n).toBe(3);
   });
 
-  it("route: 429 when limited with nothing cached; s-maxage=60 on 200", async () => {
+  it("route: 429 when limited with nothing cached; public max-age=60 and no s-maxage on 200", async () => {
     const mod = await import("@/lib/money-market-rates");
     const { GET } = await import("@/app/api/money-market-rates/route");
     const spy = vi.spyOn(mod, "moneyMarketRates");
@@ -186,7 +186,7 @@ describe("Class A 10/12 fixes: bounded cache + upstream budget", () => {
     expect(res.headers.get("retry-after")).toBe("60");
     spy.mockResolvedValueOnce({} as never);
     const ok = await GET(new NextRequest("https://horizonpulse.dev/api/money-market-rates"));
-    expect(ok.headers.get("cache-control")).toContain("s-maxage=60");
+    expect(ok.headers.get("cache-control")).toBe("public, max-age=60");
     spy.mockRestore();
   });
 });
@@ -319,5 +319,22 @@ describe("Class A 10/12 third review: failed holiday reads + stale empty range",
     expect(r.rates[0].status).toMatch(/^STALE as-of 2026-10-13T11:00:00-04:00$/);
     expect(r.rates[0].status_note).toContain("may not be current");
     expect(r.rates[0].observations).toEqual([]);
+  });
+});
+
+describe("served_at (spec v2: actual serve time)", () => {
+  it("is read after the upstream fetch, never before retrieved_at, and moves on a cache hit", async () => {
+    let t = Date.parse("2026-10-13T09:04:51-04:00");
+    const d: Deps = {
+      now: () => new Date(t),
+      fetchText: async (u) => (u.includes("newyorkfed") ? NY : K8),
+      fetchJson: async () => { t += 1000; return LATEST; }, // fetch takes 1 s
+    };
+    const a = await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    expect(Date.parse(a.served_at)).toBeGreaterThanOrEqual(Date.parse(a.retrieved_at));
+    t = Date.parse("2026-10-13T09:05:12-04:00"); // 21 s later: server-side cache hit, no new fetch
+    const b = await moneyMarketRates({ kind: "latest", rates: ["SOFR"] }, d);
+    expect(b.retrieved_at).toBe(a.retrieved_at);
+    expect(b.served_at).toBe("2026-10-13T09:05:12-04:00");
   });
 });
