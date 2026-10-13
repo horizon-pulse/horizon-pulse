@@ -7,14 +7,14 @@
 import { expect } from "vitest";
 import { decodePaymentRequiredHeader, encodePaymentRequiredHeader } from "@x402/core/http";
 
-export function expectRejectedGolden(actual: string | null, golden: string, code?: string | RegExp): string {
+export function expectRejectedGolden(actual: string | null, golden: string, code: string): string {
+  // Odin F2: every call site pins the exact expected reason code.
   expect(actual).not.toBeNull();
   const a = decodePaymentRequiredHeader(actual!);
   const g = decodePaymentRequiredHeader(golden);
   expect(typeof a.error).toBe("string");
   expect(a.error).toMatch(/^[a-z0-9_]{1,80}$/);
-  if (typeof code === "string") expect(a.error).toBe(code);
-  else if (code) expect(a.error).toMatch(code);
+  expect(a.error).toBe(code);
   expect(encodePaymentRequiredHeader({ ...a, error: g.error })).toBe(golden);
   return a.error!;
 }

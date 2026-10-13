@@ -82,6 +82,23 @@ describe("rail-reject helpers", () => {
     expect(settleFailReason("tef_past_seq")).toBe("tef_past_seq");
     expect(reasonFromRailResponse(null, "verification_failed")).toBe("verification_failed");
   });
+  it("F1: codes carrying a 0x address or a long hex run fall back to our own code", async () => {
+    const addr = "0x" + "ab".repeat(20);
+    for (const bad of [addr, `bad_payto_${addr}`, "x0x1", "a".repeat(16), "deadbeefdeadbeef", `tx_${"0f".repeat(32)}`]) {
+      expect(sanitizeReason(bad)).toBeNull();
+      expect(settleFailReason(bad)).toBe("settlement_failed");
+    }
+    // Ordinary codes (short hex-ish fragments) still pass.
+    for (const ok of ["insufficient_funds", "tef_past_seq", "invalid_exact_evm_payload_signature", "deadbeef"]) expect(sanitizeReason(ok)).toBe(ok);
+    const mk = (hdr: string) =>
+      new Response("{}", { status: 402, headers: { "payment-required": hdr } });
+    const pr = (await import("@x402/core/http")).decodePaymentRequiredHeader(goldenPulseHeader);
+    const enc = (await import("@x402/core/http")).encodePaymentRequiredHeader;
+    expect(reasonFromRailResponse(mk(enc({ ...pr, error: addr })), "verification_failed")).toBe("verification_failed");
+    expect(reasonFromRailResponse(mk(enc({ ...pr, error: "f".repeat(40) })), "verification_failed")).toBe("verification_failed");
+    const r402 = new NextResponse("{}", { status: 402, headers: { "PAYMENT-REQUIRED": goldenPulseHeader, "content-type": "application/json" } });
+    expect(await withRejectReason(r402, addr)).toBe(r402);
+  });
   it("withRejectReason: non-402 / no reason → same object; 402 → only error changes, body kept", async () => {
     const ok = NextResponse.json({ x: 1 });
     expect(await withRejectReason(ok, "insufficient_funds")).toBe(ok);

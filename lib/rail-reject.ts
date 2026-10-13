@@ -13,15 +13,22 @@
  *
  * Codes are plain /^[a-z0-9_]+$/ (<= 80 chars); anything else from a
  * facilitator becomes the generic fallback, so no free text ever leaks.
+ * Odin F1: a code that contains "0x" or a run of >= 16 hex characters is also
+ * refused (falls back to our own code), so a facilitator can never put an EVM
+ * address, tx hash or other identifier into the buyer-visible reason.
  */
 import { NextResponse } from "next/server";
 import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePaymentRequiredHeader } from "@x402/core/http";
 
 /** Our own codes (facilitator codes such as insufficient_funds pass through). */
 export const RAIL_REJECT = {
-  /** Payload doesn't match the advertised requirement (amount, payTo, asset, network, version, shape). */
+  /**
+   * Payload doesn't match the advertised requirement (amount, payTo, asset, network, version, shape).
+   * Also used for XRPL "no payment slot" (signed tx has neither Sequence nor TicketSequence): Odin F4.
+   */
   invalidPayload: "invalid_payload",
-  /** Rail not ready on our side (facilitator / replay store / receiving account unavailable). Retry later or pay on Base. */
+  /** Rail not ready on our side (facilitator / replay store / receiving account unavailable). Retry later or pay on Base.
+   *  Includes a failed XRPL replay-store claim (fail closed, nothing charged): Odin F4. */
   unavailable: "rail_unavailable",
   /** Our rail code threw before anything was charged. */
   error: "rail_error",
@@ -33,8 +40,13 @@ export const RAIL_REJECT = {
 
 export type OnReject = (reason: string) => void;
 
+/** Hex-run threshold: 16 lowercase hex chars in a row (shortest real ids we care about are far longer). */
+const HEX_RUN = /[0-9a-f]{16,}/;
+
 export function sanitizeReason(v: unknown): string | null {
-  return typeof v === "string" && v.length > 0 && v.length <= 80 && /^[a-z0-9_]+$/.test(v) ? v : null;
+  if (typeof v !== "string" || v.length === 0 || v.length > 80 || !/^[a-z0-9_]+$/.test(v)) return null;
+  if (v.includes("0x") || HEX_RUN.test(v)) return null; // Odin F1: no addresses / hashes / long hex ids
+  return v;
 }
 
 /** Definitive settle failure: the rail's sanitized code, unless it is a placeholder. */

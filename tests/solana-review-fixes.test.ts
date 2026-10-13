@@ -180,7 +180,7 @@ describe("fix 1: PayAI timeout / malformed response never leaks; ambiguous settl
       const run = handler();
       const res = await run.handler(paid(solPayload(sol)));
       expect(res.status).toBe(402);
-      expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
+      expectRejectedGolden(res.headers.get("payment-required"), goldenHeader, "verification_failed");
       const body = await res.text();
       expect(body).toBe(GOLDEN_PULSE.body);
       expectNoPayaiText(body);
@@ -198,7 +198,7 @@ describe("fix 1: PayAI timeout / malformed response never leaks; ambiguous settl
     const run = handler();
     const res = await run.handler(paid(solPayload(sol)));
     expect(res.status).toBe(402);
-    expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
+    expectRejectedGolden(res.headers.get("payment-required"), goldenHeader, "verification_failed");
     expect(run.ran.count).toBe(0);
     expect(hits).toEqual([`${PAYAI}/verify`]);
     expect(warnLines().some((l) => l.includes("PayAI verify threw (FacilitatorTimeoutError)"))).toBe(true);
@@ -211,7 +211,7 @@ describe("fix 1: PayAI timeout / malformed response never leaks; ambiguous settl
     const [, sol] = await accepts();
     const res = await handler().handler(paid(solPayload(sol)));
     expect(res.status).toBe(402);
-    expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
+    expectRejectedGolden(res.headers.get("payment-required"), goldenHeader, "verification_failed");
     expectNoPayaiText(await res.text());
   });
 
@@ -297,7 +297,7 @@ describe("fix 1: PayAI timeout / malformed response never leaks; ambiguous settl
       const [, sol] = await accepts();
       const res = await handler().handler(paid(solPayload(sol)));
       expect(res.status).toBe(402);
-      expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
+      expectRejectedGolden(res.headers.get("payment-required"), goldenHeader, ({ "success:false transaction_failed (no tx)": "transaction_failed", "SettleError 400 simulation failed": "invalid_exact_svm_payload_transaction_simulation_failed" } as Record<string, string>)[name]);
       expect(await res.text()).toBe(GOLDEN_PULSE.body);
     });
   }
@@ -599,7 +599,7 @@ describe("should-fixes 4-9", () => {
     setSolanaAlertHook((a) => alerts.push(a));
     const res = await handler().handler(paid(solPayload(sol)));
     expect(res.status).toBe(402);
-    expectRejectedGolden(res.headers.get("payment-required"), goldenHeader);
+    expectRejectedGolden(res.headers.get("payment-required"), goldenHeader, "settlement_failed");
     expect(alerts).toEqual([expect.objectContaining({ kind: "payai_allowance", source: "free_tier_exhausted" })]);
   });
 });

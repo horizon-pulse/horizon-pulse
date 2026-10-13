@@ -1388,6 +1388,8 @@ export async function handleXrplPayment(
     // Replay guard: BEFORE verify.
     const k = xrplPaymentKeyFromTx(config.network, check.tx);
     if (!k) {
+      // Reason code (Odin F4): no Sequence/TicketSequence means the signed tx is
+      // malformed for us, so this is the buyer's payload problem → invalid_payload.
       warn("rejected XRPL payload before facilitator (no payment slot)");
       return reject(RAIL_REJECT.invalidPayload);
     }
@@ -1400,6 +1402,8 @@ export async function handleXrplPayment(
       seen = await replay.claim(k, REPLAY_TTL_MS);
     } catch (err) {
       // Fail closed: nothing verified or charged; caller serves the Base-only 402.
+      // Reason code (Odin F4): our replay store is down, not the buyer's fault →
+      // rail_unavailable (retry later or pay on Base), never invalid_payload.
       warn(`replay store claim failed fp=${fp(k)}; XRPL payment not accepted`, err);
       return reject(RAIL_REJECT.unavailable);
     }

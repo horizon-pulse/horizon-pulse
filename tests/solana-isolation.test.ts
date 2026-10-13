@@ -305,8 +305,9 @@ describe("paid isolation", () => {
       expect(run.ran.count).toBe(handlerRuns);
       if (expectStatus === 402) {
         // 1b: machine-readable reason, no handler body.
-        const code = ({ "PayAI verify says invalid": "transaction_simulation_failed", "PayAI settle unsuccessful": "settle_failed" } as Record<string, string>)[name];
-        expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader(), code ?? /^(rail_error|verification_failed|[a-z0-9_]+)$/);
+        const code = ({ "PayAI verify throws (PayAI down)": "verification_failed", "PayAI verify says invalid": "transaction_simulation_failed", "PayAI settle unsuccessful": "settle_failed" } as Record<string, string>)[name];
+        expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader(), code);
+        expect(code).toBeDefined(); // Odin F2: every 402 case pinned, no match-anything fallback
         expect(await res.text()).not.toContain('"ok":true');
       } else {
         expect(res.headers.get("payment-required")).toBeNull();
@@ -365,7 +366,7 @@ describe("paid isolation", () => {
     const run = makeHandler();
     const res = await run.handler(paid(solanaPayload(accepts[1])));
     expect(res.status).toBe(402);
-    expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader());
+    expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader(), "rail_unavailable");
     const base = await run.handler(paid(basePayload(accepts[0])));
     expect(base.status).toBe(200);
     expect(run.ran.count).toBe(1);
@@ -378,7 +379,7 @@ describe("paid isolation", () => {
     const run = makeHandler();
     const res = await run.handler(paid(solanaPayload(accepts[1])));
     expect(res.status).toBe(402);
-    expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader("local"));
+    expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader("local"), "verification_failed");
   });
 
   it("flag off: a Solana-looking payload never reaches PayAI; it takes main's CDP path", async () => {
