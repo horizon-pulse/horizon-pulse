@@ -1,6 +1,15 @@
-# Solana USDC rail (branch `solana-rail`) — OFF by default
+# Solana USDC rail — live on Solana mainnet
 
-Status: code + tests only. Not deployed. Go-live is gated on Odin's review.
+Status (checked 2026-10-12): **live in production.** Every paid HTTP route's 402 has
+an `exact` USDC entry for `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`, at the same atomic
+amount as Base, with payTo `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz`. Settlement goes
+through PayAI (`https://facilitator.payai.network`). First settlement: an operator test
+payment on 2026-10-08, tx `SmsCBJftu2yHL44VQZdzYziD4bBpxb6PWH66d2H5JD4XsbGqXXRvNS2x4xvdY7tooyw7uWoLkBXGyaUjZX86DVC`
+(0.005 USDC, `GET /api/pulse`; a test, not customer activity).
+The rail is still behind the switch and guards below. If any guard fails, routes fall
+back to their non-Solana entries. **Hosted MCP (`/mcp`) and the local MCP client are
+Base only.** Solana payment is HTTP only.
+The 402 can also list other networks (Base, XRPL, Polygon); they are documented separately.
 
 ## What it does
 When ON, every paid route's 402 / OPTIONS gets a **second** `accepts` entry for
@@ -43,7 +52,7 @@ code change + Michael's passphrase; env can only turn the rail on/off.
   fails **before money can move** → exact Base-only 402; a settle whose outcome is
   **unknown** → generic 502/504 `settlement_unconfirmed`, **never** a 402. Base
   payments never touch Solana code.
-- MCP (`/mcp`) and the human browser-402 copy are unchanged (Base only).
+- MCP (hosted `/mcp` and the local MCP client) and the human browser-402 copy are Base only.
 
 ## Guards added 2026-10-08 (Odin review follow-up)
 - **(b) Token-account guard.** The Solana entry is shown only while the payTo's USDC
@@ -206,18 +215,26 @@ is byte-identical to main with the flag on (tested), and the Solana/PayAI server
 declares Bazaar. **PayAI-facilitated Solana sales do NOT count toward the Coinbase
 Bazaar settlement window.**
 
-## Known blockers before a Solana sale can succeed
-1. **payTo has no USDC token account** (the guard above keeps the rail Base-only until it exists). x402 `exact` on Solana pays via
-   `TransferChecked` into the payTo's USDC associated token account
-   `3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu`. On 2026-10-08 (read-only RPC)
-   neither the payTo account nor that ATA exists. Standard x402 clients do not
-   create it, and PayAI's simulation will fail until it exists. Creating it is an
-   on-chain action (~0.002 SOL rent) on Michael's side — his call.
-2. Odin's clock-row-11 gate on the @x402/svm fixes (see report). Those PRs touch
-   the `batch-settlement` scheme only; this rail uses `exact`.
-3. PayAI free allowance: 1,000 credits per receiving wallet (lifetime, ≈650 Solana
-   settlements per PayAI docs); beyond that PayAI needs an API key/credits
-   (= a PayAI account; Michael's decision).
+## Blockers (history) and current limitations
+Resolved:
+- ~~payTo has no USDC token account~~ **Resolved 2026-10-08.** The ATA
+  `3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu` exists. It is an initialized SPL-Token
+  USDC account owned by the payTo (public RPC `getAccountInfo`, checked 2026-10-12). The
+  token-account guard stays in place.
+- ~~Go-live review gate~~ **Resolved 2026-10-08.** The rail was reviewed and switched on, and the first
+  operator test settlement landed the same day.
+- The @x402/svm fixes that were tracked here affect `batch-settlement` only. This rail uses
+  `exact`, so they never blocked it.
+
+Still applies:
+- **PayAI free allowance:** 1,000 credits per receiving wallet (lifetime, about 650
+  Solana settlements per PayAI docs). Past that, PayAI needs an API key with credits.
+  The allowance alert above fires at 80%.
+- **The replay guard is per instance.** The N1 cross-instance check closes most of the gap,
+  except a replay on another instance within 30 s of confirmation.
+- **No Coinbase Bazaar credit.** PayAI-facilitated Solana sales do not count
+  toward the Coinbase Bazaar settlement window.
+- **No Solana MCP.** Hosted `/mcp` and the local MCP client are Base only.
 
 ## Tests / smoke
 - `npm test` (vitest): flag-off identity, flag-on shape, config/pin validation,
