@@ -2440,6 +2440,156 @@
         }
       }
     },
+    "/api/discourse/split": {
+      "get": {
+        "operationId": "getDiscourseSplit",
+        "tags": [
+          "Agent utilities"
+        ],
+        "summary": "How Hacker News and Bluesky posts split on a question (not a poll)",
+        "description": "Online discourse sample, NOT a poll. Use to see how public Hacker News and Bluesky posts split on a question. GET with required q; optional sides (2-4, default yes,no), window (1-30d). Returns JSON: per-side share with 95% interval and n, counts per source, links only (no text or usernames), caveats. Refuses elections, health and a named person's conduct. Under 30 decided posts, refusals and errors: not charged.\n\nPrice: $0.03 USDC per call (30000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "x-payment-info": {
+          "protocol": "x402",
+          "x402Version": 2,
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "assetSymbol": "USDC",
+          "decimals": 6,
+          "priceUsd": "$0.03",
+          "amount": "30000",
+          "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+          "maxTimeoutSeconds": 300,
+          "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
+          "discovery": "https://horizonpulse.dev/.well-known/x402"
+        },
+        "x-price-status": "untested",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "description": "Question or topic, 3-200 chars (required). Elections/candidates, health, and a named person's conduct are refused (not charged).",
+            "schema": {
+              "type": "string"
+            },
+            "example": "tabs or spaces for indentation"
+          },
+          {
+            "name": "sides",
+            "in": "query",
+            "required": false,
+            "description": "2-4 comma-separated side labels (default yes,no).",
+            "schema": {
+              "type": "string"
+            },
+            "example": "tabs,spaces"
+          },
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "description": "Look-back window 1-30 days, e.g. 7d (default 30d).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
+            "headers": {
+              "PAYMENT-RESPONSE": {
+                "$ref": "#/components/headers/PaymentResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiscourseSplitResponse"
+                },
+                "example": {
+                  "source": "discourse-split",
+                  "illustrative": true,
+                  "note": "Format sample only: counts are illustrative, NOT measured. No stance classifier is configured on this server yet, so no real answer has been recorded; this sample will be replaced by a real recording. No post text or usernames are ever returned.",
+                  "asOf": "2026-10-13T05:00:00.000Z",
+                  "ok": true,
+                  "label": "online discourse sample, NOT a poll",
+                  "question": "tabs or spaces for indentation",
+                  "sides": [
+                    {
+                      "label": "tabs",
+                      "share": 0.4167,
+                      "ci95": [
+                        0.3171,
+                        0.5235
+                      ],
+                      "n": 35
+                    },
+                    {
+                      "label": "spaces",
+                      "share": 0.5833,
+                      "ci95": [
+                        0.4765,
+                        0.6829
+                      ],
+                      "n": 49
+                    }
+                  ],
+                  "n_classified": 84,
+                  "n_neutral": 61,
+                  "n_fetched": 145,
+                  "sources": {
+                    "hn": 52,
+                    "bsky": 32
+                  },
+                  "sample": [],
+                  "window": {
+                    "days": 30,
+                    "from": "2026-09-13T05:00:00.000Z",
+                    "to": "2026-10-13T05:00:00.000Z"
+                  },
+                  "classifier": "none (illustrative)",
+                  "method": "Keyword search of public Hacker News comments (Algolia) and Bluesky posts within the window; one post per account, at most 10 per thread; each post (truncated to 280 chars, never returned) is labeled with one side or neutral by a stance classifier; shares are over decided posts with Wilson 95% intervals. Deleted posts are dropped, also when a cached answer is served.",
+                  "caveats": [
+                    "Not a poll: self-selected posters on two tech-leaning, US-heavy networks; not representative of any population.",
+                    "Keyword search misses posts that use other words and can include off-topic posts.",
+                    "Bots, coordinated posting and brigading can move the numbers; one-vote-per-account and per-thread caps only reduce this.",
+                    "Stance labels come from an automated classifier and are sometimes wrong (sarcasm, quotes, negation)."
+                  ],
+                  "cached": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input. Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "ok": false,
+                  "error": "Query param q is required",
+                  "code": "missing_query",
+                  "charged": false,
+                  "label": "online discourse sample, NOT a poll"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "$ref": "#/components/headers/PaymentRequired"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/screenshot": {
       "get": {
         "operationId": "getScreenshot",
@@ -4746,6 +4896,108 @@
           }
         },
         "description": "Inferred from a real response recorded from GET /api/demo/market-quote at 2026-10-12T12:20Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
+      },
+      "DiscourseSplitResponse": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "illustrative": {
+            "type": "boolean"
+          },
+          "note": {
+            "type": "string"
+          },
+          "asOf": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "label": {
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "sides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "share": {
+                  "type": "number"
+                },
+                "ci95": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                },
+                "n": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "n_classified": {
+            "type": "number"
+          },
+          "n_neutral": {
+            "type": "number"
+          },
+          "n_fetched": {
+            "type": "number"
+          },
+          "sources": {
+            "type": "object",
+            "properties": {
+              "hn": {
+                "type": "number"
+              },
+              "bsky": {
+                "type": "number"
+              }
+            }
+          },
+          "sample": {
+            "type": "array"
+          },
+          "window": {
+            "type": "object",
+            "properties": {
+              "days": {
+                "type": "number"
+              },
+              "from": {
+                "type": "string"
+              },
+              "to": {
+                "type": "string"
+              }
+            }
+          },
+          "classifier": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "caveats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "cached": {
+            "type": "boolean"
+          }
+        },
+        "description": "Inferred from a real response recorded from GET /api/demo/discourse-split at 2026-10-13T05:00Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
       },
       "ScreenshotResponse": {
         "type": "object",

@@ -42,6 +42,7 @@ export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
   "/api/bazaar-check": "2026-10-09T16:38Z",
   "/api/market/search": "2026-10-12T04:09Z",
   "/api/market/quote": "2026-10-12T12:20Z",
+  "/api/discourse/split": "2026-10-13T05:00Z",
 };
 
 export function exampleRecordedAt(path: string): string {
@@ -554,6 +555,34 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
         "text": "Horizon Pulse sample PDF\nPay-per-call APIs for AI agents over x402 (USDC on Base).\nThis file is the fixed input for the free /api/demo/pdf sample."
       }
     ]
+  },
+  "/api/discourse/split": {
+    "source": "discourse-split",
+    "illustrative": true,
+    "note": "Format sample only: counts are illustrative, NOT measured. No stance classifier is configured on this server yet, so no real answer has been recorded; this sample will be replaced by a real recording. No post text or usernames are ever returned.",
+    "asOf": "2026-10-13T05:00:00.000Z",
+    "ok": true,
+    "label": "online discourse sample, NOT a poll",
+    "question": "tabs or spaces for indentation",
+    "sides": [
+      { "label": "tabs", "share": 0.4167, "ci95": [0.3171, 0.5235], "n": 35 },
+      { "label": "spaces", "share": 0.5833, "ci95": [0.4765, 0.6829], "n": 49 }
+    ],
+    "n_classified": 84,
+    "n_neutral": 61,
+    "n_fetched": 145,
+    "sources": { "hn": 52, "bsky": 32 },
+    "sample": [],
+    "window": { "days": 30, "from": "2026-09-13T05:00:00.000Z", "to": "2026-10-13T05:00:00.000Z" },
+    "classifier": "none (illustrative)",
+    "method": "Keyword search of public Hacker News comments (Algolia) and Bluesky posts within the window; one post per account, at most 10 per thread; each post (truncated to 280 chars, never returned) is labeled with one side or neutral by a stance classifier; shares are over decided posts with Wilson 95% intervals. Deleted posts are dropped, also when a cached answer is served.",
+    "caveats": [
+      "Not a poll: self-selected posters on two tech-leaning, US-heavy networks; not representative of any population.",
+      "Keyword search misses posts that use other words and can include off-topic posts.",
+      "Bots, coordinated posting and brigading can move the numbers; one-vote-per-account and per-thread caps only reduce this.",
+      "Stance labels come from an automated classifier and are sometimes wrong (sarcasm, quotes, negation)."
+    ],
+    "cached": false
   },
   "/api/market/search": {
       "ok": true,

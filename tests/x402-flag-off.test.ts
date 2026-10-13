@@ -76,6 +76,13 @@
  * UPDATE_GOLDEN=1 after copy-only edits naming RLUSD on the XRP Ledger as a
  * rail (/.well-known/x402 instructions, skill.md, openapi.json, llms.txt).
  * golden.cdp and golden.local (all 50 402 / OPTIONS keys) are unchanged.
+ *
+ * 2026-10-13 (branch discourse-split, on main 49722f5): regenerated with
+ * UPDATE_GOLDEN=1 after adding /api/discourse/split. golden.cdp and
+ * golden.local gained ONLY the three new discourse-split keys per mode; all
+ * 50 pre-existing keys per mode are byte-identical to main's golden (key-by-key
+ * compare). golden.discovery refreshed (/.well-known/x402, skill.md,
+ * openapi.json, llms.txt list the new route).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

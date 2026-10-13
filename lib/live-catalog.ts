@@ -38,6 +38,8 @@ import {
   SEARCH_PRICE_ATOMIC,
   PDF_PRICE_USD,
   PDF_PRICE_ATOMIC,
+  DISCOURSE_SPLIT_PRICE_USD,
+  DISCOURSE_SPLIT_PRICE_ATOMIC,
   HTTP_PRICE_USD,
   HTTP_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
@@ -193,6 +195,17 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
       "Pre-pay quote for one x402 resource: live terms per network (Base, Solana), CDP Bazaar entry, payTo cross-check and a pay/caution/avoid verdict (never pays)",
     category: "agent",
     blurb: "Check an x402 seller's live price and payTo before paying",
+    priceStatus: "untested",
+  },
+  {
+    path: "/api/discourse/split?q=…",
+    method: "GET",
+    priceUsd: DISCOURSE_SPLIT_PRICE_USD,
+    priceAtomic: DISCOURSE_SPLIT_PRICE_ATOMIC,
+    summary:
+      "Online discourse sample, NOT a poll: how public Hacker News and Bluesky posts split on a question, per-side share with 95% interval, counts and links only (no text or usernames); <30 decided posts not charged",
+    category: "agent",
+    blurb: "How Hacker News and Bluesky posts split on a question (not a poll)",
     priceStatus: "untested",
   },
   {
