@@ -1025,7 +1025,7 @@ export async function discoveryOptionsResponse(opts: {
 
 type AppRouteHandler = (req: NextRequest) => Promise<NextResponse>;
 
-/** Copy of req minus x402 payment headers (used only on the Solana / XRPL fallback paths). */
+/** Copy of req minus x402 payment headers (paid-HEAD guard and the Solana / XRPL / Polygon fallback paths). */
 function withoutPaymentHeaders(req: NextRequest): NextRequest {
   const headers = new Headers(req.headers);
   headers.delete("payment-signature");
@@ -1090,7 +1090,15 @@ export function createX402GetHandler(
       : paymentRequiredResponse(paymentOpts);
   }
 
-  return async (req: NextRequest) => {
+  return async (incoming: NextRequest) => {
+    // Paid HEAD (F2): a HEAD response has no body, so a paid HEAD would settle
+    // and deliver nothing. A HEAD that carries PAYMENT-SIGNATURE / X-PAYMENT is
+    // served exactly like an unpaid HEAD: the payment headers are dropped
+    // BEFORE any rail is chosen, so no facilitator verify or settle, no XRPL /
+    // Solana lookup, and no route handler ever runs for it. 402 (not 405)
+    // keeps HEAD a faithful mirror of GET for probes and caches; the challenge
+    // tells the client to pay with GET.
+    const req = incoming.method === "HEAD" && hasPaymentHeader(incoming) ? withoutPaymentHeaders(incoming) : incoming;
     const cdpReady = hasCdpCredentials();
     // Solana USDC rail (lib/solana-config.ts). Off (the default) → every
     // branch below behaves exactly as on main. On → Solana entry appended
