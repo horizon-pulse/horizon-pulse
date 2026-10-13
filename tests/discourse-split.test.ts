@@ -260,7 +260,7 @@ describe("price parity: $0.03 / 30000 everywhere", () => {
   it("well-known x402 lists the route", async () => {
     const wk = await import("@/app/.well-known/x402/route");
     const body = await wk.GET().json();
-    expect(body.resources).toContain("GET https://horizonpulse.dev/api/discourse/split");
+    expect(body.resources).toContain("https://horizonpulse.dev/api/discourse/split");
   });
 
   it("free demo serves the canned sample at both demo paths without running sources", async () => {
