@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-13: HEAD is never charged; bazaar-check labels Polygon and XRPL
+
+- **Fixed:** a HEAD request to a paid route now returns the same 402 as GET, byte for byte (the PAYMENT-REQUIRED header, including the bazaar method, which is GET). A HEAD that carries a payment header (PAYMENT-SIGNATURE or X-PAYMENT) is served as that unpaid 402: no verify, no settle, on any rail. Before, a paid HEAD could settle and return no body.
+- **Changed (`/api/bazaar-check` response values):** `networkLabel` now returns `polygon` for `eip155:137` and `xrpl` for `xrpl:0`. Before, these two networks came back as their raw CAIP-2 ids. Clients matching on `eip155:137` / `xrpl:0` in label fields should also accept `polygon` / `xrpl`. Other networks are unchanged.
+- **New (additive):** bazaar-check `summary.indexedOnPolygon` / `summary.indexedOnXrpl`, read-only Polygon USDC and XRPL RLUSD on-chain checks, and a methodology line: on XRPL, `holdsUsdc` means the payTo holds RLUSD.
+- **Docs:** llms.txt documents the PAYMENT-RESPONSE receipt (tx hash, network, payer) and that HEAD is never charged; the MCP `market_search` rail parameter lists base|solana|xrpl|evm|polygon|<CAIP-2>.
+- **Unchanged:** prices, payTo and the GET 402 bytes on every route.
+
 ## 2026-10-12 (branch market-mvp, not deployed): agent marketplace MVP, two new paid routes
 
 - **New:** `GET /api/market/search` ($0.005, untested price): x402 offers from CDP Bazaar discovery (plus our own catalog, no boost), ranked by relevance, the index's order, a live re-check, recency and distinct payers. No paid placement, no featured listings. The top 3 are re-checked live with one unpaid request each, and their live payTo is cross-checked against the index entry. Every result has a direct-pay buy plan; Horizon Pulse holds no funds and takes no fee.
