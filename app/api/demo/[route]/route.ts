@@ -16,7 +16,6 @@ import { marketQuoteHandler } from "@/app/api/market/quote/handler";
 import { screenshotHandler } from "@/app/api/screenshot/handler";
 import { searchHandler } from "@/app/api/search/handler";
 import { pdfHandler } from "@/app/api/pdf/handler";
-import { OUTPUT_EXAMPLES } from "@/lib/route-examples";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,9 +51,6 @@ const HANDLERS: Record<string, Handler> = {
   screenshot: screenshotHandler,
   search: searchHandler,
   pdf: pdfHandler,
-  // Canned: the recorded example (lib/route-examples.ts). Never runs the
-  // classifier or the sources, so the free demo costs nothing per call.
-  "discourse-split": async () => NextResponse.json(OUTPUT_EXAMPLES["/api/discourse/split"]),
 };
 
 /**
@@ -80,8 +76,8 @@ export async function GET(
   }
 
   const origin = req.nextUrl.origin;
-  // Demo names are flat; nested paid routes map back (market-search -> /api/market/search, discourse-split -> /api/discourse/split).
-  const paidPath = `/api/${route.replace(/^(market|discourse)-/, "$1/")}`;
+  // Demo names are flat; nested paid routes map back (market-search -> /api/market/search).
+  const paidPath = `/api/${route.replace(/^market-/, "market/")}`;
   const inner = new NextRequest(
     `${origin}${paidPath}${demo.query ? `?${demo.query}` : ""}`,
     { method: "GET" },

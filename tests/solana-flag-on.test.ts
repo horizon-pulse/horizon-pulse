@@ -26,8 +26,6 @@ const MAIN_PRICES: Record<string, string> = {
   search: "30000", pdf: "20000",
   // market-mvp: new routes, priced like every route (same atomic amount on both rails).
   "market/search": "5000", "market/quote": "5000",
-  // discourse-split (2026-10-13): $0.03 like /api/search.
-  "discourse/split": "30000",
 };
 
 async function captureBoth() {
@@ -95,7 +93,7 @@ describe("flag on", () => {
         checked++;
       }
     }
-    expect(checked).toBe(106); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local) + 6 discourse-split
+    expect(checked).toBe(100); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local)
     expect(JSON.stringify(all.cdp)).not.toBe(JSON.stringify(golden.cdp));
   });
 

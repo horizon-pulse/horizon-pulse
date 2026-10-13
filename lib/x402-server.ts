@@ -29,7 +29,6 @@ import {
   BAZAAR_CHECK_PRICE_USD,
   MARKET_SEARCH_PRICE_USD,
   MARKET_QUOTE_PRICE_USD,
-  DISCOURSE_SPLIT_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -841,42 +840,6 @@ export function marketSearchRouteConfig(): RoutesConfig {
       },
     },
   });
-}
-
-/** Online discourse split (HN + Bluesky; NOT a poll). Same rails, payTo and Bazaar pattern. */
-export function discourseSplitRouteConfig(): RoutesConfig {
-  const payTo = getPayTo();
-  const network = getNetworkCaip2();
-  return {
-    "/api/discourse/split": {
-      accepts: [
-        {
-          scheme: "exact",
-          price: DISCOURSE_SPLIT_PRICE_USD,
-          network,
-          payTo,
-        },
-      ],
-      description: routeDescription("/api/discourse/split"),
-      mimeType: "application/json",
-      ...serviceMetadata("/api/discourse/split"),
-      extensions: {
-        ...declareChargedDiscovery({
-          method: "GET",
-          input: { q: "tabs or spaces for indentation", sides: "tabs,spaces" },
-          inputSchema: {
-            properties: {
-              q: { type: "string", description: "Question or topic, 3-200 chars (required). Elections/candidates, health, and a named person's conduct are refused (not charged)." },
-              sides: { type: "string", description: "2-4 comma-separated side labels (default yes,no)." },
-              window: { type: "string", description: "Look-back window 1-30 days, e.g. 7d (default 30d)." },
-            },
-            required: ["q"],
-          },
-          output: outputOf("/api/discourse/split", "Horizon Pulse online discourse split (NOT a poll): shares with 95% intervals, counts and source links"),
-        } as DiscoveryDecl),
-      },
-    },
-  };
 }
 
 export function marketQuoteRouteConfig(): RoutesConfig {
