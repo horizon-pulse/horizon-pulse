@@ -76,6 +76,13 @@
  * UPDATE_GOLDEN=1 after copy-only edits naming RLUSD on the XRP Ledger as a
  * rail (/.well-known/x402 instructions, skill.md, openapi.json, llms.txt).
  * golden.cdp and golden.local (all 50 402 / OPTIONS keys) are unchanged.
+ *
+ * 2026-10-13 (branch coinbase-b-d): regenerated with UPDATE_GOLDEN=1 after
+ * description-only edits in lib/route-metadata.ts (search terms first, 15
+ * routes; /api/pdf unchanged). Changed bytes: resource.description inside
+ * PAYMENT-REQUIRED, the same text in browser-402 HTML and OPTIONS bodies, and
+ * the openapi.json sha. Every accepts array, status and other header is
+ * byte-identical (checked by decoding each challenge).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
