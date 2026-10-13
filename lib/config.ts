@@ -126,6 +126,14 @@ export const MARKET_SEARCH_PRICE_ATOMIC = "5000" as const; // USDC 6 decimals
 export const MARKET_QUOTE_PRICE_USD = "$0.005" as const;
 export const MARKET_QUOTE_PRICE_ATOMIC = "5000" as const; // USDC 6 decimals
 
+/**
+ * /api/discourse/split — online discourse sample (Hacker News + Bluesky) split
+ * by side with 95% intervals; NOT a poll. $0.03 (30000 atomic). UNTESTED price
+ * (scope memo 2026-10-13). Refusals, <30 decided posts and errors: not charged.
+ */
+export const DISCOURSE_SPLIT_PRICE_USD = "$0.03" as const;
+export const DISCOURSE_SPLIT_PRICE_ATOMIC = "30000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data. Thirteen x402 v2 routes (USDC on Base mainnet, eip155:8453; Coinbase CDP facilitator): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), /api/pdf ($0.02 PDF URL to text per page), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
+    "description": "Pay-per-call APIs for AI agents via x402: web fetch, HTTP proxy, page extract, x402 tooling, marketplace search, discourse sampling and crypto market data. Seventeen x402 v2 paid routes (USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 SSRF-safe HTTP proxy, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search and /api/market/quote ($0.005 each), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), /api/pdf ($0.02 PDF URL to text per page), /api/discourse/split ($0.03 online discourse sample, NOT a poll), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
     "version": "1.0.0",
     "contact": {
       "name": "Horizon Pulse",
