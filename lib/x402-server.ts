@@ -1,3 +1,4 @@
+import { withPaidCallMeta } from "./paid-call-meta";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import {
   FacilitatorTimeoutError,
@@ -1147,7 +1148,16 @@ export function createX402GetHandler(
       : paymentRequiredResponse(paymentOpts);
   }
 
-  return async (incoming: NextRequest) => {
+  const routePath = (() => {
+    try {
+      return new URL(paymentOpts.resource).pathname;
+    } catch {
+      return paymentOpts.resource;
+    }
+  })();
+  return async (incoming: NextRequest) => withPaidCallMeta(routePath, incoming.method, await serve(incoming));
+
+  async function serve(incoming: NextRequest): Promise<NextResponse> {
     // Paid HEAD (F2): a HEAD response has no body, so a paid HEAD would settle
     // and deliver nothing. A HEAD that carries PAYMENT-SIGNATURE / X-PAYMENT is
     // served exactly like an unpaid HEAD: the payment headers are dropped
@@ -1234,7 +1244,7 @@ export function createX402GetHandler(
       return settlementUnavailableResponse();
     }
     return runPaidHandler(req);
-  };
+  }
 }
 
 export function searchRouteConfig(): RoutesConfig {

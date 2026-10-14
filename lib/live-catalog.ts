@@ -224,7 +224,7 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: SEARCH_PRICE_USD,
     priceAtomic: SEARCH_PRICE_ATOMIC,
     summary:
-      "Web search → top 1-5 pages as clean markdown with sources (Google results via Serper; SSRF-safe fetch; partial results on page errors)",
+      "Web search → top 1-5 pages as clean markdown with sources (web results via Serper; SSRF-safe fetch; partial results on page errors)",
     category: "web",
     blurb: "Web search with the top pages as clean text and sources",
   },
