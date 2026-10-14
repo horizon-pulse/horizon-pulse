@@ -100,7 +100,7 @@ const responseNetwork = (res: Response) =>
 
 /** Representative routes: three GET (different handler shapes) + the POST-body route. */
 const CASES = [
-  { route: "pulse", method: "GET", query: "", body: undefined, usd: "$0.005", atomic: "5000" },
+  { route: "pulse", method: "GET", query: "", body: undefined, usd: "$0.002", atomic: "2000" },
   { route: "yield", method: "GET", query: "", body: undefined, usd: "$0.02", atomic: "20000" },
   { route: "x402-check", method: "GET", query: "?url=https%3A%2F%2Fexample.com%2Fapi", body: undefined, usd: "$0.01", atomic: "10000" },
   { route: "extract", method: "POST", query: "", body: { html: "<html><head><title>t</title></head><body><h1>Hi</h1></body></html>" }, usd: "$0.015", atomic: "15000" },

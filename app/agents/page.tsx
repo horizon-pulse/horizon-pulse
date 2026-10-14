@@ -144,7 +144,7 @@ export default function AgentsPage() {
               <h3>Pay with a Coinbase wallet (untested)</h3>
               <p>
                 <strong>Untested:</strong> not yet run against Horizon Pulse; based on Coinbase&apos;s docs only. Coinbase Agentic Wallet CLI (Coinbase lists Base, Polygon and Solana USDC for it):{" "}
-                <code>npx awal@latest x402 pay {PUBLIC_BASE_URL}/api/pulse --max-amount 5000</code> (5000 = $0.005). Coinbase Wallet MCP (<code>https://mcp.base.org</code>, Base
+                <code>npx awal@latest x402 pay {PUBLIC_BASE_URL}/api/pulse --max-amount 2000</code> (2000 = $0.002). Coinbase Wallet MCP (<code>https://mcp.base.org</code>, Base
                 USDC only): <code>initiate_x402_request</code> with <code>maxPayment</code> set to the route&apos;s price, approve in Coinbase Wallet, then{" "}
                 <code>complete_x402_request</code>. The Coinbase for Agents connector pays only from Coinbase&apos;s curated catalog, which does not include Horizon Pulse.
               </p>

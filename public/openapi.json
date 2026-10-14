@@ -48,7 +48,7 @@
           "Crypto market data"
         ],
         "summary": "BTC, ETH and SOL spot prices with 24h momentum (Coinbase Exchange, CoinGecko fallback)",
-        "description": "Crypto prices API: BTC, ETH, SOL spot price. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Crypto prices API: BTC, ETH, SOL spot price. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -57,8 +57,8 @@
           "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
           "assetSymbol": "USDC",
           "decimals": 6,
-          "priceUsd": "$0.005",
-          "amount": "5000",
+          "priceUsd": "$0.002",
+          "amount": "2000",
           "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
           "maxTimeoutSeconds": 300,
           "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
@@ -139,7 +139,7 @@
           "Crypto market data"
         ],
         "summary": "RSI, MACD and Bollinger bands plus perpetual funding (CoinGecko, OKX)",
-        "description": "Crypto indicators API: RSI, MACD, Bollinger. Use when you need indicators for BTC, ETH and SOL rather than just prices. Call GET with no parameters. Returns JSON per asset: rsi14, macd {macd, signal, histogram} (null when there are too few candles), bollinger {upper, middle, lower, period}, lastClose and OKX perpetual funding {fundingRate, fundingTime}. Computed from CoinGecko OHLC closes (Coinbase candles fallback); methodology included. Descriptive only, not advice. Errors are not charged.\n\nPrice: $0.015 USDC per call (15000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Crypto indicators API: RSI, MACD, Bollinger. Use when you need indicators for BTC, ETH and SOL rather than just prices. Call GET with no parameters. Returns JSON per asset: rsi14, macd {macd, signal, histogram} (null when there are too few candles), bollinger {upper, middle, lower, period}, lastClose and OKX perpetual funding {fundingRate, fundingTime}. Computed from CoinGecko OHLC closes (Coinbase candles fallback); methodology included. Descriptive only, not advice. Errors are not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -148,8 +148,8 @@
           "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
           "assetSymbol": "USDC",
           "decimals": 6,
-          "priceUsd": "$0.015",
-          "amount": "15000",
+          "priceUsd": "$0.005",
+          "amount": "5000",
           "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
           "maxTimeoutSeconds": 300,
           "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
@@ -489,7 +489,7 @@
           "Crypto market data"
         ],
         "summary": "Base and Ethereum fees with a suggested max fee (public RPC)",
-        "description": "Gas price and gas fee estimate (Base, Ethereum). Use before sending a transaction on Base or Ethereum to choose fees and timing. Call GET with no parameters. Returns JSON per network: baseFeeGwei, priorityFeeGwei (p50, with p10/p90), suggestedMaxFeeGwei (2x base + priority), timingHint (cheap/normal/expensive vs the last 20 blocks) and simpleTransfer cost in ETH and USD, plus ethUsd. From eth_feeHistory with eth_gasPrice fallback. Descriptive, not a forecast. Errors are not charged.\n\nPrice: $0.01 USDC per call (10000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Gas price and gas fee estimate (Base, Ethereum). Use before sending a transaction on Base or Ethereum to choose fees and timing. Call GET with no parameters. Returns JSON per network: baseFeeGwei, priorityFeeGwei (p50, with p10/p90), suggestedMaxFeeGwei (2x base + priority), timingHint (cheap/normal/expensive vs the last 20 blocks) and simpleTransfer cost in ETH and USD, plus ethUsd. From eth_feeHistory with eth_gasPrice fallback. Descriptive, not a forecast. Errors are not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -498,8 +498,8 @@
           "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
           "assetSymbol": "USDC",
           "decimals": 6,
-          "priceUsd": "$0.01",
-          "amount": "10000",
+          "priceUsd": "$0.002",
+          "amount": "2000",
           "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
           "maxTimeoutSeconds": 300,
           "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
@@ -596,7 +596,7 @@
           "Crypto market data"
         ],
         "summary": "BTC, ETH and SOL perpetual funding with a crowding hint (OKX)",
-        "description": "Perp funding rates (crypto derivatives data). Use when you need current perpetual futures funding rates for BTC, ETH and SOL. Call GET with no parameters. Returns JSON per asset from OKX USDT swaps: instId, fundingRate, fundingTime and a rule-based crowding hint {side: longs/shorts/neutral, level: quiet/mild/elevated/extreme} with the thresholds used. OKX public data only. The hint is not a forecast or advice. Errors are not charged.\n\nPrice: $0.01 USDC per call (10000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Perp funding rates (crypto derivatives data). Use when you need current perpetual futures funding rates for BTC, ETH and SOL. Call GET with no parameters. Returns JSON per asset from OKX USDT swaps: instId, fundingRate, fundingTime and a rule-based crowding hint {side: longs/shorts/neutral, level: quiet/mild/elevated/extreme} with the thresholds used. OKX public data only. The hint is not a forecast or advice. Errors are not charged.\n\nPrice: $0.003 USDC per call (3000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -605,8 +605,8 @@
           "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
           "assetSymbol": "USDC",
           "decimals": 6,
-          "priceUsd": "$0.01",
-          "amount": "10000",
+          "priceUsd": "$0.003",
+          "amount": "3000",
           "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
           "maxTimeoutSeconds": 300,
           "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",

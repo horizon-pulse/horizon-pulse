@@ -21,7 +21,7 @@ const pr = (c: Captured) => decodePaymentRequiredHeader(header(c)!);
 
 /** main's per-route Base prices (atomic USDC) — must be matched exactly on Solana. */
 const MAIN_PRICES: Record<string, string> = {
-  pulse: "5000", signals: "15000", yield: "20000", portfolio: "40000", gas: "10000", funding: "10000",
+  pulse: "2000", signals: "5000", yield: "20000", portfolio: "40000", gas: "2000", funding: "3000",
   fetch: "20000", http: "10000", extract: "15000", "x402-check": "10000", "bazaar-check": "10000", screenshot: "20000",
   search: "30000", pdf: "20000",
   // market-mvp: new routes, priced like every route (same atomic amount on both rails).

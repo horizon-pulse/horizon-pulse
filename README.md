@@ -78,12 +78,12 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
 | Route | Price | Auth |
 | --- | --- | --- |
-| `GET /api/pulse` | **$0.005** USDC (`5000` atomic) | x402 v2 |
-| `GET /api/signals` | **$0.015** USDC (`15000` atomic) | x402 v2 |
+| `GET /api/pulse` | **$0.002** USDC (`2000` atomic) | x402 v2 |
+| `GET /api/signals` | **$0.005** USDC (`5000` atomic) | x402 v2 |
 | `GET /api/yield` | **$0.02** USDC (`20000` atomic) | x402 v2 |
 | `GET /api/portfolio?address=0x…` | **$0.04** USDC (`40000` atomic) | x402 v2 |
-| `GET /api/gas` | **$0.01** USDC (`10000` atomic) | x402 v2 |
-| `GET /api/funding` | **$0.01** USDC (`10000` atomic) | x402 v2 |
+| `GET /api/gas` | **$0.002** USDC (`2000` atomic) | x402 v2 |
+| `GET /api/funding` | **$0.003** USDC (`3000` atomic) | x402 v2 |
 | `GET /api/fetch?url=https://…` | **$0.02** USDC (`20000` atomic) | x402 v2 |
 | `GET` / `POST` `/api/http` | **$0.01** USDC (`10000` atomic) | x402 v2 |
 | `GET` / `POST` `/api/extract` | **$0.015** USDC (`15000` atomic) | x402 v2 |

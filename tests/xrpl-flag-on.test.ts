@@ -25,8 +25,8 @@ const pr = (c: Captured) => decodePaymentRequiredHeader(header(c)!);
 
 /** main's per-route Base prices (atomic USDC) and the RLUSD decimal value they must map to. */
 const MAIN_PRICES: Record<string, [string, string]> = {
-  pulse: ["5000", "0.005"], signals: ["15000", "0.015"], yield: ["20000", "0.02"], portfolio: ["40000", "0.04"],
-  gas: ["10000", "0.01"], funding: ["10000", "0.01"], fetch: ["20000", "0.02"], http: ["10000", "0.01"],
+  pulse: ["2000", "0.002"], signals: ["5000", "0.005"], yield: ["20000", "0.02"], portfolio: ["40000", "0.04"],
+  gas: ["2000", "0.002"], funding: ["3000", "0.003"], fetch: ["20000", "0.02"], http: ["10000", "0.01"],
   extract: ["15000", "0.015"], "x402-check": ["10000", "0.01"], screenshot: ["20000", "0.02"],
   search: ["30000", "0.03"], pdf: ["20000", "0.02"],
   // landed on main after rail-xrpl bef2ab6 (rebased onto 82ce1c3):

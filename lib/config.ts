@@ -36,11 +36,11 @@ export const CDP_FACILITATOR_URL =
 /** CAIP-2 network id for Base mainnet (x402 v2) */
 export const BASE_CAIP2 = "eip155:8453" as const;
 
-export const PULSE_PRICE_USD = "$0.005" as const;
-export const PULSE_PRICE_ATOMIC = "5000" as const; // USDC 6 decimals
+export const PULSE_PRICE_USD = "$0.002" as const;
+export const PULSE_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 
-export const SIGNALS_PRICE_USD = "$0.015" as const;
-export const SIGNALS_PRICE_ATOMIC = "15000" as const;
+export const SIGNALS_PRICE_USD = "$0.005" as const;
+export const SIGNALS_PRICE_ATOMIC = "5000" as const;
 
 export const YIELD_PRICE_USD = "$0.02" as const;
 export const YIELD_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
@@ -48,11 +48,11 @@ export const YIELD_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
 export const PORTFOLIO_PRICE_USD = "$0.04" as const;
 export const PORTFOLIO_PRICE_ATOMIC = "40000" as const; // USDC 6 decimals
 
-export const GAS_PRICE_USD = "$0.01" as const;
-export const GAS_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
+export const GAS_PRICE_USD = "$0.002" as const;
+export const GAS_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 
-export const FUNDING_PRICE_USD = "$0.01" as const;
-export const FUNDING_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
+export const FUNDING_PRICE_USD = "$0.003" as const;
+export const FUNDING_PRICE_ATOMIC = "3000" as const; // USDC 6 decimals
 
 export const FETCH_PRICE_USD = "$0.02" as const;
 export const FETCH_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals

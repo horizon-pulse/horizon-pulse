@@ -21,12 +21,12 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 | Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |
 | --- | --- | --- | --- | --- |
-| GET | /api/pulse | $0.005 | 5000 | BTC/ETH/SOL spot + momentum (Coinbase Exchange, CoinGecko fallback) |
-| GET | /api/signals | $0.015 | 15000 | RSI/MACD/Bollinger + OKX funding |
+| GET | /api/pulse | $0.002 | 2000 | BTC/ETH/SOL spot + momentum (Coinbase Exchange, CoinGecko fallback) |
+| GET | /api/signals | $0.005 | 5000 | RSI/MACD/Bollinger + OKX funding |
 | GET | /api/yield | $0.02 | 20000 | DefiLlama yields (TVL ≥ $10M) |
 | GET | /api/portfolio?address=0x… | $0.04 | 40000 | Base + Ethereum balances, concentration score, rule findings vs fixed thresholds |
-| GET | /api/gas | $0.01 | 10000 | Base + Ethereum fee snapshot + timingHint |
-| GET | /api/funding | $0.01 | 10000 | OKX BTC/ETH/SOL perpetual funding + crowding hint |
+| GET | /api/gas | $0.002 | 2000 | Base + Ethereum fee snapshot + timingHint |
+| GET | /api/funding | $0.003 | 3000 | OKX BTC/ETH/SOL perpetual funding + crowding hint |
 | GET | /api/fetch?url=https://… | $0.02 | 20000 | Fetch public URL → clean text/markdown (SSRF-safe, capped) |
 | GET/POST | /api/http | $0.01 | 10000 | Universal HTTP proxy (url/method/headers/body) → status + body (SSRF-safe; volume price) |
 | GET/POST | /api/extract | $0.015 | 15000 | URL or HTML → structured fields (title, links, images, headings, json-ld, text sample), plus optional CSS-selector `fields` |
@@ -125,7 +125,7 @@ These are services for people who run an API. They are not paid with x402; never
 - Guide: https://horizonpulse.dev/agents
 - Local MCP server (stdio, Node): https://github.com/horizon-pulse/horizon-pulse/tree/main/mcp. Every route as a tool (same names as the hosted /mcp: pulse, signals, yield, portfolio, gas, funding, fetch, http, extract, x402_check, bazaar_check, market_search, market_quote, screenshot, search, pdf) plus free `catalog`, `quote`, `demo`. Pays the x402 challenge from `HP_PRIVATE_KEY` (use a dedicated low-balance wallet); pays only the Base payTo above in Base USDC (the MCP server pays on Base only), refuses amounts above the listed price, caps per call (`HP_MAX_USD_PER_CALL`, default $0.05) and per session (`HP_MAX_USD_TOTAL`, default $1). No key → quote only.
 - Hosted MCP: `https://horizonpulse.dev/mcp` (for MCP clients that can pay x402).
-- Pay with a Coinbase wallet (UNTESTED: not yet run against Horizon Pulse; based on Coinbase's docs only). Coinbase Agentic Wallet CLI: `npx awal@latest x402 pay https://horizonpulse.dev/api/pulse --max-amount 5000` (USDC atomic units, so 5000 = $0.005; POST: `-X POST -d '{"url":"https://example.com"}'`); Coinbase lists Base, Polygon and Solana USDC for it. Coinbase Wallet MCP (`https://mcp.base.org`): `initiate_x402_request` with url, method GET or POST and `maxPayment` (e.g. "0.005"), approve in Coinbase Wallet, then `complete_x402_request`; Base USDC only. Set the cap to the route's listed price. The Coinbase for Agents connector (Grok, Perplexity and others) pays only from Coinbase's curated catalog, which does not include Horizon Pulse.
+- Pay with a Coinbase wallet (UNTESTED: not yet run against Horizon Pulse; based on Coinbase's docs only). Coinbase Agentic Wallet CLI: `npx awal@latest x402 pay https://horizonpulse.dev/api/pulse --max-amount 2000` (USDC atomic units, so 2000 = $0.002; POST: `-X POST -d '{"url":"https://example.com"}'`); Coinbase lists Base, Polygon and Solana USDC for it. Coinbase Wallet MCP (`https://mcp.base.org`): `initiate_x402_request` with url, method GET or POST and `maxPayment` (e.g. "0.005"), approve in Coinbase Wallet, then `complete_x402_request`; Base USDC only. Set the cap to the route's listed price. The Coinbase for Agents connector (Grok, Perplexity and others) pays only from Coinbase's curated catalog, which does not include Horizon Pulse.
 
 ## Honesty
 
