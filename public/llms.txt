@@ -66,7 +66,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 - You pay only for a successful response. The payment is verified first and settled after the handler succeeds.
 - Errors return JSON `{ "ok": false, "error": "...", "code": "..." }` and are not charged: 400 bad input, 413 too large, 415 wrong content type, 422 nothing usable (e.g. `no_fields_matched`, `no_text_layer`), 404 no search results, 502 upstream failure, 503 search provider unavailable, 504 timeout.
-- Exceptions: `/api/http` returns upstream 4xx/5xx as data (charged), and `/api/x402-check` and `/api/market/quote` bill any HTTP answer from the target; `/api/tx-status`: a not_found status is a charged answer (poll again after `pollAgainSeconds`); `/api/watch`: a changed:false answer is charged.
+- Exceptions: `/api/http` returns upstream 4xx/5xx as data (charged), and `/api/x402-check` and `/api/market/quote` bill any HTTP answer from the target; `/api/tx-status`: a not_found status is a charged answer (poll again after `pollAgainSeconds`); `/api/watch`: a changed:false answer is charged; balance: billed if at least one rail answers; a per-rail error is returned for any that fail; 502 and not charged if all fail. `/api/balance`: Calls left doesn't reserve the XRPL network fee.
 - Response schemas and examples for every operation are in `/openapi.json`; free samples are at `/api/demo/{route}`.
 
 ## Which route to call
