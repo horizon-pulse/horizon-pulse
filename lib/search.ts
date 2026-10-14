@@ -2,7 +2,7 @@
  * /api/search — web search, then fetch the top N results as clean markdown.
  *
  * Search results (links only) come from a search API provider; every result
- * page is then fetched through our own SSRF-safe fetch pipeline
+ * page is then fetched through our own fetch pipeline with SSRF protections
  * (fetchPublicUrl). Provider is selected by env; the key never leaves the
  * server.
  *
@@ -21,7 +21,7 @@ export const SEARCH_PAGE_CHAR_CAP = 12_000;
 export const SEARCH_METHODOLOGY = {
   search:
     "The query goes to a third-party web search API (provider named in each response). Only result links, titles and snippets are used from the provider.",
-  fetch: `Each of the top n results (1-${SEARCH_MAX_RESULTS}, default ${SEARCH_DEFAULT_RESULTS}) is fetched in parallel through the same SSRF-safe pipeline as /api/fetch (private/local targets blocked at every redirect hop, 200KB / 8s caps per page) and converted to clean markdown/text, trimmed to ${SEARCH_PAGE_CHAR_CAP / 1000}K characters per page.`,
+  fetch: `Each of the top n results (1-${SEARCH_MAX_RESULTS}, default ${SEARCH_DEFAULT_RESULTS}) is fetched in parallel through the same pipeline with SSRF protections as /api/fetch (private/local targets blocked at every redirect hop, 200KB / 8s caps per page) and converted to clean markdown/text, trimmed to ${SEARCH_PAGE_CHAR_CAP / 1000}K characters per page.`,
   sources: "Every page is returned with its URL, title, rank, and fetch status, so answers can cite sources.",
   billing:
     "Billed when the search returns at least one result, even if some pages fail to fetch (each page reports its own error). Not billed: missing or too-long query, bad n, search provider unavailable or erroring, or zero results; those return 400/404/503 and settlement is skipped.",

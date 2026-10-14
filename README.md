@@ -20,7 +20,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 - Agents hit live paid HTTP endpoints (crypto routes frozen; `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/bazaar-check` + `/api/market/search` + `/api/market/quote` + `/api/screenshot` + `/api/search` + `/api/pdf` non-crypto LIVE — see below).
 - Unpaid requests receive **HTTP 402** with x402 **v2** requirements: canonical wire is the **`PAYMENT-REQUIRED`** header, with one `accepts` entry per network: Base (CAIP-2 **`eip155:8453`**, Base USDC, the treasury below) and Solana (CAIP-2 **`solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`**, USDC mint, the Solana payTo below). See [`docs/solana-rail.md`](docs/solana-rail.md).
 - Retry with an x402 v2 **`PAYMENT-SIGNATURE`** header. The facilitator (Coinbase CDP on Base, PayAI on Solana) **verifies + settles**, then the route returns live data.
-- No stubbed prices or fake APYs: Coinbase Exchange (CoinGecko fallback) for spot; CoinGecko OHLC (Coinbase candles fallback) for signals; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only); `/api/fetch` returns best-effort cleaned text from a requested public URL (SSRF-safe, size/time capped); `/api/http` is a raw universal proxy (filtered headers, text|base64 body, SSRF-safe) priced **$0.01** for volume; `/api/extract` returns best-effort structured page fields from a URL or HTML (SSRF-safe, size/time capped) priced **$0.015**.
+- No stubbed prices or fake APYs: Coinbase Exchange (CoinGecko fallback) for spot; CoinGecko OHLC (Coinbase candles fallback) for signals; OKX for perpetual funding (Binance/Bybit are often geo-blocked on Vercel); DefiLlama for yield pools; public RPC `balanceOf` for portfolio (real balances only); `eth_feeHistory` / `eth_gasPrice` for gas (real fees only); `/api/fetch` returns best-effort cleaned text from a requested public URL (with SSRF protections, size/time capped); `/api/http` is a raw universal proxy (filtered headers, text|base64 body, with SSRF protections) priced **$0.01** for volume; `/api/extract` returns best-effort structured page fields from a URL or HTML (with SSRF protections, size/time capped) priced **$0.015**.
 - Never invent metrics; never advertise routes that 404; never cite a cached balance — `/status` reads live USDC `balanceOf` on `payTo`. Honest: current `payTo` is interim Coinbase-custodial (not Safe/multisig).
 
 ## Catalog status (post first settlement)
@@ -168,7 +168,7 @@ Live perpetual **funding rates** for BTC / ETH / SOL from **OKX** (same source a
 
 Fetch a public **http(s) URL** (`?url=https://…`, required) and return best-effort **clean text/markdown**.
 
-- SSRF-safe: blocks localhost, private, link-local, and metadata IPs; re-checks each redirect hop
+- SSRF protections: blocks localhost, private, link-local, and metadata IPs; re-checks each redirect hop
 - Caps: ~**200KB** raw body, **8s** timeout, max **3** redirects
 - Preferred Content-Types: `text/html`, `text/plain`, `application/json`, `text/markdown`
 - Cleaning is best-effort (strip script/style/chrome, collapse whitespace) — not a full readability engine
@@ -183,7 +183,7 @@ Universal **agent HTTP proxy** — call a public http(s) URL with optional metho
 - **Price choice:** **$0.01** USDC (`10000` atomic) for volume. `/api/fetch` stays **$0.02** (specialized clean-text). Prefer `/api/http` for raw proxy traffic.
 - Inputs: `url` (required); `method` (`GET` default; `GET|POST|HEAD|PUT|PATCH|DELETE`); optional allowlisted `headers` (no Cookie / hop-by-hop); optional `body` for POST/PUT/PATCH (size-capped)
 - GET query: `?url=&method=&headers=<json>`; POST JSON body for full control including upstream body
-- SSRF-safe (shared guards with `/api/fetch`): blocks private/link-local/metadata; http/https only; re-checks redirects
+- SSRF protections (shared guards with `/api/fetch`): blocks private/link-local/metadata; http/https only; re-checks redirects
 - Caps: ~**384KB** response body, **64KB** request body, **12s** timeout, max **3** redirects
 - Honesty: upstream 4xx/5xx returned in `status` when the hop succeeded; proxy failures use honest error codes
 - `runtime = 'nodejs'`, `dynamic = 'force-dynamic'`
@@ -195,7 +195,7 @@ Universal **agent HTTP proxy** — call a public http(s) URL with optional metho
 URL or HTML → **structured page fields** for agents (title, description, canonical, language, links, images, headings, json-ld, text sample).
 
 - **Price choice:** **$0.015** USDC (`15000` atomic) — between `/api/http` ($0.01) and `/api/fetch` ($0.02). Same payTo + Base USDC stack.
-- Inputs: `url` (optional if `html` provided) and/or `html` (size-capped). Prefer fetching `url` with the same SSRF-safe `assertSafePublicUrl` as fetch/http.
+- Inputs: `url` (optional if `html` provided) and/or `html` (size-capped). Prefer fetching `url` with the same SSRF protections (`assertSafePublicUrl`) as fetch/http.
 - GET query: `?url=&fields=<url-encoded json>`; POST JSON `{ url?, html?, fields? }` for html payloads
 - Optional **`fields`**: up to 20 named CSS selectors, e.g. `{"title":"h1","links":{"selector":"a.story","attr":"href","all":true,"limit":5}}`. `attr` is `text` (default), `html`, or any attribute (href/src resolved to absolute URLs). Unmatched fields return `null` plus `fieldErrors[name]` (`no_match`, `bad_selector`, `attr_missing`, `time_budget`, `document_too_deep`, `eval_failed`). If none match: **422 `no_fields_matched`, not charged**. Hard 2s selector budget; `:has()` at most once per selector; pages nested >256 levels are refused for fields. Deterministic selectors, no AI.
 - Lightweight regex parse (no cheerio). Empty fields omitted. Not a full browser DOM.

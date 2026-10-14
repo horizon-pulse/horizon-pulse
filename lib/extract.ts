@@ -4,7 +4,7 @@
  * Price: $0.015 USDC (15000 atomic) — between /api/http ($0.01 volume proxy)
  * and /api/fetch ($0.02 clean-text). Same payTo + facilitator stack.
  *
- * Inputs: `url` (fetched SSRF-safe) and/or `html` (size-capped). No cookie jar.
+ * Inputs: `url` (fetched with SSRF protections) and/or `html` (size-capped). No cookie jar.
  * Parse is lightweight regex/DOM-ish (no cheerio) — honest best-effort.
  */
 

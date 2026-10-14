@@ -27,7 +27,7 @@ export const X402_CHECK_METHODOLOGY = {
     "x402 v2: base64 JSON in the PAYMENT-REQUIRED header (falls back to JSON body). x402 v1: JSON body with x402Version 1 and accepts[].maxAmountRequired.",
   payToType:
     "eth_getCode on Base (eip155:8453 / 'base') and Ethereum (eip155:1 / 'ethereum') via public RPCs. Empty code = EOA (a single private key controls funds). Other networks: not checked.",
-  limits: `SSRF-safe (private/local targets blocked at every redirect hop), ${CHECK_MAX_REDIRECTS} redirects, ${CHECK_TIMEOUT_MS / 1000}s timeout, ${MAX_BODY_BYTES / 1000}KB body cap.`,
+  limits: `SSRF protections (private/local targets blocked at every redirect hop), ${CHECK_MAX_REDIRECTS} redirects, ${CHECK_TIMEOUT_MS / 1000}s timeout, ${MAX_BODY_BYTES / 1000}KB body cap.`,
   billing:
     "Any HTTP answer from the target is a completed report and is billed, including 4xx/5xx answers (e.g. 'returned HTTP 500, not 402' is the finding). Not billed: missing/bad url, bad method, invalid or oversized body, blocked private/local host, DNS failure, connection failure, timeout, or too many redirects; those return 400/502/504 and settlement is skipped.",
   notAdvice:

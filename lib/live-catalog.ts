@@ -141,7 +141,7 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: FETCH_PRICE_USD,
     priceAtomic: FETCH_PRICE_ATOMIC,
     summary:
-      "Fetch public http(s) URL → clean text/markdown (SSRF-safe, ~200KB / 8s caps)",
+      "Fetch public http(s) URL → clean text/markdown (with SSRF protections, ~200KB / 8s caps)",
     category: "web",
     blurb: "Any public URL as clean text or markdown",
   },
@@ -151,7 +151,7 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: HTTP_PRICE_USD,
     priceAtomic: HTTP_PRICE_ATOMIC,
     summary:
-      "Universal agent HTTP proxy (url/method/headers/body) → status + filtered headers + body (SSRF-safe; $0.01 volume price)",
+      "Universal agent HTTP proxy (url/method/headers/body) → status + filtered headers + body (with SSRF protections; $0.01 volume price)",
     category: "web",
     blurb: "Universal HTTP proxy: your method, headers and body",
   },
@@ -161,7 +161,7 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: EXTRACT_PRICE_USD,
     priceAtomic: EXTRACT_PRICE_ATOMIC,
     summary:
-      "URL or HTML → structured fields (title, description, links, images, headings, json-ld, text sample); SSRF-safe; $0.015",
+      "URL or HTML → structured fields (title, description, links, images, headings, json-ld, text sample); with SSRF protections; $0.015",
     category: "web",
     blurb: "Page to structured fields, or your own CSS selectors",
   },
@@ -274,7 +274,7 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: SCREENSHOT_PRICE_USD,
     priceAtomic: SCREENSHOT_PRICE_ATOMIC,
     summary:
-      "Headless Chromium render → PNG/JPEG (base64 JSON), viewport/fullPage options; SSRF-safe on every sub-request",
+      "Headless Chromium render → PNG/JPEG (base64 JSON), viewport/fullPage options; SSRF protections on every sub-request",
     category: "web",
     blurb: "Headless Chromium render to PNG or JPEG",
   },
@@ -284,7 +284,7 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: SEARCH_PRICE_USD,
     priceAtomic: SEARCH_PRICE_ATOMIC,
     summary:
-      "Web search → top 1-5 pages as clean markdown with sources (web results via Serper; SSRF-safe fetch; partial results on page errors)",
+      "Web search → top 1-5 pages as clean markdown with sources (web results via Serper; fetch with SSRF protections; partial results on page errors)",
     category: "web",
     blurb: "Web search with the top pages as clean text and sources",
   },

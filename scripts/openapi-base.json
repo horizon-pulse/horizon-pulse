@@ -110,7 +110,7 @@
     "/api/fetch": {
       "get": {
         "summary": "Fetch public URL \u2192 clean text/markdown",
-        "description": "x402 v2 exact payment. Requires query param url=https://\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~200KB / 8s caps; preferred Content-Types: text/html, text/plain, application/json, text/markdown.",
+        "description": "x402 v2 exact payment. Requires query param url=https://\u2026 Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.02 USDC (20000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. With SSRF protections; ~200KB / 8s caps; preferred Content-Types: text/html, text/plain, application/json, text/markdown.",
         "parameters": [
           {
             "name": "url",
@@ -151,7 +151,7 @@
     "/api/http": {
       "get": {
         "summary": "Universal HTTP proxy (query)",
-        "description": "x402 v2 exact payment. Requires query param url=https://\u2026. Optional method (GET default), headers (JSON string). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~384KB / 12s caps. Response: ok, status, headers, body, bodyEncoding, contentType, elapsedMs.",
+        "description": "x402 v2 exact payment. Requires query param url=https://\u2026. Optional method (GET default), headers (JSON string). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.01 USDC (10000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. With SSRF protections; ~384KB / 12s caps. Response: ok, status, headers, body, bodyEncoding, contentType, elapsedMs.",
         "parameters": [
           {
             "name": "url",
@@ -278,7 +278,7 @@
     "/api/extract": {
       "get": {
         "summary": "Extract structured fields from a public URL",
-        "description": "x402 v2 exact payment. Query param url=https://\u2026 (optional if html provided via POST). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. SSRF-safe; ~200KB / 8s caps. Response omits empty fields: ok, url?, title, description, canonical, language?, links, images, jsonLd, headings, textSample, elapsedMs.",
+        "description": "x402 v2 exact payment. Query param url=https://\u2026 (optional if html provided via POST). Unpaid \u2192 HTTP 402 + PAYMENT-REQUIRED. Price $0.015 USDC (15000 atomic). Network eip155:8453. payTo 0x5b32c973596078a967562ca652761404f19be0e9. With SSRF protections; ~200KB / 8s caps. Response omits empty fields: ok, url?, title, description, canonical, language?, links, images, jsonLd, headings, textSample, elapsedMs.",
         "parameters": [
           {
             "name": "url",
@@ -329,7 +329,7 @@
       },
       "post": {
         "summary": "Extract structured fields from URL and/or HTML",
-        "description": "Same $0.015 USDC x402 price as GET. JSON body: { url?, html? } \u2014 at least one required. If html is provided it is parsed (url echoed); else url is fetched SSRF-safe. Same caps/payTo as GET. Network eip155:8453.",
+        "description": "Same $0.015 USDC x402 price as GET. JSON body: { url?, html? } \u2014 at least one required. If html is provided it is parsed (url echoed); else url is fetched with SSRF protections. Same caps/payTo as GET. Network eip155:8453.",
         "requestBody": {
           "required": true,
           "content": {
@@ -412,7 +412,7 @@
     "/api/x402-check": {
       "get": {
         "summary": "Audit an x402 endpoint",
-        "description": "$0.01 USDC x402. Sends one unpaid probe (never pays or signs) to a public x402 endpoint and reports: HTTP status, whether it is a valid x402 challenge, x402 version (v1/v2), decoded accepts (network, asset, price, payTo), payTo type via eth_getCode on Base/Ethereum (EOA vs contract), discovery-metadata hints, and pass/warn/fail checks. SSRF-safe (private/localhost blocked at every redirect hop), 3 redirects, 8s timeout. Any HTTP answer from the target, including 5xx, is a billed report. Bad input, blocked hosts, DNS/connection failures and timeouts return 400/502/504 and are not charged.",
+        "description": "$0.01 USDC x402. Sends one unpaid probe (never pays or signs) to a public x402 endpoint and reports: HTTP status, whether it is a valid x402 challenge, x402 version (v1/v2), decoded accepts (network, asset, price, payTo), payTo type via eth_getCode on Base/Ethereum (EOA vs contract), discovery-metadata hints, and pass/warn/fail checks. SSRF protections (private/localhost blocked at every redirect hop), 3 redirects, 8s timeout. Any HTTP answer from the target, including 5xx, is a billed report. Bad input, blocked hosts, DNS/connection failures and timeouts return 400/502/504 and are not charged.",
         "parameters": [
           {
             "name": "url",
@@ -594,7 +594,7 @@
     "/api/screenshot": {
       "get": {
         "summary": "Screenshot a public URL",
-        "description": "$0.02 USDC x402. Renders the URL in headless Chromium (fresh browser, no cookies) and returns JSON with the image as base64 (imageBase64) plus mimeType, bytes, width, height, finalUrl, pageStatus, title. SSRF-safe: the URL and every sub-request are checked; private/local targets blocked. fullPage clipped at 4000px; image capped at 3MB (PNG falls back to JPEG). Billed when an image is returned; failures return 400/413/502/504 and are not charged.",
+        "description": "$0.02 USDC x402. Renders the URL in headless Chromium (fresh browser, no cookies) and returns JSON with the image as base64 (imageBase64) plus mimeType, bytes, width, height, finalUrl, pageStatus, title. SSRF protections: the URL and every sub-request are checked; private/local targets blocked. fullPage clipped at 4000px; image capped at 3MB (PNG falls back to JPEG). Billed when an image is returned; failures return 400/413/502/504 and are not charged.",
         "parameters": [
           {
             "name": "url",
@@ -686,7 +686,7 @@
     "/api/search": {
       "get": {
         "summary": "Search the web and fetch top results",
-        "description": "$0.03 USDC x402. Sends the query to a third-party search API (Serper, Google results), then fetches the top n result pages (1-5, default 3) in parallel through the same SSRF-safe pipeline as /api/fetch (private/localhost blocked at every redirect hop, 200KB / 8s per page, 12K characters per page) and returns clean markdown/text with URL, title, rank and per-source ok/error. Billed when at least one result is returned, even if some pages fail. Bad input, zero results, or a search-provider failure are not charged.",
+        "description": "$0.03 USDC x402. Sends the query to a third-party search API (Serper, Google results), then fetches the top n result pages (1-5, default 3) in parallel through the same pipeline with SSRF protections as /api/fetch (private/localhost blocked at every redirect hop, 200KB / 8s per page, 12K characters per page) and returns clean markdown/text with URL, title, rank and per-source ok/error. Billed when at least one result is returned, even if some pages fail. Bad input, zero results, or a search-provider failure are not charged.",
         "parameters": [
           {
             "name": "q",

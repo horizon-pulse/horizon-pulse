@@ -99,7 +99,7 @@ export const SCREENSHOT_PRICE_ATOMIC = "20000" as const; // USDC 6 decimals
 /**
  * /api/search — web search (Serper, Google results) then fetch top 1-5 pages
  * as clean markdown with sources. $0.03 (30000 atomic): provider query +
- * up to 5 SSRF-safe fetches.
+ * up to 5 fetches with SSRF protections.
  */
 export const SEARCH_PRICE_USD = "$0.03" as const;
 export const SEARCH_PRICE_ATOMIC = "30000" as const; // USDC 6 decimals

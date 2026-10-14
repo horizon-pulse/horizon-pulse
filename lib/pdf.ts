@@ -21,7 +21,7 @@ export const PDF_MAX_CHARS = 100_000;
 const PARSE_BUDGET_MS = 10_000;
 
 export const PDF_METHODOLOGY = {
-  download: `SSRF-safe GET (private/localhost blocked at every redirect hop, ${PDF_MAX_REDIRECTS} redirects), ${PDF_MAX_BYTES / 1024 / 1024}MB cap (larger files are rejected, not truncated), ${PDF_TIMEOUT_MS / 1000}s download budget. The file must start with %PDF-.`,
+  download: `GET with SSRF protections (private/localhost blocked at every redirect hop, ${PDF_MAX_REDIRECTS} redirects), ${PDF_MAX_BYTES / 1024 / 1024}MB cap (larger files are rejected, not truncated), ${PDF_TIMEOUT_MS / 1000}s download budget. The file must start with %PDF-.`,
   parse: `Text layer via pdf.js, pages 1-${PDF_MAX_PAGES} at most (use pages=N to limit), ${PDF_MAX_CHARS / 1000}K characters total. No OCR: scanned image-only PDFs return no_text_layer. ${PARSE_BUDGET_MS / 1000}s parse budget: partial text is returned as truncated; no text by then returns parse_timeout (504, not billed).`,
   billing:
     "Billed only when text is returned. Not billed: missing/bad URL, blocked host, not a PDF, too large, download failure or timeout, encrypted or corrupt PDF, no text layer, or parse timeout with no text; those return 400/413/415/422/502/504 and settlement is skipped.",
