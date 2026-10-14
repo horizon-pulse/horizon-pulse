@@ -162,7 +162,7 @@ export const SERVICE_DESCRIPTION =
  * Facts only: no uptime, volume or popularity claims.
  */
 export const DISCOVERY_DESCRIPTION =
-  "Pay-per-call APIs for AI agents via x402 (USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger; no API key): web search with page contents, web fetch to markdown, HTTP proxy, structured page extract, page screenshots, PDF to text, x402 endpoint checks, CDP Bazaar index checks, an x402 marketplace search and pre-pay quote, and crypto data (spot prices, technical indicators, perp funding, gas fees, DeFi yields, wallet portfolios)." as const;
+  "Pay-per-call APIs for AI agents via x402 (USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger; no API key): web search with page contents, web fetch to markdown, HTTP proxy, structured page extract, page screenshots, PDF to text, x402 endpoint checks, CDP Bazaar index checks, an x402 marketplace search and pre-pay quote, transaction status, a tokenized stock status check on Base (on-chain token state, no price, not investment advice), and crypto data (spot prices, technical indicators, perp funding, gas fees, DeFi yields, wallet portfolios)." as const;
 
 export const GITHUB_REPO = "https://github.com/horizon-pulse/horizon-pulse" as const;
 
