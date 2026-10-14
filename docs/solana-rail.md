@@ -231,7 +231,7 @@ Resolved:
   `exact`, so they never blocked it.
 
 Still applies:
-- **PayAI free allowance:** 1,000 credits per receiving wallet (lifetime, about 650
+- **PayAI facilitator allowance:** 1,000 credits per receiving wallet (lifetime, about 650
   Solana settlements per PayAI docs). Past that, PayAI needs an API key with credits.
   The allowance alert above fires at 80%.
 - **The replay guard is per instance.** The N1 cross-instance check closes most of the gap,
