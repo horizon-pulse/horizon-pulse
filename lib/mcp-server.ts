@@ -16,6 +16,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPaymentWrapper } from "@x402/mcp";
+import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
+import { POLL_INTERVAL_SECONDS } from "./paid-call-meta";
 import { NextRequest, type NextResponse } from "next/server";
 import { z } from "zod";
 import { buildPaymentRequirements, getResourceServer } from "./x402-server";
@@ -249,6 +251,27 @@ export const TOOLS: ToolDef[] = [
   },
 ];
 
+/** MCP tool name -> HTTP route path (for the shared poll-interval table). */
+const MCP_ROUTE: Readonly<Record<string, string>> = { pulse: "/api/pulse", gas: "/api/gas", funding: "/api/funding", signals: "/api/signals", yield: "/api/yield" };
+
+/**
+ * Tool text for MCP clients (plan #4): the route description, the exact price, the rail
+ * (MCP payments are Base only), and for feed tools how often the data changes, so an
+ * agent loop can decide when calling again is worth it.
+ */
+export function mcpToolDescription(name: string, opts: PaymentOpts): string {
+  const usd = Number(opts.maxAmountRequired) / 1e6;
+  const n = POLL_INTERVAL_SECONDS[MCP_ROUTE[name] ?? ""];
+  const cadence = n ? ` Data changes about every ${n >= 3600 ? `${n / 3600} h` : n >= 60 ? `${n / 60} min` : `${n} s`}; calling more often returns the same values.` : "";
+  return `${opts.description.replace(/\.$/, "")}. Price $${usd} per call via x402, USDC on Base (MCP payments are Base only).${cadence}`;
+}
+
+/** MCP tool annotations: every paid tool only reads public data except the HTTP proxy, which can send non-GET methods upstream. */
+export function mcpToolAnnotations(name: string): ToolAnnotations {
+  const proxy = name === "http";
+  return { readOnlyHint: !proxy, destructiveHint: false, idempotentHint: !proxy, openWorldHint: true };
+}
+
 export function buildMcpServer(): McpServer {
   const server = new McpServer({ name: "horizon-pulse", version: "1.0.0" });
   const resourceServer = getResourceServer();
@@ -265,12 +288,7 @@ export function buildMcpServer(): McpServer {
         iconUrl: pr.resource.iconUrl,
       },
     });
-    server.tool(
-      t.name,
-      `${t.opts.description.replace(/\.$/, "")}. Paid per call via x402 (USDC on Base).`,
-      t.schema,
-      paid(async (args) => t.call(args as Record<string, unknown>)),
-    );
+    server.tool(t.name, mcpToolDescription(t.name, t.opts), t.schema, mcpToolAnnotations(t.name), paid(async (args) => t.call(args as Record<string, unknown>)));
   }
   // FREE tools: no x402 wrapper, no challenge; counted as free, never in TOOLS (the paid list).
   for (const f of FREE_TOOLS) server.tool(f.name, f.description, f.schema, async (args) => f.call(args as Record<string, unknown>));
