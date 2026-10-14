@@ -3546,6 +3546,6 @@
   },
   "sha256 public/openapi.json": "dd40d49595c72175ec622f975c9a415a39485b1337bd69506e7962d7cd65a4f1",
   "sha256 public/llms.txt": "56873ca04002f54f090e31efa88806673dc228367e72f1c3fc0c77e6b38d4129",
-  "sha256 public/.well-known/x402list.txt": "b91f96203bcf22b2439d97c7512ec787d97bfccc14baf0c4edb5c2982e3a7b9e"
+  "sha256 public/.well-known/x402list.txt": "cc68946b8a020597bfd4eca58cba763c5a78eeb67078d93833fc209cdce923e3"
  }
 }
