@@ -31,6 +31,7 @@ import {
   MARKET_SEARCH_PRICE_USD,
   MARKET_QUOTE_PRICE_USD,
   DISCOURSE_SPLIT_PRICE_USD,
+  TX_STATUS_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -874,6 +875,41 @@ export function discourseSplitRouteConfig(): RoutesConfig {
             required: ["q"],
           },
           output: outputOf("/api/discourse/split", "Horizon Pulse online discourse split (NOT a poll): shares with 95% intervals, counts and source links"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+/** Transaction status + finality (Base, Polygon, Solana, XRPL; public RPCs). Same rails, payTo and Bazaar pattern. */
+export function txStatusRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/tx-status": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: TX_STATUS_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/tx-status"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/tx-status"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { network: "base", tx: "0xe6e6ebd93db6735aad12a86a1084d5e1d6759e31fbedf7b741946f2bf410644f" },
+          inputSchema: {
+            properties: {
+              tx: { type: "string", description: "Transaction id (required): 0x + 64 hex (Base/Polygon), 64 hex (XRPL) or a base58 Solana signature." },
+              network: { type: "string", description: "base, polygon, solana or xrpl (or CAIP-2). Required for 0x hashes; optional for Solana signatures and XRPL hashes." },
+            },
+            required: ["tx"],
+          },
+          output: outputOf("/api/tx-status", "Horizon Pulse transaction status: landed or not, final flag, confirmations, fee and token transfers"),
         } as DiscoveryDecl),
       },
     },

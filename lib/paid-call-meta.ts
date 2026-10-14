@@ -19,6 +19,7 @@ export const POLL_INTERVAL_SECONDS: Readonly<Record<string, number>> = {
   "/api/funding": 300, // OKX funding revalidate 60 s; rate changes slowly
   "/api/signals": 300, // OHLC-based indicators
   "/api/yield": 3600, // DefiLlama pools
+  "/api/tx-status": 5, // poll until final; the body also carries pollAgainSeconds per chain
 };
 
 function settleHeader(res: Response): string | null {

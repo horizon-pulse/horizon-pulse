@@ -16,6 +16,7 @@ import { marketQuoteHandler } from "@/app/api/market/quote/handler";
 import { screenshotHandler } from "@/app/api/screenshot/handler";
 import { searchHandler } from "@/app/api/search/handler";
 import { pdfHandler } from "@/app/api/pdf/handler";
+import { txStatusHandler } from "@/app/api/tx-status/handler";
 import { OUTPUT_EXAMPLES } from "@/lib/route-examples";
 
 export const runtime = "nodejs";
@@ -26,7 +27,7 @@ type Handler = (req: NextRequest) => Promise<NextResponse>;
 
 // bazaar-check: CDP discovery + ~15 outbound probes per run, so one sample per instance per 10 min.
 // market-search / market-quote: CDP discovery + live probes of third-party sellers, same 10 min reuse.
-const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf", "bazaar-check", "market-search", "market-quote"]);
+const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf", "bazaar-check", "market-search", "market-quote", "tx-status"]);
 const HEAVY_TTL_MS = 10 * 60 * 1000;
 /** search spends paid provider quota: one sample per instance per day. */
 const TTL_MS: Record<string, number> = { search: 24 * 60 * 60 * 1000 };
@@ -52,6 +53,7 @@ const HANDLERS: Record<string, Handler> = {
   screenshot: screenshotHandler,
   search: searchHandler,
   pdf: pdfHandler,
+  "tx-status": txStatusHandler,
   // Canned: the recorded example (lib/route-examples.ts). Never runs the
   // classifier or the sources, so the free demo costs nothing per call.
   "discourse-split": async () => NextResponse.json(OUTPUT_EXAMPLES["/api/discourse/split"]),

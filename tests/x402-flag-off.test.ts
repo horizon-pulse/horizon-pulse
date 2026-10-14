@@ -95,6 +95,13 @@
  * 50 pre-existing keys per mode are byte-identical to main's golden (key-by-key
  * compare). golden.discovery refreshed (/.well-known/x402, skill.md,
  * openapi.json, llms.txt list the new route).
+ *
+ * 2026-10-14 (branch tx-status, off main 0ef8e9f): regenerated with
+ * UPDATE_GOLDEN=1 after adding /api/tx-status ($0.002). golden.cdp and
+ * golden.local gained ONLY the three new tx-status keys per mode; all 53
+ * pre-existing keys per mode are byte-identical to main's golden (key-by-key
+ * compare). golden.discovery refreshed (/.well-known/x402, skill.md,
+ * openapi.json, llms.txt list the new route).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

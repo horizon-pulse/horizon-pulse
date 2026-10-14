@@ -38,6 +38,7 @@ import * as x402check from "@/app/api/x402-check/handler";
 import * as bazaarCheck from "@/app/api/bazaar-check/handler";
 import * as marketSearch from "@/app/api/market/search/handler";
 import * as discourseSplit from "@/app/api/discourse/split/handler";
+import * as txStatus from "@/app/api/tx-status/handler";
 import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
@@ -197,6 +198,15 @@ export const TOOLS: ToolDef[] = [
     },
     call: (a) =>
       runHandler((req) => discourseSplit.discourseSplitHandler(req), makeRequest("/api/discourse/split", { q: s(a.q), sides: s(a.sides), window: s(a.window) })),
+  },
+  {
+    name: "tx_status",
+    opts: txStatus.paymentOpts,
+    schema: {
+      tx: z.string().describe("Transaction id: 0x + 64 hex (Base/Polygon), 64 hex (XRPL) or a base58 Solana signature"),
+      network: z.string().optional().describe("base, polygon, solana or xrpl; required for 0x hashes. Poll again after pollAgainSeconds until final is true"),
+    },
+    call: (a) => runHandler((req) => txStatus.txStatusHandler(req), makeRequest("/api/tx-status", { tx: s(a.tx), network: s(a.network) })),
   },
   {
     name: "market_quote",

@@ -67,7 +67,7 @@ function assertBaseFirstSolanaSecond(all: { cdp: Record<string, Captured>; local
       n++;
     }
   }
-  expect(n).toBe(106); // 88 on main + 12 market-mvp + 6 discourse-split
+  expect(n).toBe(112); // 88 on main + 12 market-mvp + 6 discourse-split + 6 tx-status
 }
 
 let now = 1_800_000_000_000;

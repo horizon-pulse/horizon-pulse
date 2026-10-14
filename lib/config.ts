@@ -134,6 +134,14 @@ export const MARKET_QUOTE_PRICE_ATOMIC = "5000" as const; // USDC 6 decimals
 export const DISCOURSE_SPLIT_PRICE_USD = "$0.03" as const;
 export const DISCOURSE_SPLIT_PRICE_ATOMIC = "30000" as const; // USDC 6 decimals
 
+/**
+ * /api/tx-status — did a transaction land, and is it final (Base, Polygon,
+ * Solana, XRPL). $0.002 (2000 atomic), the CDP-fee floor tier. Volume plan
+ * route #4 (Odin order 10/14). Bad input and RPCs down: not charged.
+ */
+export const TX_STATUS_PRICE_USD = "$0.002" as const;
+export const TX_STATUS_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

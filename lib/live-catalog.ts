@@ -40,6 +40,8 @@ import {
   PDF_PRICE_ATOMIC,
   DISCOURSE_SPLIT_PRICE_USD,
   DISCOURSE_SPLIT_PRICE_ATOMIC,
+  TX_STATUS_PRICE_USD,
+  TX_STATUS_PRICE_ATOMIC,
   HTTP_PRICE_USD,
   HTTP_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
@@ -198,6 +200,16 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceStatus: "untested",
   },
   {
+    path: "/api/tx-status?tx=…&network=…",
+    method: "GET",
+    priceUsd: TX_STATUS_PRICE_USD,
+    priceAtomic: TX_STATUS_PRICE_ATOMIC,
+    summary:
+      "Did a transaction land, and is it final: status (not_found/pending/confirmed/failed), final flag, confirmations, fee and decoded token transfers on Base, Polygon, Solana or XRPL; public RPCs, read-only",
+    category: "agent",
+    blurb: "Did my transaction land, and is it final (4 chains)",
+  },
+  {
     path: "/api/discourse/split?q=…",
     method: "GET",
     priceUsd: DISCOURSE_SPLIT_PRICE_USD,
@@ -249,7 +261,7 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL)." as const;
 
 export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
   crypto: "Crypto market data",
