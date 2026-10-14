@@ -753,7 +753,8 @@ export async function queryIndex(
 /* ------------------------------------------------------------------ */
 
 const BASE_RPCS = [process.env.BASE_RPC_URL ?? "", "https://base.drpc.org", "https://mainnet.base.org"].filter(Boolean);
-const POLYGON_RPCS = ["https://polygon-rpc.com", "https://polygon.drpc.org"];
+// polygon-rpc.com answers 403 "API key disabled" since ~10/2026: keyless RPCs first, it stays last as a fallback only.
+const POLYGON_RPCS = ["https://polygon.drpc.org", "https://polygon-bor-rpc.publicnode.com", "https://polygon-rpc.com"];
 const XRPL_RPCS = ["https://xrplcluster.com/", "https://s1.ripple.com:51234/"];
 
 export type OnchainCheck = { network: string; payTo: string; method: string; holdsUsdc: boolean | null };
