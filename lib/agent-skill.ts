@@ -197,7 +197,7 @@ Source and full README: ${GITHUB_REPO}/tree/main/mcp
 ## 5. Errors and billing
 
 - You pay only for a successful response. Errors return \`{ "ok": false, "error": "...", "code": "..." }\` and are not charged: 400 bad input, 413 too large, 415 wrong content type, 422 nothing usable, 404 no search results, 502 upstream failure, 503 provider unavailable, 504 timeout.
-- Exceptions: \`/api/http\` returns upstream 4xx/5xx as data (charged); \`/api/x402-check\` and \`/api/market/quote\` bill any HTTP answer from the target; \`/api/tx-status\`: a not_found status is a charged answer (poll again after \`pollAgainSeconds\`).
+- Exceptions: \`/api/http\` returns upstream 4xx/5xx as data (charged); \`/api/x402-check\` and \`/api/market/quote\` bill any HTTP answer from the target; \`/api/tx-status\`: a not_found status is a charged answer (poll again after \`pollAgainSeconds\`); \`/api/watch\`: a changed:false answer is charged.
 
 ## 6. Safety rules
 
