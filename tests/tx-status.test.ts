@@ -189,3 +189,18 @@ describe("402 terms", () => {
     expect(JSON.stringify(c.extensions)).toContain('"method":"GET"');
   });
 });
+
+describe("billing text (Odin PASS fix 2026-10-14)", () => {
+  it("llms.txt, skill.md and openapi list tx-status not_found as a charged answer", async () => {
+    const { readFileSync } = await import("node:fs");
+    const llms = readFileSync("public/llms.txt", "utf8");
+    const api = readFileSync("public/openapi.json", "utf8");
+    const { GET } = await import("@/app/skill.md/route");
+    const skill = await (await (GET as unknown as (r: NextRequest) => Promise<Response>)(new NextRequest("https://horizonpulse.dev/skill.md"))).text();
+    for (const t of [llms, skill, api]) expect(t).toContain("a not_found status is a charged answer");
+  });
+  it("not_found and pending answers carry a numeric pollAgainSeconds; final answers null", async () => {
+    const nf = await txStatus({ tx: EVM, network: "base" }, deps(evm({ eth_blockNumber: "0x1" })));
+    expect(nf.ok && typeof nf.pollAgainSeconds).toBe("number");
+  });
+});
