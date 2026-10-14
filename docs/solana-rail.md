@@ -1,15 +1,20 @@
 # Solana USDC rail — live on Solana mainnet
 
-Status (checked 2026-10-12): **live in production.** Every paid HTTP route's 402 has
+Status (checked 2026-10-14 8:45 AM ET): **live in production.** Every paid HTTP route's 402 has
 an `exact` USDC entry for `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`, at the same atomic
 amount as Base, with payTo `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz`. Settlement goes
 through PayAI (`https://facilitator.payai.network`). First settlement: an operator test
 payment on 2026-10-08, tx `SmsCBJftu2yHL44VQZdzYziD4bBpxb6PWH66d2H5JD4XsbGqXXRvNS2x4xvdY7tooyw7uWoLkBXGyaUjZX86DVC`
 (0.005 USDC, `GET /api/pulse`; a test, not customer activity).
 The rail is still behind the switch and guards below. If any guard fails, routes fall
-back to their non-Solana entries. **Hosted MCP (`/mcp`) and the local MCP client are
-Base only.** Solana payment is HTTP only.
-The 402 can also list other networks (Base, XRPL, Polygon); they are documented separately.
+back to their non-Solana entries.
+
+| surface | payment rails (live check 2026-10-14) |
+|---|---|
+| HTTP paid routes (`/api/*`, 17 routes) | Base, Solana, Polygon, XRPL (e.g. `GET /api/pulse` unpaid 402 lists `eip155:8453`, `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`, `eip155:137`, `xrpl:0`) |
+| Hosted MCP (`/mcp`, 17 tools incl. `discourse_split`) and the local MCP client | **Base only** (`eip155:8453`; e.g. unpaid `discourse_split` call) |
+
+Solana payment is HTTP only. The other networks are documented separately.
 
 ## What it does
 When ON, every paid route's 402 / OPTIONS gets a **second** `accepts` entry for
@@ -219,7 +224,7 @@ Bazaar settlement window.**
 Resolved:
 - ~~payTo has no USDC token account~~ **Resolved 2026-10-08.** The ATA
   `3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu` exists. It is an initialized SPL-Token
-  USDC account owned by the payTo (public RPC `getAccountInfo`, checked 2026-10-12). The
+  USDC account owned by the payTo (public RPC `getAccountInfo`, re-checked 2026-10-14). The
   token-account guard stays in place.
 - ~~Go-live review gate~~ **Resolved 2026-10-08.** The rail was reviewed and switched on, and the first
   operator test settlement landed the same day.
@@ -234,7 +239,7 @@ Still applies:
   except a replay on another instance within 30 s of confirmation.
 - **No Coinbase Bazaar credit.** PayAI-facilitated Solana sales do not count
   toward the Coinbase Bazaar settlement window.
-- **No Solana MCP.** Hosted `/mcp` and the local MCP client are Base only.
+- **No Solana MCP.** Hosted `/mcp` (all 17 tools, including `discourse_split`) and the local MCP client are Base only.
 
 ## Tests / smoke
 - `npm test` (vitest): flag-off identity, flag-on shape, config/pin validation,
