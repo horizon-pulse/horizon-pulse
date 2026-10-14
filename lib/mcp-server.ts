@@ -266,10 +266,13 @@ export function mcpToolDescription(name: string, opts: PaymentOpts): string {
   return `${opts.description.replace(/\.$/, "")}. Price $${usd} per call via x402, USDC on Base (MCP payments are Base only).${cadence}`;
 }
 
-/** MCP tool annotations: every paid tool only reads public data except the HTTP proxy, which can send non-GET methods upstream. */
+/**
+ * MCP tool annotations: every paid tool only reads public data, except the HTTP proxy,
+ * which can send POST/PUT/PATCH/DELETE upstream, so it is marked destructive (Odin 10/14).
+ */
 export function mcpToolAnnotations(name: string): ToolAnnotations {
   const proxy = name === "http";
-  return { readOnlyHint: !proxy, destructiveHint: false, idempotentHint: !proxy, openWorldHint: true };
+  return { readOnlyHint: !proxy, destructiveHint: proxy, idempotentHint: !proxy, openWorldHint: true };
 }
 
 export function buildMcpServer(): McpServer {

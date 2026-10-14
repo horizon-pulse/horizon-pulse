@@ -10,6 +10,9 @@ describe("MCP tool text (plan #4)", () => {
   });
   it("annotations: read-only except the http proxy", () => {
     expect(mcpToolAnnotations("pulse")).toMatchObject({ readOnlyHint: true, openWorldHint: true, destructiveHint: false });
-    expect(mcpToolAnnotations("http").readOnlyHint).toBe(false);
+    expect(mcpToolAnnotations("http")).toEqual({ readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
+    for (const n of ["pulse", "gas", "funding", "signals", "yield", "fetch", "search", "x402_check"]) {
+      expect(mcpToolAnnotations(n).destructiveHint, n).toBe(false);
+    }
   });
 });
