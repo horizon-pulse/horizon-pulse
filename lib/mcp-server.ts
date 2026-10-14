@@ -42,6 +42,7 @@ import * as txStatus from "@/app/api/tx-status/handler";
 import * as tokenizedStock from "@/app/api/tokenized-stock/handler";
 import * as watchRoute from "@/app/api/watch/handler";
 import * as balanceRoute from "@/app/api/balance/handler";
+import * as txGuardRoute from "@/app/api/tx-guard/handler";
 import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
@@ -237,6 +238,17 @@ export const TOOLS: ToolDef[] = [
       xrpl: z.string().optional().describe("XRP Ledger r-address (RLUSD, trust line, reserve, fee). Give at least one of evm, solana, xrpl"),
     },
     call: (a) => runHandler((req) => balanceRoute.balanceHandler(req), makeRequest("/api/balance", { evm: s(a.evm), solana: s(a.solana), xrpl: s(a.xrpl) })),
+  },
+  {
+    name: "tx_guard",
+    opts: txGuardRoute.paymentOpts,
+    schema: {
+      chain: z.enum(["base", "polygon", "solana", "xrpl"]).describe("Chain of the transfer"),
+      to: z.string().describe("Recipient address you are about to send to"),
+      expected: z.string().optional().describe("The address you meant to send to (for the lookalike check)"),
+      token: z.string().optional().describe("Token contract on Base or Polygon (checked against the ScamSniffer public list)"),
+    },
+    call: (a) => runHandler((req) => txGuardRoute.txGuardHandler(req), makeRequest("/api/tx-guard", { chain: s(a.chain), to: s(a.to), expected: s(a.expected), token: s(a.token) })),
   },
   {
     name: "market_quote",

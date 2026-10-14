@@ -166,6 +166,14 @@ export const WATCH_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 export const BALANCE_PRICE_USD = "$0.002" as const;
 export const BALANCE_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 
+/**
+ * /api/tx-guard — mechanical pre-transfer recipient checks (lookalike vs
+ * expected, OFAC SDN snapshot, account age, cited scam-token list). $0.002
+ * (2000 atomic). Bad input: not charged.
+ */
+export const TX_GUARD_PRICE_USD = "$0.002" as const;
+export const TX_GUARD_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

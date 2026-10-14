@@ -35,6 +35,7 @@ import {
   TOKENIZED_STOCK_PRICE_USD,
   WATCH_PRICE_USD,
   BALANCE_PRICE_USD,
+  TX_GUARD_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -1016,6 +1017,43 @@ export function balanceRouteConfig(): RoutesConfig {
             },
           },
           output: outputOf("/api/balance", "Horizon Pulse balance: per rail stablecoin balance, gas/fee state, canPay yes/no and calls left at our live prices (no risk score, no USD valuation)"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+/** Mechanical pre-transfer recipient checks (bundled OFAC SDN snapshot, public RPCs, cited scam list). Same rails, payTo and Bazaar pattern. */
+export function txGuardRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/tx-guard": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: TX_GUARD_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/tx-guard"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/tx-guard"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { chain: "base", to: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", expected: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
+          inputSchema: {
+            properties: {
+              chain: { type: "string", enum: ["base", "polygon", "solana", "xrpl"], description: "Chain of the transfer." },
+              to: { type: "string", description: "Recipient address you are about to send to." },
+              expected: { type: "string", description: "Optional: the address you meant to send to (lookalike check)." },
+              token: { type: "string", description: "Optional: token contract on Base or Polygon (ScamSniffer public list)." },
+            },
+            required: ["chain", "to"],
+          },
+          output: outputOf("/api/tx-guard", "Horizon Pulse tx-guard: mechanical allow/warn/block per check (expected match, OFAC SDN snapshot, account age, scam token) and overall"),
         } as DiscoveryDecl),
       },
     },

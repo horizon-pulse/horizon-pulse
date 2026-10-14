@@ -121,6 +121,11 @@
  * after adding /api/balance ($0.002). golden.cdp and golden.local gained ONLY
  * the three new balance keys per mode; all 62 pre-existing keys per mode are
  * byte-identical to main's golden. golden.discovery refreshed.
+ *
+ * 2026-10-14 (branch tx-guard, off main 3093280): regenerated with UPDATE_GOLDEN=1
+ * after adding /api/tx-guard ($0.002). golden.cdp and golden.local gained ONLY
+ * the three new tx-guard keys per mode; all pre-existing keys per mode are
+ * byte-identical to main's golden. golden.discovery refreshed.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
