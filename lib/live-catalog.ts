@@ -217,9 +217,9 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     priceUsd: TOKENIZED_STOCK_PRICE_USD,
     priceAtomic: TOKENIZED_STOCK_PRICE_ATOMIC,
     summary:
-      "Price and status of Coinbase tokenized stocks on Base (AAPLc, NVDAc, TSLAc…): Chainlink feed price on Base, paused flags, supply, multiplier, issuer and a feed-frozen flag; on-chain only, not investment advice",
+      "Status check of Coinbase tokenized stocks on Base (AAPLc, NVDAc, TSLAc…): paused flags, supply, supply cap, multiplier, issuer and token address; on-chain token state only, no price; not investment advice",
     category: "crypto",
-    blurb: "Tokenized stock price and status on Base (on-chain)",
+    blurb: "Tokenized stock status check on Base (on-chain, no price)",
   },
   {
     path: "/api/discourse/split?q=…",
@@ -273,7 +273,7 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock price and status on Base, on-chain only, not investment advice)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock status check on Base, on-chain token state, no price, not investment advice)." as const;
 
 export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
   crypto: "Crypto market data",

@@ -917,7 +917,7 @@ export function txStatusRouteConfig(): RoutesConfig {
   };
 }
 
-/** Tokenized stocks on Base (on-chain: B20 tokens + Chainlink feeds). Same rails, payTo and Bazaar pattern. */
+/** Tokenized stock status on Base (on-chain B20 token state, no price). Same rails, payTo and Bazaar pattern. */
 export function tokenizedStockRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
@@ -943,7 +943,7 @@ export function tokenizedStockRouteConfig(): RoutesConfig {
               symbol: { type: "string", description: "Optional. Ticker (AAPL or AAPLc) or the token address on Base; omit for every listed Coinbase tokenized stock." },
             },
           },
-          output: outputOf("/api/tokenized-stock", "Horizon Pulse tokenized stock status on Base: on-chain price, paused flags, supply, issuer, feed-frozen flag. Not investment advice"),
+          output: outputOf("/api/tokenized-stock", "Horizon Pulse tokenized stock status check on Base: paused flags, supply, supply cap, multiplier, issuer, token address (no price). Not investment advice"),
         } as DiscoveryDecl),
       },
     },

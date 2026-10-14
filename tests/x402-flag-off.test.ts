@@ -108,6 +108,8 @@
  * golden.local gained ONLY the three new tokenized-stock keys per mode; all 56
  * pre-existing keys per mode are byte-identical to main's golden (key-by-key
  * compare). golden.discovery refreshed.
+ * Fix (Odin conditional PASS): status only, no price; regenerated again, same
+ * 3 added keys per mode, pre-existing 56 still byte-identical to main 3d3a280.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

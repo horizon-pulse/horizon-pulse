@@ -213,7 +213,7 @@ export const TOOLS: ToolDef[] = [
     name: "tokenized_stock",
     opts: tokenizedStock.paymentOpts,
     schema: {
-      symbol: z.string().optional().describe("Ticker (AAPL or AAPLc) or the token address on Base; omit for all listed Coinbase tokenized stocks. Not investment advice"),
+      symbol: z.string().optional().describe("Ticker (AAPL or AAPLc) or the token address on Base; omit for all listed Coinbase tokenized stocks. Status check only (paused, supply, cap, multiplier, issuer), no price. Not investment advice"),
     },
     call: (a) => runHandler((req) => tokenizedStock.tokenizedStockHandler(req), makeRequest("/api/tokenized-stock", { symbol: s(a.symbol) })),
   },
