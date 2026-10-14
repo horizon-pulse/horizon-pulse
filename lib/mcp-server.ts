@@ -43,6 +43,7 @@ import * as tokenizedStock from "@/app/api/tokenized-stock/handler";
 import * as watchRoute from "@/app/api/watch/handler";
 import * as balanceRoute from "@/app/api/balance/handler";
 import * as txGuardRoute from "@/app/api/tx-guard/handler";
+import * as groceryNormalizeRoute from "@/app/api/grocery/normalize/handler";
 import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
@@ -249,7 +250,21 @@ export const TOOLS: ToolDef[] = [
       token: z.string().optional().describe("Token contract on Base or Polygon (ScamSniffer public list, GPL-3.0, up to 7-day delay)"),
     },
     call: (a) => runHandler((req) => txGuardRoute.txGuardHandler(req), makeRequest("/api/tx-guard", { chain: s(a.chain), to: s(a.to), expected: s(a.expected), token: s(a.token) })),
+  },  {
+    name: "grocery_normalize",
+    opts: groceryNormalizeRoute.paymentOpts,
+    schema: {
+      ingredients: z.array(z.string()).describe("Recipe ingredient lines, one per item (max 100, 200 chars each)"),
+      servings: z.number().int().optional().describe("Servings the recipe makes (1-100); give with targetServings to scale"),
+      targetServings: z.number().int().optional().describe("Servings you want (1-100)"),
+    },
+    call: (a) =>
+      runHandler(
+        (req) => groceryNormalizeRoute.groceryNormalizeHandler(req),
+        makeRequest("/api/grocery/normalize", {}, { ingredients: a.ingredients, servings: a.servings, targetServings: a.targetServings }),
+      ),
   },
+
   {
     name: "market_quote",
     opts: marketQuote.paymentOpts,

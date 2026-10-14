@@ -37,6 +37,7 @@ const MAIN_PRICES: Record<string, [string, string]> = {
   watch: ["2000", "0.002"], // watch 2026-10-14
   balance: ["2000", "0.002"], // balance 2026-10-14
   "tx-guard": ["2000", "0.002"], // tx-guard 2026-10-14
+  "grocery/normalize": ["2000", "0.002"], // grocery/normalize 2026-10-14
 };
 
 const RLUSD = "524C555344000000000000000000000000000000";
@@ -82,7 +83,7 @@ function expectShape(
       checked++;
     }
   }
-  expect(checked).toBe(136); // as tests/solana-flag-on: 88 on main + 12 market-mvp + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard
+  expect(checked).toBe(144); // as tests/solana-flag-on: 88 on main + 12 market-mvp + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS)
 }
 
 const xrplEntry = (route: string, network = "xrpl:1", issuer = TESTNET_ISSUER, extra: Record<string, unknown> = {}) => ({

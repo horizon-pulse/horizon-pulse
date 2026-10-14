@@ -3371,6 +3371,495 @@
         }
       }
     },
+    "/api/grocery/normalize": {
+      "get": {
+        "operationId": "getGroceryNormalize",
+        "tags": [
+          "Agent utilities"
+        ],
+        "summary": "Turn recipe ingredient lines into a normalized shopping list",
+        "description": "Recipe to shopping list normalizer: POST JSON {ingredients: [lines], servings?, targetServings?} (or GET ingredients=line|line). Returns per line name, canonicalId, qty, unit, metric (ml or g), category, optional/toTaste, prepNote, stated pack size, a typical pack hint, plus a merged shoppingList scaled to targetServings and unparsed lines. Deterministic, no outbound calls, no prices, nothing stored. Bad input (400) or nothing parsed (422): not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "x-payment-info": {
+          "protocol": "x402",
+          "x402Version": 2,
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "assetSymbol": "USDC",
+          "decimals": 6,
+          "priceUsd": "$0.002",
+          "amount": "2000",
+          "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+          "maxTimeoutSeconds": 300,
+          "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
+          "discovery": "https://horizonpulse.dev/.well-known/x402"
+        },
+        "parameters": [
+          {
+            "name": "ingredients",
+            "in": "query",
+            "required": true,
+            "description": "Ingredient lines separated by | (max 100 lines, 200 chars each). POST JSON is preferred.",
+            "schema": {
+              "type": "string",
+              "maxLength": 20000
+            },
+            "example": "2 cups all-purpose flour|3 large eggs"
+          },
+          {
+            "name": "servings",
+            "in": "query",
+            "required": false,
+            "description": "Servings the recipe makes (1-100). Give with targetServings to scale, or neither.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "example": 4
+          },
+          {
+            "name": "targetServings",
+            "in": "query",
+            "required": false,
+            "description": "Servings wanted (1-100).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "example": 8
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
+            "headers": {
+              "PAYMENT-RESPONSE": {
+                "$ref": "#/components/headers/PaymentResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroceryNormalizeResponse"
+                },
+                "example": {
+                  "source": "grocery-normalize",
+                  "priced": {
+                    "amountUsd": "$0.002",
+                    "amountAtomic": "2000",
+                    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+                    "network": "base",
+                    "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+                  },
+                  "asOf": "2026-10-14T21:18:00.000Z",
+                  "ok": true,
+                  "scale": {
+                    "servings": 4,
+                    "targetServings": 8,
+                    "factor": 2
+                  },
+                  "items": [
+                    {
+                      "raw": "2 cups all-purpose flour",
+                      "name": "all-purpose flour",
+                      "canonicalId": "all-purpose-flour",
+                      "qty": 4,
+                      "qtyMax": null,
+                      "unit": "cup",
+                      "dimension": "volume",
+                      "metric": {
+                        "value": 946.4,
+                        "unit": "ml"
+                      },
+                      "category": "baking",
+                      "optional": false,
+                      "toTaste": false,
+                      "prepNote": null,
+                      "statedPackSize": null,
+                      "packHint": {
+                        "typicalPack": "5 lb (2.27 kg)",
+                        "packsNeeded": null
+                      },
+                      "confidence": "high"
+                    },
+                    {
+                      "raw": "3 large eggs",
+                      "name": "large eggs",
+                      "canonicalId": "egg",
+                      "qty": 6,
+                      "qtyMax": null,
+                      "unit": "each",
+                      "dimension": "count",
+                      "metric": null,
+                      "category": "dairy_eggs",
+                      "optional": false,
+                      "toTaste": false,
+                      "prepNote": null,
+                      "statedPackSize": null,
+                      "packHint": {
+                        "typicalPack": "1 dozen (12)",
+                        "packsNeeded": 1
+                      },
+                      "confidence": "high"
+                    },
+                    {
+                      "raw": "1 tbsp olive oil",
+                      "name": "olive oil",
+                      "canonicalId": "olive-oil",
+                      "qty": 2,
+                      "qtyMax": null,
+                      "unit": "tbsp",
+                      "dimension": "volume",
+                      "metric": {
+                        "value": 29.6,
+                        "unit": "ml"
+                      },
+                      "category": "pantry",
+                      "optional": false,
+                      "toTaste": false,
+                      "prepNote": null,
+                      "statedPackSize": null,
+                      "packHint": {
+                        "typicalPack": "500 ml bottle",
+                        "packsNeeded": 1
+                      },
+                      "confidence": "high"
+                    }
+                  ],
+                  "shoppingList": [
+                    {
+                      "canonicalId": "all-purpose-flour",
+                      "unit": "ml",
+                      "qty": 946.4,
+                      "metric": {
+                        "value": 946.4,
+                        "unit": "ml"
+                      },
+                      "from": [
+                        0
+                      ]
+                    },
+                    {
+                      "canonicalId": "egg",
+                      "unit": "each",
+                      "qty": 6,
+                      "metric": null,
+                      "from": [
+                        1
+                      ]
+                    },
+                    {
+                      "canonicalId": "olive-oil",
+                      "unit": "ml",
+                      "qty": 29.6,
+                      "metric": {
+                        "value": 29.6,
+                        "unit": "ml"
+                      },
+                      "from": [
+                        2
+                      ]
+                    }
+                  ],
+                  "unparsed": [],
+                  "methodology": {
+                    "parser": "Deterministic rule-based parser (quantities incl. fractions, unicode fractions and ranges; unit aliases; parenthetical pack sizes; prep notes after a comma). No network, no third-party data, no AI model.",
+                    "units": "Volume converts to ml and mass to g with exact factors (US customary: tsp 4.92892 ml, tbsp 14.7868 ml, cup 236.588 ml, fl oz 29.5735 ml, pint 473.176 ml, quart 946.353 ml, gallon 3785.41 ml; oz 28.3495 g, lb 453.592 g). Volume is never converted to mass (no density guesses). Count units stay counts.",
+                    "packs": "packHint is from a small Horizon Pulse table of typical US pack sizes, for planning only. It is not a retailer listing, not stock and not a price.",
+                    "scaling": "If servings and targetServings are both given, every quantity is multiplied by targetServings / servings.",
+                    "storage": "Nothing is stored or logged."
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed input, limits exceeded, or servings without targetServings (not charged). Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "ok": false,
+                  "error": "Send ingredients (array of lines) or text (one ingredient per line)",
+                  "code": "missing_ingredients",
+                  "charged": false
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "$ref": "#/components/headers/PaymentRequired"
+              }
+            }
+          },
+          "422": {
+            "description": "No ingredient could be parsed (no_ingredients_parsed; not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postGroceryNormalize",
+        "tags": [
+          "Agent utilities"
+        ],
+        "summary": "Turn recipe ingredient lines into a normalized shopping list",
+        "description": "Recipe to shopping list normalizer: POST JSON {ingredients: [lines], servings?, targetServings?} (or GET ingredients=line|line). Returns per line name, canonicalId, qty, unit, metric (ml or g), category, optional/toTaste, prepNote, stated pack size, a typical pack hint, plus a merged shoppingList scaled to targetServings and unparsed lines. Deterministic, no outbound calls, no prices, nothing stored. Bad input (400) or nothing parsed (422): not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "x-payment-info": {
+          "protocol": "x402",
+          "x402Version": 2,
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "assetSymbol": "USDC",
+          "decimals": 6,
+          "priceUsd": "$0.002",
+          "amount": "2000",
+          "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+          "maxTimeoutSeconds": 300,
+          "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
+          "discovery": "https://horizonpulse.dev/.well-known/x402"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ingredients": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "Ingredient lines, one per item (max 100, 200 chars each)."
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 10000,
+                    "description": "Alternative to ingredients: one ingredient per line (max 10,000 chars)."
+                  },
+                  "servings": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Servings the recipe makes (1-100). Give with targetServings to scale, or neither."
+                  },
+                  "targetServings": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100,
+                    "description": "Servings wanted (1-100)."
+                  }
+                }
+              },
+              "example": {
+                "ingredients": [
+                  "2 cups all-purpose flour",
+                  "3 large eggs",
+                  "1 tbsp olive oil"
+                ],
+                "servings": 4,
+                "targetServings": 8
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
+            "headers": {
+              "PAYMENT-RESPONSE": {
+                "$ref": "#/components/headers/PaymentResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroceryNormalizeResponse"
+                },
+                "example": {
+                  "source": "grocery-normalize",
+                  "priced": {
+                    "amountUsd": "$0.002",
+                    "amountAtomic": "2000",
+                    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+                    "network": "base",
+                    "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+                  },
+                  "asOf": "2026-10-14T21:18:00.000Z",
+                  "ok": true,
+                  "scale": {
+                    "servings": 4,
+                    "targetServings": 8,
+                    "factor": 2
+                  },
+                  "items": [
+                    {
+                      "raw": "2 cups all-purpose flour",
+                      "name": "all-purpose flour",
+                      "canonicalId": "all-purpose-flour",
+                      "qty": 4,
+                      "qtyMax": null,
+                      "unit": "cup",
+                      "dimension": "volume",
+                      "metric": {
+                        "value": 946.4,
+                        "unit": "ml"
+                      },
+                      "category": "baking",
+                      "optional": false,
+                      "toTaste": false,
+                      "prepNote": null,
+                      "statedPackSize": null,
+                      "packHint": {
+                        "typicalPack": "5 lb (2.27 kg)",
+                        "packsNeeded": null
+                      },
+                      "confidence": "high"
+                    },
+                    {
+                      "raw": "3 large eggs",
+                      "name": "large eggs",
+                      "canonicalId": "egg",
+                      "qty": 6,
+                      "qtyMax": null,
+                      "unit": "each",
+                      "dimension": "count",
+                      "metric": null,
+                      "category": "dairy_eggs",
+                      "optional": false,
+                      "toTaste": false,
+                      "prepNote": null,
+                      "statedPackSize": null,
+                      "packHint": {
+                        "typicalPack": "1 dozen (12)",
+                        "packsNeeded": 1
+                      },
+                      "confidence": "high"
+                    },
+                    {
+                      "raw": "1 tbsp olive oil",
+                      "name": "olive oil",
+                      "canonicalId": "olive-oil",
+                      "qty": 2,
+                      "qtyMax": null,
+                      "unit": "tbsp",
+                      "dimension": "volume",
+                      "metric": {
+                        "value": 29.6,
+                        "unit": "ml"
+                      },
+                      "category": "pantry",
+                      "optional": false,
+                      "toTaste": false,
+                      "prepNote": null,
+                      "statedPackSize": null,
+                      "packHint": {
+                        "typicalPack": "500 ml bottle",
+                        "packsNeeded": 1
+                      },
+                      "confidence": "high"
+                    }
+                  ],
+                  "shoppingList": [
+                    {
+                      "canonicalId": "all-purpose-flour",
+                      "unit": "ml",
+                      "qty": 946.4,
+                      "metric": {
+                        "value": 946.4,
+                        "unit": "ml"
+                      },
+                      "from": [
+                        0
+                      ]
+                    },
+                    {
+                      "canonicalId": "egg",
+                      "unit": "each",
+                      "qty": 6,
+                      "metric": null,
+                      "from": [
+                        1
+                      ]
+                    },
+                    {
+                      "canonicalId": "olive-oil",
+                      "unit": "ml",
+                      "qty": 29.6,
+                      "metric": {
+                        "value": 29.6,
+                        "unit": "ml"
+                      },
+                      "from": [
+                        2
+                      ]
+                    }
+                  ],
+                  "unparsed": [],
+                  "methodology": {
+                    "parser": "Deterministic rule-based parser (quantities incl. fractions, unicode fractions and ranges; unit aliases; parenthetical pack sizes; prep notes after a comma). No network, no third-party data, no AI model.",
+                    "units": "Volume converts to ml and mass to g with exact factors (US customary: tsp 4.92892 ml, tbsp 14.7868 ml, cup 236.588 ml, fl oz 29.5735 ml, pint 473.176 ml, quart 946.353 ml, gallon 3785.41 ml; oz 28.3495 g, lb 453.592 g). Volume is never converted to mass (no density guesses). Count units stay counts.",
+                    "packs": "packHint is from a small Horizon Pulse table of typical US pack sizes, for planning only. It is not a retailer listing, not stock and not a price.",
+                    "scaling": "If servings and targetServings are both given, every quantity is multiplied by targetServings / servings.",
+                    "storage": "Nothing is stored or logged."
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed input, limits exceeded, or servings without targetServings (not charged). Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "ok": false,
+                  "error": "Send ingredients (array of lines) or text (one ingredient per line)",
+                  "code": "missing_ingredients",
+                  "charged": false
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "$ref": "#/components/headers/PaymentRequired"
+              }
+            }
+          },
+          "422": {
+            "description": "No ingredient could be parsed (no_ingredients_parsed; not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/discourse/split": {
       "get": {
         "operationId": "getDiscourseSplit",
@@ -6445,6 +6934,190 @@
           }
         },
         "description": "Inferred from a real response recorded from GET /api/demo/tx-guard at 2026-10-14T15:42Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
+      },
+      "GroceryNormalizeResponse": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "priced": {
+            "type": "object",
+            "properties": {
+              "amountUsd": {
+                "type": "string"
+              },
+              "amountAtomic": {
+                "type": "string"
+              },
+              "asset": {
+                "type": "string"
+              },
+              "network": {
+                "type": "string"
+              },
+              "payTo": {
+                "type": "string"
+              }
+            }
+          },
+          "asOf": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "scale": {
+            "type": "object",
+            "properties": {
+              "servings": {
+                "type": "number"
+              },
+              "targetServings": {
+                "type": "number"
+              },
+              "factor": {
+                "type": "number"
+              }
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "raw": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "canonicalId": {
+                  "type": "string"
+                },
+                "qty": {
+                  "type": "number"
+                },
+                "qtyMax": {
+                  "description": "Null in the recorded example; may hold a value."
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "dimension": {
+                  "type": "string"
+                },
+                "metric": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "value": {
+                      "type": "number"
+                    },
+                    "unit": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "category": {
+                  "type": "string"
+                },
+                "optional": {
+                  "type": "boolean"
+                },
+                "toTaste": {
+                  "type": "boolean"
+                },
+                "prepNote": {
+                  "description": "Null in the recorded example; may hold a value."
+                },
+                "statedPackSize": {
+                  "description": "Null in the recorded example; may hold a value."
+                },
+                "packHint": {
+                  "type": "object",
+                  "properties": {
+                    "typicalPack": {
+                      "type": "string"
+                    },
+                    "packsNeeded": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    }
+                  }
+                },
+                "confidence": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "shoppingList": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "canonicalId": {
+                  "type": "string"
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "qty": {
+                  "type": "number"
+                },
+                "metric": {
+                  "type": [
+                    "object",
+                    "null"
+                  ],
+                  "properties": {
+                    "value": {
+                      "type": "number"
+                    },
+                    "unit": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "from": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          },
+          "unparsed": {
+            "type": "array"
+          },
+          "methodology": {
+            "type": "object",
+            "properties": {
+              "parser": {
+                "type": "string"
+              },
+              "units": {
+                "type": "string"
+              },
+              "packs": {
+                "type": "string"
+              },
+              "scaling": {
+                "type": "string"
+              },
+              "storage": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "description": "Inferred from a real response recorded from GET /api/demo/grocery-normalize at 2026-10-14T21:18Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
       },
       "DiscourseSplitResponse": {
         "type": "object",

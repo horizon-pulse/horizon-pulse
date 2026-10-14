@@ -36,6 +36,7 @@ import {
   WATCH_PRICE_USD,
   BALANCE_PRICE_USD,
   TX_GUARD_PRICE_USD,
+  GROCERY_NORMALIZE_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -1493,4 +1494,62 @@ export function pdfRouteConfig(): RoutesConfig {
       },
     },
   });
+}
+
+const GROCERY_NORMALIZE_SCHEMA_PROPS = {
+  servings: { type: "integer", description: "Servings the recipe makes (1-100). Give with targetServings to scale, or neither." },
+  targetServings: { type: "integer", description: "Servings wanted (1-100)." },
+};
+
+/** Recipe ingredient lines to a normalized shopping list. Deterministic, no outbound calls. Same rails, payTo and Bazaar pattern; GET and POST share one price. */
+export function groceryNormalizeRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  const output = outputOf("/api/grocery/normalize", "Horizon Pulse grocery normalize: per line name, canonicalId, qty, unit, metric, category, pack hint; merged shoppingList; unparsed lines (no prices)");
+  return methodSplitRoutes(
+    "/api/grocery/normalize",
+    {
+      accepts: [
+        {
+          scheme: "exact",
+          price: GROCERY_NORMALIZE_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/grocery/normalize"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/grocery/normalize"),
+    },
+    {
+      ...declareChargedDiscovery({
+        method: "GET",
+        input: { ingredients: "2 cups all-purpose flour|3 large eggs", servings: "4", targetServings: "8" },
+        inputSchema: {
+          properties: {
+            ingredients: { type: "string", description: "Ingredient lines separated by | (max 100 lines, 200 chars each). POST JSON is preferred." },
+            ...GROCERY_NORMALIZE_SCHEMA_PROPS,
+          },
+          required: ["ingredients"],
+        },
+        output,
+      } as DiscoveryDecl),
+    },
+    {
+      ...declareChargedDiscovery({
+        method: "POST",
+        bodyType: "json",
+        input: { ingredients: ["2 cups all-purpose flour", "3 large eggs", "1 tbsp olive oil"], servings: 4, targetServings: 8 },
+        inputSchema: {
+          properties: {
+            ingredients: { type: "array", items: { type: "string" }, description: "Ingredient lines, one per item (max 100, 200 chars each)." },
+            text: { type: "string", description: "Alternative to ingredients: one ingredient per line (max 10,000 chars)." },
+            ...GROCERY_NORMALIZE_SCHEMA_PROPS,
+          },
+          required: [],
+        },
+        output,
+      } as DiscoveryDecl),
+    },
+  );
 }

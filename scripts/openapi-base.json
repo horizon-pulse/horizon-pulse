@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402: web fetch, HTTP proxy, page extract, x402 tooling, marketplace search, discourse sampling, transaction status, tokenized-stock status and crypto market data. Twenty-two x402 v2 paid routes (USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 HTTP proxy with SSRF protections, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search and /api/market/quote ($0.005 each), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), /api/pdf ($0.02 PDF URL to text per page), /api/discourse/split ($0.03 online discourse sample, NOT a poll), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 status check of Coinbase tokenized stocks on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 has a public page or endpoint changed since your last check, short diff), /api/balance ($0.002 can this wallet pay right now, per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
+    "description": "Pay-per-call APIs for AI agents via x402: web fetch, HTTP proxy, page extract, x402 tooling, marketplace search, discourse sampling, transaction status, tokenized-stock status and crypto market data. Twenty-three x402 v2 paid routes (USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 HTTP proxy with SSRF protections, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search and /api/market/quote ($0.005 each), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), /api/pdf ($0.02 PDF URL to text per page), /api/discourse/split ($0.03 online discourse sample, NOT a poll), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 status check of Coinbase tokenized stocks on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 has a public page or endpoint changed since your last check, short diff), /api/balance ($0.002 can this wallet pay right now, per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks), /api/grocery/normalize ($0.002 recipe ingredient lines to a normalized shopping list, deterministic, no prices), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
     "version": "1.0.0",
     "contact": {
       "name": "Horizon Pulse",
@@ -1038,6 +1038,113 @@
           },
           "504": {
             "description": "Download or parse timed out before any text (not charged)"
+          }
+        }
+      }
+    },
+    "/api/grocery/normalize": {
+      "get": {
+        "summary": "Recipe ingredient lines to a normalized shopping list",
+        "description": "$0.002 USDC x402. Recipe ingredient lines to a normalized shopping list: per line name, canonicalId, qty/qtyMax, unit, metric (ml or g; volume is never converted to mass), category, optional/toTaste, prepNote, statedPackSize and a typical US pack hint from our own table (planning only, not a retailer listing, no price, no stock); a merged shoppingList scaled by targetServings/servings; unparsed lines. Deterministic, no outbound calls, nothing stored. Any 200 is billed; bad input (400) and no ingredient parsed (422) are not charged. GET form: ingredients=line|line.",
+        "parameters": [
+          {
+            "name": "ingredients",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 20000
+            },
+            "description": "Ingredient lines separated by | (max 100 lines, 200 chars each)"
+          },
+          {
+            "name": "servings",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Servings the recipe makes; give with targetServings"
+          },
+          {
+            "name": "targetServings",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            },
+            "description": "Servings wanted"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: normalized list (charged)"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing or malformed input, limits exceeded, or servings without targetServings (not charged)"
+          },
+          "422": {
+            "description": "No ingredient could be parsed (no_ingredients_parsed; not charged)"
+          }
+        }
+      },
+      "post": {
+        "summary": "Recipe ingredient lines to a normalized shopping list",
+        "description": "$0.002 USDC x402. Recipe ingredient lines to a normalized shopping list: per line name, canonicalId, qty/qtyMax, unit, metric (ml or g; volume is never converted to mass), category, optional/toTaste, prepNote, statedPackSize and a typical US pack hint from our own table (planning only, not a retailer listing, no price, no stock); a merged shoppingList scaled by targetServings/servings; unparsed lines. Deterministic, no outbound calls, nothing stored. Any 200 is billed; bad input (400) and no ingredient parsed (422) are not charged. Same price as GET.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ingredients": {
+                    "type": "array",
+                    "maxItems": 100,
+                    "items": {
+                      "type": "string",
+                      "maxLength": 200
+                    }
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 10000,
+                    "description": "Alternative: one ingredient per line"
+                  },
+                  "servings": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "targetServings": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success: normalized list (charged)"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing or malformed input, limits exceeded, or servings without targetServings (not charged)"
+          },
+          "422": {
+            "description": "No ingredient could be parsed (no_ingredients_parsed; not charged)"
           }
         }
       }

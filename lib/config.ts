@@ -174,6 +174,14 @@ export const BALANCE_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 export const TX_GUARD_PRICE_USD = "$0.002" as const;
 export const TX_GUARD_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 
+/**
+ * /api/grocery/normalize — recipe ingredient lines to a normalized, scaled
+ * shopping list. Deterministic, no outbound calls. $0.002 (2000 atomic).
+ * Bad input (400) and nothing parsed (422): not charged.
+ */
+export const GROCERY_NORMALIZE_PRICE_USD = "$0.002" as const;
+export const GROCERY_NORMALIZE_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

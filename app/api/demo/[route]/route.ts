@@ -21,6 +21,7 @@ import { tokenizedStockHandler } from "@/app/api/tokenized-stock/handler";
 import { watchHandler } from "@/app/api/watch/handler";
 import { balanceHandler } from "@/app/api/balance/handler";
 import { txGuardHandler } from "@/app/api/tx-guard/handler";
+import { groceryNormalizeHandler } from "@/app/api/grocery/normalize/handler";
 import { OUTPUT_EXAMPLES } from "@/lib/route-examples";
 
 export const runtime = "nodejs";
@@ -62,6 +63,7 @@ const HANDLERS: Record<string, Handler> = {
   watch: watchHandler,
   balance: balanceHandler,
   "tx-guard": txGuardHandler,
+  "grocery-normalize": groceryNormalizeHandler,
   // Canned: the recorded example (lib/route-examples.ts). Never runs the
   // classifier or the sources, so the free demo costs nothing per call.
   "discourse-split": async () => NextResponse.json(OUTPUT_EXAMPLES["/api/discourse/split"]),

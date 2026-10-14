@@ -20,6 +20,7 @@ export const POLL_INTERVAL_SECONDS: Readonly<Record<string, number>> = {
   "/api/signals": 300, // OHLC-based indicators
   "/api/yield": 3600, // DefiLlama pools
   "/api/balance": 60, // balances move with each payment
+  "/api/grocery/normalize": 0, // deterministic: same input, same answer; no reason to poll
   "/api/tx-guard": 300, // account age moves slowly; SDN is a bundled snapshot
   "/api/watch": 300, // agent decides; 5 min is a sane floor for page checks
   "/api/tokenized-stock": 300, // token state (supply, pause, multiplier) changes slowly

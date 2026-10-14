@@ -37,6 +37,7 @@ const BAD_REQUEST: Record<string, Json> = {
   "/api/tx-status": { ok: false, error: "Query param tx is required (transaction hash or Solana signature)", code: "missing_tx", charged: false },
   "/api/tokenized-stock": { ok: false, error: "symbol must be a ticker (AAPL or AAPLc) or a 0x token address", code: "invalid_symbol", charged: false },
   "/api/watch": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url", charged: false },
+  "/api/grocery/normalize": { ok: false, error: "Send ingredients (array of lines) or text (one ingredient per line)", code: "missing_ingredients", charged: false },
   "/api/tx-guard": { ok: false, error: "chain must be one of base, polygon, solana, xrpl", code: "invalid_chain", charged: false },
   "/api/balance": { ok: false, error: "Give at least one of evm (0x… for Base and Polygon), solana, xrpl (r…)", code: "missing_address", charged: false },
   "/api/screenshot": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url" },

@@ -10,8 +10,8 @@
 import { writeFileSync } from "node:fs";
 
 const [, , BASE = "http://127.0.0.1:3461", OUT = "smoke-solana.json"] = process.argv;
-const ROUTES = ["pulse", "signals", "yield", "portfolio", "gas", "funding", "fetch", "http", "extract", "x402-check", "screenshot", "search", "pdf", "bazaar-check", "market/search", "market/quote", "discourse/split", "tx-status", "tokenized-stock", "watch", "balance", "tx-guard"];
-const POST = new Set(["http", "extract"]);
+const ROUTES = ["pulse", "signals", "yield", "portfolio", "gas", "funding", "fetch", "http", "extract", "x402-check", "screenshot", "search", "pdf", "bazaar-check", "market/search", "market/quote", "discourse/split", "tx-status", "tokenized-stock", "watch", "balance", "tx-guard", "grocery/normalize"];
+const POST = new Set(["http", "extract", "grocery/normalize"]);
 
 const decode = (h) => (h ? JSON.parse(Buffer.from(h, "base64").toString("utf8")) : null);
 

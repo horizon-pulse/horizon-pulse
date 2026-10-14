@@ -2,14 +2,14 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.horizon-pulse/horizon-pulse",
   "title": "Horizon Pulse",
-  "description": "Pay-per-call x402 tools for agents: crypto data, web fetch/extract, x402 checks, marketplace.",
+  "description": "24 agent tools via x402: crypto data, tx checks, web fetch. MCP pays Base USDC; HTTP adds 3 rails.",
   "websiteUrl": "https://horizonpulse.dev",
   "repository": {
     "url": "https://github.com/horizon-pulse/horizon-pulse",
     "source": "github",
     "subfolder": "mcp"
   },
-  "version": "0.1.0",
+  "version": "0.1.3",
   "remotes": [
     {
       "type": "streamable-http",

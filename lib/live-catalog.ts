@@ -50,6 +50,8 @@ import {
   BALANCE_PRICE_ATOMIC,
   TX_GUARD_PRICE_USD,
   TX_GUARD_PRICE_ATOMIC,
+  GROCERY_NORMALIZE_PRICE_USD,
+  GROCERY_NORMALIZE_PRICE_ATOMIC,
   HTTP_PRICE_USD,
   HTTP_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
@@ -256,7 +258,17 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
       "Mechanical pre-transfer recipient checks on Base, Polygon, Solana or the XRP Ledger: lookalike vs an expected address, OFAC SDN snapshot (source URL and pull date shown), account age, cited scam-token list; allow, warn or block per check",
     category: "agent",
     blurb: "Check a recipient address before sending (allow/warn/block)",
+  },  {
+    path: "/api/grocery/normalize",
+    method: "GET|POST",
+    priceUsd: GROCERY_NORMALIZE_PRICE_USD,
+    priceAtomic: GROCERY_NORMALIZE_PRICE_ATOMIC,
+    summary:
+      "Recipe ingredient lines to a normalized shopping list: name, canonical id, quantity, unit, metric value, category, optional/to-taste flags, typical pack hint, scaled to target servings and merged; deterministic, no outbound calls, no prices",
+    category: "agent",
+    blurb: "Turn recipe ingredient lines into a normalized shopping list",
   },
+
   {
     path: "/api/discourse/split?q=…",
     method: "GET",
@@ -309,7 +321,7 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock status check on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 changed-since-last-check for a public page or endpoint, short diff), /api/balance ($0.002 can-I-pay-now check per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock status check on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 changed-since-last-check for a public page or endpoint, short diff), /api/balance ($0.002 can-I-pay-now check per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks), /api/grocery/normalize ($0.002 recipe ingredient lines to a normalized shopping list, deterministic, no prices)." as const;
 
 export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
   crypto: "Crypto market data",
