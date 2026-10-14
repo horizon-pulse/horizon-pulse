@@ -50,7 +50,7 @@ Optional: `OPTIONS` on a paid route returns discovery + the same `PAYMENT-REQUIR
 - **Skill file:** [`/skill.md`](https://horizonpulse.dev/skill.md), plain markdown an agent can follow end to end (generated from `public/openapi.json` by `lib/agent-skill.ts`).
 - **Guide:** [`/agents`](https://horizonpulse.dev/agents): pay flow, skill and MCP setup.
 - **Local MCP server:** [`mcp/`](mcp/README.md), stdio, every live route as a tool, pays the x402 challenge from a buyer wallet you configure, with per-call and per-session caps (quote-only without a key). Not published to npm; install from this repo.
-- **Hosted MCP:** `POST https://horizonpulse.dev/mcp` (streamable HTTP) for MCP clients that can pay x402 themselves.
+- **Hosted MCP:** `POST https://horizonpulse.dev/mcp` (streamable HTTP) for MCP clients that can pay x402 themselves. Payments over MCP are USDC on Base only; Solana is supported on the HTTP routes only (see docs/solana-rail.md).
 
 ## Treasury (payTo)
 
@@ -58,7 +58,7 @@ Optional: `OPTIONS` on a paid route returns discovery + the same `PAYMENT-REQUIR
 | --- | --- |
 | **payTo** | `0x5b32c973596078a967562ca652761404f19be0e9` |
 | **Basename** | `horizonpulsebase.base.eth` (resolves to the payTo above; a label only, the 402 carries the hex address) |
-| **Custody** | **Interim Coinbase-custodial** Base address (Michael-controlled). **Not** a Safe or multisig. |
+| **Custody** | **Interim Coinbase-custodial** Base address (owner-controlled). **Not** a Safe or multisig. |
 | **Upgrade path** | Move later to a non-custodial Safe / multisig when ready — same catalog and prices. |
 | **USDC (Base)** | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | **Network** | `base` (CAIP-2 `eip155:8453`) |

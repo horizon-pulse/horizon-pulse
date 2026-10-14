@@ -1,6 +1,20 @@
-# Solana USDC rail (branch `solana-rail`) — OFF by default
+# Solana USDC rail — live on Solana mainnet
 
-Status: code + tests only. Not deployed. Go-live is gated on Odin's review.
+Status (checked 2026-10-14): **live in production.** Every paid HTTP route's 402 has
+an `exact` USDC entry for `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`, at the same atomic
+amount as Base, with payTo `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz`. Settlement goes
+through PayAI (`https://facilitator.payai.network`). First settlement: an operator test
+payment on 2026-10-08, tx `SmsCBJftu2yHL44VQZdzYziD4bBpxb6PWH66d2H5JD4XsbGqXXRvNS2x4xvdY7tooyw7uWoLkBXGyaUjZX86DVC`
+(0.005 USDC, `GET /api/pulse`; a test, not customer activity).
+The rail is still behind the switch and guards below. If any guard fails, routes fall
+back to their non-Solana entries.
+
+| surface | payment rails (live check 2026-10-14) |
+|---|---|
+| HTTP paid routes (`/api/*`) | Base, Solana, Polygon, XRPL (e.g. `GET /api/pulse` unpaid 402 lists `eip155:8453`, `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`, `eip155:137`, `xrpl:0`) |
+| Hosted MCP (`/mcp`, all tools incl. `discourse_split`) and the local MCP client | **Base only** (`eip155:8453`; e.g. unpaid `discourse_split` call) |
+
+Solana payment is HTTP only. The other networks are documented separately.
 
 ## What it does
 When ON, every paid route's 402 / OPTIONS gets a **second** `accepts` entry for
@@ -27,7 +41,7 @@ pubkey. `HP_SOLANA_NETWORK`, if set, must be the mainnet CAIP-2. Anything else =
 OFF = byte-identical to main (`tests/x402-flag-off.test.ts`, golden from clean
 main fc7e5f6). Note: Solana base58 has no checksum, so an edited address can still
 be "valid"; the exact pin is what stops it. Changing the payout address requires a
-code change + Michael's passphrase; env can only turn the rail on/off.
+code change + owner approval; env can only turn the rail on/off.
 
 ## Isolation
 - `@x402/svm` (2.27.0, same line as main's `@x402/core` 2.27.0) is lazy-imported only when ON.
@@ -43,9 +57,9 @@ code change + Michael's passphrase; env can only turn the rail on/off.
   fails **before money can move** → exact Base-only 402; a settle whose outcome is
   **unknown** → generic 502/504 `settlement_unconfirmed`, **never** a 402. Base
   payments never touch Solana code.
-- MCP (`/mcp`) and the human browser-402 copy are unchanged (Base only).
+- MCP (hosted `/mcp` and the local MCP client) and the human browser-402 copy are Base only.
 
-## Guards added 2026-10-08 (Odin review follow-up)
+## Guards added 2026-10-08 (internal review follow-up)
 - **(b) Token-account guard.** The Solana entry is shown only while the payTo's USDC
   token account `3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu` exists (read-only
   `getAccountInfo`, jsonParsed; must be an initialized SPL-Token USDC account owned by
@@ -66,7 +80,7 @@ code change + Michael's passphrase; env can only turn the rail on/off.
   `/supported` response. Not listed, list missing, non-https URL, or fetch failure →
   fail closed (Base-only). The rail re-fetches `/supported` every 10 min.
 
-## Review fixes (Odin code review 2026-10-08, PASS WITH FIXES)
+## Review fixes (internal review 2026-10-08, PASS WITH FIXES)
 
 ### Paid-path failure table (fix 1 + should-fix 8)
 | phase | what happened | client gets |
@@ -96,11 +110,10 @@ the client to sign and pay again (double charge).
   `maxTimeoutSeconds`). Released (deleted) when nothing could have been charged:
   verify rejected/failed, or the handler failed before settle.
 - In-memory, **per instance**. A fully global guard needs a shared store (e.g.
-  KV) = an account → Michael's decision. Instead, a cheap cross-instance check
+  KV) = an account → owner decision. Instead, a cheap cross-instance check
   (N1, below) catches replays that land on another instance.
 
-**PayAI duplicate handling (from PayAI's own docs, read 2026-10-08;
-copies in hp-tests/solana-rail-20261008/payai-*.2026-10-08.*):**
+**PayAI duplicate handling (from PayAI's own docs, read 2026-10-08):**
 - `facilitator.payai.network/developers.md`: "`POST /settle` … Idempotent:
   re-submitting an identical body returns the original outcome rather than paying
   twice." "Terminal responses are retained for 24 hours, and signed-payload
@@ -114,12 +127,12 @@ copies in hp-tests/solana-rail-20261008/payai-*.2026-10-08.*):**
   (`success:false` may be pending).
 - Consequence: PayAI will never move the money twice, but it **will report the
   original success again** for a replayed identical payload for 24 h — so without a
-  local guard the same payment would unlock the route repeatedly (Odin probe P5:
+  local guard the same payment would unlock the route repeatedly (internal review probe:
   4×200, 4 handler runs, 4 settles). Hence the local guard and its 25 h retention.
   The reference `@x402/svm` facilitator does the same with an in-memory
   `SettlementCache` (`duplicate_settlement`).
 
-## Re-review fixes (Odin re-review 2026-10-08, PASS WITH 1 FIX)
+## Re-review fixes (internal re-review 2026-10-08, PASS WITH 1 FIX)
 
 ### R1 — reason codes only in logs (required)
 - Verify-invalid logs `reason=<invalidReason>`, settle-failed logs `reason=<errorReason>`,
@@ -175,7 +188,7 @@ copies in hp-tests/solana-rail-20261008/payai-*.2026-10-08.*):**
 literal (any IPv4 form the URL parser normalises, or IPv6); not `localhost` /
 `*.localhost`; default port; hostname exactly on `SOLANA_RPC_HOST_ALLOWLIST`
 (`api.mainnet-beta.solana.com` only — a dedicated provider needs an account and
-Michael's approval, then its hostname is added in code). Anything else → rail OFF
+owner approval, then its hostname is added in code). Anything else → rail OFF
 (misconfigured). The parsed, normalised URL is what is stored and fetched. The RPC
 `fetch` uses `redirect: "error"`. Never logged.
 
@@ -195,10 +208,10 @@ Michael's approval, then its hostname is added in code). Anything else → rail 
   - `warn_rate`: ≥ 20 `[solana-rail]` warnings within 5 min (at most one alert per window);
   - `payai_allowance`: on-chain count of transactions touching payTo's USDC account
     (read-only `getSignaturesForAddress`, background, every ~10 min) reaches **80% of
-    the ~650 free settlements (520)** — an upper bound (Michael's own transfers
+    the ~650 free settlements (520)** — an upper bound (the owner's own transfers
     count too), so it alerts early, never late; also fires immediately on a PayAI
     `free_tier_exhausted` settle error. Buying credits / a PayAI account is
-    Michael's decision.
+    owner decision.
 
 ## Bazaar
 CDP/Base stays the Bazaar-indexed entry: the `extensions.bazaar` block on every 402
@@ -206,22 +219,30 @@ is byte-identical to main with the flag on (tested), and the Solana/PayAI server
 declares Bazaar. **PayAI-facilitated Solana sales do NOT count toward the Coinbase
 Bazaar settlement window.**
 
-## Known blockers before a Solana sale can succeed
-1. **payTo has no USDC token account** (the guard above keeps the rail Base-only until it exists). x402 `exact` on Solana pays via
-   `TransferChecked` into the payTo's USDC associated token account
-   `3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu`. On 2026-10-08 (read-only RPC)
-   neither the payTo account nor that ATA exists. Standard x402 clients do not
-   create it, and PayAI's simulation will fail until it exists. Creating it is an
-   on-chain action (~0.002 SOL rent) on Michael's side — his call.
-2. Odin's clock-row-11 gate on the @x402/svm fixes (see report). Those PRs touch
-   the `batch-settlement` scheme only; this rail uses `exact`.
-3. PayAI free allowance: 1,000 credits per receiving wallet (lifetime, ≈650 Solana
-   settlements per PayAI docs); beyond that PayAI needs an API key/credits
-   (= a PayAI account; Michael's decision).
+## Blockers (history) and current limitations
+Resolved:
+- ~~payTo has no USDC token account~~ **Resolved 2026-10-08.** The ATA
+  `3v95wKFDYRxegtZQYYeUzNnPrhogaCs9UpaR4QD7MzZu` exists. It is an initialized SPL-Token
+  USDC account owned by the payTo (public RPC `getAccountInfo`, re-checked 2026-10-14). The
+  token-account guard stays in place.
+- ~~Go-live review gate~~ **Resolved 2026-10-08.** The rail was reviewed and switched on, and the first
+  operator test settlement landed the same day.
+- The @x402/svm fixes that were tracked here affect `batch-settlement` only. This rail uses
+  `exact`, so they never blocked it.
+
+Still applies:
+- **PayAI facilitator allowance:** 1,000 credits per receiving wallet (lifetime, about 650
+  Solana settlements per PayAI docs). Past that, PayAI needs an API key with credits.
+  The allowance alert above fires at 80%.
+- **The replay guard is per instance.** The N1 cross-instance check closes most of the gap,
+  except a replay on another instance within 30 s of confirmation.
+- **No Coinbase Bazaar credit.** PayAI-facilitated Solana sales do not count
+  toward the Coinbase Bazaar settlement window.
+- **No Solana MCP.** Hosted `/mcp` (all tools, including `discourse_split`) and the local MCP client are Base only.
 
 ## Tests / smoke
 - `npm test` (vitest): flag-off identity, flag-on shape, config/pin validation,
-  isolation (unpaid + paid), SDK local verify (watch-only signer, no keys), Odin
+  isolation (unpaid + paid), SDK local verify (watch-only signer, no keys), internal-review
   guards (`tests/solana-guards.test.ts`), review fixes
   (`tests/solana-review-fixes.test.ts`) and re-review fixes
   (`tests/solana-rereview-fixes.test.ts`).
