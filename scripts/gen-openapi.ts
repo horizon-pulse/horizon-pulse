@@ -36,6 +36,7 @@ const BAD_REQUEST: Record<string, Json> = {
   "/api/discourse/split": { ok: false, error: "Query param q is required", code: "missing_query", charged: false, label: "online discourse sample, NOT a poll" },
   "/api/tx-status": { ok: false, error: "Query param tx is required (transaction hash or Solana signature)", code: "missing_tx", charged: false },
   "/api/tokenized-stock": { ok: false, error: "symbol must be a ticker (AAPL or AAPLc) or a 0x token address", code: "invalid_symbol", charged: false },
+  "/api/watch": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url", charged: false },
   "/api/screenshot": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url" },
   "/api/search": { ok: false, error: "Query param q is required", code: "missing_query" },
   "/api/pdf": { ok: false, error: "Query param url is required (absolute http/https URL of a PDF)", code: "missing_url" },

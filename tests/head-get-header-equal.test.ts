@@ -17,7 +17,7 @@ import { resetPolygonRailForTests } from "@/lib/polygon-rail";
 const PR = "payment-required";
 
 async function compareAll() {
-  expect(PAID_ROUTES.length).toBe(19); // 16 + discourse/split + tx-status + tokenized-stock
+  expect(PAID_ROUTES.length).toBe(20); // 16 + discourse/split + tx-status + tokenized-stock + watch
   for (const route of PAID_ROUTES) {
     const mod = (await import(path.join(__dirname, "..", "app", "api", route, "route.ts"))) as {
       GET: (r: NextRequest) => Promise<Response>;

@@ -110,6 +110,12 @@
  * compare). golden.discovery refreshed.
  * Fix (Odin conditional PASS): status only, no price; regenerated again, same
  * 3 added keys per mode, pre-existing 56 still byte-identical to main 3d3a280.
+ *
+ * 2026-10-14 (branch watch, off main b55a052): regenerated with UPDATE_GOLDEN=1
+ * after adding /api/watch ($0.002). golden.cdp and golden.local gained ONLY the
+ * three new watch keys per mode; all 59 pre-existing keys per mode are
+ * byte-identical to main's golden. golden.discovery refreshed (well-known,
+ * skill.md, openapi.json, llms.txt list the new route).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

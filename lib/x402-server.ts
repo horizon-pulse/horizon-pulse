@@ -33,6 +33,7 @@ import {
   DISCOURSE_SPLIT_PRICE_USD,
   TX_STATUS_PRICE_USD,
   TOKENIZED_STOCK_PRICE_USD,
+  WATCH_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -944,6 +945,41 @@ export function tokenizedStockRouteConfig(): RoutesConfig {
             },
           },
           output: outputOf("/api/tokenized-stock", "Horizon Pulse tokenized stock status check on Base: paused flags, supply, supply cap, multiplier, issuer, token address (no price). Not investment advice"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+/** Page/endpoint change watch (stateless token, SSRF-guarded fetch). Same rails, payTo and Bazaar pattern. */
+export function watchRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/watch": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: WATCH_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/watch"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/watch"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { url: "https://example.com" },
+          inputSchema: {
+            properties: {
+              url: { type: "string", description: "Public http(s) URL of the page or endpoint (required)." },
+              since: { type: "string", description: "Optional. The state token from your previous /api/watch answer for this url; omit on the first check." },
+            },
+            required: ["url"],
+          },
+          output: outputOf("/api/watch", "Horizon Pulse watch: changed true/false since your last check; when changed, added lines and added/removed counts; pass state back as since"),
         } as DiscoveryDecl),
       },
     },

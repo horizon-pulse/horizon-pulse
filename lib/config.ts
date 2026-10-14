@@ -150,6 +150,14 @@ export const TX_STATUS_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 export const TOKENIZED_STOCK_PRICE_USD = "$0.002" as const;
 export const TOKENIZED_STOCK_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 
+/**
+ * /api/watch — has a public page or endpoint changed since the last check
+ * (stateless state token, short line diff). $0.002 (2000 atomic). Bad input,
+ * blocked targets, upstream errors: not charged.
+ */
+export const WATCH_PRICE_USD = "$0.002" as const;
+export const WATCH_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

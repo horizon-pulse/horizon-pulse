@@ -32,6 +32,8 @@ const MAIN_PRICES: Record<string, string> = {
   "tx-status": "2000",
   // tokenized-stock (2026-10-14): $0.002.
   "tokenized-stock": "2000",
+  // watch (2026-10-14): $0.002.
+  watch: "2000",
 };
 
 async function captureBoth() {
@@ -99,7 +101,7 @@ describe("flag on", () => {
         checked++;
       }
     }
-    expect(checked).toBe(118); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local) + 6 discourse-split + 6 tx-status + 6 tokenized-stock
+    expect(checked).toBe(124); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local) + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch
     expect(JSON.stringify(all.cdp)).not.toBe(JSON.stringify(golden.cdp));
   });
 

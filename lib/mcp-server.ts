@@ -40,6 +40,7 @@ import * as marketSearch from "@/app/api/market/search/handler";
 import * as discourseSplit from "@/app/api/discourse/split/handler";
 import * as txStatus from "@/app/api/tx-status/handler";
 import * as tokenizedStock from "@/app/api/tokenized-stock/handler";
+import * as watchRoute from "@/app/api/watch/handler";
 import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
@@ -216,6 +217,15 @@ export const TOOLS: ToolDef[] = [
       symbol: z.string().optional().describe("Ticker (AAPL or AAPLc) or the token address on Base; omit for all listed Coinbase tokenized stocks. Status check only (paused, supply, cap, multiplier, issuer), no price. Not investment advice"),
     },
     call: (a) => runHandler((req) => tokenizedStock.tokenizedStockHandler(req), makeRequest("/api/tokenized-stock", { symbol: s(a.symbol) })),
+  },
+  {
+    name: "watch",
+    opts: watchRoute.paymentOpts,
+    schema: {
+      url: z.string().describe("Public http(s) URL of the page or endpoint to check"),
+      since: z.string().optional().describe("The state token from your previous watch answer for this url; omit on the first check"),
+    },
+    call: (a) => runHandler((req) => watchRoute.watchHandler(req), makeRequest("/api/watch", { url: s(a.url), since: s(a.since) })),
   },
   {
     name: "market_quote",
