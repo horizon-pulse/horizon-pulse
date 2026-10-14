@@ -1049,7 +1049,7 @@ export function txGuardRouteConfig(): RoutesConfig {
               chain: { type: "string", enum: ["base", "polygon", "solana", "xrpl"], description: "Chain of the transfer." },
               to: { type: "string", description: "Recipient address you are about to send to." },
               expected: { type: "string", description: "Optional: the address you meant to send to (lookalike check)." },
-              token: { type: "string", description: "Optional: token contract on Base or Polygon (ScamSniffer public list)." },
+              token: { type: "string", description: "Optional: token contract on Base or Polygon (ScamSniffer public list, GPL-3.0, up to 7-day delay)." },
             },
             required: ["chain", "to"],
           },

@@ -5,6 +5,7 @@
   "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data.",
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/check-sdn-age.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",

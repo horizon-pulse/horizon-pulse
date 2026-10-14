@@ -246,7 +246,7 @@ export const TOOLS: ToolDef[] = [
       chain: z.enum(["base", "polygon", "solana", "xrpl"]).describe("Chain of the transfer"),
       to: z.string().describe("Recipient address you are about to send to"),
       expected: z.string().optional().describe("The address you meant to send to (for the lookalike check)"),
-      token: z.string().optional().describe("Token contract on Base or Polygon (checked against the ScamSniffer public list)"),
+      token: z.string().optional().describe("Token contract on Base or Polygon (ScamSniffer public list, GPL-3.0, up to 7-day delay)"),
     },
     call: (a) => runHandler((req) => txGuardRoute.txGuardHandler(req), makeRequest("/api/tx-guard", { chain: s(a.chain), to: s(a.to), expected: s(a.expected), token: s(a.token) })),
   },
