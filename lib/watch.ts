@@ -64,7 +64,7 @@ export type Snapshot = { urlHash: Buffer; allHash: Buffer; lineHashes: string[] 
 
 export function snapshot(url: string, lines: string[]): Snapshot {
   const used = lines.slice(0, WATCH_MAX_LINES);
-  return { urlHash: h(url, H_URL), allHash: h(used.join("\n"), H_ALL), lineHashes: used.map((l) => h(l, H_LINE).toString("hex")) };
+  return { urlHash: h(url, H_URL), allHash: h(lines.join("\n"), H_ALL), lineHashes: used.map((l) => h(l, H_LINE).toString("hex")) };
 }
 
 export function encodeState(s: Snapshot): string {

@@ -74,6 +74,12 @@ describe("watch engine", () => {
     expect(r.diff.addedTruncated).toBe(true);
     expect(r.diff.added[0].length).toBeLessThanOrEqual(301);
   });
+  it("a change after line 400 is still reported (whole-content hash), with no added lines", async () => {
+    const base = Array.from({ length: 450 }, (_, i) => `l${i}`);
+    const since = snapshot(U, base);
+    const r = await watch(U, since, page([...base.slice(0, 449), "changed tail"].join("\n")));
+    expect(r).toMatchObject({ check: "changed", changed: true, diff: { addedCount: 0, removedCount: 0 }, truncatedSource: true });
+  });
   it("upstream errors pass through (not charged)", async () => {
     expect(await watch(U, null, fail(504, "timeout"))).toMatchObject({ ok: false, status: 504 });
   });
