@@ -27,9 +27,10 @@ const ARGS = {
   search: { q: "x402" },
   pdf: { url: "https://horizonpulse.dev/sample.pdf" },
   discourse_split: { q: "tabs or spaces" },
+  tokenized_stock: { symbol: "AAPL" },
   tx_status: { network: "base", tx: "0xe6e6ebd93db6735aad12a86a1084d5e1d6759e31fbedf7b741946f2bf410644f" },
 };
-const Q = { portfolio: "?address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", fetch: "?url=https://example.com", http: "?url=https://example.com", extract: "?url=https://example.com", x402_check: "?url=https://horizonpulse.dev/api/pulse", bazaar_check: "?url=horizonpulse.dev", market_search: "?q=weather%20forecast", market_quote: "?url=https://horizonpulse.dev/api/pulse", screenshot: "?url=https://example.com", search: "?q=x402", pdf: "?url=https://horizonpulse.dev/sample.pdf", discourse_split: "?q=tabs%20or%20spaces" , tx_status: "?network=base&tx=0xe6e6ebd93db6735aad12a86a1084d5e1d6759e31fbedf7b741946f2bf410644f" };
+const Q = { portfolio: "?address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", fetch: "?url=https://example.com", http: "?url=https://example.com", extract: "?url=https://example.com", x402_check: "?url=https://horizonpulse.dev/api/pulse", bazaar_check: "?url=horizonpulse.dev", market_search: "?q=weather%20forecast", market_quote: "?url=https://horizonpulse.dev/api/pulse", screenshot: "?url=https://example.com", search: "?q=x402", pdf: "?url=https://horizonpulse.dev/sample.pdf", discourse_split: "?q=tabs%20or%20spaces" , tokenized_stock: "?symbol=AAPL", tx_status: "?network=base&tx=0xe6e6ebd93db6735aad12a86a1084d5e1d6759e31fbedf7b741946f2bf410644f" };
 let fail = 0;
 const ok = (c, msg) => { console.log(`${c ? "PASS" : "FAIL"} ${msg}`); if (!c) fail++; };
 
@@ -37,7 +38,7 @@ const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabiliti
 ok(init.status === 200 && init.json.result?.serverInfo?.name === "horizon-pulse", "initialize is free");
 const list = await rpc("tools/list", {});
 const names = (list.json.result?.tools || []).map((t) => t.name).sort();
-const EXPECTED = ["bazaar_check","discourse_split","extract","fetch","funding","gas","http","market_quote","market_search","pdf","portfolio","pulse","screenshot","search","signals","tx_status","x402_check","yield"];
+const EXPECTED = ["bazaar_check","discourse_split","extract","fetch","funding","gas","http","market_quote","market_search","pdf","portfolio","pulse","screenshot","search","signals","tokenized_stock","tx_status","x402_check","yield"];
 // FREE tools (no x402 wrapper): listed, never challenged; not part of the paid count.
 const FREE = ["money_market_rates"];
 EXPECTED.push(...FREE);

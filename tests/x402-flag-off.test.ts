@@ -102,6 +102,12 @@
  * pre-existing keys per mode are byte-identical to main's golden (key-by-key
  * compare). golden.discovery refreshed (/.well-known/x402, skill.md,
  * openapi.json, llms.txt list the new route).
+ *
+ * 2026-10-14 (branch tokenized-stocks, off main 3d3a280): regenerated with
+ * UPDATE_GOLDEN=1 after adding /api/tokenized-stock ($0.002). golden.cdp and
+ * golden.local gained ONLY the three new tokenized-stock keys per mode; all 56
+ * pre-existing keys per mode are byte-identical to main's golden (key-by-key
+ * compare). golden.discovery refreshed.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

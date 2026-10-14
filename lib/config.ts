@@ -142,6 +142,14 @@ export const DISCOURSE_SPLIT_PRICE_ATOMIC = "30000" as const; // USDC 6 decimals
 export const TX_STATUS_PRICE_USD = "$0.002" as const;
 export const TX_STATUS_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 
+/**
+ * /api/tokenized-stock — price and status of Coinbase tokenized stocks on Base
+ * (on-chain only: B20 token contracts + Chainlink feeds on Base). $0.002
+ * (2000 atomic). Unknown symbol, bad input and RPCs down: not charged.
+ */
+export const TOKENIZED_STOCK_PRICE_USD = "$0.002" as const;
+export const TOKENIZED_STOCK_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

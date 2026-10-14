@@ -32,6 +32,7 @@ import {
   MARKET_QUOTE_PRICE_USD,
   DISCOURSE_SPLIT_PRICE_USD,
   TX_STATUS_PRICE_USD,
+  TOKENIZED_STOCK_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -910,6 +911,39 @@ export function txStatusRouteConfig(): RoutesConfig {
             required: ["tx"],
           },
           output: outputOf("/api/tx-status", "Horizon Pulse transaction status: landed or not, final flag, confirmations, fee and token transfers"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+/** Tokenized stocks on Base (on-chain: B20 tokens + Chainlink feeds). Same rails, payTo and Bazaar pattern. */
+export function tokenizedStockRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/tokenized-stock": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: TOKENIZED_STOCK_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/tokenized-stock"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/tokenized-stock"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { symbol: "AAPL" },
+          inputSchema: {
+            properties: {
+              symbol: { type: "string", description: "Optional. Ticker (AAPL or AAPLc) or the token address on Base; omit for every listed Coinbase tokenized stock." },
+            },
+          },
+          output: outputOf("/api/tokenized-stock", "Horizon Pulse tokenized stock status on Base: on-chain price, paused flags, supply, issuer, feed-frozen flag. Not investment advice"),
         } as DiscoveryDecl),
       },
     },

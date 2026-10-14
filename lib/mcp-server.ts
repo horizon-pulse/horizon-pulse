@@ -39,6 +39,7 @@ import * as bazaarCheck from "@/app/api/bazaar-check/handler";
 import * as marketSearch from "@/app/api/market/search/handler";
 import * as discourseSplit from "@/app/api/discourse/split/handler";
 import * as txStatus from "@/app/api/tx-status/handler";
+import * as tokenizedStock from "@/app/api/tokenized-stock/handler";
 import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
@@ -207,6 +208,14 @@ export const TOOLS: ToolDef[] = [
       network: z.string().optional().describe("base, polygon, solana or xrpl; required for 0x hashes. Poll again after pollAgainSeconds until final is true"),
     },
     call: (a) => runHandler((req) => txStatus.txStatusHandler(req), makeRequest("/api/tx-status", { tx: s(a.tx), network: s(a.network) })),
+  },
+  {
+    name: "tokenized_stock",
+    opts: tokenizedStock.paymentOpts,
+    schema: {
+      symbol: z.string().optional().describe("Ticker (AAPL or AAPLc) or the token address on Base; omit for all listed Coinbase tokenized stocks. Not investment advice"),
+    },
+    call: (a) => runHandler((req) => tokenizedStock.tokenizedStockHandler(req), makeRequest("/api/tokenized-stock", { symbol: s(a.symbol) })),
   },
   {
     name: "market_quote",
