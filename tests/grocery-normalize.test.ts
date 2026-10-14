@@ -94,3 +94,13 @@ describe("parsing", () => {
     expect(d).not.toMatch(/grok|kroger|walmart|instacart|amazon|\btarget\b/i);
   });
 });
+
+describe("free demo points at the real paid path", () => {
+  it("grocery-normalize demo -> /api/grocery/normalize", async () => {
+    const { GET } = await import("@/app/api/demo/[route]/route");
+    const r = await GET(new NextRequest("https://horizonpulse.dev/api/demo/grocery-normalize"), { params: Promise.resolve({ route: "grocery-normalize" }) });
+    const j = await r.json();
+    expect(j.paid_endpoint).toBe("https://horizonpulse.dev/api/grocery/normalize");
+    expect(j.note).toContain("/api/grocery/normalize");
+  });
+});

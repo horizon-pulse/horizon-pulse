@@ -92,8 +92,8 @@ export async function GET(
   }
 
   const origin = req.nextUrl.origin;
-  // Demo names are flat; nested paid routes map back (market-search -> /api/market/search, discourse-split -> /api/discourse/split).
-  const paidPath = `/api/${route.replace(/^(market|discourse)-/, "$1/")}`;
+  // Demo names are flat; nested paid routes map back (market-search -> /api/market/search, discourse-split -> /api/discourse/split, grocery-normalize -> /api/grocery/normalize).
+  const paidPath = `/api/${route.replace(/^(market|discourse|grocery)-/, "$1/")}`;
   const inner = new NextRequest(
     `${origin}${paidPath}${demo.query ? `?${demo.query}` : ""}`,
     { method: "GET" },
