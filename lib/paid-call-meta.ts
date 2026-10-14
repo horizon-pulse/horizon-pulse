@@ -19,6 +19,7 @@ export const POLL_INTERVAL_SECONDS: Readonly<Record<string, number>> = {
   "/api/funding": 300, // OKX funding revalidate 60 s; rate changes slowly
   "/api/signals": 300, // OHLC-based indicators
   "/api/yield": 3600, // DefiLlama pools
+  "/api/balance": 60, // balances move with each payment
   "/api/watch": 300, // agent decides; 5 min is a sane floor for page checks
   "/api/tokenized-stock": 300, // token state (supply, pause, multiplier) changes slowly
   "/api/tx-status": 5, // poll until final; the body also carries pollAgainSeconds per chain

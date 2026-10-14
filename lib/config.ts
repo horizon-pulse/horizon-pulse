@@ -158,6 +158,14 @@ export const TOKENIZED_STOCK_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 export const WATCH_PRICE_USD = "$0.002" as const;
 export const WATCH_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 
+/**
+ * /api/balance — can I pay right now, per rail (stablecoin, gas/fees, yes/no,
+ * calls left at our live prices). $0.002 (2000 atomic). Bad input and RPCs
+ * down: not charged.
+ */
+export const BALANCE_PRICE_USD = "$0.002" as const;
+export const BALANCE_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

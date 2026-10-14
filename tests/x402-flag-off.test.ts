@@ -116,6 +116,11 @@
  * three new watch keys per mode; all 59 pre-existing keys per mode are
  * byte-identical to main's golden. golden.discovery refreshed (well-known,
  * skill.md, openapi.json, llms.txt list the new route).
+ *
+ * 2026-10-14 (branch balance, off main e6e317d): regenerated with UPDATE_GOLDEN=1
+ * after adding /api/balance ($0.002). golden.cdp and golden.local gained ONLY
+ * the three new balance keys per mode; all 62 pre-existing keys per mode are
+ * byte-identical to main's golden. golden.discovery refreshed.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

@@ -14,7 +14,7 @@ import { NextRequest } from "next/server";
 export const PAID_ROUTES = [
   "pulse", "signals", "yield", "portfolio", "gas", "funding", "fetch",
   "http", "extract", "x402-check", "bazaar-check", "screenshot", "search", "pdf",
-  "market/search", "market/quote", "discourse/split", "tx-status", "tokenized-stock", "watch",
+  "market/search", "market/quote", "discourse/split", "tx-status", "tokenized-stock", "watch", "balance",
 ] as const;
 const POST_ROUTES = new Set(["http", "extract"]);
 

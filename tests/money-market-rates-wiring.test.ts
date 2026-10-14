@@ -30,10 +30,10 @@ describe("openapi + docs + llms", () => {
     expect(op.description).toContain(MMR_DISCLAIMER);
     expect(op.responses["200"].description).toContain(MMR_DISCLAIMER);
   });
-  it("paid counts: 20 paid paths (16 + discourse/split + tx-status + tokenized-stock + watch); 1 free path", () => {
+  it("paid counts: 21 paid paths (16 + discourse/split + tx-status + tokenized-stock + watch + balance); 1 free path", () => {
     const paidPaths = Object.entries<Record<string, Record<string, unknown>>>(spec.paths).filter(([, it]) => Object.values(it).some((o) => o["x-payment-info"]));
     const freePaths = Object.entries<Record<string, Record<string, unknown>>>(spec.paths).filter(([, it]) => Object.values(it).some((o) => o["x-free"]));
-    expect(paidPaths).toHaveLength(20);
+    expect(paidPaths).toHaveLength(21);
     expect(freePaths.map(([p]) => p)).toEqual(["/api/money-market-rates"]);
   });
   it("llms.txt lists it as FREE with the exact disclaimer", () => {
@@ -49,29 +49,29 @@ describe("openapi + docs + llms", () => {
     const { loadSkillRoutes } = await import("@/lib/agent-skill");
     const r = loadSkillRoutes();
     expect(r.some((x) => x.tool.includes("money"))).toBe(false);
-    expect(new Set(r.map((x) => x.tool)).size).toBe(20);
+    expect(new Set(r.map((x) => x.tool)).size).toBe(21);
   });
 });
 
 describe("x402 discovery excludes it", () => {
-  it("/.well-known/x402 resources do not list money-market-rates (20 paid paths stay: 16 + discourse/split + tx-status + tokenized-stock + watch; plain URLs since hygiene a)", async () => {
+  it("/.well-known/x402 resources do not list money-market-rates (21 paid paths stay: 16 + discourse/split + tx-status + tokenized-stock + watch + balance; plain URLs since hygiene a)", async () => {
     const { GET } = await import("@/app/.well-known/x402/route");
     const res = await (GET as unknown as () => Promise<Response>)();
     const j = await res.json();
     expect(j.resources.some((x: string) => x.includes("money-market"))).toBe(false);
-    expect(j.resources).toHaveLength(20);
+    expect(j.resources).toHaveLength(21);
   });
 });
 
 describe("hosted MCP", () => {
-  it("21 tools: 20 paid (TOOLS) + 1 free money_market_rates with the disclaimer", async () => {
+  it("22 tools: 21 paid (TOOLS) + 1 free money_market_rates with the disclaimer", async () => {
     const { TOOLS, FREE_TOOLS, buildMcpServer } = await import("@/lib/mcp-server");
-    expect(TOOLS).toHaveLength(20);
+    expect(TOOLS).toHaveLength(21);
     expect(TOOLS.some((t) => t.name === "money_market_rates")).toBe(false);
     expect(FREE_TOOLS.map((t) => t.name)).toEqual(["money_market_rates"]);
     expect(FREE_TOOLS[0].description).toContain(MMR_DISCLAIMER);
     const server = buildMcpServer() as unknown as { _registeredTools: Record<string, unknown> };
-    expect(Object.keys(server._registeredTools)).toHaveLength(21);
+    expect(Object.keys(server._registeredTools)).toHaveLength(22);
   });
   it("free tool call returns the route's answer, never an x402 challenge", async () => {
     const { FREE_TOOLS } = await import("@/lib/mcp-server");

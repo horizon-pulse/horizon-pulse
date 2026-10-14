@@ -34,6 +34,7 @@ import {
   TX_STATUS_PRICE_USD,
   TOKENIZED_STOCK_PRICE_USD,
   WATCH_PRICE_USD,
+  BALANCE_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -980,6 +981,41 @@ export function watchRouteConfig(): RoutesConfig {
             required: ["url"],
           },
           output: outputOf("/api/watch", "Horizon Pulse watch: changed true/false since your last check; when changed, added lines and added/removed counts; pass state back as since"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+/** Can-I-pay-now balance check per rail (public RPCs, read-only). Same rails, payTo and Bazaar pattern. */
+export function balanceRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/balance": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: BALANCE_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/balance"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/balance"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { evm: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
+          inputSchema: {
+            properties: {
+              evm: { type: "string", description: "0x address checked on Base and Polygon (USDC + gas)." },
+              solana: { type: "string", description: "Solana address (USDC + SOL)." },
+              xrpl: { type: "string", description: "XRP Ledger classic r-address (RLUSD, trust line, reserve, fee). Give at least one of evm, solana, xrpl." },
+            },
+          },
+          output: outputOf("/api/balance", "Horizon Pulse balance: per rail stablecoin balance, gas/fee state, canPay yes/no and calls left at our live prices (no risk score, no USD valuation)"),
         } as DiscoveryDecl),
       },
     },

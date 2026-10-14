@@ -46,6 +46,8 @@ import {
   TOKENIZED_STOCK_PRICE_ATOMIC,
   WATCH_PRICE_USD,
   WATCH_PRICE_ATOMIC,
+  BALANCE_PRICE_USD,
+  BALANCE_PRICE_ATOMIC,
   HTTP_PRICE_USD,
   HTTP_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
@@ -234,6 +236,16 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     blurb: "Did this page or endpoint change since my last check",
   },
   {
+    path: "/api/balance?evm=…[&solana=…][&xrpl=…]",
+    method: "GET",
+    priceUsd: BALANCE_PRICE_USD,
+    priceAtomic: BALANCE_PRICE_ATOMIC,
+    summary:
+      "Can I pay right now: per rail (Base, Polygon, Solana, XRP Ledger) the stablecoin balance, gas/fee state incl. the XRPL reserve and RLUSD trust line, a yes/no and calls left at our live prices; no risk score, no USD valuation; public RPCs, read-only",
+    category: "agent",
+    blurb: "Can my wallet pay x402 calls right now (4 rails)",
+  },
+  {
     path: "/api/discourse/split?q=…",
     method: "GET",
     priceUsd: DISCOURSE_SPLIT_PRICE_USD,
@@ -285,7 +297,7 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock status check on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 changed-since-last-check for a public page or endpoint, short diff)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock status check on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 changed-since-last-check for a public page or endpoint, short diff), /api/balance ($0.002 can-I-pay-now check per rail)." as const;
 
 export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
   crypto: "Crypto market data",
