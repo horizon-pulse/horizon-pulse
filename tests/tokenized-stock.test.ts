@@ -1,7 +1,7 @@
 /**
  * /api/tokenized-stock (2026-10-14): input parsing, decoding of a mocked
- * Multicall3 answer (token + Chainlink feed), paused/supply/multiplier/frozen
- * flags, RPC fallback, not-charged errors, priced block, metadata lines.
+ * Multicall3 answer (token contract only, no price), paused/supply/multiplier
+ * flags, issuer label, zero-supply 200, RPC fallback, not-charged errors, priced block, metadata lines.
  */
 import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
@@ -16,19 +16,15 @@ const T = parseAbi([
   "function name() view returns (string)", "function symbol() view returns (string)", "function decimals() view returns (uint8)",
   "function totalSupply() view returns (uint256)", "function supplyCap() view returns (uint256)", "function multiplier() view returns (uint256)",
   "function pausedFeatures() view returns (uint8[])", "function contractURI() view returns (string)",
-  "function latestRoundData() view returns (uint80, int256, uint256, uint256, uint80)", "function description() view returns (string)",
 ]);
-type Opt = { paused?: number[]; mult?: bigint; ageS?: number; failFeed?: boolean; cap?: bigint };
+type Opt = { paused?: number[]; mult?: bigint; supply?: bigint; failMult?: boolean; cap?: bigint };
 function rows(tickers: string[], o: Opt = {}) {
   return tickers.flatMap((t) => {
-    const upd = BigInt(Math.floor(NOW / 1000) - (o.ageS ?? 60));
     const r = (fn: string, v: unknown) => ({ success: true, returnData: encodeFunctionResult({ abi: T, functionName: fn, result: v } as never) as Hex });
     return [
-      r("name", `${t} Inc.`), r("symbol", `${t}c`), r("decimals", 8), r("totalSupply", 150_000_000n),
-      r("supplyCap", o.cap ?? (1n << 128n) - 1n), r("multiplier", o.mult ?? 10n ** 18n), r("pausedFeatures", o.paused ?? []),
+      r("name", `${t} Inc.`), r("symbol", `${t}c`), r("decimals", 8), r("totalSupply", o.supply ?? 150_000_000n),
+      r("supplyCap", o.cap ?? (1n << 128n) - 1n), o.failMult ? { success: false, returnData: "0x" as Hex } : r("multiplier", o.mult ?? 10n ** 18n), r("pausedFeatures", o.paused ?? []),
       r("contractURI", `https://api.coinbase.com/v1/tokenized-stocks/metadata/${t}c`),
-      o.failFeed ? { success: false, returnData: "0x" as Hex } : r("latestRoundData", [7n, 34_557_000_000n, upd, upd, 7n]),
-      r("description", `Coinbase ${t}`),
     ];
   });
 }
@@ -77,35 +73,43 @@ describe("parseStockInput", () => {
 });
 
 describe("engine (mocked Multicall3)", () => {
-  it("decodes price, supply, multiplier, issuer, paused and frozen flags", async () => {
+  it("decodes supply, multiplier, issuer label, paused flags; no price fields", async () => {
     const calls: string[] = [];
     const r = await tokenizedStock(["AAPL"], deps(() => agg(rows(["AAPL"], { mult: 2n * 10n ** 18n })), calls));
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatch(/eth_call 0xcA11bde05977b3631167028862bE2a173976CA11$/);
     if (!r.ok) throw new Error("expected ok");
     const s = r.stocks[0];
-    expect(s).toMatchObject({ ticker: "AAPL", symbol: "AAPLc", decimals: 8, multiplier: "2", issuer: { name: "Coinbase" } });
+    expect(s).toMatchObject({ ticker: "AAPL", symbol: "AAPLc", decimals: 8, multiplier: "2", issuer: "Coinbase (from the published token list, not an on-chain field)", zeroSupply: false });
     expect(s.supply).toEqual({ total: "1.5", totalAtomic: "150000000", shareEquivalent: "3", cap: null, capUnlimited: true });
-    expect(s.price).toMatchObject({ priceUsd: "345.57", underlyingEquivalentUsd: "172.785", feedDescription: "Coinbase AAPL", ageSeconds: 60 });
+    expect(Object.keys(s).filter((k) => /price|feed|market|frozen/i.test(k))).toEqual([]);
+    expect(JSON.stringify(r)).not.toMatch(/priceUsd|feedLikelyFrozen|latestRoundData|Chainlink/);
     expect(s.paused).toEqual({ any: false, features: [], transfer: false, mint: false, burn: false, seize: false });
-    expect(s.market.feedLikelyFrozen).toBe(false);
     expect(r.notAdvice).toBe(NOT_ADVICE);
     expect(r.untrusted).toBe(UNTRUSTED);
     expect(r.sources[0]).toMatch(/^https:\/\/docs\.base\.org\//);
   });
-  it("paused features and stale feed", async () => {
-    const r = await tokenizedStock(["TSLA"], deps(() => agg(rows(["TSLA"], { paused: [0, 3], ageS: 3 * 86_400, cap: 10n ** 12n }))));
+  it("paused features and a finite cap", async () => {
+    const r = await tokenizedStock(["TSLA"], deps(() => agg(rows(["TSLA"], { paused: [0, 3], cap: 10n ** 12n }))));
     if (!r.ok) throw new Error("expected ok");
     expect(r.stocks[0].paused).toEqual({ any: true, features: ["transfer", "seize"], transfer: true, mint: false, burn: false, seize: true });
-    expect(r.stocks[0].market.feedLikelyFrozen).toBe(true);
     expect(r.stocks[0].supply).toMatchObject({ cap: "10000", capUnlimited: false });
   });
-  it("a failed feed read is null + errors, still 200", async () => {
-    const r = await tokenizedStock(["NVDA"], deps(() => agg(rows(["NVDA"], { failFeed: true }))));
+  it("a failed sub-read is null + errors, still ok", async () => {
+    const r = await tokenizedStock(["NVDA"], deps(() => agg(rows(["NVDA"], { failMult: true }))));
     if (!r.ok) throw new Error("expected ok");
-    expect(r.stocks[0].price.priceUsd).toBeNull();
-    expect(r.stocks[0].market.feedLikelyFrozen).toBeNull();
-    expect(r.stocks[0].errors).toContain("latestRoundData unavailable");
+    expect(r.stocks[0].multiplier).toBeNull();
+    expect(r.stocks[0].supply.shareEquivalent).toBeNull();
+    expect(r.stocks[0].errors).toContain("multiplier unavailable");
+  });
+  it("COIN, CRCL, INTC with zero supply are a normal status (zeroSupply true), not an error", async () => {
+    for (const t of ["COIN", "CRCL", "INTC"]) {
+      const res = await tokenizedStockHandler(new NextRequest(`https://horizonpulse.dev/api/tokenized-stock?symbol=${t}`), deps(() => agg(rows([t], { supply: 0n }))));
+      expect(res.status, t).toBe(200);
+      const j = await res.json();
+      expect(j.stocks[0], t).toMatchObject({ ticker: t, zeroSupply: true, supply: { total: "0", totalAtomic: "0" }, errors: [] });
+      expect(j.notAdvice).toBe(NOT_ADVICE);
+    }
   });
   it("all 13 in one call", async () => {
     const calls: string[] = [];
@@ -144,11 +148,13 @@ describe("handler", () => {
     expect(res.status).toBe(502);
     expect((await res.json()).charged).toBe(false);
   });
-  it("metadata: $0.002, not-advice + untrusted lines, <= 500 chars", () => {
+  it("metadata: $0.002, status check (no price), not-advice + untrusted lines, <= 500 chars", () => {
     expect(paymentOpts.maxAmountRequired).toBe("2000");
     const d = ROUTE_METADATA["/api/tokenized-stock"].description;
     expect(d.length).toBeLessThanOrEqual(500);
     expect(d).toContain("Not investment advice.");
+    expect(d).toMatch(/status check/);
+    expect(d).not.toMatch(/Chainlink|price API|feed/i);
     expect(d).toContain(UNTRUSTED);
   });
 });

@@ -44,7 +44,7 @@ export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
   "/api/market/quote": "2026-10-12T12:20Z",
   "/api/discourse/split": "2026-10-13T05:00Z",
   "/api/tx-status": "2026-10-14T14:30Z",
-  "/api/tokenized-stock": "2026-10-14T14:50Z",
+  "/api/tokenized-stock": "2026-10-14T14:54Z",
 };
 
 export function exampleRecordedAt(path: string): string {
@@ -606,7 +606,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
       "network": "base",
       "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
     },
-    "asOf": "2026-10-14T14:50:16.706Z",
+    "asOf": "2026-10-14T14:54:39.312Z",
     "ok": true,
     "count": 1,
     "stocks": [
@@ -617,11 +617,8 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
         "token": "0xb200000000000000000000C2e324d24d7eEcd1fb",
         "network": "base",
         "caip2": "eip155:8453",
-        "issuer": {
-          "name": "Coinbase",
-          "basis": "Token address is on the Coinbase-issued list in Base docs; the token's on-chain contractURI points to Coinbase's metadata.",
-          "contractURI": "https://api.coinbase.com/v1/tokenized-stocks/metadata/AAPLc"
-        },
+        "issuer": "Coinbase (from the published token list, not an on-chain field)",
+        "contractURI": "https://api.coinbase.com/v1/tokenized-stocks/metadata/AAPLc",
         "decimals": 8,
         "supply": {
           "total": "8167.29109699",
@@ -639,19 +636,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
           "burn": false,
           "seize": false
         },
-        "price": {
-          "priceUsd": "345.57",
-          "underlyingEquivalentUsd": "345.57",
-          "feed": "0x787f13dEa48Db0897CbCDD985de77809D837F988",
-          "feedDescription": "Coinbase AAPL",
-          "roundId": "36893488147419103565",
-          "updatedAt": "2026-10-14T13:34:21.000Z",
-          "ageSeconds": 4555
-        },
-        "market": {
-          "feedLikelyFrozen": false,
-          "basis": "Chainlink feed updatedAt vs its 24h heartbeat (on-chain proxy, not an exchange calendar)"
-        },
+        "zeroSupply": false,
         "errors": []
       }
     ],
