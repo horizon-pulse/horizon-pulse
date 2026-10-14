@@ -29,6 +29,7 @@ import {
   BAZAAR_CHECK_PRICE_USD,
   MARKET_SEARCH_PRICE_USD,
   MARKET_QUOTE_PRICE_USD,
+  DISCOURSE_SPLIT_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -44,6 +45,7 @@ import { baseRail, runOnPaidRail } from "./paid-rail";
 import { getXrplRailConfig } from "./xrpl-config";
 import { handleXrplPayment, isXrplPaymentRequest, withXrplAccept } from "./xrpl-rail";
 import { getPolygonRailConfig } from "./polygon-config";
+import { withRejectReason } from "./rail-reject";
 import { handlePolygonPayment, isPolygonPaymentRequest, withPolygonAccept } from "./polygon-rail";
 
 /**
@@ -841,6 +843,42 @@ export function marketSearchRouteConfig(): RoutesConfig {
   });
 }
 
+/** Online discourse split (HN + Bluesky; NOT a poll). Same rails, payTo and Bazaar pattern. */
+export function discourseSplitRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/discourse/split": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: DISCOURSE_SPLIT_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/discourse/split"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/discourse/split"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { q: "tabs or spaces for indentation", sides: "tabs,spaces" },
+          inputSchema: {
+            properties: {
+              q: { type: "string", description: "Question or topic, 3-200 chars (required). Elections/candidates, health, and a named person's conduct are refused (not charged)." },
+              sides: { type: "string", description: "2-4 comma-separated side labels (default yes,no)." },
+              window: { type: "string", description: "Look-back window 1-30 days, e.g. 7d (default 30d)." },
+            },
+            required: ["q"],
+          },
+          output: outputOf("/api/discourse/split", "Horizon Pulse online discourse split (NOT a poll): shares with 95% intervals, counts and source links"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
 export function marketQuoteRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
@@ -1163,22 +1201,34 @@ export function createX402GetHandler(
       return withVary(challenge) as NextResponse;
     }
     if (solana.enabled && isSolanaPaymentRequest(req)) {
-      const paid = await handleSolanaPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, solana.config);
+      let rejected: string | null = null;
+      const paid = await handleSolanaPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, solana.config, (r) => {
+        rejected = r;
+      });
       // Solana unavailable / rejected / threw → the Base-only 402 (built from
       // a copy of the request WITHOUT the Solana payment header, so the Base
       // server never even parses a Solana payload).
-      return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
+      // Rejected (nothing charged, no body): Base-only 402 + PAYMENT-REQUIRED.error = reason, as Base does.
+      return withVary(paid ?? (await withRejectReason(await baseChallenge(withoutPaymentHeaders(req), cdpReady), rejected))) as NextResponse;
     }
     if (xrpl.enabled && isXrplPaymentRequest(req)) {
-      const paid = await handleXrplPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, xrpl.config);
+      let rejected: string | null = null;
+      const paid = await handleXrplPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, xrpl.config, (r) => {
+        rejected = r;
+      });
       // XRPL unavailable / rejected / threw → the Base-only 402 (built from a
       // copy of the request WITHOUT the XRPL payment header, so the Base
       // server never even parses an XRPL payload).
-      return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
+      // Rejected (nothing charged, no body): Base-only 402 + PAYMENT-REQUIRED.error = reason, as Base does.
+      return withVary(paid ?? (await withRejectReason(await baseChallenge(withoutPaymentHeaders(req), cdpReady), rejected))) as NextResponse;
     }
     if (polygon.enabled && isPolygonPaymentRequest(req, polygon.config)) {
-      const paid = await handlePolygonPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, polygon.config);
-      return withVary(paid ?? (await baseChallenge(withoutPaymentHeaders(req), cdpReady))) as NextResponse;
+      let rejected: string | null = null;
+      const paid = await handlePolygonPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, polygon.config, (r) => {
+        rejected = r;
+      });
+      // Rejected (nothing charged, no body): Base-only 402 + PAYMENT-REQUIRED.error = reason, as Base does.
+      return withVary(paid ?? (await withRejectReason(await baseChallenge(withoutPaymentHeaders(req), cdpReady), rejected))) as NextResponse;
     }
     if (!cdpReady) {
       return settlementUnavailableResponse();

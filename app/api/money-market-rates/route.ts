@@ -13,8 +13,10 @@ export async function GET(req: NextRequest) {
   // Vercel sets x-real-ip to the client address (what @vercel/functions ipAddress() reads); XFF first entry is the fallback.
   const ip = req.headers.get("x-real-ip")?.trim() || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
   try {
+    // Spec v2 §6: `public, max-age=60` only. No s-maxage: a shared/CDN copy would
+    // pin served_at to the first request's time (live-check 10/13).
     const body = await moneyMarketRates(p.query, { ...defaultMmrDeps(), clientIp: ip });
-    return NextResponse.json(body, { status: 200, headers: { "cache-control": "public, max-age=60, s-maxage=60" } });
+    return NextResponse.json(body, { status: 200, headers: { "cache-control": "public, max-age=60" } });
   } catch (e) {
     if (!(e instanceof MmrUpstreamLimited)) throw e;
     return NextResponse.json(

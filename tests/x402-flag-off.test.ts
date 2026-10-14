@@ -88,6 +88,13 @@
  * UPDATE_GOLDEN=1 after /.well-known/x402 resources became plain absolute URLs
  * (16, was 18 "VERB URL" strings). Only discovery["GET /.well-known/x402"].body
  * changed; golden.cdp and golden.local are byte-identical.
+ *
+ * 2026-10-13 (branch discourse-split, rebased onto main f133fd6): regenerated with
+ * UPDATE_GOLDEN=1 after adding /api/discourse/split. golden.cdp and
+ * golden.local gained ONLY the three new discourse-split keys per mode; all
+ * 50 pre-existing keys per mode are byte-identical to main's golden (key-by-key
+ * compare). golden.discovery refreshed (/.well-known/x402, skill.md,
+ * openapi.json, llms.txt list the new route).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

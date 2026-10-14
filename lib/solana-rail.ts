@@ -78,6 +78,7 @@
  *     console.error line tagged "[solana-rail][ALERT]").
  */
 import type { NextRequest } from "next/server";
+import { RAIL_REJECT, reasonFromRailResponse, settleFailReason, type OnReject } from "./rail-reject";
 import { NextRequest as NextRequestCtor, NextResponse } from "next/server";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import type { FacilitatorClient, RouteConfig, RoutesConfig } from "@x402/core/server";
@@ -1140,7 +1141,7 @@ function jsonError(status: number, error: string): NextResponse {
 // Paid path
 // ---------------------------------------------------------------------------
 
-type Decision = { kind: "response"; res: NextResponse } | { kind: "base" } | { kind: "rethrow"; err: unknown };
+type Decision = { kind: "response"; res: NextResponse } | { kind: "base"; reason: string } | { kind: "rethrow"; err: unknown };
 
 function decide(key: string, att: Attempt, res: NextResponse | null, threw: boolean, thrown: unknown): Decision {
   const s = att.settle;
@@ -1152,7 +1153,7 @@ function decide(key: string, att: Attempt, res: NextResponse | null, threw: bool
     if (s.outcome === "failed") {
       // Definitive: nothing landed. Key kept (the same tx would fail again).
       replaySet(key, "settle_failed");
-      return { kind: "base" };
+      return { kind: "base", reason: settleFailReason(s.reason) };
     }
     // Ambiguous (or settled but no deliverable response): the tx may have
     // landed. Never a 402 (would invite a second payment); no PayAI text.
@@ -1171,6 +1172,7 @@ function decide(key: string, att: Attempt, res: NextResponse | null, threw: bool
   if (att.handlerRan && res && res.status >= 400) return { kind: "response", res }; // route's own error, as on Base
   if (threw) {
     warn("Solana payment path threw", thrown);
+    return { kind: "base", reason: RAIL_REJECT.error };
   } else {
     let reason = "";
     try {
@@ -1182,7 +1184,7 @@ function decide(key: string, att: Attempt, res: NextResponse | null, threw: bool
     }
     warn(`Solana payment not accepted (status ${res?.status ?? "none"} from Solana server${reason})`);
   }
-  return { kind: "base" };
+  return { kind: "base", reason: reasonFromRailResponse(res, RAIL_REJECT.verifyFailed) };
 }
 
 /**
@@ -1233,14 +1235,23 @@ export async function handleSolanaPayment(
   routes: RoutesConfig,
   atomicUsdc: string,
   config: SolanaRailConfig,
+  onReject?: OnReject,
 ): Promise<NextResponse | null> {
+  const reject = (reason: string): null => {
+    try {
+      onReject?.(reason);
+    } catch {
+      /* never let a reporter break the paid path */
+    }
+    return null;
+  };
   let key: string | null = null;
   let decision: Decision;
   const startedAt = Date.now();
   try {
     // N3: token-account check and rail init in parallel.
     const [ready, rail] = await Promise.all([solanaTokenAccountReady(config), getRail(config)]);
-    if (!ready || !rail) return null;
+    if (!ready || !rail) return reject(RAIL_REJECT.unavailable);
 
     const requirement = await buildSolanaRequirement(rail, atomicUsdc);
     const received = decodePaymentSignatureHeader(req.headers.get("payment-signature")!.trim()) as PaymentPayload;
@@ -1248,7 +1259,7 @@ export async function handleSolanaPayment(
     const check = validateSolanaPaymentPayload(payload, requirement);
     if (!check.ok) {
       warn(`rejected Solana payload before facilitator (${check.reason})`);
-      return null;
+      return reject(RAIL_REJECT.invalidPayload);
     }
 
     // Replay guard: BEFORE verify.
@@ -1317,10 +1328,10 @@ export async function handleSolanaPayment(
     // Our own code threw before/around the facilitator: nothing was settled.
     if (key && !attempts.get(key)?.settle) replay.delete(key);
     warn("Solana payment path threw", err);
-    return null;
+    return reject(RAIL_REJECT.error);
   } finally {
     if (key) attempts.delete(key);
   }
   if (decision.kind === "rethrow") throw decision.err;
-  return decision.kind === "response" ? decision.res : null;
+  return decision.kind === "response" ? decision.res : reject(decision.reason);
 }

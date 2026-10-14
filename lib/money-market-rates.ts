@@ -412,12 +412,15 @@ export async function moneyMarketRates(query: MmrQuery, deps: Deps) {
       Object.assign(r, rateStatus({ latest: String(r.observations[0].effectiveDate), today, minutes, closed, disagree: disagreeSet(), coveredYears: coveredYears(), releaseMin: 480, secured: true, sofraiToday: true }));
     }
   }
+  // served_at = actual serve time (spec v2 §3): read the clock AFTER the upstream
+  // reads, never the request-start instant, and never earlier than retrieved_at.
+  const servedAt = new Date(Math.max(deps.now().getTime(), retrievedAt || 0));
   const todayStatus = !holidayVerified || disagreeSet().has(today) || !coveredYears()?.has(+today.slice(0, 4)) ? "UNVERIFIED holiday status" : isPubDay(today, closed) ? "open" : "holiday, no publish";
   return {
     route: "money-market-rates",
     scope: MMR_SCOPE,
     retrieved_at: etIso(new Date(retrievedAt || served.getTime())),
-    served_at: etIso(served),
+    served_at: etIso(servedAt),
     calendar: { today_et: today, today_status: todayStatus, holiday_sources: [...HOLIDAY_SOURCES], holiday_checked_at: hol ? etIso(new Date(hol.readAt)) : null },
     rates,
     terms: termsBlock(Number(today.slice(0, 4)), query.rates),
