@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
-import { txGuard, parseTxGuardInput, expectedMatch, sdnCheck, overall, SDN_SNAPSHOT, SDN_NO_MATCH, SCAM_LIST_SOURCE, SCAM_LIST_COMMIT, SDN_FAIL_AFTER_DAYS, sdnAgeDays, allSourcesFailed, UNTRUSTED, TX_GUARD_METHODOLOGY, NOTE, type Check } from "@/lib/tx-guard";
+import { txGuard, parseTxGuardInput, expectedMatch, sdnCheck, overall, SDN_SNAPSHOT, SDN_NO_MATCH, SCAM_LIST_SOURCE, SCAM_LIST_COMMIT, SDN_FAIL_AFTER_DAYS, sdnAgeDays, allSourcesFailed, resetScamCacheForTests, SCAM_CACHE_TTL_MS, UNTRUSTED, TX_GUARD_METHODOLOGY, NOTE, type Check } from "@/lib/tx-guard";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 import SDN from "@/lib/data/ofac-sdn-crypto-2026-10-14.json";
 import { createHash } from "node:crypto";
@@ -33,6 +33,8 @@ function mockFetch(o: O): typeof fetch {
   }) as typeof fetch;
 }
 const deps = (o: O) => ({ fetch: mockFetch(o), now: () => NOW });
+
+beforeEach(() => resetScamCacheForTests());
 
 describe("tx-guard input", () => {
   it("chain and to required, addresses validated per chain", () => {
@@ -158,10 +160,29 @@ describe("Sentinel MED-3 / LOW-7 / LOW-8 / LOW-9", () => {
   });
 });
 
+describe("scam_token 1-hour in-memory cache", () => {
+  it("one fetch per hour; refetch after TTL; only the per-call match is returned", async () => {
+    const T = "0x1234567890abcdef1234567890abcdef12345678";
+    let fetches = 0, t = NOW;
+    const base = mockFetch({ nonce: 1, scam: [T, "0x" + "ab".repeat(20)] });
+    const f = (async (u: RequestInfo | URL, i?: RequestInit) => { if (String(u).includes("scamsniffer")) fetches++; return base(u, i); }) as typeof fetch;
+    const d = { fetch: f, now: () => t };
+    expect((await txGuard({ chain: "base", to: V, token: T }, d)).checks[3].result).toBe("block");
+    t += SCAM_CACHE_TTL_MS - 1;
+    const r = await txGuard({ chain: "base", to: V, token: T }, d);
+    expect(fetches).toBe(1);
+    expect(JSON.stringify(r)).not.toContain("ab".repeat(20));
+    t += 1;
+    await txGuard({ chain: "base", to: V, token: T }, d);
+    expect(fetches).toBe(2);
+  });
+});
+
 describe("scam_token", () => {
   it("listed = block, not listed = allow, list down = unavailable, non-EVM = skipped", async () => {
     const T = "0x1234567890abcdef1234567890abcdef12345678";
     expect((await txGuard({ chain: "base", to: V, token: T }, deps({ nonce: 1, scam: [T] }))).checks[3].result).toBe("block");
+    resetScamCacheForTests();
     const a = (await txGuard({ chain: "base", to: V, token: T }, deps({ nonce: 1, scam: [] }))).checks[3];
     expect(a.result).toBe("allow");
     expect(a.source).toContain("ScamSniffer public list (GPL-3.0, up to 7-day delay)");
@@ -169,8 +190,10 @@ describe("scam_token", () => {
     expect(a.source).toContain(SCAM_LIST_COMMIT);
     // Only the per-call match leaves: no list entries in the response.
     const many = Array.from({ length: 50 }, (_, i) => "0x" + i.toString(16).padStart(40, "a"));
+    resetScamCacheForTests();
     const r2 = await txGuard({ chain: "base", to: V, token: T }, deps({ nonce: 1, scam: many }));
     for (const x of many) expect(JSON.stringify(r2)).not.toContain(x);
+    resetScamCacheForTests();
     expect((await txGuard({ chain: "base", to: V, token: T }, deps({ nonce: 1, scamDown: true }))).checks[3].result).toBe("unavailable");
     expect((await txGuard({ chain: "solana", to: SOL, token: SOL }, deps({ sigs: [{ signature: "s", blockTime: 1 }] }))).checks[3].result).toBe("skipped");
   });
