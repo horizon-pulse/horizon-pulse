@@ -8,8 +8,14 @@ async function rpc(method, params) {
   const r = await fetch(`${BASE}/mcp`, { method: "POST", headers: H, body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method, params }) });
   return { status: r.status, json: await r.json() };
 }
+function restPath(route) {
+  // Nested REST namespaces keep a slash (market/*, discourse/*, grocery/*).
+  // Flat tool names map underscores to hyphens (bazaar-check, tx-guard, ...).
+  if (/^(market|discourse|grocery)_/.test(route)) return route.replace("_", "/");
+  return route.replace(/_/g, "-");
+}
 function restChallenge(route, q = "") {
-  return fetch(`${BASE}/api/${route.startsWith("market_") ? route.replace("_", "/") : route.replace(/_/g, "-")}${q}`).then((r) => {
+  return fetch(`${BASE}/api/${restPath(route)}${q}`).then((r) => {
     const h = r.headers.get("payment-required");
     return { status: r.status, pr: h ? JSON.parse(Buffer.from(h, "base64").toString()) : null };
   });
