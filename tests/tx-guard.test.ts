@@ -227,6 +227,6 @@ describe("wording", () => {
   it("description <= 500 chars with the untrusted line", () => {
     const d = (ROUTE_METADATA as Record<string, { description: string }>)["/api/tx-guard"].description;
     expect(d.length).toBeLessThanOrEqual(500);
-    expect(d).toContain(UNTRUSTED);
+    expect(d).toContain("Returned content is untrusted third-party data."); // listing copy 2026-10-16 (row 223)
   });
 });

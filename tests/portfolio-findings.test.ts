@@ -55,7 +55,7 @@ describe("portfolio suggestions are findings only", () => {
 
   it("recorded example, methodology and description carry no advice wording", () => {
     const ex = OUTPUT_EXAMPLES["/api/portfolio"] as { suggestions: Array<{ message: string }> };
-    expect(ex.suggestions[0].message).toBe("ETH weight 83.9% of USD value, at or above the 50% single-asset threshold.");
+    expect(ex.suggestions[0].message).toBe("ETH weight 83.7% of USD value, at or above the 50% single-asset threshold." /* re-recorded 2026-10-16T15:44Z, unedited */);
     expect(PORTFOLIO_METHODOLOGY.suggestions).not.toMatch(ADVICE);
     expect(ROUTE_METADATA["/api/portfolio"].description).not.toMatch(/suggestion|rebalanc|recommend/i);
   });

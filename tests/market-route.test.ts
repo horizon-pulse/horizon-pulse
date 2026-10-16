@@ -85,7 +85,7 @@ describe("market routes: unpaid 402", () => {
       expect(pr.accepts).toHaveLength(1);
       expect(pr.accepts[0]).toMatchObject({ scheme: "exact", network: "eip155:8453", amount: "5000", payTo: BASE_PAYTO });
       expect(pr.resource!.description!.length).toBeLessThanOrEqual(500);
-      expect(pr.resource!.description).toContain(UNTRUSTED);
+      expect(pr.resource!.description).toMatch(/Returned (listing text|content) is untrusted third-party data\./); // listing copy 2026-10-16 (row 223)
       const bz = (pr.extensions as Record<string, any>).bazaar;
       expect(bz.info.input.method).toBe("GET");
       // Our 402 never carries another seller's address.

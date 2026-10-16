@@ -96,6 +96,6 @@ describe("balance metadata", () => {
   it("description <= 500 chars and carries the untrusted line", () => {
     const d = (ROUTE_METADATA as any)["/api/balance"].description as string;
     expect(d.length).toBeLessThanOrEqual(500);
-    expect(d).toContain(UNTRUSTED);
+    expect(d).toContain("Returned content is untrusted third-party data."); // listing copy 2026-10-16: the fact, no instruction (row 223)
   });
 });

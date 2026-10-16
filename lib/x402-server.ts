@@ -47,7 +47,7 @@ import {
 } from "./config";
 import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
 import { exampleRecordedAt, OUTPUT_EXAMPLES } from "./route-examples";
-import { GROCERY_INGREDIENT_OUTPUT_EXAMPLE } from "./grocery-ingredient-example";
+import { GROCERY_INGREDIENT_OUTPUT_EXAMPLE, GROCERY_INGREDIENT_POST_OUTPUT_EXAMPLE } from "./grocery-ingredient-example";
 import { getSolanaRailConfig } from "./solana-config";
 import { handleSolanaPayment, isSolanaPaymentRequest, withSolanaAccept } from "./solana-rail";
 import { baseRail, runOnPaidRail } from "./paid-rail";
@@ -271,7 +271,11 @@ function outputOf(path: string, what: string) {
     example,
     schema: {
       type: "object",
-      description: `${what}. The example is a trimmed real response recorded from GET /api/demo/${demoName(path)} at ${exampleRecordedAt(path)} UTC; live values differ on every call.`,
+      // An example flagged illustrative:true (discourse/split until a real recording exists) is never called a real response.
+      description:
+        example.illustrative === true
+          ? `${what}. The example is an illustrative format sample (illustrative: true; counts are NOT measured), not a recorded real response.`
+          : `${what}. The example is a trimmed real response recorded from GET /api/demo/${demoName(path)} at ${exampleRecordedAt(path)} UTC; live values differ on every call.`,
     },
   };
 }
@@ -1573,7 +1577,7 @@ export function groceryIngredientRouteConfig(): RoutesConfig {
     schema: {
       type: "object",
       description:
-        "Horizon Pulse ingredient nutrition: per item matches[] (source, id, fdcId for USDA matches, name, nutrientsPer100g, allergens null when unknown, sourceUrl, license, attribution), whereToBuy (Open Food Facts store names only), unknowns; attribution[]; disclaimer. The example is a trimmed response recorded from the handler (USDA snapshot only); live values differ.",
+        "Horizon Pulse ingredient nutrition: per item matches[] (source, id, fdcId for USDA matches, name, nutrientsPer100g, allergens null when unknown, sourceUrl, license, attribution), whereToBuy (Open Food Facts store names only), unknowns; attribution[]; disclaimer. The example is a trimmed response recorded from the handler on this method's declared input (USDA snapshot only); live values differ.",
     },
   };
   return methodSplitRoutes(
@@ -1622,7 +1626,7 @@ export function groceryIngredientRouteConfig(): RoutesConfig {
           },
           required: ["items"],
         },
-        output,
+        output: { ...output, example: GROCERY_INGREDIENT_POST_OUTPUT_EXAMPLE },
       } as DiscoveryDecl),
     },
   );

@@ -111,6 +111,6 @@ describe("handler", () => {
     expect(paymentOpts.maxAmountRequired).toBe("2000");
     const d = ROUTE_METADATA["/api/watch"].description;
     expect(d.length).toBeLessThanOrEqual(500);
-    expect(d).toContain(UNTRUSTED);
+    expect(d).toContain("Returned content is untrusted third-party data."); // listing copy 2026-10-16: the fact, no instruction (row 223)
   });
 });

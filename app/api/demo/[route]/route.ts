@@ -1,3 +1,6 @@
+import { getSolanaRailConfig } from "@/lib/solana-config";
+import { getXrplRailConfig } from "@/lib/xrpl-config";
+import { getPolygonRailConfig } from "@/lib/polygon-config";
 import { NextRequest, NextResponse } from "next/server";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { pulseHandler } from "@/app/api/pulse/handler";
@@ -71,6 +74,20 @@ const HANDLERS: Record<string, Handler> = {
   "discourse-split": async () => NextResponse.json(OUTPUT_EXAMPLES["/api/discourse/split"]),
 };
 
+/** Payment rails the paid route's 402 offers right now (same rail flags the paid 402 uses), for the demo note. */
+function liveRailsText(): string {
+  const rails = ["USDC on Base"];
+  if (getSolanaRailConfig().enabled) rails.push("USDC on Solana");
+  if (getXrplRailConfig().enabled) rails.push("RLUSD on the XRP Ledger");
+  if (getPolygonRailConfig().enabled) rails.push("USDC on Polygon");
+  return rails.length === 1 ? rails[0] : `${rails.slice(0, -1).join(", ")} or ${rails[rails.length - 1]}`;
+}
+
+/** A canned sample marked illustrative:true (discourse/split) is never called real output. */
+function isIllustrative(sample: unknown): boolean {
+  return typeof sample === "object" && sample !== null && (sample as { illustrative?: unknown }).illustrative === true;
+}
+
 /**
  * Free fixed-input sample. Ignores every caller query param / body: the
  * real handler runs on the catalog's fixed input only. CDN-cached 5 min.
@@ -130,7 +147,7 @@ export async function GET(
   return NextResponse.json(
     {
       demo: true,
-      note: `Free fixed-input sample of real output. The paid route accepts your own input: ${paidPath} (${demo.priceUsd} per call, x402 USDC on Base, no signup or API key).`,
+      note: `${isIllustrative(sample) ? "Free fixed-input illustrative format sample (NOT real output: counts are not measured)." : "Free fixed-input sample of real output."} The paid route accepts your own input: ${paidPath} (${demo.priceUsd} per call via x402: ${liveRailsText()}; no signup or API key).`,
       paid_endpoint: `${origin}${paidPath}`,
       price: demo.priceUsd,
       fixed_input: demo.input,

@@ -5,9 +5,14 @@
  * recorded from the free fixed-input twin GET https://horizonpulse.dev/api/demo/<route>
  * on 2026-10-01 ~14:36 UTC (asOf fields show the exact time). Fields were
  * dropped to keep the PAYMENT-REQUIRED header small (methodology, priced,
- * long arrays/bodies; truncated strings end in "…"); no value was invented
- * or edited. Live values change on every call. Raw recordings:
- * hp-tests/demo-samples-20261001/ (box only, not in the repo).
+ * long arrays/bodies; truncated strings end in "…"). Except for the entries
+ * named below, no value was invented or edited. Live values change on every
+ * call. Raw recordings: hp-tests/demo-samples-20261001/ (box only, not in the repo).
+ *
+ * EXCEPTION: /api/discourse/split is NOT a recording. It is an illustrative
+ * format sample with invented counts, marked `illustrative: true` in the example
+ * itself; its Bazaar schema text and its demo note say so (no stance classifier
+ * has produced a real answer yet). Replace it with a real recording when one exists.
  *
  * 2026-10-09: in /api/pulse the recorded key overall.signal ("hold") is shown
  * under its new name overall.direction ("flat"), same rule (see CHANGELOG.md).
@@ -33,13 +38,25 @@
  * nothing paid), now with evidence + unknowns; same trimming as before (priced,
  * listing, policy, methodology, buyPlan.accepts/steps, live.findings, index.accepts
  * dropped); no value was edited. Raw capture: /workspace/hp-tmp/rea-ship/demo-market-quote.json (box only).
+ * 2026-10-16 (branch fix/listing-copy-examples, Odin 11:43 AM ET): /api/pulse,
+ * /api/portfolio, /api/funding and /api/x402-check re-recorded by running their
+ * handlers locally on the demo's fixed inputs (x402-check with the declared
+ * method=GET) against the live data sources; no paid call was made. Only the
+ * top-level `methodology` field is dropped; every other key and value is as
+ * returned (the earlier pulse key rename and portfolio message re-render are gone;
+ * funding now shows BTC, ETH and SOL). Raw: /workspace/hp-tmp/listing-fix/rec-*.json (box only).
+ * Same pass (Odin 11:48 AM ET): /api/bazaar-check re-recorded the same way against
+ * live horizonpulse.dev and CDP discovery (24 routes listed). Trimmed for size only:
+ * `methodology` and `priced` dropped, and `routes` cut to 3 of the 24 entries
+ * (/api/pulse, /api/yield, /api/grocery/ingredient) unchanged; summary counts are
+ * for all 24. No value was edited.
  */
 
 export const EXAMPLES_RECORDED_AT = "2026-10-01T14:36Z" as const;
 
-/** Routes added after the 2026-10-01 recording, with their own recording time (UTC). */
+/** Routes added (or re-recorded) after the 2026-10-01 recording, with their own recording time (UTC). */
 export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
-  "/api/bazaar-check": "2026-10-09T16:38Z",
+  "/api/bazaar-check": "2026-10-16T15:49Z",
   "/api/market/search": "2026-10-12T04:09Z",
   "/api/market/quote": "2026-10-12T12:20Z",
   "/api/discourse/split": "2026-10-13T05:00Z",
@@ -49,6 +66,10 @@ export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
   "/api/balance": "2026-10-14T15:21Z",
   "/api/tx-guard": "2026-10-14T15:42Z",
   "/api/grocery/normalize": "2026-10-14T21:18Z",
+  "/api/pulse": "2026-10-16T15:44Z",
+  "/api/portfolio": "2026-10-16T15:44Z",
+  "/api/funding": "2026-10-16T15:44Z",
+  "/api/x402-check": "2026-10-16T15:44Z",
 };
 
 export function exampleRecordedAt(path: string): string {
@@ -59,24 +80,31 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
   "/api/pulse": {
     "ok": true,
     "source": "coinbase",
-    "asOf": "2026-10-01T14:36:42.113Z",
+    "priced": {
+      "amountUsd": "$0.002",
+      "amountAtomic": "2000",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "network": "base",
+      "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+    },
+    "asOf": "2026-10-16T15:44:52.573Z",
     "assets": {
       "BTC": {
         "id": "bitcoin",
-        "priceUsd": 84092.26,
-        "change24hPct": 0.40332180519101707,
+        "priceUsd": 81572,
+        "change24hPct": -0.9247164120007333,
         "momentum": "neutral"
       },
       "ETH": {
         "id": "ethereum",
-        "priceUsd": 2695,
-        "change24hPct": 0.6776596460031482,
+        "priceUsd": 2440.61,
+        "change24hPct": 0.10212786901384002,
         "momentum": "neutral"
       },
       "SOL": {
         "id": "solana",
-        "priceUsd": 117.79,
-        "change24hPct": -0.8084210526315737,
+        "priceUsd": 104.55,
+        "change24hPct": -1.3586187376167542,
         "momentum": "neutral"
       }
     },
@@ -84,7 +112,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
       "momentum": "neutral",
       "sentiment": "neutral",
       "direction": "flat",
-      "avgChange24hPct": 0.09085346618753054
+      "avgChange24hPct": -0.7270690935345492
     }
   },
   "/api/signals": {
@@ -178,9 +206,45 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
   },
   "/api/portfolio": {
     "ok": true,
+    "source": "rpc+coinbase+coingecko",
+    "priced": {
+      "amountUsd": "$0.04",
+      "amountAtomic": "40000",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "network": "base",
+      "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+    },
     "address": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
-    "asOf": "2026-10-01T14:36:45.419Z",
+    "asOf": "2026-10-16T15:44:52.576Z",
+    "networks": [
+      {
+        "network": "base",
+        "chainId": 8453,
+        "ok": true,
+        "rpc": "https://base.publicnode.com"
+      },
+      {
+        "network": "ethereum",
+        "chainId": 1,
+        "ok": true,
+        "rpc": "https://ethereum.publicnode.com"
+      }
+    ],
     "holdings": [
+      {
+        "network": "base",
+        "chainId": 8453,
+        "symbol": "ETH",
+        "kind": "native",
+        "contract": null,
+        "decimals": 18,
+        "balanceAtomic": "3128821803472737280",
+        "balance": "3.12882180347273728",
+        "stablecoin": false,
+        "priceUsd": 2440.45,
+        "valueUsd": 7635.733170285041,
+        "weight": 0.29436685823915304
+      },
       {
         "network": "base",
         "chainId": 8453,
@@ -188,12 +252,55 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
         "kind": "erc20",
         "contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
         "decimals": 6,
-        "balanceAtomic": "43286078",
-        "balance": "43.286078",
+        "balanceAtomic": "45145979",
+        "balance": "45.145979",
         "stablecoin": true,
         "priceUsd": 1,
-        "valueUsd": 43.286078,
-        "weight": 0.0015226151828024019
+        "valueUsd": 45.145979,
+        "weight": 0.001740432739593058
+      },
+      {
+        "network": "base",
+        "chainId": 8453,
+        "symbol": "WETH",
+        "kind": "erc20",
+        "contract": "0x4200000000000000000000000000000000000006",
+        "decimals": 18,
+        "balanceAtomic": "222512739074208417",
+        "balance": "0.222512739074208417",
+        "stablecoin": false,
+        "priceUsd": 2440.45,
+        "valueUsd": 543.0312140736519,
+        "weight": 0.020934517858052216
+      },
+      {
+        "network": "base",
+        "chainId": 8453,
+        "symbol": "DAI",
+        "kind": "erc20",
+        "contract": "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
+        "decimals": 18,
+        "balanceAtomic": "4234351889843575709",
+        "balance": "4.234351889843575709",
+        "stablecoin": true,
+        "priceUsd": 0.9999789894,
+        "valueUsd": 4.234262923569759,
+        "weight": 0.00016323601754711812
+      },
+      {
+        "network": "base",
+        "chainId": 8453,
+        "symbol": "cbBTC",
+        "kind": "erc20",
+        "contract": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
+        "decimals": 8,
+        "balanceAtomic": "325",
+        "balance": "0.00000325",
+        "stablecoin": false,
+        "note": "Coinbase Wrapped BTC — Base has no BitGo WBTC; used as BTC exposure",
+        "priceUsd": 81519,
+        "valueUsd": 0.26493675,
+        "weight": 1.0213635939124969e-05
       },
       {
         "network": "ethereum",
@@ -202,32 +309,103 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
         "kind": "native",
         "contract": null,
         "decimals": 18,
-        "balanceAtomic": "5715987139328012679",
-        "balance": "5.715987139328012679",
+        "balanceAtomic": "5769653936881798941",
+        "balance": "5.769653936881798941",
         "stablecoin": false,
-        "priceUsd": 2696.21,
-        "valueUsd": 15411.50168492758,
-        "weight": 0.5421093233546252
+        "priceUsd": 2440.45,
+        "valueUsd": 14080.551950263185,
+        "weight": 0.5428225093042933
+      },
+      {
+        "network": "ethereum",
+        "chainId": 1,
+        "symbol": "USDC",
+        "kind": "erc20",
+        "contract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        "decimals": 6,
+        "balanceAtomic": "37192124",
+        "balance": "37.192124",
+        "stablecoin": true,
+        "priceUsd": 1,
+        "valueUsd": 37.192124,
+        "weight": 0.001433801895504464
+      },
+      {
+        "network": "ethereum",
+        "chainId": 1,
+        "symbol": "WETH",
+        "kind": "erc20",
+        "contract": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        "decimals": 18,
+        "balanceAtomic": "1466528037085158070",
+        "balance": "1.46652803708515807",
+        "stablecoin": false,
+        "priceUsd": 2440.45,
+        "valueUsd": 3578.988348104474,
+        "weight": 0.13797438074525092
+      },
+      {
+        "network": "ethereum",
+        "chainId": 1,
+        "symbol": "WBTC",
+        "kind": "erc20",
+        "contract": "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+        "decimals": 8,
+        "balanceAtomic": "0",
+        "balance": "0",
+        "stablecoin": false,
+        "priceUsd": 81407.43433,
+        "valueUsd": 0,
+        "weight": 0
+      },
+      {
+        "network": "ethereum",
+        "chainId": 1,
+        "symbol": "DAI",
+        "kind": "erc20",
+        "contract": "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+        "decimals": 18,
+        "balanceAtomic": "14372078273323112880",
+        "balance": "14.37207827332311288",
+        "stablecoin": true,
+        "priceUsd": 0.9999789894,
+        "valueUsd": 14.371776307335344,
+        "weight": 0.0005540495646665288
       }
     ],
     "totals": {
-      "valueUsd": 28428.77076815375,
-      "stablecoinShare": 0.003485316759255355,
-      "maxAssetWeight": 0.83884957651361,
+      "valueUsd": 25939.51376170726,
+      "stablecoinShare": 0.0038915202173111685,
+      "maxAssetWeight": 0.8371893675434464,
       "maxAssetSymbol": "ETH",
-      "maxChainWeight": 0.682574246168484,
+      "maxChainWeight": 0.6827847415097152,
       "maxChain": "ethereum"
     },
     "risk": {
       "score": 85,
-      "band": "high"
+      "band": "high",
+      "components": {
+        "concentration": 41.85946837717232,
+        "nonStable": 29.883254393480662,
+        "chainConcentration": 13.655694830194305
+      }
     },
     "suggestions": [
       {
         "priority": "high",
         "code": "concentration_high",
-        "message": "ETH weight 83.9% of USD value, at or above the 50% single-asset threshold."
+        "message": "ETH weight 83.7% of USD value, at or above the 50% single-asset threshold."
+      },
+      {
+        "priority": "high",
+        "code": "stables_low",
+        "message": "Stablecoin share 0.4% of USD value, below the 15% threshold."
       }
+    ],
+    "warnings": [],
+    "priceSources": [
+      "coinbase",
+      "coingecko"
     ]
   },
   "/api/gas": {
@@ -280,24 +458,52 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
   "/api/funding": {
     "ok": true,
     "source": "okx",
-    "asOf": "2026-10-01T14:36:45.068Z",
+    "priced": {
+      "amountUsd": "$0.003",
+      "amountAtomic": "3000",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "network": "base",
+      "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+    },
+    "asOf": "2026-10-16T15:44:53.616Z",
     "assets": {
       "BTC": {
         "instId": "BTC-USDT-SWAP",
-        "fundingRate": 8.50403758528e-05,
-        "fundingTime": "1790870400000",
+        "fundingRate": 4.37943538326e-05,
+        "nextFundingRate": 0,
+        "fundingTime": "1792166400000",
+        "venue": "okx",
         "crowding": {
-          "side": "longs",
-          "level": "mild"
+          "side": "neutral",
+          "level": "quiet",
+          "absRate": 4.37943538326e-05,
+          "rule": "|rate|<0.00005 → quiet/neutral"
+        }
+      },
+      "ETH": {
+        "instId": "ETH-USDT-SWAP",
+        "fundingRate": 2.02049356428e-05,
+        "nextFundingRate": 0,
+        "fundingTime": "1792166400000",
+        "venue": "okx",
+        "crowding": {
+          "side": "neutral",
+          "level": "quiet",
+          "absRate": 2.02049356428e-05,
+          "rule": "|rate|<0.00005 → quiet/neutral"
         }
       },
       "SOL": {
         "instId": "SOL-USDT-SWAP",
-        "fundingRate": -4.39448031955e-05,
-        "fundingTime": "1790870400000",
+        "fundingRate": 3.22363122435e-05,
+        "nextFundingRate": 0,
+        "fundingTime": "1792166400000",
+        "venue": "okx",
         "crowding": {
           "side": "neutral",
-          "level": "quiet"
+          "level": "quiet",
+          "absRate": 3.22363122435e-05,
+          "rule": "|rate|<0.00005 → quiet/neutral"
         }
       }
     }
@@ -371,104 +577,265 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
     "elapsedMs": 120
   },
   "/api/bazaar-check": {
-      "ok": true,
-      "source": "bazaar-check",
-      "asOf": "2026-10-09T16:38:45.681Z",
-      "target": {
-          "input": "horizonpulse.dev",
-          "host": "horizonpulse.dev",
-          "origin": "https://horizonpulse.dev"
-      },
-      "verdict": "fully_indexed",
-      "summary": {
-          "routesListed": 13,
-          "routesProbed": 13,
-          "indexed": 13,
-          "notIndexed": 0,
-          "indexedOnBase": 13,
-          "indexedOnSolana": 13,
-          "fail": 0,
-          "warn": 0
-      },
-      "wellKnown": {
-          "url": "https://horizonpulse.dev/.well-known/x402",
-          "httpStatus": 200,
-          "found": true,
-          "entries": 15
-      },
-      "index": {
-          "payTos": [
-              {
-                  "network": "eip155:8453",
-                  "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
-                  "indexedTotalForPayTo": 13,
-                  "indexedOnHost": 13
-              },
-              {
-                  "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-                  "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
-                  "indexedTotalForPayTo": 13,
-                  "indexedOnHost": 13
-              }
-          ],
-          "searchHitsOnHost": 13
-      },
-      "routes": [
-          {
-              "url": "https://horizonpulse.dev/api/pulse",
-              "methods": [
-                  "GET"
-              ],
-              "probed": true,
-              "indexed": true,
-              "indexedNetworks": [
-                  "base",
-                  "solana"
-              ],
-              "advertisedNetworks": [
-                  "base",
-                  "solana"
-              ],
-              "lastIndexed": "2026-10-08T21:10:33.046Z",
-              "findings": []
-          },
-          {
-              "url": "https://horizonpulse.dev/api/signals",
-              "methods": [
-                  "GET"
-              ],
-              "probed": true,
-              "indexed": true,
-              "indexedNetworks": [
-                  "base",
-                  "solana"
-              ],
-              "advertisedNetworks": [
-                  "base",
-                  "solana"
-              ],
-              "lastIndexed": "2026-10-09T15:20:10.271Z",
-              "findings": []
-          }
+    "source": "bazaar-check",
+    "asOf": "2026-10-16T15:49:29.959Z",
+    "ok": true,
+    "target": {
+      "input": "horizonpulse.dev",
+      "host": "horizonpulse.dev",
+      "origin": "https://horizonpulse.dev"
+    },
+    "verdict": "partially_indexed",
+    "summary": {
+      "routesListed": 24,
+      "routesProbed": 24,
+      "indexed": 23,
+      "notIndexed": 1,
+      "indexedOnBase": 23,
+      "indexedOnSolana": 23,
+      "indexedOnPolygon": 11,
+      "indexedOnXrpl": 11,
+      "fail": 1,
+      "warn": 12
+    },
+    "wellKnown": {
+      "url": "https://horizonpulse.dev/.well-known/x402",
+      "httpStatus": 200,
+      "found": true,
+      "entries": 24
+    },
+    "index": {
+      "source": "https://api.cdp.coinbase.com/platform/v2/x402/discovery",
+      "payTos": [
+        {
+          "network": "eip155:8453",
+          "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+          "indexedTotalForPayTo": 23,
+          "indexedOnHost": 23
+        },
+        {
+          "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+          "indexedTotalForPayTo": 23,
+          "indexedOnHost": 23
+        },
+        {
+          "network": "xrpl:0",
+          "payTo": "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
+          "indexedTotalForPayTo": 11,
+          "indexedOnHost": 11
+        }
       ],
-      "findings": [],
-      "elapsedMs": 1707
+      "searchHitsOnHost": 20,
+      "searchError": null,
+      "indexedNotListed": []
+    },
+    "onchain": [],
+    "routes": [
+      {
+        "url": "https://horizonpulse.dev/api/pulse",
+        "methods": [
+          "GET"
+        ],
+        "probed": true,
+        "skippedReason": null,
+        "indexed": true,
+        "indexedNetworks": [
+          "base",
+          "solana",
+          "xrpl",
+          "polygon"
+        ],
+        "advertisedNetworks": [
+          "base",
+          "solana",
+          "xrpl",
+          "polygon"
+        ],
+        "lastIndexed": "2026-10-14T16:19:02.508Z",
+        "lastCalledAt": "2026-10-14T16:19:02.184Z",
+        "probes": [
+          {
+            "method": "GET",
+            "httpStatus": 402,
+            "x402Version": 2,
+            "challengeSource": "header",
+            "bazaar": {
+              "present": true,
+              "method": "GET",
+              "methodEnum": [
+                "GET"
+              ]
+            }
+          }
+        ],
+        "findings": []
+      },
+      {
+        "url": "https://horizonpulse.dev/api/yield",
+        "methods": [
+          "GET"
+        ],
+        "probed": true,
+        "skippedReason": null,
+        "indexed": true,
+        "indexedNetworks": [
+          "base",
+          "solana"
+        ],
+        "advertisedNetworks": [
+          "base",
+          "solana",
+          "xrpl",
+          "polygon"
+        ],
+        "lastIndexed": "2026-10-09T15:20:16.681Z",
+        "lastCalledAt": "2026-10-09T15:20:16.431Z",
+        "probes": [
+          {
+            "method": "GET",
+            "httpStatus": 402,
+            "x402Version": 2,
+            "challengeSource": "header",
+            "bazaar": {
+              "present": true,
+              "method": "GET",
+              "methodEnum": [
+                "GET"
+              ]
+            }
+          }
+        ],
+        "findings": [
+          {
+            "id": "network_not_indexed",
+            "level": "warn",
+            "message": "The 402 advertises xrpl, polygon, but the CDP index entry lists only base, solana (last updated 2026-10-09T15:20:16.681Z).",
+            "fix": "CDP refreshes an entry from the live 402 after a new CDP-facilitated paid call to that route (in our experience); make one, then recheck after about 15 minutes.",
+            "doc": "https://docs.cdp.coinbase.com/x402/support/troubleshooting#my-endpoint-is-missing-from-the-bazaar"
+          }
+        ]
+      },
+      {
+        "url": "https://horizonpulse.dev/api/grocery/ingredient",
+        "methods": [
+          "GET"
+        ],
+        "probed": true,
+        "skippedReason": null,
+        "indexed": false,
+        "indexedNetworks": [],
+        "advertisedNetworks": [
+          "base",
+          "solana",
+          "xrpl",
+          "polygon"
+        ],
+        "lastIndexed": null,
+        "lastCalledAt": null,
+        "probes": [
+          {
+            "method": "GET",
+            "httpStatus": 402,
+            "x402Version": 2,
+            "challengeSource": "header",
+            "bazaar": {
+              "present": true,
+              "method": "GET",
+              "methodEnum": [
+                "GET"
+              ]
+            }
+          }
+        ],
+        "findings": [
+          {
+            "id": "not_indexed",
+            "level": "fail",
+            "message": "Not in CDP discovery, although other routes for this payTo are. Lint passed, so this route most likely has not settled a payment through the CDP facilitator since it was added or changed.",
+            "fix": "Make one paid call to this route through the CDP facilitator; indexing runs after the settle and can take up to 15 minutes.",
+            "doc": "https://docs.cdp.coinbase.com/x402/support/troubleshooting#my-endpoint-is-missing-from-the-bazaar"
+          }
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "id": "well_known_no_method",
+        "level": "info",
+        "message": "24 /.well-known/x402 entries have no HTTP method prefix; probed with GET. Some discovery tools default bare entries to POST.",
+        "fix": "Prefix each entry with its method, e.g. \"GET https://host/api/route\"."
+      }
+    ],
+    "elapsedMs": 3641
   },
   "/api/x402-check": {
+    "source": "x402-check",
+    "priced": {
+      "amountUsd": "$0.01",
+      "amountAtomic": "10000",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "network": "base",
+      "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+    },
+    "asOf": "2026-10-16T15:44:54.069Z",
     "ok": true,
     "target": "https://horizonpulse.dev/api/pulse",
+    "finalUrl": "https://horizonpulse.dev/api/pulse",
     "method": "GET",
     "httpStatus": 402,
     "isX402": true,
     "x402Version": 2,
     "challengeSource": "header",
+    "resource": {
+      "url": "https://horizonpulse.dev/api/pulse",
+      "description": "Crypto prices API: BTC, ETH, SOL spot price. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
+      "mimeType": "application/json"
+    },
     "accepts": [
       {
+        "scheme": "exact",
         "network": "eip155:8453",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
         "assetLabel": "USDC (Base)",
-        "amountUsd": "$0.005",
+        "amountAtomic": "2000",
+        "amountUsd": "$0.002",
         "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
-        "payToType": "eoa"
+        "payToType": "contract",
+        "maxTimeoutSeconds": 300
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "assetLabel": "USDC (Solana)",
+        "amountAtomic": "2000",
+        "amountUsd": "$0.002",
+        "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+        "payToType": null,
+        "maxTimeoutSeconds": 300
+      },
+      {
+        "scheme": "exact",
+        "network": "xrpl:0",
+        "asset": "524C555344000000000000000000000000000000",
+        "assetLabel": null,
+        "amountAtomic": "0.002",
+        "amountUsd": null,
+        "payTo": "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
+        "payToType": null,
+        "maxTimeoutSeconds": 300
+      },
+      {
+        "scheme": "exact",
+        "network": "eip155:137",
+        "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+        "assetLabel": null,
+        "amountAtomic": "2000",
+        "amountUsd": null,
+        "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+        "payToType": null,
+        "maxTimeoutSeconds": 300
       }
     ],
     "discovery": {
@@ -480,31 +847,51 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
     "checks": [
       {
         "id": "status_402",
-        "level": "pass"
+        "level": "pass",
+        "message": "Unpaid request returned HTTP 402."
       },
       {
         "id": "challenge",
-        "level": "pass"
+        "level": "pass",
+        "message": "x402 challenge parsed from PAYMENT-REQUIRED header."
       },
       {
         "id": "version",
-        "level": "pass"
+        "level": "pass",
+        "message": "x402 v2."
       },
       {
         "id": "payto_type",
-        "level": "info"
+        "level": "info",
+        "message": "payTo 0x5b32c973596078a967562ca652761404f19be0e9 is a contract (e.g. a Safe or smart wallet) (accepts[0])."
+      },
+      {
+        "id": "asset",
+        "level": "info",
+        "message": "Asset 524C555344000000000000000000000000000000 is not a USDC contract we recognize; price shown in atomic units only (accepts[2])."
+      },
+      {
+        "id": "amount",
+        "level": "fail",
+        "message": "Price (amount / maxAmountRequired) missing or not an integer string (accepts[2])."
+      },
+      {
+        "id": "asset",
+        "level": "info",
+        "message": "Asset 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 is not a USDC contract we recognize; price shown in atomic units only (accepts[3])."
       },
       {
         "id": "discovery",
-        "level": "pass"
+        "level": "pass",
+        "message": "Discovery metadata present (method GET)."
       }
     ],
     "summary": {
       "pass": 4,
       "warn": 0,
-      "fail": 0
+      "fail": 1
     },
-    "elapsedMs": 201
+    "elapsedMs": 451
   },
   "/api/screenshot": {
     "ok": true,

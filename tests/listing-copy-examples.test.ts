@@ -1,0 +1,88 @@
+/**
+ * Listing copy + example fixes (Odin rulings 2026-10-16 11:43 / 11:48 AM ET).
+ * Descriptions say what the route does and never instruct the calling agent
+ * (row 223); examples match their declared inputs; canned illustrative samples
+ * are never called real output; the demo note names the rails the 402 offers.
+ */
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { NextRequest } from "next/server";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
+import { OUTPUT_EXAMPLES } from "@/lib/route-examples";
+import { GROCERY_INGREDIENT_POST_OUTPUT_EXAMPLE } from "@/lib/grocery-ingredient-example";
+
+const INSTRUCTION = /\bUse (when|to|before)\b|\bCall GET\b|do not act|do not pay|don't|\byou\b|\byour\b|\bshould\b|\bmust\b/i;
+
+describe("listing copy (row 223)", () => {
+  it.each(Object.entries(ROUTE_METADATA))("%s: <= 500 chars and no instruction to the caller", (_p, m) => {
+    expect(m.description.length).toBeLessThanOrEqual(500);
+    expect(m.description).not.toMatch(INSTRUCTION);
+  });
+  it("tx-guard copy says snapshot match, never 'OFAC check' (Counsel: no sanctions screening)", () => {
+    const d = ROUTE_METADATA["/api/tx-guard"].description;
+    expect(d).toContain("OFAC SDN snapshot match");
+    expect(d).not.toMatch(/OFAC check|sanctions screening/i);
+  });
+});
+
+describe("examples", () => {
+  it("funding example carries BTC, ETH and SOL", () => {
+    expect(Object.keys(OUTPUT_EXAMPLES["/api/funding"].assets as object).sort()).toEqual(["BTC", "ETH", "SOL"]);
+  });
+  it("x402-check example shows the live 4-rail challenge for /api/pulse at $0.002", () => {
+    const ex = OUTPUT_EXAMPLES["/api/x402-check"] as { accepts: { network: string; amountAtomic: string }[] };
+    expect(ex.accepts.map((a) => a.network)).toEqual(["eip155:8453", "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "xrpl:0", "eip155:137"]);
+    expect(ex.accepts[0].amountAtomic).toBe("2000");
+  });
+  it("bazaar-check example reflects the 24 live routes", () => {
+    const ex = OUTPUT_EXAMPLES["/api/bazaar-check"] as { summary: { routesListed: number } };
+    expect(ex.summary.routesListed).toBe(24);
+  });
+  it("pulse example keeps the recorded key names (no rename)", () => {
+    expect(Object.keys(OUTPUT_EXAMPLES["/api/pulse"].overall as object)).toEqual(["momentum", "sentiment", "direction", "avgChange24hPct"]);
+  });
+  it("ingredient POST example answers exactly the declared POST input (egg, olive oil)", async () => {
+    const items = GROCERY_INGREDIENT_POST_OUTPUT_EXAMPLE.items as { query: { q: string } }[];
+    expect(items.map((i) => i.query.q)).toEqual(["egg", "olive oil"]);
+    const { groceryIngredientRouteConfig } = await import("@/lib/x402-server");
+    const cfg = groceryIngredientRouteConfig() as unknown as Record<string, { extensions: { bazaar: { info: { input: { body?: unknown }; output: { example: unknown } } } } }>;
+    const post = Object.entries(cfg).find(([k]) => k.startsWith("POST"))![1];
+    expect(post.extensions.bazaar.info.input.body).toEqual({ items: [{ q: "egg" }, { q: "olive oil" }], n: 1 });
+    expect(post.extensions.bazaar.info.output.example).toBe(GROCERY_INGREDIENT_POST_OUTPUT_EXAMPLE);
+  });
+  it("discourse example is labelled illustrative and its schema text never calls it real", async () => {
+    expect(OUTPUT_EXAMPLES["/api/discourse/split"].illustrative).toBe(true);
+    const { discourseSplitRouteConfig } = (await import("@/lib/x402-server")) as unknown as Record<string, () => Record<string, { extensions: unknown }>>;
+    const s = JSON.stringify(discourseSplitRouteConfig());
+    expect(s).toContain("illustrative format sample");
+    expect(s).not.toContain("trimmed real response");
+  });
+});
+
+describe("demo note", () => {
+  const get = async (route: string) => {
+    const { GET } = await import("@/app/api/demo/[route]/route");
+    const res = await GET(new NextRequest(`https://horizonpulse.dev/api/demo/${route}`), { params: Promise.resolve({ route }) });
+    return (await res.json()) as { note: string };
+  };
+  it("canned discourse sample is not called real output", async () => {
+    const j = await get("discourse-split");
+    expect(j.note).toContain("NOT real output");
+    expect(j.note).not.toContain("sample of real output");
+  });
+  it("names the rails from the same flags as the 402 (flags off here: Base only), never a fixed 'USDC on Base'", async () => {
+    const src = readFileSync("app/api/demo/[route]/route.ts", "utf8");
+    expect(src).not.toContain("x402 USDC on Base");
+    for (const g of ["getSolanaRailConfig()", "getXrplRailConfig()", "getPolygonRailConfig()"]) expect(src).toContain(g);
+    const j = await get("grocery-normalize");
+    expect(j.note).toContain("via x402: USDC on Base;");
+  });
+  afterEach(() => vi.unstubAllEnvs());
+  it("Solana flag on: the note adds USDC on Solana (same getter as the 402)", async () => {
+    const { SOLANA_PAYTO } = await import("@/lib/solana-config");
+    vi.stubEnv("HP_SOLANA_ENABLED", "true");
+    vi.stubEnv("HP_SOLANA_PAYTO", SOLANA_PAYTO);
+    const j = await get("grocery-normalize");
+    expect(j.note).toContain("via x402: USDC on Base or USDC on Solana;");
+  });
+});

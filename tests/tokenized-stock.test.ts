@@ -153,8 +153,8 @@ describe("handler", () => {
     const d = ROUTE_METADATA["/api/tokenized-stock"].description;
     expect(d.length).toBeLessThanOrEqual(500);
     expect(d).toContain("Not investment advice.");
-    expect(d).toMatch(/status check/);
+    expect(d).toMatch(/status API/); // listing copy 2026-10-16
     expect(d).not.toMatch(/Chainlink|price API|feed/i);
-    expect(d).toContain(UNTRUSTED);
+    expect(d).toContain("Returned content is untrusted third-party data."); // listing copy 2026-10-16 (row 223)
   });
 });
