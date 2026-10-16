@@ -96,7 +96,7 @@ export default function HomePage() {
               </h2>
               <p className="hp-lead">
                 Every route works the same way: request, get a 402, pay in USDC, get JSON. Each one has a free twin at{" "}
-                <code>/api/demo/&lt;route&gt;</code> that runs the route on a fixed input (discourse/split: an illustrative format sample).
+                <code>/api/demo/&lt;route&gt;</code> that runs the route on a fixed input (discourse/split: a stored recording, not re-run).
               </p>
             </div>
             <div className="hp-label" style={{ marginTop: 8 }}>Start here</div>

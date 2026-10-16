@@ -20,10 +20,15 @@
  * serve that file, since prod still serves the old one until deploy). Same trim
  * as before (methodology and null meta fields dropped). Raw: /workspace/hp-tmp/copy-pass/rec-pdf.json.
  *
- * EXCEPTION: /api/discourse/split is NOT a recording. It is an illustrative
- * format sample with invented counts, marked `illustrative: true` in the example
- * itself; its Bazaar schema text and its demo note say so (no stance classifier
- * has produced a real answer yet). Replace it with a real recording when one exists.
+ * /api/discourse/split was recorded 2026-10-16T17:16Z (UTC) by running its route
+ * handler (app/api/discourse/split/handler.ts) locally on the declared input
+ * (q=self-driving cars, sides=for,against) with the production classifier
+ * (openai:gpt-6-luna) against live Hacker News and Bluesky; no x402 call.
+ * Only `priced` was dropped; nothing else edited. It replaces the earlier
+ * illustrative format sample (tabs or spaces), whose query found 3 posts on
+ * 2026-10-16 (below the 30-decided minimum). The query was chosen after four
+ * local runs on 2026-10-16 decided 91, 95, 99 and 92 posts (175 fetched).
+ * Raw: /workspace/hp-tmp/discourse/rec-handler.json (box only).
  *
  * 2026-10-09: in /api/pulse the recorded key overall.signal ("hold") is shown
  * under its new name overall.direction ("flat"), same rule (see CHANGELOG.md).
@@ -79,7 +84,7 @@ export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
   "/api/bazaar-check": "2026-10-16T15:49Z",
   "/api/market/search": "2026-10-12T04:09Z",
   "/api/market/quote": "2026-10-12T12:20Z",
-  "/api/discourse/split": "2026-10-13T05:00Z",
+  "/api/discourse/split": "2026-10-16T17:16Z",
   "/api/tx-status": "2026-10-14T14:30Z",
   "/api/tokenized-stock": "2026-10-14T14:54Z",
   "/api/watch": "2026-10-14T15:13Z",
@@ -1557,23 +1562,55 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
 
   "/api/discourse/split": {
     "source": "discourse-split",
-    "illustrative": true,
-    "note": "Format sample only: counts are illustrative, NOT measured. No stance classifier is configured on this server yet, so no real answer has been recorded; this sample will be replaced by a real recording. No post text or usernames are ever returned.",
-    "asOf": "2026-10-13T05:00:00.000Z",
+    "asOf": "2026-10-16T17:16:09.147Z",
     "ok": true,
     "label": "online discourse sample, NOT a poll",
-    "question": "tabs or spaces for indentation",
+    "question": "self-driving cars",
     "sides": [
-      { "label": "tabs", "share": 0.4167, "ci95": [0.3171, 0.5235], "n": 35 },
-      { "label": "spaces", "share": 0.5833, "ci95": [0.4765, 0.6829], "n": 49 }
+      {
+        "label": "for",
+        "share": 0.2826,
+        "ci95": [
+          0.2008,
+          0.3819
+        ],
+        "n": 26
+      },
+      {
+        "label": "against",
+        "share": 0.7174,
+        "ci95": [
+          0.6181,
+          0.7992
+        ],
+        "n": 66
+      }
     ],
-    "n_classified": 84,
-    "n_neutral": 61,
-    "n_fetched": 145,
-    "sources": { "hn": 52, "bsky": 32 },
-    "sample": [],
-    "window": { "days": 30, "from": "2026-09-13T05:00:00.000Z", "to": "2026-10-13T05:00:00.000Z" },
-    "classifier": "none (illustrative)",
+    "n_classified": 92,
+    "n_neutral": 83,
+    "n_fetched": 175,
+    "sources": {
+      "hn": 36,
+      "bsky": 56
+    },
+    "sample": [
+      "https://news.ycombinator.com/item?id=50120148",
+      "https://news.ycombinator.com/item?id=50098540",
+      "https://news.ycombinator.com/item?id=50093181",
+      "https://news.ycombinator.com/item?id=50088001",
+      "https://news.ycombinator.com/item?id=50069203",
+      "https://bsky.app/profile/did:plc:mumiphunmc3cjg7hdubdcvcs/post/3mxz2udtiks2z",
+      "https://bsky.app/profile/did:plc:lw7hallqsgrhwumgudkph44j/post/3mxz2qkntm622",
+      "https://bsky.app/profile/did:plc:pszqzmyy3mw5s2c3sit6aqkp/post/3mxz2klx2k22q",
+      "https://bsky.app/profile/did:plc:w2vftbw2lqfjj3wdn3x4xhra/post/3mxz2fpz7qc2y",
+      "https://bsky.app/profile/did:plc:sonncyo6avfaobajokkmqvm2/post/3mxyzuf6zx224"
+    ],
+    "window": {
+      "days": 30,
+      "from": "2026-09-16T17:16:02.269Z",
+      "to": "2026-10-16T17:16:02.269Z"
+    },
+    "classifier": "openai:gpt-6-luna",
     "method": "Keyword search of public Hacker News comments (Algolia) and Bluesky posts within the window; one post per account, at most 10 per thread; each post (truncated to 280 chars, never returned) is labeled with one side or neutral by a stance classifier; shares are over decided posts with Wilson 95% intervals. Deleted links are removed from the sample, also when a cached answer is served (shares and n are not recomputed).",
     "caveats": [
       "Not a poll: self-selected posters on two tech-leaning, US-heavy networks; not representative of any population.",

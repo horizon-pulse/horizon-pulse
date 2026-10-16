@@ -120,7 +120,7 @@ Each facilitator verifies the payment first and settles it only after the route 
 - \`GET ${PUBLIC_BASE_URL}/.well-known/x402\`: x402 resource list (\`METHOD URL\` strings)
 - \`GET ${PUBLIC_BASE_URL}/openapi.json\`: OpenAPI 3.1, typed inputs, response examples, per-operation \`x-payment-info\` (price, asset, network, payTo of the Base entry; the Solana entry is in the 402 and the table above)
 - \`GET ${PUBLIC_BASE_URL}/llms.txt\`: plain-text catalog and rules
-- \`GET ${PUBLIC_BASE_URL}/api/demo/{route}\`: free sample of a route on a fixed input (no payment; discourse/split returns an illustrative format sample)
+- \`GET ${PUBLIC_BASE_URL}/api/demo/{route}\`: free sample of a route on a fixed input (no payment; discourse/split returns a stored recording, not re-run)
 
 ## 2. Pick a route
 

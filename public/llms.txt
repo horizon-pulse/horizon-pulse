@@ -104,7 +104,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 `GET /api/demo/{route}` runs the real handler on a fixed input and returns `demo: true`. Use it to check the response shape before paying. Inputs cannot be changed.
 
-- /api/demo/fetch, /api/demo/http, /api/demo/extract, /api/demo/x402-check, /api/demo/bazaar-check, /api/demo/market-search, /api/demo/market-quote, /api/demo/discourse-split (canned format sample), /api/demo/tx-status, /api/demo/tokenized-stock, /api/demo/watch, /api/demo/balance, /api/demo/tx-guard, /api/demo/grocery-normalize, /api/demo/grocery-ingredient, /api/demo/chain-head, /api/demo/token-meta, /api/demo/name-resolve, /api/demo/screenshot, /api/demo/search, /api/demo/pdf
+- /api/demo/fetch, /api/demo/http, /api/demo/extract, /api/demo/x402-check, /api/demo/bazaar-check, /api/demo/market-search, /api/demo/market-quote, /api/demo/discourse-split (stored recording, not re-run), /api/demo/tx-status, /api/demo/tokenized-stock, /api/demo/watch, /api/demo/balance, /api/demo/tx-guard, /api/demo/grocery-normalize, /api/demo/grocery-ingredient, /api/demo/chain-head, /api/demo/token-meta, /api/demo/name-resolve, /api/demo/screenshot, /api/demo/search, /api/demo/pdf
 - /api/demo/pulse, /api/demo/signals, /api/demo/yield, /api/demo/gas, /api/demo/funding, /api/demo/portfolio
 
 ## Free (not paid)

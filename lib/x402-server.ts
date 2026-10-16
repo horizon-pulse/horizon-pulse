@@ -881,7 +881,7 @@ export function discourseSplitRouteConfig(): RoutesConfig {
       extensions: {
         ...declareChargedDiscovery({
           method: "GET",
-          input: { q: "tabs or spaces for indentation", sides: "tabs,spaces" },
+          input: { q: "self-driving cars", sides: "for,against" },
           inputSchema: {
             properties: {
               q: { type: "string", description: "Question or topic, 3-200 chars (required). Elections/candidates, health, and a named person's conduct are refused (not charged)." },

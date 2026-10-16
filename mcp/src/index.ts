@@ -6,7 +6,7 @@
  * (catalog read from /openapi.json at startup) and pays each call's x402 v2
  * challenge in USDC on Base from the buyer wallet in HP_PRIVATE_KEY.
  * Three free helper tools: catalog, quote (decode the 402 without paying),
- * demo (free fixed-input sample of a route; discourse/split's is an illustrative format sample).
+ * demo (free fixed-input sample of a route; discourse/split's is a stored recording, not re-run).
  *
  * stdout is the MCP channel; all logs go to stderr. The key is never logged.
  */
@@ -58,7 +58,7 @@ const HELPER_TOOLS = [
   {
     name: "demo",
     description:
-      "Free, never pays. Return the route's free sample: the route's handler run on a fixed input (GET /api/demo/<route>; discourse/split returns an illustrative format sample instead), to check the response shape before paying.",
+      "Free, never pays. Return the route's free sample: the route's handler run on a fixed input (GET /api/demo/<route>; discourse/split returns a stored recording instead), to check the response shape before paying.",
     inputSchema: {
       type: "object",
       properties: { route: { type: "string", description: ROUTE_ENUM_HINT } },

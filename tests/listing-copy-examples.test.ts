@@ -50,12 +50,17 @@ describe("examples", () => {
     expect(post.extensions.bazaar.info.input.body).toEqual({ items: [{ q: "egg" }, { q: "olive oil" }], n: 1 });
     expect(post.extensions.bazaar.info.output.example).toBe(GROCERY_INGREDIENT_POST_OUTPUT_EXAMPLE);
   });
-  it("discourse example is labelled illustrative and its schema text never calls it real", async () => {
-    expect(OUTPUT_EXAMPLES["/api/discourse/split"].illustrative).toBe(true);
+  it("discourse example is a real recording of its declared input and clears the 30-decided minimum", async () => {
+    const ex = OUTPUT_EXAMPLES["/api/discourse/split"] as Record<string, unknown>;
+    expect(ex.illustrative).toBeUndefined();
+    expect(ex.question).toBe("self-driving cars");
+    expect((ex.sides as { label: string }[]).map((x) => x.label)).toEqual(["for", "against"]);
+    expect(ex.n_classified as number).toBeGreaterThanOrEqual(60);
+    expect(String(ex.classifier)).toMatch(/^openai:/);
     const { discourseSplitRouteConfig } = (await import("@/lib/x402-server")) as unknown as Record<string, () => Record<string, { extensions: unknown }>>;
     const s = JSON.stringify(discourseSplitRouteConfig());
-    expect(s).toContain("illustrative format sample");
-    expect(s).not.toContain("trimmed real response");
+    expect(s).toContain('"q":"self-driving cars","sides":"for,against"');
+    expect(s).not.toContain("illustrative format sample");
   });
 });
 
@@ -65,10 +70,10 @@ describe("demo note", () => {
     const res = await GET(new NextRequest(`https://horizonpulse.dev/api/demo/${route}`), { params: Promise.resolve({ route }) });
     return (await res.json()) as { note: string };
   };
-  it("canned discourse sample is not called real output", async () => {
+  it("recorded discourse sample is no longer called illustrative", async () => {
     const j = await get("discourse-split");
-    expect(j.note).toContain("NOT real output");
-    expect(j.note).not.toContain("sample of real output");
+    expect(j.note).toContain("sample of real output");
+    expect(j.note).not.toContain("NOT real output");
   });
   it("names the rails from the same flags as the 402 (flags off here: Base only), never a fixed 'USDC on Base'", async () => {
     const src = readFileSync("app/api/demo/[route]/route.ts", "utf8");

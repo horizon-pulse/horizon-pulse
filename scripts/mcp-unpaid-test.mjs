@@ -32,7 +32,7 @@ const ARGS = {
   screenshot: { url: "https://example.com" },
   search: { q: "x402" },
   pdf: { url: "https://horizonpulse.dev/sample.pdf" },
-  discourse_split: { q: "tabs or spaces" },
+  discourse_split: { q: "self-driving cars" },
   tokenized_stock: { symbol: "AAPL" },
   watch: { url: "https://example.com" },
   balance: { evm: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },

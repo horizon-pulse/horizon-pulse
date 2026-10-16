@@ -75,7 +75,7 @@ const HANDLERS: Record<string, Handler> = {
   "chain-head": chainHeadHandler,
   "token-meta": tokenMetaHandler,
   "name-resolve": nameResolveHandler,
-  // Canned: the recorded example (lib/route-examples.ts). Never runs the
+  // Stored: the recorded example (lib/route-examples.ts, recorded 2026-10-16). Never runs the
   // classifier or the sources, so the free demo costs nothing per call.
   "discourse-split": async () => NextResponse.json(OUTPUT_EXAMPLES["/api/discourse/split"]),
 };

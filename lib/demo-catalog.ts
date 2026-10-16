@@ -1,6 +1,6 @@
 /**
  * Free fixed-input samples for every paid route (GET /api/demo/<route>).
- * Handler output on FIXED inputs only (discourse/split: canned illustrative sample) — callers cannot choose a URL or
+ * Handler output on FIXED inputs only (discourse/split: stored recording, not re-run) — callers cannot choose a URL or
  * address, so demos can't be used as a free proxy. Not x402 resources: kept
  * out of /.well-known/x402, OpenAPI, and Bazaar discovery on purpose.
  */
@@ -55,7 +55,7 @@ export const DEMO_ROUTES: DemoRoute[] = [
   { route: "bazaar-check", priceUsd: BAZAAR_CHECK_PRICE_USD, query: "url=horizonpulse.dev", input: "url=horizonpulse.dev (fixed; sample reused for 10 min)" },
   { route: "market-search", priceUsd: MARKET_SEARCH_PRICE_USD, query: "q=horizon%20pulse%20bazaar%20check&n=1", input: "q=horizon pulse bazaar check, n=1 (fixed; sample reused for 10 min)" },
   { route: "market-quote", priceUsd: MARKET_QUOTE_PRICE_USD, query: "url=https%3A%2F%2Fhorizonpulse.dev%2Fapi%2Fpulse", input: "url=https://horizonpulse.dev/api/pulse (fixed; sample reused for 10 min)" },
-  { route: "discourse-split", priceUsd: DISCOURSE_SPLIT_PRICE_USD, query: "q=tabs%20or%20spaces%20for%20indentation&sides=tabs,spaces", input: "q=tabs or spaces for indentation, sides=tabs,spaces (fixed; canned illustrative format sample, NOT real output, not re-run)" },
+  { route: "discourse-split", priceUsd: DISCOURSE_SPLIT_PRICE_USD, query: "q=self-driving%20cars&sides=for,against", input: "q=self-driving cars, sides=for,against (fixed; stored recording of a real answer from 2026-10-16, not re-run)" },
   { route: "tx-status", priceUsd: TX_STATUS_PRICE_USD, query: "network=base&tx=0xe6e6ebd93db6735aad12a86a1084d5e1d6759e31fbedf7b741946f2bf410644f", input: "network=base, tx=0xe6e6…644f (fixed: a finalized Base USDC transfer; sample reused for 10 min)" },
   { route: "tokenized-stock", priceUsd: TOKENIZED_STOCK_PRICE_USD, query: "symbol=AAPL", input: "symbol=AAPL (fixed; on-chain status read of the AAPLc token contract on Base, no price; sample reused for 10 min). Not investment advice." },
   { route: "watch", priceUsd: WATCH_PRICE_USD, query: "url=https://example.com", input: "url=https://example.com (fixed; first check: returns the baseline state token, no since; sample reused for 10 min)" },

@@ -25,7 +25,7 @@ export default function TryPage() {
               <span>Then pay per call.</span>
             </h1>
             <p className="hp-sub">
-              Each free sample runs the route&apos;s own handler on a fixed input, cached for a few minutes (discourse/split shows an illustrative format sample, not measured output). The paid route takes your own input and costs a fraction of a
+              Each free sample runs the route&apos;s own handler on a fixed input, cached for a few minutes (discourse/split serves a stored recording instead of re-running). The paid route takes your own input and costs a fraction of a
               cent to a few cents in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger.
             </p>
           </div>

@@ -263,7 +263,7 @@ describe("price parity: $0.03 / 30000 everywhere", () => {
     expect(body.resources).toContain("https://horizonpulse.dev/api/discourse/split");
   });
 
-  it("free demo serves the canned sample at both demo paths without running sources", async () => {
+  it("free demo serves the stored recording at both demo paths without running sources", async () => {
     const flat = await import("@/app/api/demo/[route]/route");
     const slash = await import("@/app/api/demo/discourse/[op]/route");
     const a = await (await flat.GET(new NextRequest("https://horizonpulse.dev/api/demo/discourse-split"), { params: Promise.resolve({ route: "discourse-split" }) })).json();
@@ -272,7 +272,8 @@ describe("price parity: $0.03 / 30000 everywhere", () => {
       expect(d.demo).toBe(true);
       expect(d.paid_endpoint).toBe("https://horizonpulse.dev/api/discourse/split");
       expect(d.sample.label).toBe(DISCOURSE_LABEL);
-      expect(d.sample.illustrative).toBe(true);
+      expect(d.sample.illustrative).toBeUndefined();
+      expect(d.sample.question).toBe("self-driving cars");
     }
   });
 });
