@@ -26,6 +26,9 @@ import { balanceHandler } from "@/app/api/balance/handler";
 import { txGuardHandler } from "@/app/api/tx-guard/handler";
 import { groceryNormalizeHandler } from "@/app/api/grocery/normalize/handler";
 import { groceryIngredientHandler } from "@/app/api/grocery/ingredient/handler";
+import { chainHeadHandler } from "@/app/api/chain/head/handler";
+import { tokenMetaHandler } from "@/app/api/token/meta/handler";
+import { nameResolveHandler } from "@/app/api/name/resolve/handler";
 import { OUTPUT_EXAMPLES } from "@/lib/route-examples";
 
 export const runtime = "nodejs";
@@ -36,7 +39,7 @@ type Handler = (req: NextRequest) => Promise<NextResponse>;
 
 // bazaar-check: CDP discovery + ~15 outbound probes per run, so one sample per instance per 10 min.
 // market-search / market-quote: CDP discovery + live probes of third-party sellers, same 10 min reuse.
-const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf", "bazaar-check", "market-search", "market-quote", "tx-status", "tokenized-stock", "watch", "balance", "tx-guard"]);
+const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf", "bazaar-check", "market-search", "market-quote", "tx-status", "tokenized-stock", "watch", "balance", "tx-guard", "chain-head", "token-meta", "name-resolve"]);
 const HEAVY_TTL_MS = 10 * 60 * 1000;
 /** search spends paid provider quota: one sample per instance per day. */
 const TTL_MS: Record<string, number> = { search: 24 * 60 * 60 * 1000 };
@@ -69,6 +72,9 @@ const HANDLERS: Record<string, Handler> = {
   "tx-guard": txGuardHandler,
   "grocery-normalize": groceryNormalizeHandler,
   "grocery-ingredient": groceryIngredientHandler,
+  "chain-head": chainHeadHandler,
+  "token-meta": tokenMetaHandler,
+  "name-resolve": nameResolveHandler,
   // Canned: the recorded example (lib/route-examples.ts). Never runs the
   // classifier or the sources, so the free demo costs nothing per call.
   "discourse-split": async () => NextResponse.json(OUTPUT_EXAMPLES["/api/discourse/split"]),
@@ -111,8 +117,8 @@ export async function GET(
   }
 
   const origin = req.nextUrl.origin;
-  // Demo names are flat; nested paid routes map back (market-search -> /api/market/search, discourse-split -> /api/discourse/split, grocery-normalize -> /api/grocery/normalize, grocery-ingredient -> /api/grocery/ingredient).
-  const paidPath = `/api/${route.replace(/^(market|discourse|grocery)-/, "$1/")}`;
+  // Demo names are flat; nested paid routes map back (market-search -> /api/market/search, discourse-split -> /api/discourse/split, grocery-normalize -> /api/grocery/normalize, grocery-ingredient -> /api/grocery/ingredient, chain-head -> /api/chain/head, token-meta -> /api/token/meta, name-resolve -> /api/name/resolve).
+  const paidPath = `/api/${route.replace(/^(market|discourse|grocery|chain|token|name)-/, "$1/")}`;
   const inner = new NextRequest(
     `${origin}${paidPath}${demo.query ? `?${demo.query}` : ""}`,
     { method: "GET" },

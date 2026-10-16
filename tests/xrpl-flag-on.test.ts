@@ -39,6 +39,9 @@ const MAIN_PRICES: Record<string, [string, string]> = {
   "tx-guard": ["2000", "0.002"], // tx-guard 2026-10-14
   "grocery/normalize": ["2000", "0.002"], // grocery/normalize 2026-10-14
   "grocery/ingredient": ["5000", "0.005"], // grocery/ingredient 2026-10-16
+  "chain/head": ["2000", "0.002"], // wave 1 2026-10-16
+  "token/meta": ["2000", "0.002"], // wave 1 2026-10-16
+  "name/resolve": ["2000", "0.002"], // wave 1 2026-10-16
 };
 
 const RLUSD = "524C555344000000000000000000000000000000";
@@ -84,7 +87,7 @@ function expectShape(
       checked++;
     }
   }
-  expect(checked).toBe(152); // as tests/solana-flag-on: 88 on main + 12 market-mvp + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient
+  expect(checked).toBe(170); // as tests/solana-flag-on: 88 on main + 12 market-mvp + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient + 18 wave-1 (chain/head, token/meta, name/resolve x 6)
 }
 
 const xrplEntry = (route: string, network = "xrpl:1", issuer = TESTNET_ISSUER, extra: Record<string, unknown> = {}) => ({

@@ -38,6 +38,9 @@ import {
   TX_GUARD_PRICE_USD,
   GROCERY_NORMALIZE_PRICE_USD,
   GROCERY_INGREDIENT_PRICE_USD,
+  CHAIN_HEAD_PRICE_USD,
+  TOKEN_META_PRICE_USD,
+  NAME_RESOLVE_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -1630,4 +1633,108 @@ export function groceryIngredientRouteConfig(): RoutesConfig {
       } as DiscoveryDecl),
     },
   );
+}
+
+/** Chain tip for Base, Polygon, Ethereum, Solana and XRPL (public RPCs). Same rails, payTo and Bazaar pattern as tx-status. */
+export function chainHeadRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/chain/head": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: CHAIN_HEAD_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/chain/head"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/chain/head"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { network: "base,solana,xrpl" },
+          inputSchema: {
+            properties: {
+              network: { type: "string", description: "Optional comma list of base, polygon, ethereum, solana, xrpl (or CAIP-2 ids). Default: all five." },
+            },
+            required: [],
+          },
+          output: outputOf("/api/chain/head", "Horizon Pulse chain head: per network chainId, height (block, slot or ledger index), headTime, headAgeSeconds, finalizedHeight, finalityGap"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+/** Token metadata from chain state (EVM, Solana, XRPL; public RPCs). Same rails, payTo and Bazaar pattern as tx-status. */
+export function tokenMetaRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/token/meta": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: TOKEN_META_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/token/meta"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/token/meta"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { network: "base", token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" },
+          inputSchema: {
+            properties: {
+              network: { type: "string", description: "base, polygon, ethereum, solana or xrpl (or CAIP-2 id). Required." },
+              token: { type: "string", description: "Required. EVM: 0x + 40 hex contract address. Solana: base58 mint. XRPL: CURRENCY.rIssuer (3-char code or 40 hex)." },
+            },
+            required: ["network", "token"],
+          },
+          output: outputOf("/api/token/meta", "Horizon Pulse token metadata from chain state: found, standard, name, symbol, decimals, totalSupply, details (no price)"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
+}
+
+/** ENS and Basenames, forward and reverse, on-chain only. Same rails, payTo and Bazaar pattern as tx-status. */
+export function nameResolveRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return {
+    "/api/name/resolve": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: NAME_RESOLVE_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/name/resolve"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/name/resolve"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: { name: "vitalik.eth" },
+          inputSchema: {
+            properties: {
+              name: { type: "string", description: "ENS or Basename to resolve (e.g. vitalik.eth, jesse.base.eth). Give name or address." },
+              address: { type: "string", pattern: "^0x[0-9a-fA-F]{40}$", description: "0x address for reverse lookup (ENS and Basename primary names). Give name or address." },
+            },
+            required: [],
+          },
+          output: outputOf("/api/name/resolve", "Horizon Pulse name resolution: forward (address, resolver, registry) or reverse (ENS and Basename primary names, verified forward)"),
+        } as DiscoveryDecl),
+      },
+    },
+  };
 }

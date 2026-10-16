@@ -42,6 +42,10 @@ const MAIN_PRICES: Record<string, string> = {
   "grocery/normalize": "2000",
   // grocery/ingredient (2026-10-16): $0.005.
   "grocery/ingredient": "5000",
+  // wave-1 chain utilities (2026-10-16): $0.002 each.
+  "chain/head": "2000",
+  "token/meta": "2000",
+  "name/resolve": "2000",
 };
 
 async function captureBoth() {
@@ -109,7 +113,7 @@ describe("flag on", () => {
         checked++;
       }
     }
-    expect(checked).toBe(152); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local) + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient
+    expect(checked).toBe(170); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local) + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient + 18 wave-1 (3 GET routes x 6: chain/head, token/meta, name/resolve)
     expect(JSON.stringify(all.cdp)).not.toBe(JSON.stringify(golden.cdp));
   });
 

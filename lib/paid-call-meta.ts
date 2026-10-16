@@ -26,6 +26,9 @@ export const POLL_INTERVAL_SECONDS: Readonly<Record<string, number>> = {
   "/api/watch": 300, // agent decides; 5 min is a sane floor for page checks
   "/api/tokenized-stock": 300, // token state (supply, pause, multiplier) changes slowly
   "/api/tx-status": 5, // poll until final; the body also carries pollAgainSeconds per chain
+  "/api/chain/head": 5, // a new Base/Polygon block every few seconds; Solana slots faster, XRPL ledgers ~4 s
+  "/api/token/meta": 300, // supply moves with mints/burns; name, symbol and decimals rarely change
+  "/api/name/resolve": 3600, // name records change rarely
 };
 
 function settleHeader(res: Response): string | null {

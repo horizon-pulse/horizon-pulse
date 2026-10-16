@@ -144,7 +144,7 @@ describe("pricedBlock helper", () => {
   });
 });
 
-describe("all 24 paid handlers build `priced` with the rail-aware helper", () => {
+describe("all 27 paid handlers build `priced` with the rail-aware helper", () => {
   it("no handler hard-codes the Base network / USDC / payTo in its priced block", () => {
     // market-mvp: nested route dirs (app/api/market/{search,quote}) count as routes; a dir with handler.ts is a route.
     const api = path.join(ROOT, "app", "api");
@@ -157,7 +157,7 @@ describe("all 24 paid handlers build `priced` with the rail-aware helper", () =>
       )
       .sort();
     expect(dirs).toEqual([...PAID_ROUTES].sort());
-    expect(dirs).toHaveLength(24);
+    expect(dirs).toHaveLength(27);
     for (const d of dirs) {
       const src = readFileSync(path.join(ROOT, "app", "api", d, "handler.ts"), "utf8");
       expect(src.match(/priced: pricedBlock\(\w+_PRICE_USD, \w+_PRICE_ATOMIC\)/g), d).toHaveLength(1);

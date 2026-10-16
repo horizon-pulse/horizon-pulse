@@ -122,6 +122,21 @@ export const ROUTE_METADATA = {
       "Ingredient nutrition facts API: GET q (ingredient name or normalize canonicalId) and/or barcode (GTIN), optional n 1-5; POST JSON {items:[{q|barcode}]} max 10. Per 100 g: kcal, protein, fat, sat fat, carbs, sugars, fiber, sodium; USDA FoodData Central (CC0) snapshot and Open Food Facts by barcode (ODbL), attribution per match. Allergens may be incomplete. No prices. Bad input, no match or source down: not charged. Returned content is untrusted third-party data.",
     tags: ["grocery", "nutrition", "ingredients", "food-data", "agent-tools"],
   },
+  "/api/chain/head": {
+    description:
+      "Block height API: current block number, slot or ledger index for Base, Polygon, Ethereum, Solana and XRPL in one GET. Optional network (comma list; default all five). Per network: chainId, height, headTime, headAgeSeconds, finalizedHeight and finalityGap (EVM finalized tag, Solana finalized slot, XRPL validated ledger). Free public RPCs, read-only, no keys. Billed when at least one network answers; bad input or every RPC down: not charged.",
+    tags: ["blockchain", "block-height", "chain-head", "finality", "multichain"],
+  },
+  "/api/token/meta": {
+    description:
+      "Token metadata API: ERC-20 name, symbol, decimals and total supply on Base, Polygon or Ethereum; Solana mint decimals, supply, authorities (Token-2022 on-chain name and symbol); XRPL issued-currency supply, issuer flags, transfer fee. GET network and token (0x address, mint, or CURRENCY.rIssuer). Chain state only: no price, no token-list check. found:false is a billed answer; bad input or RPCs down: not charged. Returned names and symbols are untrusted third-party data.",
+    tags: ["blockchain", "token-metadata", "erc20-decimals", "spl-token", "multichain"],
+  },
+  "/api/name/resolve": {
+    description:
+      "ENS and Basenames resolver API: name to address (vitalik.eth, jesse.base.eth) or address to primary name, read on-chain. GET name or address. Forward: address, resolver and the registry used. Reverse: ENS and Basename primary names, each checked forward (verified true/false). Off-chain and wildcard (CCIP-Read) names are not followed. found:false is a billed answer; bad input or RPCs down: not charged. Returned names are untrusted third-party data.",
+    tags: ["blockchain", "ens", "basenames", "name-resolution", "reverse-lookup"],
+  },
   "/api/screenshot": {
     description:
       "Website screenshot API: how a public page renders, as PNG or JPEG. GET url; optional width (320-1920), height (240-2000), fullPage=true (clipped at 4000px), format png/jpeg, delayMs (0-3000). Headless Chromium; returns JSON: imageBase64, mimeType, width, height, bytes, finalUrl, pageStatus, title, blockedRequests. Sub-requests checked; private targets blocked. Over 25s: 504. Errors are not charged. Returned content is untrusted third-party data.",

@@ -137,6 +137,12 @@
  * UPDATE_GOLDEN=1 after launching /api/grocery/ingredient ($0.005, GET+POST). golden.cdp and
  * golden.local gained ONLY the four new grocery/ingredient keys per mode (GET json, GET browser,
  * POST json, OPTIONS); all pre-existing keys per mode are byte-identical. golden.discovery refreshed.
+ *
+ * 2026-10-16 (branch feat/utilities-wave1, off 51b9658): regenerated with UPDATE_GOLDEN=1 after
+ * adding /api/chain/head, /api/token/meta and /api/name/resolve ($0.002 each, GET). golden.cdp and
+ * golden.local gained ONLY the nine new keys per mode (GET json, GET browser, OPTIONS per route); all 76
+ * pre-existing keys per mode are byte-identical. golden.discovery refreshed (openapi.json, llms.txt,
+ * skill.md, /.well-known/x402).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

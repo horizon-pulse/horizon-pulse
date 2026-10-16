@@ -187,6 +187,19 @@ export const GROCERY_NORMALIZE_PRICE_ATOMIC = "2000" as const; // USDC 6 decimal
 export const GROCERY_INGREDIENT_PRICE_USD = "$0.005" as const;
 export const GROCERY_INGREDIENT_PRICE_ATOMIC = "5000" as const; // USDC 6 decimals
 
+/**
+ * Wave-1 chain utilities (Odin 11:26 AM ET 10/16 build; Michael approved the $0.002 floor 11:29 AM ET 10/16).
+ * /api/chain/head: chain tip for Base, Polygon, Ethereum, Solana, XRPL in one call.
+ * /api/token/meta: token name, symbol, decimals, supply from chain state.
+ * /api/name/resolve: ENS and Basenames, forward and reverse, on-chain only.
+ */
+export const CHAIN_HEAD_PRICE_USD = "$0.002" as const;
+export const CHAIN_HEAD_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
+export const TOKEN_META_PRICE_USD = "$0.002" as const;
+export const TOKEN_META_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
+export const NAME_RESOLVE_PRICE_USD = "$0.002" as const;
+export const NAME_RESOLVE_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

@@ -54,6 +54,12 @@ import {
   GROCERY_NORMALIZE_PRICE_ATOMIC,
   GROCERY_INGREDIENT_PRICE_USD,
   GROCERY_INGREDIENT_PRICE_ATOMIC,
+  CHAIN_HEAD_PRICE_USD,
+  CHAIN_HEAD_PRICE_ATOMIC,
+  TOKEN_META_PRICE_USD,
+  TOKEN_META_PRICE_ATOMIC,
+  NAME_RESOLVE_PRICE_USD,
+  NAME_RESOLVE_PRICE_ATOMIC,
   HTTP_PRICE_USD,
   HTTP_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
@@ -280,6 +286,36 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     category: "agent",
     blurb: "Look up nutrition per 100 g for an ingredient or barcode",
   },
+  {
+    path: "/api/chain/head?network=…",
+    method: "GET",
+    priceUsd: CHAIN_HEAD_PRICE_USD,
+    priceAtomic: CHAIN_HEAD_PRICE_ATOMIC,
+    summary:
+      "Current chain tip for Base, Polygon, Ethereum, Solana and the XRP Ledger in one call: chain id, block/slot/ledger height, head time and age, finalized height and the gap; public RPCs, read-only",
+    category: "agent",
+    blurb: "Current block, slot or ledger height on 5 chains",
+  },
+  {
+    path: "/api/token/meta?network=…&token=…",
+    method: "GET",
+    priceUsd: TOKEN_META_PRICE_USD,
+    priceAtomic: TOKEN_META_PRICE_ATOMIC,
+    summary:
+      "Token metadata from chain state: ERC-20 name, symbol, decimals and supply (Base, Polygon, Ethereum); Solana mint decimals, supply and authorities; XRPL issued-currency supply, issuer flags and transfer fee; no price, no token-list check",
+    category: "agent",
+    blurb: "Token name, symbol, decimals and supply from chain state",
+  },
+  {
+    path: "/api/name/resolve?name=…|address=…",
+    method: "GET",
+    priceUsd: NAME_RESOLVE_PRICE_USD,
+    priceAtomic: NAME_RESOLVE_PRICE_ATOMIC,
+    summary:
+      "ENS and Basenames, on-chain: name to address, or address to ENS and Basename primary names checked forward; off-chain/wildcard (CCIP-Read) names are not followed",
+    category: "agent",
+    blurb: "Resolve an ENS name or Basename, or find an address's primary name",
+  },
 
   {
     path: "/api/discourse/split?q=…",
@@ -333,7 +369,7 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock status check on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 changed-since-last-check for a public page or endpoint, short diff), /api/balance ($0.002 can-I-pay-now check per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks), /api/grocery/normalize ($0.002 recipe ingredient lines to a normalized shopping list, deterministic, no prices), /api/grocery/ingredient ($0.005 nutrition per 100 g from USDA FoodData Central and Open Food Facts, untested price)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock status check on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 changed-since-last-check for a public page or endpoint, short diff), /api/balance ($0.002 can-I-pay-now check per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks), /api/grocery/normalize ($0.002 recipe ingredient lines to a normalized shopping list, deterministic, no prices), /api/grocery/ingredient ($0.005 nutrition per 100 g from USDA FoodData Central and Open Food Facts, untested price), /api/chain/head ($0.002 chain tip on Base, Polygon, Ethereum, Solana and XRPL), /api/token/meta ($0.002 token metadata from chain state, no price), /api/name/resolve ($0.002 ENS and Basenames, on-chain only)." as const;
 
 export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
   crypto: "Crypto market data",

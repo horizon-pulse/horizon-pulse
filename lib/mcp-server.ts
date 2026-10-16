@@ -45,6 +45,9 @@ import * as balanceRoute from "@/app/api/balance/handler";
 import * as txGuardRoute from "@/app/api/tx-guard/handler";
 import * as groceryNormalizeRoute from "@/app/api/grocery/normalize/handler";
 import * as groceryIngredientRoute from "@/app/api/grocery/ingredient/handler";
+import * as chainHeadRoute from "@/app/api/chain/head/handler";
+import * as tokenMetaRoute from "@/app/api/token/meta/handler";
+import * as nameResolveRoute from "@/app/api/name/resolve/handler";
 import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
@@ -279,6 +282,32 @@ export const TOOLS: ToolDef[] = [
         (req) => groceryIngredientRoute.groceryIngredientHandler(req),
         makeRequest("/api/grocery/ingredient", {}, { items: a.items, n: a.n }),
       ),
+  },
+  {
+    name: "chain_head",
+    opts: chainHeadRoute.paymentOpts,
+    schema: {
+      network: z.string().optional().describe("Comma list of base, polygon, ethereum, solana, xrpl (or CAIP-2 ids); default all five"),
+    },
+    call: (a) => runHandler((req) => chainHeadRoute.chainHeadHandler(req), makeRequest("/api/chain/head", { network: s(a.network) })),
+  },
+  {
+    name: "token_meta",
+    opts: tokenMetaRoute.paymentOpts,
+    schema: {
+      network: z.string().describe("base, polygon, ethereum, solana or xrpl (or CAIP-2 id)"),
+      token: z.string().describe("EVM: 0x contract address. Solana: mint address. XRPL: CURRENCY.rIssuer"),
+    },
+    call: (a) => runHandler((req) => tokenMetaRoute.tokenMetaHandler(req), makeRequest("/api/token/meta", { network: s(a.network), token: s(a.token) })),
+  },
+  {
+    name: "name_resolve",
+    opts: nameResolveRoute.paymentOpts,
+    schema: {
+      name: z.string().optional().describe("ENS name or Basename to resolve (vitalik.eth, jesse.base.eth). Give name or address"),
+      address: z.string().optional().describe("0x address for reverse lookup (ENS and Basename primary names). Give name or address"),
+    },
+    call: (a) => runHandler((req) => nameResolveRoute.nameResolveHandler(req), makeRequest("/api/name/resolve", { name: s(a.name), address: s(a.address) })),
   },
 
   {
