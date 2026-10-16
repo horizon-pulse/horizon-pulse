@@ -9,6 +9,17 @@
  * named below, no value was invented or edited. Live values change on every
  * call. Raw recordings: hp-tests/demo-samples-20261001/ (box only, not in the repo).
  *
+ * 2026-10-16 (branch fix/sample-copy-pass): /api/extract re-recorded from
+ * GET https://horizonpulse.dev/api/demo/extract (its fixed input is now also the
+ * declared Bazaar GET input: url + fields). Trimmed for header size only:
+ * source, priced, asOf and methodology dropped, links and headings cut to the
+ * first 2 entries, textSample cut at 120 chars (ends in "…"); nothing else edited. Raw: /workspace/hp-tmp/copy-pass/demo-extract.json (box only).
+ *
+ * Same branch: public/sample.pdf now names all four rails; /api/pdf re-recorded by
+ * running lib/pdf.ts pdfToText on the branch's sample.pdf bytes (fetch stubbed to
+ * serve that file, since prod still serves the old one until deploy). Same trim
+ * as before (methodology and null meta fields dropped). Raw: /workspace/hp-tmp/copy-pass/rec-pdf.json.
+ *
  * EXCEPTION: /api/discourse/split is NOT a recording. It is an illustrative
  * format sample with invented counts, marked `illustrative: true` in the example
  * itself; its Bazaar schema text and its demo note say so (no stance classifier
@@ -71,6 +82,8 @@ export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
   "/api/balance": "2026-10-14T15:21Z",
   "/api/tx-guard": "2026-10-14T15:42Z",
   "/api/grocery/normalize": "2026-10-14T21:18Z",
+  "/api/pdf": "2026-10-16T16:55Z",
+  "/api/extract": "2026-10-16T16:54Z",
   "/api/pulse": "2026-10-16T15:44Z",
   "/api/portfolio": "2026-10-16T15:44Z",
   "/api/funding": "2026-10-16T15:44Z",
@@ -648,9 +661,8 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
   "/api/extract": {
     "ok": true,
     "url": "https://horizonpulse.dev/",
-    "finalUrl": "https://horizonpulse.dev/",
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data.",
+    "description": "Pay-per-call APIs for AI agents, paid in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, with x402: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key.",
     "language": "en",
     "links": [
       {
@@ -669,22 +681,26 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
       },
       {
         "level": 2,
-        "text": "Seventeen routes. One protocol."
+        "text": "27 routes. One protocol."
       }
     ],
-    "textSample": "# Horizon Pulse\n\nLive on Base · x402 v2\n# Pay-per-call APIs\n built for agents.\n\n17 routes for market data, the web and d…",
+    "textSample": "# Horizon Pulse\n\nLive on Base + Solana + Polygon + XRP Ledger · x402 v2\n# Pay-per-call APIs\n built for agents.\n\n27 paid …",
     "fields": {
       "heading": "Pay-per-call APIsbuilt for agents.",
       "links": [
         "https://horizonpulse.dev/",
         "https://horizonpulse.dev/#catalog",
-        "https://horizonpulse.dev/#how"
+        "https://horizonpulse.dev/#how",
+        "https://horizonpulse.dev/#agents",
+        "https://horizonpulse.dev/agent-promotion"
       ]
     },
     "fieldErrors": {},
     "matchedFields": 2,
     "requestedFields": 2,
-    "elapsedMs": 120
+    "bytesRead": 70768,
+    "finalUrl": "https://horizonpulse.dev/",
+    "elapsedMs": 150
   },
   "/api/bazaar-check": {
     "source": "bazaar-check",
@@ -1044,7 +1060,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
     "ok": true,
     "requestedUrl": "https://horizonpulse.dev/sample.pdf",
     "finalUrl": "https://horizonpulse.dev/sample.pdf",
-    "bytes": 858,
+    "bytes": 920,
     "totalPages": 1,
     "pagesReturned": 1,
     "truncated": false,
@@ -1055,7 +1071,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
     "pages": [
       {
         "page": 1,
-        "text": "Horizon Pulse sample PDF\nPay-per-call APIs for AI agents over x402 (USDC on Base).\nThis file is the fixed input for the free /api/demo/pdf sample."
+        "text": "Horizon Pulse sample PDF\nPay-per-call APIs for AI agents over x402, paid in\nUSDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger.\nThis file is the fixed input for the free /api/demo/pdf sample."
       }
     ]
   },

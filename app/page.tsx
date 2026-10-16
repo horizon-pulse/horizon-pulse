@@ -96,7 +96,7 @@ export default function HomePage() {
               </h2>
               <p className="hp-lead">
                 Every route works the same way: request, get a 402, pay in USDC, get JSON. Each one has a free twin at{" "}
-                <code>/api/demo/&lt;route&gt;</code> with real output on a fixed input.
+                <code>/api/demo/&lt;route&gt;</code> that runs the route on a fixed input (discourse/split: an illustrative format sample).
               </p>
             </div>
             <div className="hp-label" style={{ marginTop: 8 }}>Start here</div>
@@ -261,7 +261,7 @@ export default function HomePage() {
 
         <section className="hp-cta-band" data-reveal>
           <h2>Start with a free sample.</h2>
-          <p>Real output, no wallet needed. Pay only when your agent needs a live input.</p>
+          <p>Fixed-input samples, no wallet needed. Pay only when your agent needs its own input.</p>
           <div className="hp-ctas">
             <a className="hp-btn primary" href="/try">Try it free</a>
             <a className="hp-btn ghost" href="/docs">Read the docs</a>

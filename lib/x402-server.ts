@@ -670,8 +670,10 @@ export function extractRouteConfig(): RoutesConfig {
     {
       ...declareChargedDiscovery({
         method: "GET",
+        // Same fixed input as GET /api/demo/extract, so the recorded example answers this exact input.
         input: {
           url: "https://horizonpulse.dev",
+          fields: '{"heading":"h1","links":{"selector":"a","attr":"href","all":true,"limit":5}}',
         },
         inputSchema: {
           properties: {
@@ -1539,7 +1541,7 @@ export function groceryNormalizeRouteConfig(): RoutesConfig {
     {
       ...declareChargedDiscovery({
         method: "GET",
-        input: { ingredients: "2 cups all-purpose flour|3 large eggs", servings: "4", targetServings: "8" },
+        input: { ingredients: "2 cups all-purpose flour|3 large eggs|1 tbsp olive oil", servings: "4", targetServings: "8" }, // same 3 lines as the recorded example and the POST input
         inputSchema: {
           properties: {
             ingredients: { type: "string", description: "Ingredient lines separated by | (max 100 lines, 200 chars each). POST JSON is preferred." },

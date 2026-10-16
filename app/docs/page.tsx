@@ -122,7 +122,7 @@ function Operation({ o }: { o: Op }) {
   );
 }
 
-const FLOW = `# 1. Free sample of the real output, no payment
+const FLOW = `# 1. Free fixed-input sample, no payment
 curl ${BASE}/api/demo/pulse
 
 # 2. Unpaid call: HTTP 402 with the price in PAYMENT-REQUIRED (base64 JSON)

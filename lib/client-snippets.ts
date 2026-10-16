@@ -2,7 +2,7 @@
 export const CODE: Record<string, { title: string; code: string }> = {
   curl: {
     title: "shell",
-    code: `# Free twin of every route: real output on a fixed input, no payment
+    code: `# Free twin of every route: the route run on a fixed input, no payment
 curl https://horizonpulse.dev/api/demo/pulse
 
 # Paid route without payment: HTTP 402 + PAYMENT-REQUIRED (base64 JSON, x402 v2)

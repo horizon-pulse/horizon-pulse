@@ -54,7 +54,7 @@ export function browser402(
 <p>${esc(info.description)}</p>
 <p class="p">${esc(info.priceUsd)} per call</p>
 <p>This is a paid API for AI agents. Agents pay per call in USDC on Base using the x402 protocol (HTTP 402 + <code>PAYMENT-REQUIRED</code> header). There is no human checkout, signup, or API key.</p>
-<p><a href="/api/demo/${esc(route)}">See a free sample of real output</a> · <a href="/llms.txt">Agent docs (llms.txt)</a> · <a href="/openapi.json">OpenAPI</a> · <a href="/">Horizon Pulse</a></p>
+<p><a href="/api/demo/${esc(route)}">See a free fixed-input sample</a> · <a href="/llms.txt">Agent docs (llms.txt)</a> · <a href="/openapi.json">OpenAPI</a> · <a href="/">Horizon Pulse</a></p>
 <p><small>Status 402 Payment Required. Programmatic clients: read the PAYMENT-REQUIRED response header.</small></p>
 </body></html>`;
   const headers = new Headers(paid.headers);

@@ -1,6 +1,6 @@
 /**
  * Free fixed-input samples for every paid route (GET /api/demo/<route>).
- * Real handler output on FIXED inputs only — callers cannot choose a URL or
+ * Handler output on FIXED inputs only (discourse/split: canned illustrative sample) — callers cannot choose a URL or
  * address, so demos can't be used as a free proxy. Not x402 resources: kept
  * out of /.well-known/x402, OpenAPI, and Bazaar discovery on purpose.
  */

@@ -6,7 +6,7 @@ import { TryPlayground } from "@/components/TryPlayground";
 
 export const metadata: Metadata = {
   title: "Try it free · Horizon Pulse",
-  description: "Run a free sample of any Horizon Pulse route and see real output before paying per call with x402.",
+  description: "Run a free sample of any Horizon Pulse route on a fixed input before paying per call with x402.",
   alternates: { canonical: "/try" },
 };
 
@@ -25,7 +25,7 @@ export default function TryPage() {
               <span>Then pay per call.</span>
             </h1>
             <p className="hp-sub">
-              Each free sample is real output from the route on a fixed input, cached for a few minutes. The paid route takes your own input and costs a fraction of a
+              Each free sample runs the route&apos;s own handler on a fixed input, cached for a few minutes (discourse/split shows an illustrative format sample, not measured output). The paid route takes your own input and costs a fraction of a
               cent to a few cents in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger.
             </p>
           </div>

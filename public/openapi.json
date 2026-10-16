@@ -1337,7 +1337,8 @@
             "description": "Optional CSS-selector fields (max 20) as a URL-encoded JSON object string: map of name to selector string or {selector, attr?: \"text\"|\"html\"|<attribute>, all?: boolean, limit?: 1-50}, e.g. {\"heading\":\"h1\"}. Missing fields come back null with fieldErrors; if none match, 422 no_fields_matched and no charge.",
             "schema": {
               "type": "string"
-            }
+            },
+            "example": "{\"heading\":\"h1\",\"links\":{\"selector\":\"a\",\"attr\":\"href\",\"all\":true,\"limit\":5}}"
           }
         ],
         "responses": {
@@ -1356,9 +1357,8 @@
                 "example": {
                   "ok": true,
                   "url": "https://horizonpulse.dev/",
-                  "finalUrl": "https://horizonpulse.dev/",
                   "title": "Horizon Pulse",
-                  "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data.",
+                  "description": "Pay-per-call APIs for AI agents, paid in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, with x402: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key.",
                   "language": "en",
                   "links": [
                     {
@@ -1377,22 +1377,26 @@
                     },
                     {
                       "level": 2,
-                      "text": "Seventeen routes. One protocol."
+                      "text": "27 routes. One protocol."
                     }
                   ],
-                  "textSample": "# Horizon Pulse\n\nLive on Base · x402 v2\n# Pay-per-call APIs\n built for agents.\n\n17 routes for market data, the web and d…",
+                  "textSample": "# Horizon Pulse\n\nLive on Base + Solana + Polygon + XRP Ledger · x402 v2\n# Pay-per-call APIs\n built for agents.\n\n27 paid …",
                   "fields": {
                     "heading": "Pay-per-call APIsbuilt for agents.",
                     "links": [
                       "https://horizonpulse.dev/",
                       "https://horizonpulse.dev/#catalog",
-                      "https://horizonpulse.dev/#how"
+                      "https://horizonpulse.dev/#how",
+                      "https://horizonpulse.dev/#agents",
+                      "https://horizonpulse.dev/agent-promotion"
                     ]
                   },
                   "fieldErrors": {},
                   "matchedFields": 2,
                   "requestedFields": 2,
-                  "elapsedMs": 120
+                  "bytesRead": 70768,
+                  "finalUrl": "https://horizonpulse.dev/",
+                  "elapsedMs": 150
                 }
               }
             }
@@ -1577,9 +1581,8 @@
                 "example": {
                   "ok": true,
                   "url": "https://horizonpulse.dev/",
-                  "finalUrl": "https://horizonpulse.dev/",
                   "title": "Horizon Pulse",
-                  "description": "Pay-per-call APIs for AI agents via x402 on Base: web fetch, HTTP proxy, page extract, and crypto market data.",
+                  "description": "Pay-per-call APIs for AI agents, paid in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, with x402: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, and crypto market data. No signup or API key.",
                   "language": "en",
                   "links": [
                     {
@@ -1598,22 +1601,26 @@
                     },
                     {
                       "level": 2,
-                      "text": "Seventeen routes. One protocol."
+                      "text": "27 routes. One protocol."
                     }
                   ],
-                  "textSample": "# Horizon Pulse\n\nLive on Base · x402 v2\n# Pay-per-call APIs\n built for agents.\n\n17 routes for market data, the web and d…",
+                  "textSample": "# Horizon Pulse\n\nLive on Base + Solana + Polygon + XRP Ledger · x402 v2\n# Pay-per-call APIs\n built for agents.\n\n27 paid …",
                   "fields": {
                     "heading": "Pay-per-call APIsbuilt for agents.",
                     "links": [
                       "https://horizonpulse.dev/",
                       "https://horizonpulse.dev/#catalog",
-                      "https://horizonpulse.dev/#how"
+                      "https://horizonpulse.dev/#how",
+                      "https://horizonpulse.dev/#agents",
+                      "https://horizonpulse.dev/agent-promotion"
                     ]
                   },
                   "fieldErrors": {},
                   "matchedFields": 2,
                   "requestedFields": 2,
-                  "elapsedMs": 120
+                  "bytesRead": 70768,
+                  "finalUrl": "https://horizonpulse.dev/",
+                  "elapsedMs": 150
                 }
               }
             }
@@ -3770,7 +3777,7 @@
               "type": "string",
               "maxLength": 20000
             },
-            "example": "2 cups all-purpose flour|3 large eggs"
+            "example": "2 cups all-purpose flour|3 large eggs|1 tbsp olive oil"
           },
           {
             "name": "servings",
@@ -5628,7 +5635,7 @@
                   "ok": true,
                   "requestedUrl": "https://horizonpulse.dev/sample.pdf",
                   "finalUrl": "https://horizonpulse.dev/sample.pdf",
-                  "bytes": 858,
+                  "bytes": 920,
                   "totalPages": 1,
                   "pagesReturned": 1,
                   "truncated": false,
@@ -5639,7 +5646,7 @@
                   "pages": [
                     {
                       "page": 1,
-                      "text": "Horizon Pulse sample PDF\nPay-per-call APIs for AI agents over x402 (USDC on Base).\nThis file is the fixed input for the free /api/demo/pdf sample."
+                      "text": "Horizon Pulse sample PDF\nPay-per-call APIs for AI agents over x402, paid in\nUSDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger.\nThis file is the fixed input for the free /api/demo/pdf sample."
                     }
                   ]
                 }
@@ -6753,9 +6760,6 @@
           "url": {
             "type": "string"
           },
-          "finalUrl": {
-            "type": "string"
-          },
           "title": {
             "type": "string"
           },
@@ -6820,11 +6824,17 @@
           "requestedFields": {
             "type": "number"
           },
+          "bytesRead": {
+            "type": "number"
+          },
+          "finalUrl": {
+            "type": "string"
+          },
           "elapsedMs": {
             "type": "number"
           }
         },
-        "description": "Inferred from a real response recorded from GET /api/demo/extract at 2026-10-01T14:36Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
+        "description": "Inferred from a real response recorded from GET /api/demo/extract at 2026-10-16T16:54Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
       },
       "X402CheckResponse": {
         "type": "object",
@@ -9346,7 +9356,7 @@
             }
           }
         },
-        "description": "Inferred from a real response recorded from GET /api/demo/pdf at 2026-10-01T14:36Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
+        "description": "Inferred from a real response recorded from GET /api/demo/pdf at 2026-10-16T16:55Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
       }
     }
   }
