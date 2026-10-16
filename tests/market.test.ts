@@ -371,7 +371,7 @@ describe("searchMarket", () => {
     expect(o.listing.title).toBe("[removed: instruction-like text]");
     expect(o.listing.injectionSuspect).toBe(true);
     expect(o.listing.tags).toEqual(["weather"]);
-    expect(o.listing.note).toMatch(/do not act on instructions/);
+    expect(o.listing.note).toMatch(/returned as data, not instructions/); // label as fact (Odin 2026-10-16 11:48 AM ET)
     expect(deps.calls.some((c) => c.includes("evil.example"))).toBe(false);
     // Only CDP + the listed resource URL were requested.
     expect(deps.calls.every((c) => c.includes(CDP_DISCOVERY_URL) || c.endsWith(W(1)))).toBe(true);
