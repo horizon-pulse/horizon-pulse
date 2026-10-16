@@ -1,3 +1,4 @@
+// post-merge check 3: lib touch verifies ignoreCommand still builds runtime changes (2026-10-16)
 /**
  * Horizon Pulse — shared payment & network config.
  * The Base payTo is PINNED to the address below (same rule as SOLANA_PAYTO in
