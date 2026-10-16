@@ -75,3 +75,5 @@ for f in "${FILES[@]}"; do
 done
 
 exit 0
+
+# post-merge check 2: scripts-only (should skip prod build) 2026-10-16T11:46:00-04:00
