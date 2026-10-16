@@ -17,6 +17,7 @@ export const GROCERY_INGREDIENT_OUTPUT_EXAMPLE: Record<string, unknown> = {
         {
           "source": "usda_fdc",
           "id": "790018",
+          "fdcId": 790018,
           "name": "Flour, wheat, all-purpose, unenriched, unbleached",
           "dataType": "Foundation",
           "category": "Cereal Grains and Pasta",
@@ -30,7 +31,7 @@ export const GROCERY_INGREDIENT_OUTPUT_EXAMPLE: Record<string, unknown> = {
             "fiber_g": 3,
             "sodium_mg": 2
           },
-          "sourceUrl": "https://fdc.nal.usda.gov/food-details/790018/nutrients",
+          "sourceUrl": "https://fdc.nal.usda.gov",
           "license": "Public domain (CC0 1.0)",
           "attribution": "Source: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, Foundation Foods, April 2026. fdc.nal.usda.gov. Public domain (CC0 1.0).",
           "matchScore": 12.36
@@ -38,6 +39,7 @@ export const GROCERY_INGREDIENT_OUTPUT_EXAMPLE: Record<string, unknown> = {
         {
           "source": "usda_fdc",
           "id": "789890",
+          "fdcId": 789890,
           "name": "Flour, wheat, all-purpose, enriched, bleached",
           "dataType": "Foundation",
           "category": "Cereal Grains and Pasta",
@@ -51,7 +53,7 @@ export const GROCERY_INGREDIENT_OUTPUT_EXAMPLE: Record<string, unknown> = {
             "fiber_g": null,
             "sodium_mg": 2
           },
-          "sourceUrl": "https://fdc.nal.usda.gov/food-details/789890/nutrients",
+          "sourceUrl": "https://fdc.nal.usda.gov",
           "license": "Public domain (CC0 1.0)",
           "attribution": "Source: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, Foundation Foods, April 2026. fdc.nal.usda.gov. Public domain (CC0 1.0).",
           "matchScore": 10.88

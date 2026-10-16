@@ -53,7 +53,8 @@ export function fdcAttribution(release: string): string {
   return `Source: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, ${release}. fdc.nal.usda.gov. Public domain (CC0 1.0).`;
 }
 export const offProductUrl = (barcode: string) => `https://world.openfoodfacts.org/product/${barcode}`;
-export const fdcFoodUrl = (fdcId: number) => `https://fdc.nal.usda.gov/food-details/${fdcId}/nutrients`;
+/** Odin 10/16: bare FDC citation URL (the per-food deep link answers HTTP 404 to non-browser fetches). The food is identified by fdcId. */
+export const FDC_SOURCE_URL = "https://fdc.nal.usda.gov" as const;
 
 export const GROCERY_INGREDIENT_METHODOLOGY = {
   fdc: "USDA FoodData Central bundled snapshot (Foundation Foods + SR Legacy; release names and zip sha256 in fdcSnapshot). Name matching is deterministic token overlap on the food description; values are per 100 g as published. No outbound call.",
@@ -98,6 +99,8 @@ function index(): Indexed[] {
 export type Match = {
   source: "usda_fdc" | "open_food_facts";
   id: string;
+  /** USDA FDC food id (FDC matches only). */
+  fdcId?: number;
   name: string;
   dataType: string;
   category?: string | null;
@@ -133,11 +136,12 @@ export function fdcSearch(q: string, n: number): Match[] {
     return {
       source: "usda_fdc",
       id: String(row[0]),
+      fdcId: row[0],
       name: row[1],
       dataType: row[2],
       category: row[3],
       nutrientsPer100g: nut,
-      sourceUrl: fdcFoodUrl(row[0]),
+      sourceUrl: FDC_SOURCE_URL,
       license: "Public domain (CC0 1.0)",
       attribution: fdcAttribution(release),
       matchScore: Math.round(score * 100) / 100,

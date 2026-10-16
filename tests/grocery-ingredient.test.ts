@@ -90,13 +90,16 @@ describe("USDA FDC snapshot", () => {
   ])("q=%s top match", (q, re) => {
     expect(GI.fdcSearch(q, 1)[0]?.name).toMatch(re);
   });
-  it("FDC match carries the Counsel citation with the release and CC0, and a fdc.nal.usda.gov link", async () => {
+  it("FDC match carries the Counsel citation with the release and CC0, the bare fdc.nal.usda.gov citation URL and an fdcId", async () => {
     const j = await (await get("q=egg&n=1")).json();
     const m = j.items[0].matches[0];
     expect(m.source).toBe("usda_fdc");
     expect(m.attribution).toBe(COUNSEL_FDC("SR Legacy, April 2018"));
     expect(m.license).toBe("Public domain (CC0 1.0)");
-    expect(m.sourceUrl).toBe(`https://fdc.nal.usda.gov/food-details/${m.id}/nutrients`);
+    expect(m.sourceUrl).toBe("https://fdc.nal.usda.gov");
+    expect(m.fdcId).toBe(Number(m.id));
+    expect(Number.isInteger(m.fdcId)).toBe(true);
+    expect(JSON.stringify(j)).not.toContain("food-details");
     expect(j.attribution).toEqual([COUNSEL_FDC("SR Legacy, April 2018")]);
     expect(fetchMock).not.toHaveBeenCalled(); // q only: no outbound call
   });

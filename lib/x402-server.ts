@@ -1580,7 +1580,7 @@ export function groceryIngredientRoutesFor(priceUsd: string): RoutesConfig {
     schema: {
       type: "object",
       description:
-        "Horizon Pulse ingredient nutrition: per item matches[] (source, id, name, nutrientsPer100g, allergens null when unknown, sourceUrl, license, attribution), whereToBuy (Open Food Facts store names only), unknowns; attribution[]; disclaimer. The example is a trimmed response recorded from the branch handler (USDA snapshot only); live values differ.",
+        "Horizon Pulse ingredient nutrition: per item matches[] (source, id, fdcId for USDA matches, name, nutrientsPer100g, allergens null when unknown, sourceUrl, license, attribution), whereToBuy (Open Food Facts store names only), unknowns; attribution[]; disclaimer. The example is a trimmed response recorded from the branch handler (USDA snapshot only); live values differ.",
     },
   };
   return methodSplitRoutes(
