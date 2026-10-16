@@ -6,7 +6,8 @@
  * 405, it retries once with POST (reported as a check),
  * follows up to 3 redirects with SSRF re-checks at every hop, and reports:
  * status, x402 version, decoded accepts (price, network, asset, payTo),
- * payTo type via eth_getCode (EOA vs contract) on Base / Ethereum, and
+ * payTo type via eth_getCode (EOA, EIP-7702-delegated EOA, or contract) on
+ * Base / Ethereum, and
  * discovery-extension hints. Never pays, never signs.
  *
  * Unreachable target (DNS/timeout/connection) → 502/504 so the caller is
@@ -26,7 +27,7 @@ export const X402_CHECK_METHODOLOGY = {
   parsing:
     "x402 v2: base64 JSON in the PAYMENT-REQUIRED header (falls back to JSON body). x402 v1: JSON body with x402Version 1 and accepts[].maxAmountRequired.",
   payToType:
-    "eth_getCode on Base (eip155:8453 / 'base') and Ethereum (eip155:1 / 'ethereum') via public RPCs. Empty code = EOA (a single private key controls funds). Other networks: not checked.",
+    "eth_getCode on Base (eip155:8453 / 'base') and Ethereum (eip155:1 / 'ethereum') via public RPCs. Empty code = EOA (a single private key controls funds). Code 0xef0100 + 20-byte address = EIP-7702-delegated EOA ('eoa_7702'; the private key still controls funds and the delegate's code also runs for the account; delegate in payToDelegate). Any other code = contract. Other networks: not checked.",
   limits: `SSRF-safe (private/local targets blocked at every redirect hop), ${CHECK_MAX_REDIRECTS} redirects, ${CHECK_TIMEOUT_MS / 1000}s timeout, ${MAX_BODY_BYTES / 1000}KB body cap.`,
   billing:
     "Any HTTP answer from the target is a completed report and is billed, including 4xx/5xx answers (e.g. 'returned HTTP 500, not 402' is the finding). Not billed: missing/bad url, bad method, invalid or oversized body, blocked private/local host, DNS failure, connection failure, timeout, or too many redirects; those return 400/502/504 and settlement is skipped.",
@@ -45,7 +46,9 @@ export type NormalizedAccept = {
   amountAtomic: string | null;
   amountUsd: string | null;
   payTo: string | null;
-  payToType: "eoa" | "contract" | "unknown" | null;
+  payToType: "eoa" | "eoa_7702" | "contract" | "unknown" | null;
+  /** EIP-7702 delegate contract when payToType is "eoa_7702", else null. */
+  payToDelegate: string | null;
   maxTimeoutSeconds: number | null;
 };
 
@@ -74,6 +77,8 @@ const KNOWN_ASSETS: Record<string, { label: string; decimals: number; usd: boole
   "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913": { label: "USDC (Base)", decimals: 6, usd: true },
   "0x036cbd53842c5426634e7929541ec2318f3dcf7e": { label: "USDC (Base Sepolia)", decimals: 6, usd: true },
   "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48": { label: "USDC (Ethereum)", decimals: 6, usd: true },
+  // Circle native USDC on Polygon PoS (= lib/polygon-config.ts USDC_POLYGON). Bridged USDC.e is not listed.
+  "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": { label: "USDC (Polygon)", decimals: 6, usd: true },
   // Solana SPL mints: base58 is case-sensitive, so these keys keep their exact case (looked up before the lowercase EVM keys).
   EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: { label: "USDC (Solana)", decimals: 6, usd: true },
   "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU": { label: "USDC (Solana devnet)", decimals: 6, usd: true },
@@ -96,6 +101,48 @@ export function inputsBeforePaymentHint(method: string): string {
   return `The endpoint may validate the ${method === "POST" ? "body" : "query"} before returning 402`;
 }
 
+/**
+ * XRPL issued-currency assets. x402 on the XRP Ledger (@x402/xrpl) states the
+ * amount as a decimal string ("0.002"), not atomic units, and names the issuer
+ * in extra.issuer. Kept out of KNOWN_ASSETS (shared with lib/market) on purpose.
+ */
+const XRPL_RLUSD_HEX = "524C555344000000000000000000000000000000";
+const XRPL_ISSUED: Record<string, { issuer: string; label: string }> = {
+  "xrpl:0": { issuer: "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De", label: "RLUSD (XRP Ledger)" },
+  "xrpl:1": { issuer: "rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV", label: "RLUSD (XRP Ledger testnet)" },
+};
+export const XRPL_DECIMAL_AMOUNT = /^(?:0|[1-9]\d{0,16})(?:\.\d{1,15})?$/;
+
+export function isXrplNetwork(network: string | null): boolean {
+  return Boolean(network && /^xrpl:/i.test(network));
+}
+
+/** RLUSD on the XRP Ledger: currency hex (or "RLUSD") plus Ripple's issuer for that network. */
+export function xrplKnownAsset(network: string | null, asset: string | null, issuer: string | null): { label: string; usd: true } | undefined {
+  if (!network || !asset) return undefined;
+  const known = XRPL_ISSUED[network.toLowerCase()];
+  if (!known) return undefined;
+  const isRlusd = asset.toUpperCase() === XRPL_RLUSD_HEX || asset === "RLUSD";
+  return isRlusd && issuer === known.issuer ? { label: known.label, usd: true } : undefined;
+}
+
+/** Decimal amount string → trimmed decimal ("0.0020" → "0.002"); null if not a non-negative decimal. */
+export function normalizeDecimal(v: string): string | null {
+  if (!XRPL_DECIMAL_AMOUNT.test(v)) return null;
+  if (!v.includes(".")) return v;
+  const t = v.replace(/0+$/, "").replace(/\.$/, "");
+  return t;
+}
+
+/** eth_getCode result → payTo type (EIP-7702 delegation designator is 0xef0100 || address). */
+export function classifyCode(code: string): { type: "eoa" | "eoa_7702" | "contract"; delegate: string | null } {
+  const c = code.toLowerCase();
+  if (c === "0x" || c === "0x0") return { type: "eoa", delegate: null };
+  const m = /^0xef0100([0-9a-f]{40})$/.exec(c);
+  if (m) return { type: "eoa_7702", delegate: `0x${m[1]}` };
+  return { type: "contract", delegate: null };
+}
+
 const RPCS: Record<string, string[]> = {
   base: [process.env.BASE_RPC_URL ?? "", "https://base.drpc.org", "https://mainnet.base.org"].filter(Boolean),
   ethereum: [process.env.ETH_RPC_URL ?? "", "https://eth.drpc.org", "https://ethereum-rpc.publicnode.com"].filter(Boolean),
@@ -109,7 +156,10 @@ function chainKey(network: string | null): "base" | "ethereum" | null {
   return null;
 }
 
-async function getCodeType(address: string, chain: "base" | "ethereum"): Promise<"eoa" | "contract" | "unknown"> {
+async function getCodeType(
+  address: string,
+  chain: "base" | "ethereum",
+): Promise<{ type: "eoa" | "eoa_7702" | "contract" | "unknown"; delegate: string | null }> {
   for (const rpc of RPCS[chain]!) {
     try {
       const res = await fetch(rpc, {
@@ -119,12 +169,12 @@ async function getCodeType(address: string, chain: "base" | "ethereum"): Promise
         signal: AbortSignal.timeout(5_000),
       });
       const j = (await res.json()) as { result?: string };
-      if (typeof j.result === "string") return j.result === "0x" || j.result === "0x0" ? "eoa" : "contract";
+      if (typeof j.result === "string" && /^0x[0-9a-fA-F]*$/.test(j.result)) return classifyCode(j.result);
     } catch {
       /* try next */
     }
   }
-  return "unknown";
+  return { type: "unknown", delegate: null };
 }
 
 /** Atomic integer string → decimal string (exported for lib/market). */
@@ -323,20 +373,32 @@ export async function checkX402Endpoint(input: {
     const asset = str(a.asset);
     const amountAtomic = str(a.amount) ?? str(a.maxAmountRequired);
     const payTo = str(a.payTo);
-    const known = asset ? knownAsset(asset) : undefined;
-    const amt = amountAtomic && known ? formatUnits(amountAtomic, known.decimals) : null;
+    const xrpl = isXrplNetwork(network);
+    const xrplKnown = xrpl ? xrplKnownAsset(network, asset, str(obj(a.extra)?.issuer)) : undefined;
+    const known = !xrpl && asset ? knownAsset(asset) : undefined;
+    const amt = xrplKnown
+      ? amountAtomic && normalizeDecimal(amountAtomic)
+      : amountAtomic && known
+        ? formatUnits(amountAtomic, known.decimals)
+        : null;
     let payToType: NormalizedAccept["payToType"] = null;
+    let payToDelegate: string | null = null;
     const ck = chainKey(network);
-    if (payTo && /^0x[a-fA-F0-9]{40}$/.test(payTo) && ck) payToType = await getCodeType(payTo, ck);
+    if (payTo && /^0x[a-fA-F0-9]{40}$/.test(payTo) && ck) {
+      const t = await getCodeType(payTo, ck);
+      payToType = t.type;
+      payToDelegate = t.delegate;
+    }
     accepts.push({
       scheme: str(a.scheme),
       network,
       asset,
-      assetLabel: known?.label ?? null,
+      assetLabel: xrplKnown?.label ?? known?.label ?? null,
       amountAtomic,
-      amountUsd: amt && known?.usd ? `$${amt}` : null,
+      amountUsd: amt && (xrplKnown?.usd || known?.usd) ? `$${amt}` : null,
       payTo,
       payToType,
+      payToDelegate,
       maxTimeoutSeconds: typeof a.maxTimeoutSeconds === "number" ? a.maxTimeoutSeconds : null,
     });
     // v1 carried discovery metadata under accepts[].outputSchema
@@ -355,11 +417,16 @@ export async function checkX402Endpoint(input: {
       if (chainKey(a.network)) checks.push({ id: "payto", level: "fail", message: `payTo missing or not an EVM address${tag}.` });
     } else if (a.payToType === "eoa") {
       checks.push({ id: "payto_type", level: "info", message: `payTo ${a.payTo} is an EOA: one private key controls every payment. Keep that key backed up; if it is lost, funds sent there are unrecoverable${tag}.` });
+    } else if (a.payToType === "eoa_7702") {
+      checks.push({ id: "payto_type", level: "info", message: `payTo ${a.payTo} is an EOA with an EIP-7702 delegation to ${a.payToDelegate}: the account's private key still controls funds, and the delegate contract's code also runs for this account (e.g. a smart-wallet upgrade)${tag}.` });
     } else if (a.payToType === "contract") {
       checks.push({ id: "payto_type", level: "info", message: `payTo ${a.payTo} is a contract (e.g. a Safe or smart wallet)${tag}.` });
     }
     if (!a.assetLabel && a.asset) checks.push({ id: "asset", level: "info", message: `Asset ${a.asset} is not a USDC contract we recognize; price shown in atomic units only${tag}.` });
-    if (!a.amountAtomic || !/^\d+$/.test(a.amountAtomic)) checks.push({ id: "amount", level: "fail", message: `Price (amount / maxAmountRequired) missing or not an integer string${tag}.` });
+    if (isXrplNetwork(a.network)) {
+      // XRPL x402 states issued-currency amounts as decimals ("0.002"); XRP drops are integers, which also match.
+      if (!a.amountAtomic || !XRPL_DECIMAL_AMOUNT.test(a.amountAtomic)) checks.push({ id: "amount", level: "fail", message: `Price (amount) missing or not a decimal string (XRPL amounts are decimals, e.g. "0.002")${tag}.` });
+    } else if (!a.amountAtomic || !/^\d+$/.test(a.amountAtomic)) checks.push({ id: "amount", level: "fail", message: `Price (amount / maxAmountRequired) missing or not an integer string${tag}.` });
   });
 
   // v2 discovery: top-level extensions.bazaar

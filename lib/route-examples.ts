@@ -56,6 +56,10 @@
  * top-level `methodology` field is dropped; every other key and value is as
  * returned (the earlier pulse key rename and portfolio message re-render are gone;
  * funding now shows BTC, ETH and SOL). Raw: /workspace/hp-tmp/listing-fix/rec-*.json (box only).
+ * 2026-10-16 (branch fix/x402-check-gaps): /api/x402-check re-recorded the same
+ * way after the payToType / XRPL-amount / Polygon-USDC fixes (payToType
+ * "eoa_7702" + payToDelegate, RLUSD and Polygon USDC labelled, 0 fails). Only
+ * `methodology` dropped. Raw: /workspace/hp-tmp/x402-gaps/rec-x402-check.json (box only).
  * Same pass (Odin 11:48 AM ET): /api/bazaar-check re-recorded the same way against
  * live horizonpulse.dev and CDP discovery (24 routes listed). Trimmed for size only:
  * `methodology` and `priced` dropped, and `routes` cut to 3 of the 24 entries
@@ -87,7 +91,7 @@ export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
   "/api/pulse": "2026-10-16T15:44Z",
   "/api/portfolio": "2026-10-16T15:44Z",
   "/api/funding": "2026-10-16T15:44Z",
-  "/api/x402-check": "2026-10-16T15:44Z",
+  "/api/x402-check": "2026-10-16T16:40Z",
   "/api/chain/head": "2026-10-16T15:31Z",
   "/api/token/meta": "2026-10-16T15:31Z",
   "/api/name/resolve": "2026-10-16T15:31Z",
@@ -904,7 +908,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
       "network": "base",
       "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
     },
-    "asOf": "2026-10-16T15:44:54.069Z",
+    "asOf": "2026-10-16T16:40:26.185Z",
     "ok": true,
     "target": "https://horizonpulse.dev/api/pulse",
     "finalUrl": "https://horizonpulse.dev/api/pulse",
@@ -915,7 +919,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
     "challengeSource": "header",
     "resource": {
       "url": "https://horizonpulse.dev/api/pulse",
-      "description": "Crypto prices API: BTC, ETH, SOL spot price. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
+      "description": "Crypto price API: BTC, ETH and SOL spot prices in USD in one GET, no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat), avgChange24hPct and asOf. Prices from Coinbase Exchange with CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
       "mimeType": "application/json"
     },
     "accepts": [
@@ -927,7 +931,8 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
         "amountAtomic": "2000",
         "amountUsd": "$0.002",
         "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
-        "payToType": "contract",
+        "payToType": "eoa_7702",
+        "payToDelegate": "0x7702cb554e6bfb442cb743a7df23154544a7176c",
         "maxTimeoutSeconds": 300
       },
       {
@@ -939,28 +944,31 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
         "amountUsd": "$0.002",
         "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
         "payToType": null,
+        "payToDelegate": null,
         "maxTimeoutSeconds": 300
       },
       {
         "scheme": "exact",
         "network": "xrpl:0",
         "asset": "524C555344000000000000000000000000000000",
-        "assetLabel": null,
+        "assetLabel": "RLUSD (XRP Ledger)",
         "amountAtomic": "0.002",
-        "amountUsd": null,
+        "amountUsd": "$0.002",
         "payTo": "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
         "payToType": null,
+        "payToDelegate": null,
         "maxTimeoutSeconds": 300
       },
       {
         "scheme": "exact",
         "network": "eip155:137",
         "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
-        "assetLabel": null,
+        "assetLabel": "USDC (Polygon)",
         "amountAtomic": "2000",
-        "amountUsd": null,
+        "amountUsd": "$0.002",
         "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
         "payToType": null,
+        "payToDelegate": null,
         "maxTimeoutSeconds": 300
       }
     ],
@@ -989,22 +997,7 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
       {
         "id": "payto_type",
         "level": "info",
-        "message": "payTo 0x5b32c973596078a967562ca652761404f19be0e9 is a contract (e.g. a Safe or smart wallet) (accepts[0])."
-      },
-      {
-        "id": "asset",
-        "level": "info",
-        "message": "Asset 524C555344000000000000000000000000000000 is not a USDC contract we recognize; price shown in atomic units only (accepts[2])."
-      },
-      {
-        "id": "amount",
-        "level": "fail",
-        "message": "Price (amount / maxAmountRequired) missing or not an integer string (accepts[2])."
-      },
-      {
-        "id": "asset",
-        "level": "info",
-        "message": "Asset 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 is not a USDC contract we recognize; price shown in atomic units only (accepts[3])."
+        "message": "payTo 0x5b32c973596078a967562ca652761404f19be0e9 is an EOA with an EIP-7702 delegation to 0x7702cb554e6bfb442cb743a7df23154544a7176c: the account's private key still controls funds, and the delegate contract's code also runs for this account (e.g. a smart-wallet upgrade) (accepts[0])."
       },
       {
         "id": "discovery",
@@ -1015,9 +1008,9 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
     "summary": {
       "pass": 4,
       "warn": 0,
-      "fail": 1
+      "fail": 0
     },
-    "elapsedMs": 451
+    "elapsedMs": 481
   },
   "/api/screenshot": {
     "ok": true,

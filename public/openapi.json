@@ -1773,7 +1773,7 @@
                     "network": "base",
                     "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
                   },
-                  "asOf": "2026-10-16T15:44:54.069Z",
+                  "asOf": "2026-10-16T16:40:26.185Z",
                   "ok": true,
                   "target": "https://horizonpulse.dev/api/pulse",
                   "finalUrl": "https://horizonpulse.dev/api/pulse",
@@ -1784,7 +1784,7 @@
                   "challengeSource": "header",
                   "resource": {
                     "url": "https://horizonpulse.dev/api/pulse",
-                    "description": "Crypto prices API: BTC, ETH, SOL spot price. Use when you need current BTC, ETH and SOL spot prices in USD. Call GET with no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat) and avgChange24hPct, and asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
+                    "description": "Crypto price API: BTC, ETH and SOL spot prices in USD in one GET, no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat), avgChange24hPct and asOf. Prices from Coinbase Exchange with CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
                     "mimeType": "application/json"
                   },
                   "accepts": [
@@ -1796,7 +1796,8 @@
                       "amountAtomic": "2000",
                       "amountUsd": "$0.002",
                       "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
-                      "payToType": "contract",
+                      "payToType": "eoa_7702",
+                      "payToDelegate": "0x7702cb554e6bfb442cb743a7df23154544a7176c",
                       "maxTimeoutSeconds": 300
                     },
                     {
@@ -1808,28 +1809,31 @@
                       "amountUsd": "$0.002",
                       "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
                       "payToType": null,
+                      "payToDelegate": null,
                       "maxTimeoutSeconds": 300
                     },
                     {
                       "scheme": "exact",
                       "network": "xrpl:0",
                       "asset": "524C555344000000000000000000000000000000",
-                      "assetLabel": null,
+                      "assetLabel": "RLUSD (XRP Ledger)",
                       "amountAtomic": "0.002",
-                      "amountUsd": null,
+                      "amountUsd": "$0.002",
                       "payTo": "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
                       "payToType": null,
+                      "payToDelegate": null,
                       "maxTimeoutSeconds": 300
                     },
                     {
                       "scheme": "exact",
                       "network": "eip155:137",
                       "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
-                      "assetLabel": null,
+                      "assetLabel": "USDC (Polygon)",
                       "amountAtomic": "2000",
-                      "amountUsd": null,
+                      "amountUsd": "$0.002",
                       "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
                       "payToType": null,
+                      "payToDelegate": null,
                       "maxTimeoutSeconds": 300
                     }
                   ],
@@ -1858,22 +1862,7 @@
                     {
                       "id": "payto_type",
                       "level": "info",
-                      "message": "payTo 0x5b32c973596078a967562ca652761404f19be0e9 is a contract (e.g. a Safe or smart wallet) (accepts[0])."
-                    },
-                    {
-                      "id": "asset",
-                      "level": "info",
-                      "message": "Asset 524C555344000000000000000000000000000000 is not a USDC contract we recognize; price shown in atomic units only (accepts[2])."
-                    },
-                    {
-                      "id": "amount",
-                      "level": "fail",
-                      "message": "Price (amount / maxAmountRequired) missing or not an integer string (accepts[2])."
-                    },
-                    {
-                      "id": "asset",
-                      "level": "info",
-                      "message": "Asset 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359 is not a USDC contract we recognize; price shown in atomic units only (accepts[3])."
+                      "message": "payTo 0x5b32c973596078a967562ca652761404f19be0e9 is an EOA with an EIP-7702 delegation to 0x7702cb554e6bfb442cb743a7df23154544a7176c: the account's private key still controls funds, and the delegate contract's code also runs for this account (e.g. a smart-wallet upgrade) (accepts[0])."
                     },
                     {
                       "id": "discovery",
@@ -1884,9 +1873,9 @@
                   "summary": {
                     "pass": 4,
                     "warn": 0,
-                    "fail": 1
+                    "fail": 0
                   },
-                  "elapsedMs": 451
+                  "elapsedMs": 481
                 }
               }
             }
@@ -6918,24 +6907,24 @@
                   "type": "string"
                 },
                 "assetLabel": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
                 "amountAtomic": {
                   "type": "string"
                 },
                 "amountUsd": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 },
                 "payTo": {
                   "type": "string"
                 },
                 "payToType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "payToDelegate": {
                   "type": [
                     "string",
                     "null"
@@ -6999,7 +6988,7 @@
             "type": "number"
           }
         },
-        "description": "Inferred from a real response recorded from GET /api/demo/x402-check at 2026-10-16T15:44Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
+        "description": "Inferred from a real response recorded from GET /api/demo/x402-check at 2026-10-16T16:40Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
       },
       "BazaarCheckResponse": {
         "type": "object",
