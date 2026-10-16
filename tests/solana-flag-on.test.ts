@@ -40,6 +40,8 @@ const MAIN_PRICES: Record<string, string> = {
   "tx-guard": "2000",
   // grocery/normalize (2026-10-14): $0.002.
   "grocery/normalize": "2000",
+  // grocery/ingredient (2026-10-16): $0.005.
+  "grocery/ingredient": "5000",
 };
 
 async function captureBoth() {
@@ -107,7 +109,7 @@ describe("flag on", () => {
         checked++;
       }
     }
-    expect(checked).toBe(144); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local) + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS)
+    expect(checked).toBe(152); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local) + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient
     expect(JSON.stringify(all.cdp)).not.toBe(JSON.stringify(golden.cdp));
   });
 

@@ -1,7 +1,7 @@
 /**
  * /api/grocery/ingredient: ingredient name (or a /api/grocery/normalize canonicalId) and/or a
- * product barcode -> nutrition per 100 g, with source attribution. NOT LAUNCHED: price unset
- * (lib/config.ts GROCERY_INGREDIENT_PRICE_USD = null).
+ * product barcode -> nutrition per 100 g, with source attribution. $0.005 per call
+ * (lib/config.ts GROCERY_INGREDIENT_PRICE_USD).
  *
  * Sources (scope to-odin/2026-10-14-pulse-ingredient-nutrition-scope.md, Counsel review
  * to-odin/2026-10-15-counsel-nutrition-route-review.md, Odin build OK 2026-10-16 10:13 AM ET):

@@ -22,6 +22,7 @@ import { watchHandler } from "@/app/api/watch/handler";
 import { balanceHandler } from "@/app/api/balance/handler";
 import { txGuardHandler } from "@/app/api/tx-guard/handler";
 import { groceryNormalizeHandler } from "@/app/api/grocery/normalize/handler";
+import { groceryIngredientHandler } from "@/app/api/grocery/ingredient/handler";
 import { OUTPUT_EXAMPLES } from "@/lib/route-examples";
 
 export const runtime = "nodejs";
@@ -64,6 +65,7 @@ const HANDLERS: Record<string, Handler> = {
   balance: balanceHandler,
   "tx-guard": txGuardHandler,
   "grocery-normalize": groceryNormalizeHandler,
+  "grocery-ingredient": groceryIngredientHandler,
   // Canned: the recorded example (lib/route-examples.ts). Never runs the
   // classifier or the sources, so the free demo costs nothing per call.
   "discourse-split": async () => NextResponse.json(OUTPUT_EXAMPLES["/api/discourse/split"]),
@@ -92,7 +94,7 @@ export async function GET(
   }
 
   const origin = req.nextUrl.origin;
-  // Demo names are flat; nested paid routes map back (market-search -> /api/market/search, discourse-split -> /api/discourse/split, grocery-normalize -> /api/grocery/normalize).
+  // Demo names are flat; nested paid routes map back (market-search -> /api/market/search, discourse-split -> /api/discourse/split, grocery-normalize -> /api/grocery/normalize, grocery-ingredient -> /api/grocery/ingredient).
   const paidPath = `/api/${route.replace(/^(market|discourse|grocery)-/, "$1/")}`;
   const inner = new NextRequest(
     `${origin}${paidPath}${demo.query ? `?${demo.query}` : ""}`,

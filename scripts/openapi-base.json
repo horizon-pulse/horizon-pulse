@@ -2,7 +2,7 @@
   "openapi": "3.0.3",
   "info": {
     "title": "Horizon Pulse",
-    "description": "Pay-per-call APIs for AI agents via x402: web fetch, HTTP proxy, page extract, x402 tooling, marketplace search, discourse sampling, transaction status, tokenized-stock status and crypto market data. Twenty-three x402 v2 paid routes (USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 HTTP proxy with SSRF protections, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search and /api/market/quote ($0.005 each), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), /api/pdf ($0.02 PDF URL to text per page), /api/discourse/split ($0.03 online discourse sample, NOT a poll), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 status check of Coinbase tokenized stocks on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 has a public page or endpoint changed since your last check, short diff), /api/balance ($0.002 can this wallet pay right now, per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks), /api/grocery/normalize ($0.002 recipe ingredient lines to a normalized shopping list, deterministic, no prices), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
+    "description": "Pay-per-call APIs for AI agents via x402: web fetch, HTTP proxy, page extract, x402 tooling, marketplace search, discourse sampling, transaction status, tokenized-stock status and crypto market data. Twenty-four x402 v2 paid routes (USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger): /api/fetch ($0.02 clean text/markdown), /api/http ($0.01 HTTP proxy with SSRF protections, GET|POST), /api/extract ($0.015 structured page fields, GET|POST), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search and /api/market/quote ($0.005 each), /api/screenshot ($0.02 headless Chromium render), /api/search ($0.03 web search then fetch top pages as clean text with sources), /api/pdf ($0.02 PDF URL to text per page), /api/discourse/split ($0.03 online discourse sample, NOT a poll), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 status check of Coinbase tokenized stocks on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 has a public page or endpoint changed since your last check, short diff), /api/balance ($0.002 can this wallet pay right now, per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks), /api/grocery/normalize ($0.002 recipe ingredient lines to a normalized shopping list, deterministic, no prices), /api/grocery/ingredient ($0.005 nutrition per 100 g from USDA FoodData Central and Open Food Facts), and six crypto routes (pulse, signals, yield, portfolio, gas, funding).",
     "version": "1.0.0",
     "contact": {
       "name": "Horizon Pulse",
@@ -1145,6 +1145,126 @@
           },
           "422": {
             "description": "No ingredient could be parsed (no_ingredients_parsed; not charged)"
+          }
+        }
+      }
+    },
+    "/api/grocery/ingredient": {
+      "get": {
+        "summary": "Ingredient or barcode to nutrition per 100 g",
+        "description": "$0.005 USDC x402. Ingredient nutrition per 100 g (energy kcal, protein, fat, saturated fat, carbs, sugars, fiber, sodium mg). q = ingredient name or a /api/grocery/normalize canonicalId, matched against a bundled USDA FoodData Central snapshot (Foundation Foods April 2026 + SR Legacy April 2018, no outbound call); barcode = GTIN read live from Open Food Facts (at most 12 reads per minute per server instance). Each match carries source, id (fdcId for USDA), sourceUrl, license and attribution; allergens are null with allergensStatus 'unknown' when not provided (never an empty list); whereToBuy lists Open Food Facts store names only (no retailer links, no prices). Any 200 is billed; bad input (400), no match (404) and Open Food Facts down or throttled with no other match (502/503) are not charged. Nutrition and product data come from Open Food Facts (https://openfoodfacts.org), made available under the ODbL (database) and DbCL (contents), and from USDA FoodData Central (fdc.nal.usda.gov, public domain/CC0). Horizon Pulse is not affiliated with or endorsed by Open Food Facts or USDA. The per-call fee is for our service; the underlying data is free from those sources. Cached Open Food Facts records are unaltered copies; full data: https://world.openfoodfacts.org/data (ODbL). GET form: q and/or barcode, optional n.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "description": "Ingredient name or canonicalId (1-100 chars); give q and/or barcode"
+          },
+          {
+            "name": "barcode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^([0-9]{8}|[0-9]{12,14})$"
+            },
+            "description": "Product GTIN-8, UPC-A, EAN-13 or GTIN-14 with a valid check digit"
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "description": "USDA matches per item (default 3)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: matches per item (charged)"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing or malformed input (needs q and/or barcode; barcode must be a valid GTIN; n 1-5; max 10 items) (not charged)"
+          },
+          "404": {
+            "description": "No match for any item (not charged)"
+          },
+          "502": {
+            "description": "Open Food Facts error with no other match (not charged)"
+          },
+          "503": {
+            "description": "Open Food Facts throttled or unavailable with no other match (source_throttled; not charged)"
+          }
+        }
+      },
+      "post": {
+        "summary": "Ingredient or barcode to nutrition per 100 g",
+        "description": "$0.005 USDC x402. Ingredient nutrition per 100 g (energy kcal, protein, fat, saturated fat, carbs, sugars, fiber, sodium mg). q = ingredient name or a /api/grocery/normalize canonicalId, matched against a bundled USDA FoodData Central snapshot (Foundation Foods April 2026 + SR Legacy April 2018, no outbound call); barcode = GTIN read live from Open Food Facts (at most 12 reads per minute per server instance). Each match carries source, id (fdcId for USDA), sourceUrl, license and attribution; allergens are null with allergensStatus 'unknown' when not provided (never an empty list); whereToBuy lists Open Food Facts store names only (no retailer links, no prices). Any 200 is billed; bad input (400), no match (404) and Open Food Facts down or throttled with no other match (502/503) are not charged. Nutrition and product data come from Open Food Facts (https://openfoodfacts.org), made available under the ODbL (database) and DbCL (contents), and from USDA FoodData Central (fdc.nal.usda.gov, public domain/CC0). Horizon Pulse is not affiliated with or endorsed by Open Food Facts or USDA. The per-call fee is for our service; the underlying data is free from those sources. Cached Open Food Facts records are unaltered copies; full data: https://world.openfoodfacts.org/data (ODbL). Same price as GET; up to 10 items per call.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "q": {
+                          "type": "string",
+                          "maxLength": 100
+                        },
+                        "barcode": {
+                          "type": "string",
+                          "pattern": "^([0-9]{8}|[0-9]{12,14})$"
+                        }
+                      }
+                    }
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success: matches per item (charged)"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing or malformed input (needs q and/or barcode; barcode must be a valid GTIN; n 1-5; max 10 items) (not charged)"
+          },
+          "404": {
+            "description": "No match for any item (not charged)"
+          },
+          "502": {
+            "description": "Open Food Facts error with no other match (not charged)"
+          },
+          "503": {
+            "description": "Open Food Facts throttled or unavailable with no other match (source_throttled; not charged)"
           }
         }
       }

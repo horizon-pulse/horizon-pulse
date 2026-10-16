@@ -1,4 +1,4 @@
-# /api/grocery/ingredient (NOT LAUNCHED: price not set)
+# /api/grocery/ingredient ($0.005 per call, x402)
 
 Ingredient name (or a `/api/grocery/normalize` canonicalId) and/or a product barcode → nutrition per 100 g
 (kcal, protein, fat, saturated fat, carbohydrates, sugars, fiber, sodium) with per-match source attribution.

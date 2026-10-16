@@ -44,6 +44,7 @@ import * as watchRoute from "@/app/api/watch/handler";
 import * as balanceRoute from "@/app/api/balance/handler";
 import * as txGuardRoute from "@/app/api/tx-guard/handler";
 import * as groceryNormalizeRoute from "@/app/api/grocery/normalize/handler";
+import * as groceryIngredientRoute from "@/app/api/grocery/ingredient/handler";
 import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
@@ -262,6 +263,21 @@ export const TOOLS: ToolDef[] = [
       runHandler(
         (req) => groceryNormalizeRoute.groceryNormalizeHandler(req),
         makeRequest("/api/grocery/normalize", {}, { ingredients: a.ingredients, servings: a.servings, targetServings: a.targetServings }),
+      ),
+  },
+  {
+    name: "grocery_ingredient",
+    opts: groceryIngredientRoute.paymentOpts,
+    schema: {
+      items: z
+        .array(z.object({ q: z.string().optional().describe("Ingredient name or a grocery_normalize canonicalId (1-100 chars)"), barcode: z.string().optional().describe("Product GTIN-8/12/13/14 (read live from Open Food Facts)") }))
+        .describe("Up to 10 items, each with q and/or barcode; one price per call"),
+      n: z.number().int().optional().describe("USDA matches per item (1-5, default 3)"),
+    },
+    call: (a) =>
+      runHandler(
+        (req) => groceryIngredientRoute.groceryIngredientHandler(req),
+        makeRequest("/api/grocery/ingredient", {}, { items: a.items, n: a.n }),
       ),
   },
 

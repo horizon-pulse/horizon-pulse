@@ -118,7 +118,7 @@ export const ROUTE_METADATA = {
 
   "/api/grocery/ingredient": {
     description:
-      "Ingredient nutrition (NOT LAUNCHED, price unset): GET q (ingredient name or normalize canonicalId) and/or barcode (GTIN), optional n 1-5; POST JSON {items:[{q|barcode}]} max 10. Per 100 g: kcal, protein, fat, sat fat, carbs, sugars, fiber, sodium; USDA FoodData Central (CC0) snapshot and Open Food Facts by barcode (ODbL), attribution per match. Allergens may be incomplete. No prices. Bad input, no match or source down: not charged.",
+      "Ingredient nutrition: GET q (ingredient name or normalize canonicalId) and/or barcode (GTIN), optional n 1-5; POST JSON {items:[{q|barcode}]} max 10. Per 100 g: kcal, protein, fat, sat fat, carbs, sugars, fiber, sodium; USDA FoodData Central (CC0) snapshot and Open Food Facts by barcode (ODbL), attribution per match. Allergens may be incomplete. No prices. Bad input, no match or source down: not charged.",
     tags: ["grocery", "nutrition", "ingredients", "food-data", "agent-tools"],
   },
   "/api/screenshot": {

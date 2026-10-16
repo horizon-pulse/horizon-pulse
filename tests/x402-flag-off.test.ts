@@ -132,6 +132,11 @@
  * golden.cdp and golden.local gained ONLY the four new grocery/normalize keys
  * per mode (GET json, GET browser, POST json, OPTIONS); all pre-existing keys
  * per mode are byte-identical to main's golden. golden.discovery refreshed.
+ *
+ * 2026-10-16 (branch grocery-ingredient launch commit, off 072c63a + fc56159): regenerated with
+ * UPDATE_GOLDEN=1 after launching /api/grocery/ingredient ($0.005, GET+POST). golden.cdp and
+ * golden.local gained ONLY the four new grocery/ingredient keys per mode (GET json, GET browser,
+ * POST json, OPTIONS); all pre-existing keys per mode are byte-identical. golden.discovery refreshed.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

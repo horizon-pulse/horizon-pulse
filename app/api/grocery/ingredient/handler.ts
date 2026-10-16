@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GROCERY_INGREDIENT_PRICE_ATOMIC, GROCERY_INGREDIENT_PRICE_USD } from "@/lib/config";
 import { pricedBlock } from "@/lib/paid-rail";
+import { ROUTE_METADATA } from "@/lib/route-metadata";
 import { GI_MAX_BODY_BYTES, GROCERY_INGREDIENT_DISCLAIMER, GROCERY_INGREDIENT_METHODOLOGY, groceryIngredient, parseIngredientInput } from "@/lib/grocery-ingredient";
+
+export const paymentOpts = {
+  maxAmountRequired: GROCERY_INGREDIENT_PRICE_ATOMIC,
+  resource: "/api/grocery/ingredient",
+  description: ROUTE_METADATA["/api/grocery/ingredient"].description,
+} as const;
 
 const bad = (status: number, code: string, error: string) =>
   NextResponse.json({ ok: false, error, code, charged: false, disclaimer: GROCERY_INGREDIENT_DISCLAIMER, methodology: GROCERY_INGREDIENT_METHODOLOGY }, { status });
@@ -35,7 +42,7 @@ export async function groceryIngredientHandler(req: NextRequest): Promise<NextRe
   if (!result.ok) return bad(result.status, result.code, result.error);
   return NextResponse.json({
     source: "grocery-ingredient",
-    priced: GROCERY_INGREDIENT_PRICE_USD && GROCERY_INGREDIENT_PRICE_ATOMIC ? pricedBlock(GROCERY_INGREDIENT_PRICE_USD, GROCERY_INGREDIENT_PRICE_ATOMIC) : null,
+    priced: pricedBlock(GROCERY_INGREDIENT_PRICE_USD, GROCERY_INGREDIENT_PRICE_ATOMIC),
     asOf: new Date().toISOString(),
     ...result,
   });

@@ -1,12 +1,18 @@
 /**
- * /api/grocery/ingredient output example: response recorded from the branch handler
- * (GET q=all-purpose flour&n=2, USDA snapshot only, no Open Food Facts read) at 2026-10-16T14:21Z UTC;
+ * /api/grocery/ingredient output example: response recorded from the handler
+ * (GET q=all-purpose flour&n=2, USDA snapshot only, no Open Food Facts read) at 2026-10-16T14:39Z UTC (launch build, price $0.005);
  * methodology omitted for length. Regenerate when the snapshot or the response shape changes.
  */
 export const GROCERY_INGREDIENT_OUTPUT_EXAMPLE: Record<string, unknown> = {
   "source": "grocery-ingredient",
-  "priced": null,
-  "asOf": "2026-10-16T14:21:00.088Z",
+  "priced": {
+    "amountUsd": "$0.005",
+    "amountAtomic": "5000",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+    "network": "base",
+    "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+  },
+  "asOf": "2026-10-16T14:39:25.223Z",
   "ok": true,
   "items": [
     {

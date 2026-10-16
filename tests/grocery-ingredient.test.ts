@@ -1,5 +1,5 @@
 /**
- * /api/grocery/ingredient (NOT LAUNCHED, price unset). Odin build OK 2026-10-16 10:13 AM ET;
+ * /api/grocery/ingredient ($0.005 launch build). Odin build OK 2026-10-16 10:13 AM ET, launch build 10:34 AM ET;
  * Counsel fixes 1-4 from to-odin/2026-10-15-counsel-nutrition-route-review.md.
  * No network: Open Food Facts is a stubbed fetch over one real fixture record.
  */
@@ -10,7 +10,7 @@ import Ajv2020 from "ajv/dist/2020";
 import { NextRequest } from "next/server";
 import * as GI from "@/lib/grocery-ingredient";
 import { GROCERY_INGREDIENT_PRICE_ATOMIC, GROCERY_INGREDIENT_PRICE_USD } from "@/lib/config";
-import { groceryIngredientRoutesFor } from "@/lib/x402-server";
+import { groceryIngredientRouteConfig } from "@/lib/x402-server";
 import { groceryIngredientHandler } from "@/app/api/grocery/ingredient/handler";
 
 const NUTELLA = JSON.parse(readFileSync("tests/fixtures/off/3017624010701.json", "utf8"));
@@ -41,29 +41,24 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("price and launch state", () => {
-  it("price is UNSET (placeholder null) on this branch", () => {
-    expect(GROCERY_INGREDIENT_PRICE_USD).toBeNull();
-    expect(GROCERY_INGREDIENT_PRICE_ATOMIC).toBeNull();
+  it("price is $0.005 (5000 atomic) in the launch build", () => {
+    expect(GROCERY_INGREDIENT_PRICE_USD).toBe("$0.005");
+    expect(GROCERY_INGREDIENT_PRICE_ATOMIC).toBe("5000");
   });
-  it("route answers 503 not_launched on GET/POST/OPTIONS, never runs the handler, never emits a 402", async () => {
+  it("unpaid GET/POST answer 402 with a PAYMENT-REQUIRED header and never run the handler", async () => {
     const mod = await import("@/app/api/grocery/ingredient/route");
     expect(Object.keys(mod).filter((k) => /^[A-Z]+$/.test(k)).sort()).toEqual(["GET", "OPTIONS", "POST"]);
     for (const res of [
       await mod.GET(new NextRequest("http://localhost/api/grocery/ingredient?q=egg")),
-      await mod.POST(new NextRequest("http://localhost/api/grocery/ingredient", { method: "POST", body: "{}" })),
-      await mod.OPTIONS(),
+      await mod.POST(new NextRequest("http://localhost/api/grocery/ingredient", { method: "POST", body: JSON.stringify({ items: [{ q: "egg" }] }), headers: { "content-type": "application/json" } })),
     ]) {
-      expect(res.status).toBe(503);
-      expect(res.headers.get("payment-required")).toBeNull();
-      expect((await res.json()).code).toBe("not_launched");
+      expect(res.status).toBe(402);
+      expect(res.headers.get("payment-required")).toBeTruthy();
     }
     expect(fetchMock).not.toHaveBeenCalled();
   });
-  it("route config refuses to build without an explicit price", () => {
-    expect(() => groceryIngredientRoutesFor("" as string)).toThrow(/explicit USD price/);
-  });
-  it("Bazaar examples validate against their declared schemas (GET strings, POST integer n) with a test price", () => {
-    const r = groceryIngredientRoutesFor("$0.005") as Record<string, { extensions?: { bazaar?: { info: unknown; schema: object } } }>;
+  it("Bazaar examples validate against their declared schemas (GET strings, POST integer n)", () => {
+    const r = groceryIngredientRouteConfig() as Record<string, { extensions?: { bazaar?: { info: unknown; schema: object } } }>;
     expect(Object.keys(r).sort()).toEqual(["/api/grocery/ingredient", "GET /api/grocery/ingredient", "POST /api/grocery/ingredient"].sort());
     for (const key of ["GET /api/grocery/ingredient", "POST /api/grocery/ingredient"]) {
       const bz = r[key].extensions!.bazaar!;

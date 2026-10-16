@@ -3860,6 +3860,470 @@
         }
       }
     },
+    "/api/grocery/ingredient": {
+      "get": {
+        "operationId": "getGroceryIngredient",
+        "tags": [
+          "Agent utilities"
+        ],
+        "summary": "Look up nutrition per 100 g for an ingredient or barcode",
+        "description": "Ingredient nutrition: GET q (ingredient name or normalize canonicalId) and/or barcode (GTIN), optional n 1-5; POST JSON {items:[{q|barcode}]} max 10. Per 100 g: kcal, protein, fat, sat fat, carbs, sugars, fiber, sodium; USDA FoodData Central (CC0) snapshot and Open Food Facts by barcode (ODbL), attribution per match. Allergens may be incomplete. No prices. Bad input, no match or source down: not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "x-payment-info": {
+          "protocol": "x402",
+          "x402Version": 2,
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "assetSymbol": "USDC",
+          "decimals": 6,
+          "priceUsd": "$0.005",
+          "amount": "5000",
+          "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+          "maxTimeoutSeconds": 300,
+          "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
+          "discovery": "https://horizonpulse.dev/.well-known/x402"
+        },
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Ingredient name or a /api/grocery/normalize canonicalId (1-100 chars). Give q and/or barcode.",
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "example": "all-purpose flour"
+          },
+          {
+            "name": "barcode",
+            "in": "query",
+            "required": false,
+            "description": "Product GTIN-8, UPC-A, EAN-13 or GTIN-14 (valid check digit); read live from Open Food Facts.",
+            "schema": {
+              "type": "string",
+              "pattern": "^([0-9]{8}|[0-9]{12,14})$"
+            }
+          },
+          {
+            "name": "n",
+            "in": "query",
+            "required": false,
+            "description": "USDA matches per item, integer 1-5 as a digit (default 3).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            },
+            "example": 2
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
+            "headers": {
+              "PAYMENT-RESPONSE": {
+                "$ref": "#/components/headers/PaymentResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroceryIngredientResponse"
+                },
+                "example": {
+                  "source": "grocery-ingredient",
+                  "priced": {
+                    "amountUsd": "$0.005",
+                    "amountAtomic": "5000",
+                    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+                    "network": "base",
+                    "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+                  },
+                  "asOf": "2026-10-16T14:39:25.223Z",
+                  "ok": true,
+                  "items": [
+                    {
+                      "query": {
+                        "q": "all-purpose flour"
+                      },
+                      "matches": [
+                        {
+                          "source": "usda_fdc",
+                          "id": "790018",
+                          "fdcId": 790018,
+                          "name": "Flour, wheat, all-purpose, unenriched, unbleached",
+                          "dataType": "Foundation",
+                          "category": "Cereal Grains and Pasta",
+                          "nutrientsPer100g": {
+                            "energy_kcal": 362,
+                            "protein_g": 12,
+                            "fat_g": 1.7,
+                            "sat_fat_g": null,
+                            "carbs_g": 74.6,
+                            "sugars_g": null,
+                            "fiber_g": 3,
+                            "sodium_mg": 2
+                          },
+                          "sourceUrl": "https://fdc.nal.usda.gov",
+                          "license": "Public domain (CC0 1.0)",
+                          "attribution": "Source: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, Foundation Foods, April 2026. fdc.nal.usda.gov. Public domain (CC0 1.0).",
+                          "matchScore": 12.36
+                        },
+                        {
+                          "source": "usda_fdc",
+                          "id": "789890",
+                          "fdcId": 789890,
+                          "name": "Flour, wheat, all-purpose, enriched, bleached",
+                          "dataType": "Foundation",
+                          "category": "Cereal Grains and Pasta",
+                          "nutrientsPer100g": {
+                            "energy_kcal": 366,
+                            "protein_g": 10.9,
+                            "fat_g": 1.48,
+                            "sat_fat_g": null,
+                            "carbs_g": 77.3,
+                            "sugars_g": null,
+                            "fiber_g": null,
+                            "sodium_mg": 2
+                          },
+                          "sourceUrl": "https://fdc.nal.usda.gov",
+                          "license": "Public domain (CC0 1.0)",
+                          "attribution": "Source: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, Foundation Foods, April 2026. fdc.nal.usda.gov. Public domain (CC0 1.0).",
+                          "matchScore": 10.88
+                        }
+                      ],
+                      "whereToBuy": null,
+                      "unknowns": [
+                        "usda_fdc 790018 sat_fat_g: not published in this release",
+                        "usda_fdc 790018 sugars_g: not published in this release",
+                        "usda_fdc 789890 sat_fat_g: not published in this release",
+                        "usda_fdc 789890 sugars_g: not published in this release",
+                        "usda_fdc 789890 fiber_g: not published in this release",
+                        "allergens: not provided for USDA generic foods (give a barcode for Open Food Facts contributor data)"
+                      ]
+                    }
+                  ],
+                  "attribution": [
+                    "Source: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, Foundation Foods, April 2026. fdc.nal.usda.gov. Public domain (CC0 1.0)."
+                  ],
+                  "disclaimer": "Indicative data only. Open Food Facts data is entered by volunteers and USDA data describes generic or reported foods; values can be wrong, missing or out of date, and recipes and labels change. Allergen and ingredient fields may be incomplete: an empty or missing allergen list does NOT mean a product is free of any allergen or trace. Always check the product's own label. Not for medical, dietary or allergy decisions. Not advice.",
+                  "fdcSnapshot": [
+                    {
+                      "dataType": "Foundation",
+                      "release": "Foundation Foods, April 2026",
+                      "url": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_json_2026-04-30.zip",
+                      "zipSha256": "186e988ec542e913f51ef62b86a47758e8cdd0d1dc3889e7b055581f3c09c77a",
+                      "foods": 363
+                    },
+                    {
+                      "dataType": "SR Legacy",
+                      "release": "SR Legacy, April 2018",
+                      "url": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_json_2018-04.zip",
+                      "zipSha256": "0fe8ae486a2c8eb42cb96413f058deb51863a46c8fb8eeb4b1fb45006dd338ef",
+                      "foods": 7793
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed input (needs q and/or barcode; barcode must be a valid GTIN; n 1-5; max 10 items) (not charged). Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "ok": false,
+                  "error": "GET needs q and/or barcode",
+                  "code": "missing_input",
+                  "charged": false
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "$ref": "#/components/headers/PaymentRequired"
+              }
+            }
+          },
+          "404": {
+            "description": "No match for any item (not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Open Food Facts error with no other match (not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Open Food Facts throttled or unavailable with no other match (source_throttled; not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postGroceryIngredient",
+        "tags": [
+          "Agent utilities"
+        ],
+        "summary": "Look up nutrition per 100 g for an ingredient or barcode",
+        "description": "Ingredient nutrition: GET q (ingredient name or normalize canonicalId) and/or barcode (GTIN), optional n 1-5; POST JSON {items:[{q|barcode}]} max 10. Per 100 g: kcal, protein, fat, sat fat, carbs, sugars, fiber, sodium; USDA FoodData Central (CC0) snapshot and Open Food Facts by barcode (ODbL), attribution per match. Allergens may be incomplete. No prices. Bad input, no match or source down: not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "x-payment-info": {
+          "protocol": "x402",
+          "x402Version": 2,
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "assetSymbol": "USDC",
+          "decimals": 6,
+          "priceUsd": "$0.005",
+          "amount": "5000",
+          "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+          "maxTimeoutSeconds": 300,
+          "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
+          "discovery": "https://horizonpulse.dev/.well-known/x402"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "q": {
+                          "type": "string",
+                          "description": "Ingredient name or canonicalId (1-100 chars)."
+                        },
+                        "barcode": {
+                          "type": "string",
+                          "pattern": "^([0-9]{8}|[0-9]{12,14})$",
+                          "description": "Product GTIN (valid check digit)."
+                        }
+                      }
+                    },
+                    "description": "Up to 10 items, each with q and/or barcode. One price per call."
+                  },
+                  "n": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 5,
+                    "description": "USDA matches per item (default 3)."
+                  }
+                }
+              },
+              "example": {
+                "items": [
+                  {
+                    "q": "egg"
+                  },
+                  {
+                    "q": "olive oil"
+                  }
+                ],
+                "n": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
+            "headers": {
+              "PAYMENT-RESPONSE": {
+                "$ref": "#/components/headers/PaymentResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroceryIngredientResponse"
+                },
+                "example": {
+                  "source": "grocery-ingredient",
+                  "priced": {
+                    "amountUsd": "$0.005",
+                    "amountAtomic": "5000",
+                    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+                    "network": "base",
+                    "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+                  },
+                  "asOf": "2026-10-16T14:39:25.223Z",
+                  "ok": true,
+                  "items": [
+                    {
+                      "query": {
+                        "q": "all-purpose flour"
+                      },
+                      "matches": [
+                        {
+                          "source": "usda_fdc",
+                          "id": "790018",
+                          "fdcId": 790018,
+                          "name": "Flour, wheat, all-purpose, unenriched, unbleached",
+                          "dataType": "Foundation",
+                          "category": "Cereal Grains and Pasta",
+                          "nutrientsPer100g": {
+                            "energy_kcal": 362,
+                            "protein_g": 12,
+                            "fat_g": 1.7,
+                            "sat_fat_g": null,
+                            "carbs_g": 74.6,
+                            "sugars_g": null,
+                            "fiber_g": 3,
+                            "sodium_mg": 2
+                          },
+                          "sourceUrl": "https://fdc.nal.usda.gov",
+                          "license": "Public domain (CC0 1.0)",
+                          "attribution": "Source: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, Foundation Foods, April 2026. fdc.nal.usda.gov. Public domain (CC0 1.0).",
+                          "matchScore": 12.36
+                        },
+                        {
+                          "source": "usda_fdc",
+                          "id": "789890",
+                          "fdcId": 789890,
+                          "name": "Flour, wheat, all-purpose, enriched, bleached",
+                          "dataType": "Foundation",
+                          "category": "Cereal Grains and Pasta",
+                          "nutrientsPer100g": {
+                            "energy_kcal": 366,
+                            "protein_g": 10.9,
+                            "fat_g": 1.48,
+                            "sat_fat_g": null,
+                            "carbs_g": 77.3,
+                            "sugars_g": null,
+                            "fiber_g": null,
+                            "sodium_mg": 2
+                          },
+                          "sourceUrl": "https://fdc.nal.usda.gov",
+                          "license": "Public domain (CC0 1.0)",
+                          "attribution": "Source: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, Foundation Foods, April 2026. fdc.nal.usda.gov. Public domain (CC0 1.0).",
+                          "matchScore": 10.88
+                        }
+                      ],
+                      "whereToBuy": null,
+                      "unknowns": [
+                        "usda_fdc 790018 sat_fat_g: not published in this release",
+                        "usda_fdc 790018 sugars_g: not published in this release",
+                        "usda_fdc 789890 sat_fat_g: not published in this release",
+                        "usda_fdc 789890 sugars_g: not published in this release",
+                        "usda_fdc 789890 fiber_g: not published in this release",
+                        "allergens: not provided for USDA generic foods (give a barcode for Open Food Facts contributor data)"
+                      ]
+                    }
+                  ],
+                  "attribution": [
+                    "Source: U.S. Department of Agriculture, Agricultural Research Service. FoodData Central, Foundation Foods, April 2026. fdc.nal.usda.gov. Public domain (CC0 1.0)."
+                  ],
+                  "disclaimer": "Indicative data only. Open Food Facts data is entered by volunteers and USDA data describes generic or reported foods; values can be wrong, missing or out of date, and recipes and labels change. Allergen and ingredient fields may be incomplete: an empty or missing allergen list does NOT mean a product is free of any allergen or trace. Always check the product's own label. Not for medical, dietary or allergy decisions. Not advice.",
+                  "fdcSnapshot": [
+                    {
+                      "dataType": "Foundation",
+                      "release": "Foundation Foods, April 2026",
+                      "url": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_foundation_food_json_2026-04-30.zip",
+                      "zipSha256": "186e988ec542e913f51ef62b86a47758e8cdd0d1dc3889e7b055581f3c09c77a",
+                      "foods": 363
+                    },
+                    {
+                      "dataType": "SR Legacy",
+                      "release": "SR Legacy, April 2018",
+                      "url": "https://fdc.nal.usda.gov/fdc-datasets/FoodData_Central_sr_legacy_food_json_2018-04.zip",
+                      "zipSha256": "0fe8ae486a2c8eb42cb96413f058deb51863a46c8fb8eeb4b1fb45006dd338ef",
+                      "foods": 7793
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed input (needs q and/or barcode; barcode must be a valid GTIN; n 1-5; max 10 items) (not charged). Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "ok": false,
+                  "error": "GET needs q and/or barcode",
+                  "code": "missing_input",
+                  "charged": false
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "$ref": "#/components/headers/PaymentRequired"
+              }
+            }
+          },
+          "404": {
+            "description": "No match for any item (not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Open Food Facts error with no other match (not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Open Food Facts throttled or unavailable with no other match (source_throttled; not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/discourse/split": {
       "get": {
         "operationId": "getDiscourseSplit",
@@ -7118,6 +7582,168 @@
           }
         },
         "description": "Inferred from a real response recorded from GET /api/demo/grocery-normalize at 2026-10-14T21:18Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
+      },
+      "GroceryIngredientResponse": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "priced": {
+            "type": "object",
+            "properties": {
+              "amountUsd": {
+                "type": "string"
+              },
+              "amountAtomic": {
+                "type": "string"
+              },
+              "asset": {
+                "type": "string"
+              },
+              "network": {
+                "type": "string"
+              },
+              "payTo": {
+                "type": "string"
+              }
+            }
+          },
+          "asOf": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "object",
+                  "properties": {
+                    "q": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "matches": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "source": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "fdcId": {
+                        "type": "number"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "dataType": {
+                        "type": "string"
+                      },
+                      "category": {
+                        "type": "string"
+                      },
+                      "nutrientsPer100g": {
+                        "type": "object",
+                        "properties": {
+                          "energy_kcal": {
+                            "type": "number"
+                          },
+                          "protein_g": {
+                            "type": "number"
+                          },
+                          "fat_g": {
+                            "type": "number"
+                          },
+                          "sat_fat_g": {
+                            "description": "Null in the recorded example; may hold a value."
+                          },
+                          "carbs_g": {
+                            "type": "number"
+                          },
+                          "sugars_g": {
+                            "description": "Null in the recorded example; may hold a value."
+                          },
+                          "fiber_g": {
+                            "type": [
+                              "number",
+                              "null"
+                            ]
+                          },
+                          "sodium_mg": {
+                            "type": "number"
+                          }
+                        }
+                      },
+                      "sourceUrl": {
+                        "type": "string"
+                      },
+                      "license": {
+                        "type": "string"
+                      },
+                      "attribution": {
+                        "type": "string"
+                      },
+                      "matchScore": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                },
+                "whereToBuy": {
+                  "description": "Null in the recorded example; may hold a value."
+                },
+                "unknowns": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "attribution": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "fdcSnapshot": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dataType": {
+                  "type": "string"
+                },
+                "release": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "zipSha256": {
+                  "type": "string"
+                },
+                "foods": {
+                  "type": "number"
+                }
+              }
+            }
+          }
+        },
+        "description": "Inferred from a real response recorded from GET /api/demo/grocery-ingredient at 2026-10-01T14:36Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
       },
       "DiscourseSplitResponse": {
         "type": "object",

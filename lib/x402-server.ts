@@ -37,6 +37,7 @@ import {
   BALANCE_PRICE_USD,
   TX_GUARD_PRICE_USD,
   GROCERY_NORMALIZE_PRICE_USD,
+  GROCERY_INGREDIENT_PRICE_USD,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -1563,16 +1564,8 @@ export function groceryNormalizeRouteConfig(): RoutesConfig {
   );
 }
 
-/**
- * /api/grocery/ingredient (NOT LAUNCHED: GROCERY_INGREDIENT_PRICE_USD is null). The price is a
- * required argument so nothing can register this route without an explicit price; the route file
- * serves 503 not_launched until lib/config.ts sets one. Bazaar example values use the declared
- * types: GET query values are strings (q, barcode, n as digits), POST body n is an integer.
- * Named *RoutesFor (not *RouteConfig) so the all-route-config sweeps skip it until launch; the
- * launch commit renames it to a no-arg groceryIngredientRouteConfig() reading lib/config.ts.
- */
-export function groceryIngredientRoutesFor(priceUsd: string): RoutesConfig {
-  if (!/^\$\d+(\.\d+)?$/.test(priceUsd)) throw new Error(`groceryIngredientRoutesFor needs an explicit USD price, got "${priceUsd}"`);
+/** /api/grocery/ingredient: ingredient name/canonicalId and/or barcode -> nutrition per 100 g (USDA FDC snapshot + Open Food Facts barcode reads). Bazaar example values use the declared types: GET query values are strings (q, barcode, n as digits), POST body n is an integer. */
+export function groceryIngredientRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
   const network = getNetworkCaip2();
   const output = {
@@ -1580,13 +1573,13 @@ export function groceryIngredientRoutesFor(priceUsd: string): RoutesConfig {
     schema: {
       type: "object",
       description:
-        "Horizon Pulse ingredient nutrition: per item matches[] (source, id, fdcId for USDA matches, name, nutrientsPer100g, allergens null when unknown, sourceUrl, license, attribution), whereToBuy (Open Food Facts store names only), unknowns; attribution[]; disclaimer. The example is a trimmed response recorded from the branch handler (USDA snapshot only); live values differ.",
+        "Horizon Pulse ingredient nutrition: per item matches[] (source, id, fdcId for USDA matches, name, nutrientsPer100g, allergens null when unknown, sourceUrl, license, attribution), whereToBuy (Open Food Facts store names only), unknowns; attribution[]; disclaimer. The example is a trimmed response recorded from the handler (USDA snapshot only); live values differ.",
     },
   };
   return methodSplitRoutes(
     "/api/grocery/ingredient",
     {
-      accepts: [{ scheme: "exact", price: priceUsd, network, payTo }],
+      accepts: [{ scheme: "exact", price: GROCERY_INGREDIENT_PRICE_USD, network, payTo }],
       description: routeDescription("/api/grocery/ingredient"),
       mimeType: "application/json",
       ...serviceMetadata("/api/grocery/ingredient"),
