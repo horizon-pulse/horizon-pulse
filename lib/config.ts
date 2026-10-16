@@ -182,6 +182,15 @@ export const TX_GUARD_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 export const GROCERY_NORMALIZE_PRICE_USD = "$0.002" as const;
 export const GROCERY_NORMALIZE_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 
+/**
+ * /api/grocery/ingredient — PRICE NOT SET (Michael decides; Pulse recommendation in
+ * to-odin/2026-10-16-pulse-grocery-ingredient-classA.md). null = NOT LAUNCHED: the route answers
+ * 503 not_launched without running the handler or emitting a 402, and it is in no catalog,
+ * discovery file, MCP tool list or golden. Set BOTH values in the launch commit.
+ */
+export const GROCERY_INGREDIENT_PRICE_USD: `$${string}` | null = null; // PLACEHOLDER: UNSET
+export const GROCERY_INGREDIENT_PRICE_ATOMIC: string | null = null; // PLACEHOLDER: UNSET (USDC 6 decimals)
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

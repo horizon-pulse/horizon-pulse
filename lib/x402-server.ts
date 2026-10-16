@@ -46,6 +46,7 @@ import {
 } from "./config";
 import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
 import { exampleRecordedAt, OUTPUT_EXAMPLES } from "./route-examples";
+import { GROCERY_INGREDIENT_OUTPUT_EXAMPLE } from "./grocery-ingredient-example";
 import { getSolanaRailConfig } from "./solana-config";
 import { handleSolanaPayment, isSolanaPaymentRequest, withSolanaAccept } from "./solana-rail";
 import { baseRail, runOnPaidRail } from "./paid-rail";
@@ -1555,6 +1556,78 @@ export function groceryNormalizeRouteConfig(): RoutesConfig {
             ...GROCERY_NORMALIZE_SCHEMA_PROPS,
           },
           required: [],
+        },
+        output,
+      } as DiscoveryDecl),
+    },
+  );
+}
+
+/**
+ * /api/grocery/ingredient (NOT LAUNCHED: GROCERY_INGREDIENT_PRICE_USD is null). The price is a
+ * required argument so nothing can register this route without an explicit price; the route file
+ * serves 503 not_launched until lib/config.ts sets one. Bazaar example values use the declared
+ * types: GET query values are strings (q, barcode, n as digits), POST body n is an integer.
+ * Named *RoutesFor (not *RouteConfig) so the all-route-config sweeps skip it until launch; the
+ * launch commit renames it to a no-arg groceryIngredientRouteConfig() reading lib/config.ts.
+ */
+export function groceryIngredientRoutesFor(priceUsd: string): RoutesConfig {
+  if (!/^\$\d+(\.\d+)?$/.test(priceUsd)) throw new Error(`groceryIngredientRoutesFor needs an explicit USD price, got "${priceUsd}"`);
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  const output = {
+    example: GROCERY_INGREDIENT_OUTPUT_EXAMPLE,
+    schema: {
+      type: "object",
+      description:
+        "Horizon Pulse ingredient nutrition: per item matches[] (source, id, name, nutrientsPer100g, allergens null when unknown, sourceUrl, license, attribution), whereToBuy (Open Food Facts store names only), unknowns; attribution[]; disclaimer. The example is a trimmed response recorded from the branch handler (USDA snapshot only); live values differ.",
+    },
+  };
+  return methodSplitRoutes(
+    "/api/grocery/ingredient",
+    {
+      accepts: [{ scheme: "exact", price: priceUsd, network, payTo }],
+      description: routeDescription("/api/grocery/ingredient"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/grocery/ingredient"),
+    },
+    {
+      ...declareChargedDiscovery({
+        method: "GET",
+        input: { q: "all-purpose flour", n: "2" },
+        inputSchema: {
+          properties: {
+            q: { type: "string", description: "Ingredient name or a /api/grocery/normalize canonicalId (1-100 chars). Give q and/or barcode." },
+            barcode: { type: "string", pattern: "^([0-9]{8}|[0-9]{12,14})$", description: "Product GTIN-8, UPC-A, EAN-13 or GTIN-14 (valid check digit); read live from Open Food Facts." },
+            n: { type: "string", pattern: "^[1-5]$", description: "USDA matches per item, integer 1-5 as a digit (default 3)." },
+          },
+          required: [],
+        },
+        output,
+      } as DiscoveryDecl),
+    },
+    {
+      ...declareChargedDiscovery({
+        method: "POST",
+        bodyType: "json",
+        input: { items: [{ q: "egg" }, { q: "olive oil" }], n: 1 },
+        inputSchema: {
+          properties: {
+            items: {
+              type: "array",
+              maxItems: 10,
+              items: {
+                type: "object",
+                properties: {
+                  q: { type: "string", description: "Ingredient name or canonicalId (1-100 chars)." },
+                  barcode: { type: "string", pattern: "^([0-9]{8}|[0-9]{12,14})$", description: "Product GTIN (valid check digit)." },
+                },
+              },
+              description: "Up to 10 items, each with q and/or barcode. One price per call.",
+            },
+            n: { type: "integer", minimum: 1, maximum: 5, description: "USDA matches per item (default 3)." },
+          },
+          required: ["items"],
         },
         output,
       } as DiscoveryDecl),

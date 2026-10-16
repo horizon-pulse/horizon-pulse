@@ -144,6 +144,16 @@ describe("pricedBlock helper", () => {
   });
 });
 
+const NOT_LAUNCHED = new Set(["grocery/ingredient"]);
+
+describe("not-launched handlers still build `priced` only with the rail-aware helper", () => {
+  it("grocery/ingredient", () => {
+    const src = readFileSync(path.join(ROOT, "app", "api", "grocery", "ingredient", "handler.ts"), "utf8");
+    expect(src.match(/pricedBlock\(GROCERY_INGREDIENT_PRICE_USD, GROCERY_INGREDIENT_PRICE_ATOMIC\)/g)).toHaveLength(1);
+    expect(src).not.toMatch(/network: "base"|USDC_BASE|getPayTo/);
+  });
+});
+
 describe("all 23 paid handlers build `priced` with the rail-aware helper", () => {
   it("no handler hard-codes the Base network / USDC / payTo in its priced block", () => {
     // market-mvp: nested route dirs (app/api/market/{search,quote}) count as routes; a dir with handler.ts is a route.
@@ -155,7 +165,10 @@ describe("all 23 paid handlers build `priced` with the rail-aware helper", () =>
           ? [d.name]
           : readdirSync(path.join(api, d.name), { withFileTypes: true }).filter((c) => c.isDirectory()).map((c) => `${d.name}/${c.name}`),
       )
-      .sort();
+      .sort()
+      // Not launched (price unset, route answers 503 not_launched): grocery/ingredient, Odin build OK 2026-10-16.
+      // Its priced block is checked below; remove it from this set in the launch commit.
+      .filter((d) => !NOT_LAUNCHED.has(d));
     expect(dirs).toEqual([...PAID_ROUTES].sort());
     expect(dirs).toHaveLength(23);
     for (const d of dirs) {
