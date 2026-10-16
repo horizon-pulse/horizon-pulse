@@ -15,6 +15,7 @@
  * report (see methodology.billing). Body is streamed and capped at 64KB.
  */
 import { assertSafePublicUrl } from "@/lib/fetch-url";
+import { RLUSD_CURRENCY_HEX, RLUSD_MAINNET_ISSUER, RLUSD_TESTNET_ISSUER, XRPL_MAINNET_CAIP2, XRPL_TESTNET_CAIP2 } from "@/lib/xrpl-config";
 
 export const CHECK_TIMEOUT_MS = 8_000;
 export const CHECK_MAX_REDIRECTS = 3;
@@ -106,10 +107,10 @@ export function inputsBeforePaymentHint(method: string): string {
  * amount as a decimal string ("0.002"), not atomic units, and names the issuer
  * in extra.issuer. Kept out of KNOWN_ASSETS (shared with lib/market) on purpose.
  */
-const XRPL_RLUSD_HEX = "524C555344000000000000000000000000000000";
+const XRPL_RLUSD_HEX = RLUSD_CURRENCY_HEX;
 const XRPL_ISSUED: Record<string, { issuer: string; label: string }> = {
-  "xrpl:0": { issuer: "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De", label: "RLUSD (XRP Ledger)" },
-  "xrpl:1": { issuer: "rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV", label: "RLUSD (XRP Ledger testnet)" },
+  [XRPL_MAINNET_CAIP2]: { issuer: RLUSD_MAINNET_ISSUER, label: "RLUSD (XRP Ledger)" },
+  [XRPL_TESTNET_CAIP2]: { issuer: RLUSD_TESTNET_ISSUER, label: "RLUSD (XRP Ledger testnet)" },
 };
 export const XRPL_DECIMAL_AMOUNT = /^(?:0|[1-9]\d{0,16})(?:\.\d{1,15})?$/;
 
@@ -422,7 +423,14 @@ export async function checkX402Endpoint(input: {
     } else if (a.payToType === "contract") {
       checks.push({ id: "payto_type", level: "info", message: `payTo ${a.payTo} is a contract (e.g. a Safe or smart wallet)${tag}.` });
     }
-    if (!a.assetLabel && a.asset) checks.push({ id: "asset", level: "info", message: `Asset ${a.asset} is not a USDC contract we recognize; price shown in atomic units only${tag}.` });
+    if (!a.assetLabel && a.asset)
+      checks.push({
+        id: "asset",
+        level: "info",
+        message: isXrplNetwork(a.network)
+          ? `Asset ${a.asset} is not an XRPL asset we recognize (we label RLUSD with Ripple's issuer); price shown as the stated decimal amount only, no USD value${tag}.`
+          : `Asset ${a.asset} is not a USDC contract we recognize; price shown in atomic units only${tag}.`,
+      });
     if (isXrplNetwork(a.network)) {
       // XRPL x402 states issued-currency amounts as decimals ("0.002"); XRP drops are integers, which also match.
       if (!a.amountAtomic || !XRPL_DECIMAL_AMOUNT.test(a.amountAtomic)) checks.push({ id: "amount", level: "fail", message: `Price (amount) missing or not a decimal string (XRPL amounts are decimals, e.g. "0.002")${tag}.` });

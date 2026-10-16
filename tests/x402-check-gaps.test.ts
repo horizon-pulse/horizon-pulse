@@ -185,3 +185,27 @@ describe("recorded example (lib/route-examples.ts)", () => {
     expect(ex.summary.fail).toBe(0);
   });
 });
+
+describe("Odin review 10/16 follow-ups", () => {
+  it("testnet RLUSD issuer comes from lib/xrpl-config", async () => {
+    const { RLUSD_TESTNET_ISSUER } = await import("@/lib/xrpl-config");
+    expect(xrplKnownAsset("xrpl:1", RLUSD_CURRENCY_HEX, RLUSD_TESTNET_ISSUER)?.label).toBe("RLUSD (XRP Ledger testnet)");
+  });
+  it("unrecognized XRPL asset: no 'atomic units' wording", async () => {
+    const c = challenge();
+    c.accepts[2]!.asset = "USD";
+    stub(c, "0x");
+    const r = await checkX402Endpoint({ url: "https://s.example/api/pulse", method: "GET" });
+    if (!r.ok) throw new Error(r.error);
+    const m = r.checks.find((k) => k.id === "asset" && k.message.includes("accepts[2]"))!.message;
+    expect(m).toMatch(/not an XRPL asset we recognize/);
+    expect(m).not.toMatch(/atomic units/);
+    expect(r.checks.some((k) => k.id === "asset" && k.message.includes("atomic units"))).toBe(false);
+  });
+  it("public/openapi.json keeps assetLabel / amountUsd / payToType / payToDelegate nullable", async () => {
+    const { readFileSync } = await import("node:fs");
+    const spec = JSON.parse(readFileSync("public/openapi.json", "utf8"));
+    const props = spec.components.schemas.X402CheckResponse.properties.accepts.items.properties;
+    for (const k of ["assetLabel", "amountUsd", "payToType", "payToDelegate"]) expect(props[k].type, k).toEqual(["string", "null"]);
+  });
+});

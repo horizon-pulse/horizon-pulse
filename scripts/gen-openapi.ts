@@ -209,6 +209,10 @@ for (const r of LIVE_PAID_ROUTES) {
       // Closed value set (lib/indicators.ts DirectionLabel); not inferable from one example.
       const dir = name === "pulse" ? schemas[respName]?.properties?.overall?.properties?.direction : undefined;
       if (dir) dir.enum = ["up", "down", "flat"];
+      // x402-check accepts[]: these stay nullable even when the recorded example has no null (unrecognized asset,
+      // non-EVM payTo). Inference from one example would narrow them to "string" (Odin review 10/16).
+      const acc = p === "/api/x402-check" ? schemas[respName]?.properties?.accepts?.items?.properties : undefined;
+      if (acc) for (const k of ["assetLabel", "amountUsd", "payToType", "payToDelegate"]) acc[k] = { type: ["string", "null"] };
       // evidence/unknowns: declared explicitly (id enums) on top of the schema inferred from the recorded example.
       if (p === "/api/market/quote" && schemas[respName]?.properties) {
         schemas[respName].properties.evidence = {
