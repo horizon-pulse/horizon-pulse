@@ -6907,13 +6907,19 @@
                   "type": "string"
                 },
                 "assetLabel": {
-                  "type": "string"
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "amountAtomic": {
                   "type": "string"
                 },
                 "amountUsd": {
-                  "type": "string"
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 },
                 "payTo": {
                   "type": "string"
