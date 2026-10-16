@@ -5,14 +5,14 @@
  * payTo at $0.002, catalog/MCP/demo/llms/openapi wiring, listing-copy rules
  * (no instructions to the calling agent), and "never calls a URL a contract names".
  */
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { NextRequest } from "next/server";
 import { encodeAbiParameters, namehash, stringToHex, toFunctionSelector } from "viem";
-import { chainHead, parseHeadInput } from "@/lib/chain-head";
+import { __resetChainHeadCacheForTests, CHAIN_HEAD_CACHE_MS, chainHead, parseHeadInput } from "@/lib/chain-head";
 import { decodeAbiText, parseTokenInput, tokenMeta, xrplCurrencyText } from "@/lib/token-meta";
 import { BASENAMES_REGISTRY_BASE, ENS_REGISTRY_ETHEREUM, nameResolve, parseNameInput, registryFor } from "@/lib/name-resolve";
-import type { RpcDeps } from "@/lib/chain-rpc";
+import { RPC_MAX_BYTES, type RpcDeps } from "@/lib/chain-rpc";
 import { chainHeadHandler } from "@/app/api/chain/head/handler";
 import { tokenMetaHandler } from "@/app/api/token/meta/handler";
 import { nameResolveHandler } from "@/app/api/name/resolve/handler";
@@ -23,6 +23,9 @@ const NOW = Date.parse("2026-10-16T15:00:10Z");
 const T0 = Math.floor(Date.parse("2026-10-16T15:00:00Z") / 1000);
 
 type Body = { method: string; params: unknown; jsonrpc?: string };
+
+// chain/head shares answers for CHAIN_HEAD_CACHE_MS; every test starts cold (NOW is fixed).
+beforeEach(() => __resetChainHeadCacheForTests());
 type H = (url: string, body: Body) => unknown;
 function deps(h: H, urls: string[] = []): RpcDeps {
   return {
@@ -294,6 +297,72 @@ describe("name/resolve", () => {
     expect(await ok.json()).toMatchObject({ source: "name-resolve", priced: { amountUsd: "$0.002", amountAtomic: "2000" }, found: true });
     const bad = await nameResolveHandler(new NextRequest("https://horizonpulse.dev/api/name/resolve"), deps(() => rpc(null)));
     expect(bad.status).toBe(400);
+  });
+});
+
+/* ------------------------------------------------------------------ Odin review fixes (2026-10-16 11:48 AM ET) */
+
+describe("review fixes", () => {
+  it("eth_call 'execution aborted (timeout)' is an outage: 502 not charged, never a billed found:false", async () => {
+    const h: H = (_u, b) => {
+      if (b.method === "eth_getCode") return rpc("0x6080");
+      if (b.method === "eth_call") return { jsonrpc: "2.0", id: 1, error: { code: -32000, message: "execution aborted (timeout = 5s)" } };
+      return rpc(null);
+    };
+    const res = await tokenMetaHandler(new NextRequest(`https://horizonpulse.dev/api/token/meta?network=base&token=${USDC}`), deps(h));
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ ok: false, code: "rpc_unavailable", charged: false });
+    const nr = await nameResolveHandler(new NextRequest("https://horizonpulse.dev/api/name/resolve?name=vitalik.eth"), deps(h));
+    expect(nr.status).toBe(502);
+    expect(await nr.json()).toMatchObject({ charged: false });
+  });
+  it("'execution reverted' is still an answer (found:false, billed)", async () => {
+    const h: H = (_u, b) => (b.method === "eth_getCode" ? rpc("0x6080") : { jsonrpc: "2.0", id: 1, error: { code: 3, message: "execution reverted" } });
+    const r = await tokenMeta({ network: "base", kind: "evm", token: USDC }, deps(h));
+    expect(r).toMatchObject({ ok: true, found: false });
+  });
+  it("registries disagree: a *.base.eth ENS primary verifies only on the Basenames registry", async () => {
+    const JESSE = "0x2211d1D0020DAEA8039E46Cf1367962070d77DA9";
+    const OTHER = "0x000000000000000000000000000000000000bEEF";
+    const lower = JESSE.slice(2).toLowerCase();
+    const isBase = (u: string) => /base\.drpc\.org|mainnet\.base\.org/.test(u) || u === process.env.BASE_RPC_URL;
+    // Ethereum (ENS) records: the reverse record names jesse.base.eth, and an ENS-side
+    // record for jesse.base.eth points elsewhere. Base (Basenames) records: the real one.
+    const eth = {
+      [namehash(`${lower}.addr.reverse`)]: { resolver: RESOLVER, name: "jesse.base.eth" },
+      [namehash("jesse.base.eth")]: { resolver: RESOLVER, addr: OTHER },
+    };
+    const base = { [namehash("jesse.base.eth")]: { resolver: RESOLVER, addr: JESSE } };
+    const ethH = ensChain(eth);
+    const baseH = ensChain(base);
+    const urls: string[] = [];
+    const r = await nameResolve({ mode: "reverse", address: JESSE }, deps((u, b) => (isBase(u) ? baseH(u, b) : ethH(u, b)), urls));
+    expect(r).toMatchObject({ ok: true, mode: "reverse", found: true, ens: { name: "jesse.base.eth", verified: true }, basename: { name: null, verified: false } });
+    // Forward of the same name goes to Basenames on Base, not the ENS-side record.
+    const f = await nameResolve({ mode: "forward", name: "jesse.base.eth" }, deps((u, b) => (isBase(u) ? baseH(u, b) : ethH(u, b))));
+    expect(f).toMatchObject({ system: "basenames", network: "base", address: JESSE });
+    expect(urls.some(isBase)).toBe(true);
+  });
+  it("RPC answers over the size cap count as that RPC failing (all too big: 502, not charged)", async () => {
+    const big = JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x" + "0".repeat(RPC_MAX_BYTES) });
+    const d: RpcDeps = { now: () => NOW, fetch: vi.fn(async () => new Response(big, { status: 200 })) as unknown as typeof fetch };
+    const res = await chainHeadHandler(new NextRequest("https://horizonpulse.dev/api/chain/head?network=base"), d);
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ charged: false });
+  });
+  it("chain/head reuses each network's answer for CHAIN_HEAD_CACHE_MS, then reads again", async () => {
+    let t = NOW;
+    const f = vi.fn(async (url: string | URL | Request, init?: RequestInit) => new Response(JSON.stringify(allChainsUp(String(url), JSON.parse(String(init?.body)) as Body)), { status: 200 }));
+    const d: RpcDeps = { now: () => t, fetch: f as unknown as typeof fetch };
+    const a = await chainHead({ networks: ["base"] }, d);
+    const calls = f.mock.calls.length;
+    t += 1000;
+    const b = await chainHead({ networks: ["base"] }, d);
+    expect(f.mock.calls.length).toBe(calls);
+    if (a.ok && b.ok) expect(b.heads[0].headAgeSeconds).toBe((a.heads[0].headAgeSeconds ?? 0) + 1);
+    t += CHAIN_HEAD_CACHE_MS;
+    await chainHead({ networks: ["base"] }, d);
+    expect(f.mock.calls.length).toBeGreaterThan(calls);
   });
 });
 

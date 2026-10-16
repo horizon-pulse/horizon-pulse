@@ -124,7 +124,7 @@ export const ROUTE_METADATA = {
   },
   "/api/chain/head": {
     description:
-      "Block height API: current block number, slot or ledger index for Base, Polygon, Ethereum, Solana and XRPL in one GET. Optional network (comma list; default all five). Per network: chainId, height, headTime, headAgeSeconds, finalizedHeight and finalityGap (EVM finalized tag, Solana finalized slot, XRPL validated ledger). Free public RPCs, read-only, no keys. Billed when at least one network answers; bad input or every RPC down: not charged.",
+      "Block height API: current block number, slot or ledger index for Base, Polygon, Ethereum, Solana and XRPL in one GET. Optional network (comma list; default all five). Per network: chainId, height, headTime, headAgeSeconds, finalizedHeight and finalityGap (EVM finalized tag, Solana finalized slot, XRPL validated ledger). Free public RPCs, read-only. Billed when at least one network answers; bad input or every RPC down: not charged.",
     tags: ["blockchain", "block-height", "chain-head", "finality", "multichain"],
   },
   "/api/token/meta": {

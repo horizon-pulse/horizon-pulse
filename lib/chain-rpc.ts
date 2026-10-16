@@ -63,6 +63,33 @@ export const RPC_TIMEOUT_MS = 5_000;
 
 export class RpcDown extends Error {}
 
+/** Per-response size cap (Odin review 2026-10-16): larger RPC answers count as that RPC failing (fallback, then 502 not charged). */
+export const RPC_MAX_BYTES = 1_000_000;
+
+/** JSON body of an RPC response, refusing anything over RPC_MAX_BYTES (content-length or streamed byte count). */
+export async function readJsonCapped(res: Response, cap: number = RPC_MAX_BYTES): Promise<unknown> {
+  const len = Number(res.headers.get("content-length") ?? "");
+  if (Number.isFinite(len) && len > cap) {
+    await res.body?.cancel().catch(() => {});
+    throw new Error("response too large");
+  }
+  if (!res.body) return JSON.parse(await res.text());
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.byteLength;
+    if (n > cap) {
+      await reader.cancel().catch(() => {});
+      throw new Error("response too large");
+    }
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
 export const obj = (v: unknown): Json | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Json) : null);
 export const hexToBig = (h: unknown): bigint | null =>
   typeof h === "string" && /^0x[0-9a-fA-F]*$/.test(h) ? BigInt(h === "0x" ? "0x0" : h) : null;
@@ -85,7 +112,7 @@ export async function rpcCall(deps: RpcDeps, network: ChainNetwork, method: stri
         lastErr = `HTTP ${res.status}`;
         continue;
       }
-      const j = obj(await res.json());
+      const j = obj(await readJsonCapped(res));
       if (!j) continue;
       if (network === "xrpl") {
         const r = obj(j.result);
@@ -95,7 +122,7 @@ export async function rpcCall(deps: RpcDeps, network: ChainNetwork, method: stri
       if ("result" in j) return j.result;
       lastErr = String(obj(j.error)?.message ?? "rpc error");
     } catch (e) {
-      lastErr = e instanceof Error ? e.name : "error";
+      lastErr = e instanceof Error ? (e.message === "response too large" ? e.message : e.name) : "error";
     }
   }
   throw new RpcDown(lastErr || "no RPC answered");
@@ -118,15 +145,16 @@ export async function ethCall(deps: RpcDeps, network: ChainNetwork, to: string, 
         lastErr = `HTTP ${res.status}`;
         continue;
       }
-      const j = obj(await res.json());
+      const j = obj(await readJsonCapped(res));
       if (!j) continue;
       if (typeof j.result === "string") return j.result === "0x" ? null : j.result;
       const err = obj(j.error);
       // A revert is an answer (the function is absent or failed), not an outage.
-      if (err && /revert|execution/i.test(String(err.message ?? ""))) return null;
+      // Only "revert": geth's "execution aborted (timeout)" / "execution timeout" are outages (Odin review 2026-10-16).
+      if (err && /revert/i.test(String(err.message ?? ""))) return null;
       lastErr = String(err?.message ?? "rpc error");
     } catch (e) {
-      lastErr = e instanceof Error ? e.name : "error";
+      lastErr = e instanceof Error ? (e.message === "response too large" ? e.message : e.name) : "error";
     }
   }
   throw new RpcDown(lastErr || "no RPC answered");

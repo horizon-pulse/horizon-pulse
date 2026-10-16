@@ -146,14 +146,27 @@ async function xrplHead(deps: RpcDeps, deadline: number): Promise<HeadRow> {
   return r;
 }
 
+/** Per-network answer cache (Odin review 2026-10-16): repeat callers within this window share one upstream read. */
+export const CHAIN_HEAD_CACHE_MS = 1_500;
+const headCache = new Map<ChainNetwork, { at: number; row: HeadRow }>();
+
+/** Test hook: clear the per-network cache. */
+export function __resetChainHeadCacheForTests(): void {
+  headCache.clear();
+}
+
 export async function chainHead(input: HeadInput, deps: RpcDeps = defaultRpcDeps()): Promise<HeadResult | HeadError> {
   const deadline = deps.now() + CHAIN_HEAD_DEADLINE_MS;
   const heads = await Promise.all(
     input.networks.map(async (n) => {
+      const hit = headCache.get(n);
+      if (hit && deps.now() - hit.at >= 0 && deps.now() - hit.at < CHAIN_HEAD_CACHE_MS) {
+        return { ...hit.row, headAgeSeconds: age(deps, hit.row.headTime) };
+      }
       try {
-        if (n === "solana") return await solanaHead(deps, deadline);
-        if (n === "xrpl") return await xrplHead(deps, deadline);
-        return await evmHead(deps, n, deadline);
+        const r = n === "solana" ? await solanaHead(deps, deadline) : n === "xrpl" ? await xrplHead(deps, deadline) : await evmHead(deps, n, deadline);
+        if (r.error === null) headCache.set(n, { at: deps.now(), row: r });
+        return r;
       } catch (e) {
         return { ...row(n), error: `No public ${n} RPC answered (${e instanceof Error ? e.message : "error"})` };
       }

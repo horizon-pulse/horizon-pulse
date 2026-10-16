@@ -4703,7 +4703,7 @@
           "Agent utilities"
         ],
         "summary": "Current block, slot or ledger height on 5 chains",
-        "description": "Block height API: current block number, slot or ledger index for Base, Polygon, Ethereum, Solana and XRPL in one GET. Optional network (comma list; default all five). Per network: chainId, height, headTime, headAgeSeconds, finalizedHeight and finalityGap (EVM finalized tag, Solana finalized slot, XRPL validated ledger). Free public RPCs, read-only, no keys. Billed when at least one network answers; bad input or every RPC down: not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Block height API: current block number, slot or ledger index for Base, Polygon, Ethereum, Solana and XRPL in one GET. Optional network (comma list; default all five). Per network: chainId, height, headTime, headAgeSeconds, finalizedHeight and finalityGap (EVM finalized tag, Solana finalized slot, XRPL validated ledger). Free public RPCs, read-only. Billed when at least one network answers; bad input or every RPC down: not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
