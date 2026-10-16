@@ -1501,6 +1501,12 @@ const GROCERY_NORMALIZE_SCHEMA_PROPS = {
   targetServings: { type: "integer", description: "Servings wanted (1-100)." },
 };
 
+/** GET query form: same fields as digit strings (query params are strings; matches market/search `n`). */
+const GROCERY_NORMALIZE_QUERY_PROPS = {
+  servings: { type: "string", pattern: "^[0-9]{1,3}$", description: "Servings the recipe makes, integer 1-100 as digits. Give with targetServings to scale, or neither." },
+  targetServings: { type: "string", pattern: "^[0-9]{1,3}$", description: "Servings wanted, integer 1-100 as digits." },
+};
+
 /** Recipe ingredient lines to a normalized shopping list. Deterministic, no outbound calls. Same rails, payTo and Bazaar pattern; GET and POST share one price. */
 export function groceryNormalizeRouteConfig(): RoutesConfig {
   const payTo = getPayTo();
@@ -1528,7 +1534,9 @@ export function groceryNormalizeRouteConfig(): RoutesConfig {
         inputSchema: {
           properties: {
             ingredients: { type: "string", description: "Ingredient lines separated by | (max 100 lines, 200 chars each). POST JSON is preferred." },
-            ...GROCERY_NORMALIZE_SCHEMA_PROPS,
+            // Query values are strings on the wire: declared as digit strings so the
+            // GET example ("4", "8") validates (was integer -> "invalid bazaar extension").
+            ...GROCERY_NORMALIZE_QUERY_PROPS,
           },
           required: ["ingredients"],
         },
