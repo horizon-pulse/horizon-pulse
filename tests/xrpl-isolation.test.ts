@@ -129,11 +129,12 @@ describe("unpaid isolation: XRPL failures serve the exact main 402", () => {
     expect(warnLines().some((l) => l.includes("unexpected XRPL requirement (payTo, network/issuer/payTo mix, extra.sourceTag)"))).toBe(true);
   });
 
-  it("XRPL facilitator unreachable (failure cached: one attempt for 82 requests)", async () => {
+  it("XRPL facilitator unreachable (failure cached: one cold check = 2 attempts, then backoff, for every captured request)", async () => {
     const calls = installXrplFacilitators({ supported: () => { throw new Error("fetch failed: ECONNREFUSED"); } });
     stubXrplOn();
     expect(JSON.stringify(await captureAll())).toBe(JSON.stringify(golden));
-    expect(calls.filter((c) => c.url === XRPL_FAC && c.op === "supported").length).toBe(1);
+    // 2026-10-17 keep-present: the cold check retries once in-request (COLD_ATTEMPTS = 2), then backs off ≥ 5 s.
+    expect(calls.filter((c) => c.url === XRPL_FAC && c.op === "supported").length).toBe(2);
   });
 
   it("XRPL facilitator hangs: bounded by HP_XRPL_INIT_TIMEOUT_MS", async () => {
@@ -185,7 +186,7 @@ describe("unpaid isolation: XRPL failures serve the exact main 402", () => {
     }
   });
 
-  it("transient RPC error after a confirmed ready keeps the entry (sticky ≤ 60 min); definitive not-ready still hides", async () => {
+  it("transient RPC error after a confirmed ready keeps the entry (no time limit since 2026-10-17); definitive not-ready still hides", async () => {
     installXrplFacilitators();
     let mode: ReadyMode = "ready";
     stubXrplOn();
@@ -202,7 +203,10 @@ describe("unpaid isolation: XRPL failures serve the exact main 402", () => {
       expect(await count()).toBe(2); // RPC timeout: last confirmed kept
       vi.setSystemTime(Date.now() + 55 * 60_000);
       await recheck();
-      expect(await count()).toBe(1); // > 60 min since last confirm: hidden
+      expect(await count()).toBe(2); // > 60 min since last confirm: still kept (was hidden before the 10/17 fix)
+      vi.setSystemTime(Date.now() + 6 * 60 * 60_000);
+      await recheck();
+      expect(await count()).toBe(2); // hours later: still kept; only a confirmed absence hides
       mode = "ready";
       vi.setSystemTime(Date.now() + 60_001);
       await recheck();

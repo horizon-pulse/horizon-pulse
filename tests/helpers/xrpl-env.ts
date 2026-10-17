@@ -73,6 +73,16 @@ export function installXrplRpc(
   /** `tx` result for a settled hash (default: validated, closed "now"). */
   tx: (hash: string) => unknown = () => ({ validated: true, date: Math.floor((Date.now() - 946_684_800_000) / 1000), status: "success" }),
 ): XrplRpcCall[] {
+  const { fn, calls } = makeXrplRpc(mode, tx);
+  __setXrplRpcForTests(fn);
+  return calls;
+}
+
+/** The read-only RPC stub installXrplRpc uses, without installing it. */
+export function makeXrplRpc(
+  mode: ReadyMode | (() => ReadyMode) = "ready",
+  tx: (hash: string) => unknown = () => ({ validated: true, date: Math.floor((Date.now() - 946_684_800_000) / 1000), status: "success" }),
+): { fn: XrplRpc; calls: XrplRpcCall[] } {
   const calls: XrplRpcCall[] = [];
   const fn: XrplRpc = async (url, method, params) => {
     calls.push({ url, method, params });
@@ -95,8 +105,7 @@ export function installXrplRpc(
     }
     throw new Error(`unexpected RPC ${method}`);
   };
-  __setXrplRpcForTests(fn);
-  return calls;
+  return { fn, calls };
 }
 
 export function setCdp(on: boolean) {

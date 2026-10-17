@@ -20,17 +20,36 @@
  *     kind, unexpected requirement, verify-phase error) callers get the
  *     untouched pre-XRPL 402 (main's) and a console.warn; see "Paid-path
  *     outcomes" below for the settle phase and handler throws.
- *   - Failed init is cached for RETRY_AFTER_MS so an outage costs at most one
- *     bounded wait (initTimeoutMs) per instance per window. A good init is
- *     refreshed every RAIL_TTL_MS (re-fetches the facilitator's /supported).
+ *   - Keep-present (fix 2026-10-17, live fault 9:34 AM ET: 33/108 prod 402s
+ *     had no XRPL entry; same shape as the Solana fix of 10/8, 190f85c/153d1f3):
+ *       - once this instance has CONFIRMED the entry (good rail init + payTo
+ *         ready), a later failed or timed-out check (account_info /
+ *         account_lines RPC, facilitator /supported refresh, SDK init) NEVER
+ *         hides it. Only a CONFIRMED ABSENCE does: the RPC answered that the
+ *         account is gone / has no usable RLUSD trust line / needs a dest tag,
+ *         or the facilitator answered /supported without the one exact kind
+ *         (XrplRailAbsentError), with an "[xrpl-rail][ALERT] xrpl_entry_dropped".
+ *       - cold (never confirmed): a failed check is retried inside the same
+ *         request (COLD_ATTEMPTS, COLD_RETRY_DELAY_MS, whole cold check capped
+ *         at initTimeoutMs + COLD_EXTRA_BUDGET_MS, i.e. 4.0 s by default),
+ *         then hidden only for COLD_BACKOFF_BASE_MS doubling to
+ *         COLD_BACKOFF_MAX_MS (5 s, 10 s, 20 s, 40 s, 60 s...), never for one
+ *         failed check.
+ *       - checks that keep failing raise "[xrpl-rail][ALERT] xrpl_check_failing"
+ *         after ALERT_CONSECUTIVE_FAILURES in a row and again after
+ *         ALERT_STALE_MS without success, each at most once per check+reason
+ *         per episode (re-armed by the next success).
+ *   - A good init is refreshed every RAIL_TTL_MS (re-fetches the facilitator's
+ *     /supported); a failed refresh of a confirmed rail is retried every
+ *     WARM_RETRY_MS while the confirmed rail keeps serving.
  *   - payTo readiness guard (the Solana token-account guard's XRPL twin): the
  *     XRPL entry is shown ONLY while the pinned payTo account exists on the
  *     configured network AND holds an RLUSD trust line to the issuer (limit
  *     > 0, not frozen) AND does not require a destination tag / deposit
  *     authorization. Read-only JSON-RPC (account_info + account_lines),
  *     cached READY_TTL_MS (~10 min), so it flips on by itself once Michael
- *     activates the account and adds the trust line (no redeploy). Absent /
- *     RPC error → hidden.
+ *     activates the account and adds the trust line (no redeploy). Confirmed
+ *     absent → hidden. RPC error → see keep-present above.
  *   - Incoming XRPL payloads have any `extensions.bazaar` stripped before
  *     they reach the facilitator.
  *   - Facilitator rejections are logged with REASON CODES ONLY (R1): a code is
@@ -103,15 +122,32 @@ import { createReplayStore, type ReplayState, type ReplayStore } from "./xrpl-re
 import { runOnPaidRail, xrplRail } from "./paid-rail";
 
 const LOG = "[xrpl-rail]";
+/** Confirmed absence (facilitator answered without the kind / pinned constants disagree): re-check after this long. */
 const RETRY_AFTER_MS = 60_000;
 /** Re-initialise a good rail (re-fetch the facilitator's /supported) this often. */
 export const RAIL_TTL_MS = 10 * 60_000;
 /** payTo readiness result (ready or not) is cached this long. */
 export const READY_TTL_MS = 10 * 60_000;
-/** RPC error → cached as "not ready" for this long before retrying. */
-const READY_ERROR_RETRY_MS = 60_000;
-/** Max age of a confirmed ready=true kept through transient RPC failures. */
-export const READY_STALE_MAX_MS = 60 * 60_000;
+/** Confirmed instance, failed refresh (entry kept): retry the check this often. */
+export const WARM_RETRY_MS = 60_000;
+/** Cold check: attempts inside one request before giving up for this request. */
+export const COLD_ATTEMPTS = 2;
+/** Cold check: pause between attempts. */
+export const COLD_RETRY_DELAY_MS = 250;
+/**
+ * Cold check budget: all attempts together finish within initTimeoutMs + this
+ * (default 2.5 s + 1.5 s = 4.0 s; max 5 s + 1.5 s). Readiness and rail init run
+ * in parallel, so this also bounds the first 402 of a cold instance. A fast
+ * failure (refused / 5xx) costs ~COLD_RETRY_DELAY_MS extra, not the budget.
+ */
+export const COLD_EXTRA_BUDGET_MS = 1_500;
+/** Cold, still failing: hidden for 5 s after the 1st failed check, then 10, 20, 40, capped at 60 s (never longer than before the fix). */
+export const COLD_BACKOFF_BASE_MS = 5_000;
+export const COLD_BACKOFF_MAX_MS = 60_000;
+/** ALERT after this many failed checks in a row (one failed check never alerts). */
+export const ALERT_CONSECUTIVE_FAILURES = 3;
+/** ALERT when a check has had no success for this long (since the last confirmation, or the first failure if never confirmed). */
+export const ALERT_STALE_MS = 30 * 60_000;
 /** Same default @x402/core applies to the Base entry. */
 export const MAX_TIMEOUT_SECONDS = 300;
 /** Upper bound on the signed blob we forward (a single-signed Payment is ~250 bytes; multisig more). */
@@ -228,6 +264,9 @@ export function resetXrplRailForTests(): void {
   failedUntil = 0;
   readyCache = null;
   readyRefresh = null;
+  failures.ready = freshFailure();
+  failures.rail = freshFailure();
+  alertedEpisodes.clear();
   paidHandlers = new WeakMap();
   replay = createReplayStore();
   replayWarned = false;
@@ -264,7 +303,13 @@ export function redact(text: string): string {
 // Ops alerts (warn rate)
 // ---------------------------------------------------------------------------
 
-export type XrplAlert = { kind: "warn_rate"; count: number; windowMs: number; threshold: number };
+export type XrplCheck = "payto_ready" | "rail";
+export type XrplAlert =
+  | { kind: "warn_rate"; count: number; windowMs: number; threshold: number }
+  /** A check keeps failing (3 in a row, or no success for 30 min). entry: whether this instance still shows XRPL. */
+  | { kind: "xrpl_check_failing"; check: XrplCheck; reason: "consecutive_failures" | "stale"; failures: number; sinceMs: number; entry: "kept" | "hidden" }
+  /** A confirmed absence retired an entry this instance had confirmed. */
+  | { kind: "xrpl_entry_dropped"; reason: "payto_not_ready" | "facilitator_kind_absent" };
 
 function defaultAlertHook(alert: XrplAlert): void {
   console.error(`${LOG}[ALERT] ${JSON.stringify(alert)}`);
@@ -280,6 +325,66 @@ export function setXrplAlertHook(fn: ((alert: XrplAlert) => void) | null): void 
 let warnTimes: number[] = [];
 let warnAlertedAt = 0;
 
+function emitAlert(alert: XrplAlert): void {
+  try {
+    alertHook(alert);
+  } catch {
+    /* an alert sink must never break a request */
+  }
+}
+
+/** Consecutive failed checks for one check kind (a cold check's in-request retry counts as one check). */
+type Failure = { streak: number; firstFailAt: number };
+const freshFailure = (): Failure => ({ streak: 0, firstFailAt: 0 });
+const failures: { ready: Failure; rail: Failure } = { ready: freshFailure(), rail: freshFailure() };
+/** Dedupe: "<check>:<reason>" alerted in the current failure episode (cleared by the next success). */
+const alertedEpisodes = new Set<string>();
+
+function noteCheckFailure(check: XrplCheck, f: Failure, confirmedAt: number | undefined, entry: "kept" | "hidden"): void {
+  const now = Date.now();
+  f.streak++;
+  if (!f.firstFailAt) f.firstFailAt = now;
+  const since = now - (confirmedAt ?? f.firstFailAt);
+  const fire = (reason: "consecutive_failures" | "stale") => {
+    const k = `${check}:${reason}`;
+    if (alertedEpisodes.has(k)) return;
+    alertedEpisodes.add(k);
+    emitAlert({ kind: "xrpl_check_failing", check, reason, failures: f.streak, sinceMs: since, entry });
+  };
+  if (f.streak >= ALERT_CONSECUTIVE_FAILURES) fire("consecutive_failures");
+  if (since >= ALERT_STALE_MS) fire("stale");
+}
+
+function noteCheckSuccess(check: XrplCheck, f: Failure): void {
+  f.streak = 0;
+  f.firstFailAt = 0;
+  alertedEpisodes.delete(`${check}:consecutive_failures`);
+  alertedEpisodes.delete(`${check}:stale`);
+}
+
+/** Cold backoff after `streak` failed checks: 5 s, 10 s, 20 s, 40 s, 60 s, 60 s... */
+export function coldBackoffMs(streak: number): number {
+  return Math.min(COLD_BACKOFF_BASE_MS * 2 ** Math.max(0, streak - 1), COLD_BACKOFF_MAX_MS);
+}
+
+/** Cold check: up to COLD_ATTEMPTS tries within initTimeoutMs + COLD_EXTRA_BUDGET_MS; a confirmed absence is not retried. */
+async function coldAttempts<T>(initTimeoutMs: number, attempt: (timeoutMs: number) => Promise<T>): Promise<T> {
+  const deadline = Date.now() + initTimeoutMs + COLD_EXTRA_BUDGET_MS;
+  let lastErr: unknown;
+  for (let i = 0; i < COLD_ATTEMPTS; i++) {
+    if (i > 0) {
+      if (isConfirmedAbsence(lastErr) || deadline - Date.now() - COLD_RETRY_DELAY_MS < 100) break;
+      await new Promise((res) => setTimeout(res, COLD_RETRY_DELAY_MS));
+    }
+    try {
+      return await attempt(Math.max(1, Math.min(initTimeoutMs, deadline - Date.now())));
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 function noteWarn(): void {
   const now = Date.now();
   warnTimes.push(now);
@@ -287,11 +392,7 @@ function noteWarn(): void {
   while (warnTimes.length && warnTimes[0] <= cutoff) warnTimes.shift();
   if (warnTimes.length >= WARN_ALERT_THRESHOLD && now - warnAlertedAt >= WARN_ALERT_WINDOW_MS) {
     warnAlertedAt = now;
-    try {
-      alertHook({ kind: "warn_rate", count: warnTimes.length, windowMs: WARN_ALERT_WINDOW_MS, threshold: WARN_ALERT_THRESHOLD });
-    } catch {
-      /* an alert sink must never break a request */
-    }
+    emitAlert({ kind: "warn_rate", count: warnTimes.length, windowMs: WARN_ALERT_WINDOW_MS, threshold: WARN_ALERT_THRESHOLD });
   }
 }
 
@@ -488,6 +589,26 @@ export function logXrplReconcile(ctx: ReconcileCtx, status: 502 | 504, reason: s
 // ---------------------------------------------------------------------------
 
 /**
+ * A CONFIRMED absence on the rail side: the facilitator answered /supported
+ * but no longer offers the one exact kind we need (or advertises fee
+ * sponsoring), or our pinned constants disagree with the SDK. Only this may
+ * retire a rail this instance has confirmed; anything else thrown during a
+ * refresh (timeout, transport, HTTP status, malformed reply, SDK init error)
+ * is transient and keeps the confirmed rail.
+ */
+export class XrplRailAbsentError extends Error {
+  override name = "XrplRailAbsentError";
+}
+
+/** True if `err` (or anything on its `cause` chain, e.g. the SDK's "Failed to initialize" wrapper) is a confirmed absence. */
+export function isConfirmedAbsence(err: unknown): boolean {
+  for (let e: unknown = err, i = 0; e && i < 5; e = (e as { cause?: unknown }).cause, i++) {
+    if (e instanceof XrplRailAbsentError) return true;
+  }
+  return false;
+}
+
+/**
  * Wraps the XRPL facilitator so it can only ever be used for v2 `exact` on
  * the configured xrpl:N, pinned payTo, RLUSD + the network's issuer:
  * getSupported is filtered to that one kind (and reports no extensions, so the
@@ -513,7 +634,7 @@ export class XrplOnlyFacilitatorClient implements FacilitatorClient {
       const url = (c as { url?: unknown }).url;
       if (c instanceof LocalXrplFacilitatorClient) continue;
       if (typeof url !== "string" || !url.startsWith("https://")) {
-        throw new Error("XRPL facilitator URL must be https");
+        throw new XrplRailAbsentError("XRPL facilitator URL must be https");
       }
     }
     let supported: SupportedResponse;
@@ -522,15 +643,17 @@ export class XrplOnlyFacilitatorClient implements FacilitatorClient {
     } catch (err) {
       throw scrubFacilitatorError(err, "supported");
     }
-    const kinds = (supported.kinds ?? []).filter(
+    // A malformed reply is a transient error, not a confirmed absence.
+    if (!supported || !Array.isArray(supported.kinds)) throw new Error("XRPL facilitator /supported returned a malformed response");
+    const kinds = supported.kinds.filter(
       (k) => k.x402Version === 2 && k.scheme === "exact" && k.network === this.network,
     );
     if (kinds.length !== 1) {
-      throw new Error(`XRPL facilitator does not list exactly one x402 v2 exact kind on ${this.network}`);
+      throw new XrplRailAbsentError(`XRPL facilitator does not list exactly one x402 v2 exact kind on ${this.network}`);
     }
     const sponsored = (kinds[0].extra as { areFeesSponsored?: unknown } | undefined)?.areFeesSponsored;
     if (sponsored !== undefined && sponsored !== false) {
-      throw new Error("XRPL facilitator advertises areFeesSponsored != false (spec requires false)");
+      throw new XrplRailAbsentError("XRPL facilitator advertises areFeesSponsored != false (spec requires false)");
     }
     const signers = Object.fromEntries(
       Object.entries((supported.signers ?? {}) as Record<string, unknown>).filter(([k]) => k.startsWith("xrpl:")),
@@ -675,7 +798,8 @@ type Rail = {
   keyOf: KeyFn;
 };
 
-let railState: { key: string; rail: Rail; builtAt: number } | null = null;
+/** builtAt = last SUCCESSFUL (confirmed) init; retryAt = earliest next refresh after a failed one. */
+let railState: { key: string; rail: Rail; builtAt: number; retryAt?: number } | null = null;
 let railInit: { key: string; promise: Promise<Rail | null> } | null = null;
 let failedKey: string | null = null;
 let failedUntil = 0;
@@ -692,13 +816,13 @@ async function initRail(config: XrplRailConfig): Promise<Rail> {
   const mods = await loader();
   // Cross-check our pinned constants against the package.
   if (mods.XRPL_MAINNET !== XRPL_MAINNET_CAIP2 || mods.XRPL_TESTNET !== XRPL_TESTNET_CAIP2) {
-    throw new Error("XRPL CAIP-2 mismatch between repo constants and @x402/xrpl");
+    throw new XrplRailAbsentError("XRPL CAIP-2 mismatch between repo constants and @x402/xrpl");
   }
   if (mods.RLUSD_CURRENCY !== RLUSD_CURRENCY_HEX) {
-    throw new Error("RLUSD currency code mismatch between repo constant and @x402/xrpl");
+    throw new XrplRailAbsentError("RLUSD currency code mismatch between repo constant and @x402/xrpl");
   }
   if (mods.RLUSD_MAINNET_ISSUER !== RLUSD_MAINNET_ISSUER || mods.RLUSD_TESTNET_ISSUER !== RLUSD_TESTNET_ISSUER) {
-    throw new Error("RLUSD issuer mismatch between repo constants and @x402/xrpl");
+    throw new XrplRailAbsentError("RLUSD issuer mismatch between repo constants and @x402/xrpl");
   }
   const keyOf = makeKeyFn(config.network, mods);
   const local =
@@ -712,19 +836,42 @@ async function initRail(config: XrplRailConfig): Promise<Rail> {
 
 function startRailInit(config: XrplRailConfig, key: string): Promise<Rail | null> {
   if (railInit?.key === key) return railInit.promise;
-  const promise: Promise<Rail | null> = withTimeout(initRail(config), config.initTimeoutMs, "XRPL rail init")
+  const prev = railState?.key === key ? railState : null;
+  // Confirmed rail: one bounded refresh in the background. Cold: retried inside this request.
+  const attempt = (ms: number) => withTimeout(initRail(config), ms, "XRPL rail init");
+  const promise: Promise<Rail | null> = (prev ? attempt(config.initTimeoutMs) : coldAttempts(config.initTimeoutMs, attempt))
     .then(
       (rail): Rail | null => {
         railState = { key, rail, builtAt: Date.now() };
         failedKey = null;
+        noteCheckSuccess("rail", failures.rail);
         return rail;
       },
       (err): Rail | null => {
-        warn("rail init failed", err);
-        // Fail closed: a failed refresh retires the old rail.
-        if (railState?.key === key) railState = null;
+        const now = Date.now();
+        const absent = isConfirmedAbsence(err);
+        const cur = railState?.key === key ? railState : null;
+        if (cur && !absent) {
+          // Refresh ERROR (timeout / transport / malformed / SDK init): NOT evidence XRPL is gone.
+          // Keep the confirmed rail, however old; retry after WARM_RETRY_MS.
+          warn("rail refresh failed; keeping last confirmed rail (present)", err, false);
+          cur.retryAt = now + WARM_RETRY_MS;
+          noteCheckFailure("rail", failures.rail, cur.builtAt, "kept");
+          return cur.rail;
+        }
         failedKey = key;
-        failedUntil = Date.now() + RETRY_AFTER_MS;
+        if (absent) {
+          warn(cur ? "facilitator confirmed the XRPL kind is gone; rail retired" : "rail init failed (confirmed absence)", err);
+          if (cur) emitAlert({ kind: "xrpl_entry_dropped", reason: "facilitator_kind_absent" });
+          railState = null;
+          noteCheckSuccess("rail", failures.rail); // a definitive answer, not a failing check
+          failedUntil = now + RETRY_AFTER_MS;
+          return null;
+        }
+        // Cold and still failing after the in-request retry: hidden only for the backoff.
+        warn("rail init failed", err);
+        noteCheckFailure("rail", failures.rail, undefined, "hidden");
+        failedUntil = now + coldBackoffMs(failures.rail.streak);
         return null;
       },
     )
@@ -735,10 +882,17 @@ function startRailInit(config: XrplRailConfig, key: string): Promise<Rail | null
   return promise;
 }
 
+/**
+ * Warm: returns the confirmed rail immediately; after RAIL_TTL_MS a background
+ * refresh re-fetches /supported. A refresh ERROR keeps it (retried every
+ * WARM_RETRY_MS); only a confirmed absence retires it. Cold: one bounded
+ * in-request retry, then hidden for the cold backoff.
+ */
 async function getRail(config: XrplRailConfig): Promise<Rail | null> {
   const key = JSON.stringify(config);
   if (railState?.key === key) {
-    if (Date.now() - railState.builtAt > RAIL_TTL_MS) void startRailInit(config, key);
+    const now = Date.now();
+    if (now - railState.builtAt > RAIL_TTL_MS && now >= (railState.retryAt ?? 0)) void startRailInit(config, key);
     return railState.rail;
   }
   if (failedKey === key && Date.now() < failedUntil) return null;
@@ -749,7 +903,12 @@ async function getRail(config: XrplRailConfig): Promise<Rail | null> {
 // payTo readiness guard (read-only RPC, cached, stale-while-revalidate)
 // ---------------------------------------------------------------------------
 
-type ReadyState = { key: string; ready: boolean; until: number; confirmedAt?: number };
+/**
+ * ready: what this instance shows. confirmedAt: last RPC answer confirming
+ * ready (kept through transient errors, cleared by a definitive not-ready).
+ * definitive: `ready` came from an RPC answer (not a cold failure).
+ */
+type ReadyState = { key: string; ready: boolean; until: number; confirmedAt?: number; definitive: boolean };
 let readyCache: ReadyState | null = null;
 let readyRefresh: Promise<boolean> | null = null;
 
@@ -766,10 +925,10 @@ function asResult(r: unknown, method: string): RpcResult {
  * with limit > 0 that neither side has frozen. actNotFound → not ready.
  * Any other RPC error → throws (caller treats as not ready, retries in 60 s).
  */
-async function checkPayToReady(config: XrplRailConfig): Promise<boolean> {
+async function checkPayToReady(config: XrplRailConfig, timeoutMs: number = config.initTimeoutMs): Promise<boolean> {
   const [infoRaw, linesRaw] = await Promise.all([
-    rpc(config.rpcUrl, "account_info", { account: config.payTo, ledger_index: "validated" }, config.initTimeoutMs),
-    rpc(config.rpcUrl, "account_lines", { account: config.payTo, peer: config.issuer, ledger_index: "validated" }, config.initTimeoutMs),
+    rpc(config.rpcUrl, "account_info", { account: config.payTo, ledger_index: "validated" }, timeoutMs),
+    rpc(config.rpcUrl, "account_lines", { account: config.payTo, peer: config.issuer, ledger_index: "validated" }, timeoutMs),
   ]);
   const info = asResult(infoRaw, "account_info");
   const lines = asResult(linesRaw, "account_lines");
@@ -807,24 +966,36 @@ async function checkPayToReady(config: XrplRailConfig): Promise<boolean> {
 function refreshReady(config: XrplRailConfig, key: string): Promise<boolean> {
   if (readyRefresh) return readyRefresh;
   const p: Promise<boolean> = (async () => {
+    const prev = readyCache && readyCache.key === key ? readyCache : null;
+    const confirmedAt = prev?.ready ? prev.confirmedAt : undefined;
     try {
-      const ready = await checkPayToReady(config);
-      readyCache = { key, ready, until: Date.now() + READY_TTL_MS, ...(ready ? { confirmedAt: Date.now() } : {}) };
+      // Confirmed instance: one bounded check (background). Cold: retried inside this request.
+      const ready = confirmedAt !== undefined ? await checkPayToReady(config) : await coldAttempts(config.initTimeoutMs, (ms) => checkPayToReady(config, ms));
+      const now = Date.now();
+      // A definitive RPC answer either way (ready, or confirmed absence: actNotFound, no/frozen/zero trust line, flags).
+      if (!ready && confirmedAt !== undefined) emitAlert({ kind: "xrpl_entry_dropped", reason: "payto_not_ready" });
+      readyCache = { key, ready, until: now + READY_TTL_MS, definitive: true, ...(ready ? { confirmedAt: now } : {}) };
+      noteCheckSuccess("payto_ready", failures.ready);
       return ready;
     } catch (err) {
-      // Transient RPC failure (timeout, 5xx). A definitive answer (actNotFound,
-      // no trust line, frozen, flags) never lands here. Keep the last CONFIRMED
-      // ready=true for up to READY_STALE_MAX_MS (same pattern as solana-rail),
-      // retrying every READY_ERROR_RETRY_MS; cold or never-confirmed stays hidden.
-      const prev = readyCache && readyCache.key === key ? readyCache : null;
+      // Transient RPC failure (timeout, transport, 5xx, malformed). Never a reason to hide a confirmed entry.
       const now = Date.now();
-      if (prev?.ready && prev.confirmedAt !== undefined && now - prev.confirmedAt < READY_STALE_MAX_MS) {
-        warn("payTo readiness RPC check failed; keeping last confirmed result (present)", err);
-        readyCache = { key, ready: true, until: now + READY_ERROR_RETRY_MS, confirmedAt: prev.confirmedAt };
+      if (confirmedAt !== undefined) {
+        warn("payTo readiness RPC check failed; keeping last confirmed result (present)", err, false);
+        readyCache = { key, ready: true, until: now + WARM_RETRY_MS, confirmedAt, definitive: false };
+        noteCheckFailure("payto_ready", failures.ready, confirmedAt, "kept");
         return true;
       }
-      warn("payTo readiness RPC check failed", err);
-      readyCache = { key, ready: false, until: now + READY_ERROR_RETRY_MS };
+      if (prev?.definitive && !prev.ready) {
+        // Last definitive answer was "not ready": keep it, re-check after WARM_RETRY_MS.
+        warn("payTo readiness RPC check failed; last answer was not ready", err);
+        readyCache = { ...prev, until: now + WARM_RETRY_MS };
+        noteCheckFailure("payto_ready", failures.ready, undefined, "hidden");
+        return false;
+      }
+      warn("payTo readiness RPC check failed (cold)", err);
+      noteCheckFailure("payto_ready", failures.ready, undefined, "hidden");
+      readyCache = { key, ready: false, until: now + coldBackoffMs(failures.ready.streak), definitive: false };
       return false;
     }
   })().finally(() => {
@@ -836,13 +1007,18 @@ function refreshReady(config: XrplRailConfig, key: string): Promise<boolean> {
 
 /**
  * True while payTo is activated with a usable RLUSD trust line. Warm: answers
- * from cache and re-checks in the background after the TTL. Cold: one bounded
- * check. RPC failure → false (hidden), retried after 60 s. Never throws.
+ * from cache and re-checks in the background after the TTL. Cold (never
+ * confirmed, last check failed): the first request after the backoff re-checks
+ * inline (bounded). Transient failures never hide a confirmed entry. Never throws.
  */
 export async function xrplPayToReady(config: XrplRailConfig): Promise<boolean> {
   const key = `${config.network}|${config.rpcUrl}|${config.issuer}|${config.payTo}`;
   if (readyCache && readyCache.key === key) {
-    if (Date.now() >= readyCache.until) void refreshReady(config, key);
+    if (Date.now() >= readyCache.until) {
+      const coldFailed = !readyCache.ready && !readyCache.definitive;
+      if (coldFailed) return refreshReady(config, key);
+      void refreshReady(config, key);
+    }
     return readyCache.ready;
   }
   return refreshReady(config, key);
