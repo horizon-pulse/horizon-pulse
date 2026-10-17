@@ -30,6 +30,7 @@ export function SiteFooter() {
               <a href={GITHUB_REPO} target="_blank" rel="noreferrer">Source on GitHub</a>
               <a href={X_URL} target="_blank" rel="noreferrer">@HorizonPulseAPI on X</a>
               <Link href="/status">Status</Link>
+              <Link href="/privacy">Privacy</Link>
               <Link href="/listing-fix">Bazaar listing fix</Link>
               <Link href="/agent-promotion">Agent promotion</Link>
               <Link href="/blog">Blog</Link>
