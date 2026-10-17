@@ -43,7 +43,8 @@ export function parseBatchBody(body: unknown): BatchParse {
   for (const [i, it] of items.entries()) {
     if (!it || typeof it !== "object" || Array.isArray(it)) return bad(`items[${i}] must be an object.`);
     const route = String((it as { route?: unknown }).route ?? "").replace(/^\/?(api\/)?/, "");
-    const allowed = BATCH_ROUTES[route];
+    // Own keys only: "constructor", "__proto__", "toString" must not resolve via Object.prototype (Odin C2).
+    const allowed = Object.hasOwn(BATCH_ROUTES, route) ? BATCH_ROUTES[route] : undefined;
     if (!allowed) return bad(`items[${i}].route must be one of: ${Object.keys(BATCH_ROUTES).join(", ")}.`, "unsupported_route");
     const raw = (it as { params?: unknown }).params ?? {};
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return bad(`items[${i}].params must be an object.`);

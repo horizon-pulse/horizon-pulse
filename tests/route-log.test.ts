@@ -7,7 +7,9 @@ import {
   evalCommand,
   logRouteRequest,
   resetRouteLogState,
-  ROUTE_LOG_TTL_S,
+  RECORDS_PER_DAY_CAP,
+  ROUTE_LOG_COUNTER_TTL_S,
+  ROUTE_LOG_RECORD_TTL_S,
   sendRouteLog,
   settleFields,
 } from "@/lib/route-log";
@@ -59,7 +61,7 @@ describe("route log: Upstash sink", () => {
   beforeEach(() => resetRouteLogState());
   afterEach(() => vi.restoreAllMocks());
 
-  it("one EVAL (one billed command) with counters, capped daily list and tx->route key, 90-day TTL", async () => {
+  it("one EVAL (one billed command): counters 90 days; daily list (cap 5k) and tx->route key 30 days", async () => {
     const rec = buildRouteLogRecord({ route: "/api/pulse", method: "GET", res: paidRes(), paidHeader: true, amountAtomic: "2000", now: NOW });
     const cmd = evalCommand(rec);
     expect(cmd[0]).toBe("EVAL");
@@ -67,7 +69,16 @@ describe("route log: Upstash sink", () => {
     expect(cmd.slice(3, 6)).toEqual(["hp:rl:d:2026-10-17", "hp:rl:r:2026-10-17", `hp:rl:tx:${TX.toLowerCase()}`]);
     expect(cmd[6]).toBe("/api/pulse|GET|paid_settled");
     expect(JSON.parse(cmd[7])).toEqual(rec);
-    expect(cmd[8]).toBe(String(ROUTE_LOG_TTL_S));
+    expect(cmd[8]).toBe(String(ROUTE_LOG_COUNTER_TTL_S));
+    expect(cmd[9]).toBe(String(RECORDS_PER_DAY_CAP - 1));
+    expect(cmd[10]).toBe(String(ROUTE_LOG_RECORD_TTL_S));
+    expect(ROUTE_LOG_COUNTER_TTL_S).toBe(90 * 86400);
+    expect(ROUTE_LOG_RECORD_TTL_S).toBe(30 * 86400);
+    expect(RECORDS_PER_DAY_CAP).toBe(5000);
+    // Lua: counters expire on ARGV[3]; the record list and tx key on ARGV[5].
+    expect(cmd[1]).toContain("redis.call('EXPIRE', KEYS[1], ARGV[3])");
+    expect(cmd[1]).toContain("redis.call('EXPIRE', KEYS[2], ARGV[5])");
+    expect(cmd[1]).toContain("redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[5])");
     const unpaid = evalCommand(buildRouteLogRecord({ route: "/api/pulse", method: "GET", res: new Response("", { status: 402 }), paidHeader: false, amountAtomic: "2000", now: NOW }));
     expect(unpaid[2]).toBe("2");
     expect(unpaid.some((a) => a.startsWith("hp:rl:tx:"))).toBe(false);

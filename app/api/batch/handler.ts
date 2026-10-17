@@ -39,9 +39,11 @@ export async function batchHandler(req: NextRequest, handlers: Record<string, H>
   if (!parsed.ok) {
     return NextResponse.json({ ok: false, error: parsed.error, code: parsed.code, charged: false }, { status: 400 });
   }
-  const results = await runBatch(parsed.items, (route, query) =>
-    handlers[route](new NextRequest(`${PUBLIC_BASE_URL}/api/${route}?${query.toString()}`, { method: "GET" })),
-  );
+  const results = await runBatch(parsed.items, async (route, query) => {
+    // Own keys only (Odin C2): never call an inherited Object.prototype member.
+    if (!Object.hasOwn(handlers, route)) return NextResponse.json({ error: "unsupported route" }, { status: 400 });
+    return handlers[route](new NextRequest(`${PUBLIC_BASE_URL}/api/${route}?${query.toString()}`, { method: "GET" }));
+  });
   const okCount = results.filter((r) => r.ok).length;
   if (okCount === 0) {
     return NextResponse.json({ ok: false, error: "Every item failed.", code: "all_items_failed", charged: false, results }, { status: 502 });

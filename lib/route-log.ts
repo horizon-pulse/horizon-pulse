@@ -12,9 +12,9 @@
  * store resolves; no new account, no paid plan). ONE billed command per
  * request: a single EVAL whose Lua body does
  *   HINCRBY hp:rl:d:<ET date> "<route>|<method>|<outcome>" 1   (daily counters)
- *   LPUSH/LTRIM hp:rl:r:<ET date> <record>  (capped at RECORDS_PER_DAY_CAP)
- *   SET hp:rl:tx:<tx> <record> EX 90d       (paid_settled only: tx -> route)
- * with a 90-day TTL on the daily keys. Upstash bills EVAL once regardless of
+ *   LPUSH/LTRIM hp:rl:r:<ET date> <record>  (capped at RECORDS_PER_DAY_CAP = 5,000)
+ *   SET hp:rl:tx:<tx> <record> EX 30d       (paid_settled only: tx -> route)
+ * Counters keep a 90-day TTL; raw records and tx keys (which carry payer) 30 days. Upstash bills EVAL once regardless of
  * the redis.call()s inside it (free plan: 500K commands/month).
  *
  * Fire-and-forget: logRouteRequest() never throws, never awaits on the
@@ -44,19 +44,22 @@ export type RouteLogRecord = {
   payer: string | null;
 };
 
-export const ROUTE_LOG_TTL_S = 90 * 24 * 3600;
-export const RECORDS_PER_DAY_CAP = 20_000;
+/** Daily per-route counters (no payer): 90 days. */
+export const ROUTE_LOG_COUNTER_TTL_S = 90 * 24 * 3600;
+/** Raw records and hp:rl:tx keys (carry payer): 30 days (Odin C1, 10/17). */
+export const ROUTE_LOG_RECORD_TTL_S = 30 * 24 * 3600;
+export const RECORDS_PER_DAY_CAP = 5_000;
 export const DEFAULT_DAILY_CAP = 3000;
 export const ROUTE_LOG_TIMEOUT_MS = 1500;
 
-/** Lua: KEYS[1]=counter hash, KEYS[2]=record list, KEYS[3]=tx key (paid_settled only; numkeys 2 otherwise); ARGV[1]=field, ARGV[2]=record, ARGV[3]=ttl, ARGV[4]=list cap-1 */
+/** Lua: KEYS[1]=counter hash, KEYS[2]=record list, KEYS[3]=tx key (paid_settled only; numkeys 2 otherwise); ARGV[1]=field, ARGV[2]=record, ARGV[3]=counter ttl, ARGV[4]=list cap-1, ARGV[5]=record ttl */
 export const ROUTE_LOG_LUA = [
   "redis.call('HINCRBY', KEYS[1], ARGV[1], 1)",
   "redis.call('EXPIRE', KEYS[1], ARGV[3])",
   "redis.call('LPUSH', KEYS[2], ARGV[2])",
   "redis.call('LTRIM', KEYS[2], 0, ARGV[4])",
-  "redis.call('EXPIRE', KEYS[2], ARGV[3])",
-  "if KEYS[3] then redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[3]) end",
+  "redis.call('EXPIRE', KEYS[2], ARGV[5])",
+  "if KEYS[3] then redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[5]) end",
   "return 1",
 ].join("\n");
 
@@ -126,8 +129,9 @@ export function evalCommand(rec: RouteLogRecord): string[] {
     ...keys,
     `${rec.route}|${rec.method}|${rec.outcome}`,
     JSON.stringify(rec),
-    String(ROUTE_LOG_TTL_S),
+    String(ROUTE_LOG_COUNTER_TTL_S),
     String(RECORDS_PER_DAY_CAP - 1),
+    String(ROUTE_LOG_RECORD_TTL_S),
   ];
 }
 

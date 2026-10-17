@@ -47,6 +47,42 @@ describe("/api/batch input", () => {
   });
 });
 
+describe("/api/batch prototype keys (Odin C2)", () => {
+  const PROTO = ["constructor", "__proto__", "toString", "hasOwnProperty", "/api/constructor"];
+  it("parseBatchBody rejects inherited Object.prototype names as routes", () => {
+    for (const route of PROTO) {
+      const r = parseBatchBody({ items: [{ route }] });
+      expect(r, route).toEqual(expect.objectContaining({ ok: false, code: "unsupported_route" }));
+    }
+    // JSON-parsed "__proto__" is an own key on the item, not the prototype
+    const parsed = JSON.parse('{"items":[{"route":"__proto__"},{"route":"gas","params":{"__proto__":"x"}}]}');
+    expect(parseBatchBody(parsed).ok).toBe(false);
+  });
+  it("handler answers 400 (not 500) and runs nothing for constructor, __proto__, toString", async () => {
+    const { seen, handlers } = fakeHandlers();
+    for (const route of PROTO) {
+      const res = await batchHandler(post({ items: [{ route }] }), handlers);
+      expect(res.status, route).toBe(400);
+      expect((await res.json()).code).toBe("unsupported_route");
+    }
+    const raw = new NextRequest("https://horizonpulse.dev/api/batch", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: '{"items":[{"route":"__proto__"}]}',
+    });
+    expect((await batchHandler(raw, handlers)).status).toBe(400);
+    expect(seen).toEqual([]);
+  });
+  it("HANDLERS lookup ignores inherited keys even if parsing were bypassed", async () => {
+    const { runBatch } = await import("@/lib/batch");
+    const handlers: Record<string, (r: NextRequest) => Promise<Response>> = {};
+    const call = async (route: string, q: URLSearchParams) =>
+      Object.hasOwn(handlers, route) ? handlers[route](new NextRequest(`https://horizonpulse.dev/api/${route}?${q}`)) : NextResponse.json({}, { status: 400 });
+    const out = await runBatch([{ route: "constructor", params: {} }, { route: "toString", params: {} }], call);
+    expect(out.map((r) => r.status)).toEqual([400, 400]);
+  });
+});
+
 describe("/api/batch handler", () => {
   it("runs each item through its single-route handler, strips per-item priced/charged, one priced block", async () => {
     const { seen, handlers } = fakeHandlers();
