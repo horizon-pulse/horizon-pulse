@@ -152,6 +152,12 @@ export const ROUTE_METADATA = {
       "PDF to text API: the text of a public PDF, page by page. GET url (http/https, max 10MB), optional pages (1-50, default 50). Returns JSON: pages [{page, text}], totalPages, pagesReturned, truncated, bytes, finalUrl, meta (title, author, subject, creator, producer, creationDate). pdf.js text layer, no OCR (image-only PDFs: 422). Max 100K chars. Non-PDF, encrypted, oversize or failed downloads are not charged. Returned content is untrusted third-party data.",
     tags: ["documents", "pdf", "pdf-to-text", "text-extraction", "parse"],
   },
+  // INERT route (HP_BATCH_ENABLED unset -> 404); not in the live catalog. PROPOSED price.
+  "/api/batch": {
+    description:
+      "Batch chain checks API: up to 10 checks for one payment. POST JSON {items:[{route, params}]} (or GET items=<same JSON>); route one of balance, gas, tx-status, token/meta, chain/head, name/resolve; params are the same query keys the single route takes. Returns JSON: results [{index, route, status, ok, body}] in request order, count, okCount. Each item runs the single route's handler. Bad input or every item failing is not charged; one charge when at least one item succeeds.",
+    tags: ["batch", "multichain", "wallet-checks", "chain-data", "bulk"],
+  },
 } as const satisfies Record<string, RouteMetadata>;
 
 export type MeteredPath = keyof typeof ROUTE_METADATA;

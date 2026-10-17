@@ -200,6 +200,18 @@ export const TOKEN_META_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 export const NAME_RESOLVE_PRICE_USD = "$0.002" as const;
 export const NAME_RESOLVE_PRICE_ATOMIC = "2000" as const; // USDC 6 decimals
 
+/**
+ * /api/batch (repeat-caller plan, 10/17): up to BATCH_MAX_ITEMS $0.002-tier
+ * checks (balance, gas, tx-status, token/meta, chain/head, name/resolve) for
+ * ONE payment. PROPOSED price, NOT approved: needs Michael's own yes in chat
+ * and Odin Class A PASS. The route is inert (404) unless HP_BATCH_ENABLED=true.
+ * $0.01 / 10 items = $0.001 per item: below the $0.002 single-call floor,
+ * which the floor rule allows only for batched items.
+ */
+export const BATCH_PRICE_USD = "$0.01" as const;
+export const BATCH_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
+export const BATCH_MAX_ITEMS = 10 as const;
+
 /** Public contact (shown on landing page + OpenAPI info.contact). */
 export const CONTACT_EMAIL = "horizonpulse.co@proton.me" as const;
 

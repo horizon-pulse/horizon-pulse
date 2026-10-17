@@ -156,8 +156,11 @@ describe("all 27 paid handlers build `priced` with the rail-aware helper", () =>
           : readdirSync(path.join(api, d.name), { withFileTypes: true }).filter((c) => c.isDirectory()).map((c) => `${d.name}/${c.name}`),
       )
       .sort();
-    expect(dirs).toEqual([...PAID_ROUTES].sort());
-    expect(dirs).toHaveLength(27);
+    // repeat-caller pack 10/17: app/api/batch is INERT (404 unless HP_BATCH_ENABLED=true) and
+    // not in the live catalog / golden PAID_ROUTES, but its handler is held to the same priced rule.
+    const INERT_ROUTES = ["batch"];
+    expect(dirs).toEqual([...PAID_ROUTES, ...INERT_ROUTES].sort());
+    expect(dirs).toHaveLength(27 + INERT_ROUTES.length);
     for (const d of dirs) {
       const src = readFileSync(path.join(ROOT, "app", "api", d, "handler.ts"), "utf8");
       expect(src.match(/priced: pricedBlock\(\w+_PRICE_USD, \w+_PRICE_ATOMIC\)/g), d).toHaveLength(1);

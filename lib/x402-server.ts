@@ -1,4 +1,6 @@
 import { withPaidCallMeta } from "./paid-call-meta";
+import { logRouteRequest } from "./route-log";
+import { withRelatedRoutes } from "./route-hints";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import {
   FacilitatorTimeoutError,
@@ -41,6 +43,8 @@ import {
   CHAIN_HEAD_PRICE_USD,
   TOKEN_META_PRICE_USD,
   NAME_RESOLVE_PRICE_USD,
+  BATCH_PRICE_USD,
+  BATCH_MAX_ITEMS,
   SEARCH_PRICE_USD,
   PDF_PRICE_USD,
   HTTP_PRICE_USD,
@@ -1347,7 +1351,16 @@ export function createX402GetHandler(
       return paymentOpts.resource;
     }
   })();
-  return async (incoming: NextRequest) => withPaidCallMeta(routePath, incoming.method, await serve(incoming));
+  // After serve(): cadence header (paid-call-meta), one fire-and-forget route-log
+  // record (lib/route-log.ts; never awaited, never throws), then the free
+  // relatedRoutes hint on settled 2xx JSON bodies (lib/route-hints.ts). None of
+  // these runs before or inside verify/settle, and the unpaid 402 is untouched.
+  return async (incoming: NextRequest) => {
+    const paidHeader = hasPaymentHeader(incoming);
+    const res = withPaidCallMeta(routePath, incoming.method, await serve(incoming));
+    logRouteRequest({ route: routePath, method: incoming.method, res, paidHeader, amountAtomic: paymentOpts.maxAmountRequired });
+    return (await withRelatedRoutes(routePath, incoming.method, res)) as NextResponse;
+  };
 
   async function serve(incoming: NextRequest): Promise<NextResponse> {
     // Paid HEAD (F2): a HEAD response has no body, so a paid HEAD would settle
@@ -1739,4 +1752,82 @@ export function nameResolveRouteConfig(): RoutesConfig {
       },
     },
   };
+}
+
+/**
+ * /api/batch (INERT unless HP_BATCH_ENABLED=true; PROPOSED price, needs
+ * Michael's yes). POST only: the bare-path key keeps every other verb paid
+ * with the same declaration, so no verb runs the handler unpaid. Example is
+ * illustrative (no recording exists while the route is off).
+ */
+export const BATCH_OUTPUT_EXAMPLE = {
+  illustrative: true,
+  source: "batch",
+  count: 2,
+  okCount: 2,
+  results: [
+    { index: 0, route: "chain/head", status: 200, ok: true, body: { source: "chain-head", networks: [{ network: "base", height: 0 }] } },
+    { index: 1, route: "gas", status: 200, ok: true, body: { ok: true, source: "rpc", networks: [{ network: "base", baseFeeGwei: 0 }] } },
+  ],
+} as const;
+
+const BATCH_ITEMS_SCHEMA = {
+  type: "array",
+  minItems: 1,
+  maxItems: BATCH_MAX_ITEMS,
+  items: {
+    type: "object",
+    properties: {
+      route: { type: "string", enum: ["balance", "gas", "tx-status", "token/meta", "chain/head", "name/resolve"] },
+      params: { type: "object", description: "The query keys the single route takes, string values." },
+    },
+    required: ["route"],
+  },
+  description: `1-${BATCH_MAX_ITEMS} checks. One price per call.`,
+} as const;
+
+const BATCH_EXAMPLE_ITEMS = [{ route: "chain/head", params: { network: "base" } }, { route: "gas", params: {} }];
+
+export function batchRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  const output = {
+    example: BATCH_OUTPUT_EXAMPLE,
+    schema: {
+      type: "object",
+      description:
+        "Horizon Pulse batch: results[] in request order (index, route, status, ok, body = the single route's JSON without priced/charged), count, okCount. The example is an illustrative format sample (illustrative: true), not a recorded real response.",
+    },
+  };
+  return methodSplitRoutes(
+    "/api/batch",
+    {
+      accepts: [{ scheme: "exact", price: BATCH_PRICE_USD, network, payTo }],
+      description: routeDescription("/api/batch"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/batch"),
+    },
+    {
+      ...declareChargedDiscovery({
+        method: "GET",
+        input: { items: JSON.stringify(BATCH_EXAMPLE_ITEMS) },
+        inputSchema: {
+          properties: {
+            items: { type: "string", description: `JSON array of 1-${BATCH_MAX_ITEMS} {route, params} objects (same shape as the POST body's items).` },
+          },
+          required: ["items"],
+        },
+        output,
+      } as DiscoveryDecl),
+    },
+    {
+      ...declareChargedDiscovery({
+        method: "POST",
+        bodyType: "json",
+        input: { items: BATCH_EXAMPLE_ITEMS },
+        inputSchema: { properties: { items: BATCH_ITEMS_SCHEMA }, required: ["items"] },
+        output,
+      } as DiscoveryDecl),
+    },
+  );
 }
