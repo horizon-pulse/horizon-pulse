@@ -250,3 +250,26 @@ Still applies:
   `node scripts/smoke-solana-rail.mjs <base> <out.json>` and
   `SMOKE_FLAG_ON_JSON=<out.json> npx vitest run -c vitest.smoke.config.mts`
   (read-only PayAI `/supported` + mainnet RPC reads).
+
+## Shared claim store (Odin 12:51 PM ET 10/18, item (d); branch feat/solana-shared-claim, first commit)
+
+Modeled on the XRPL replay store (`lib/xrpl-replay-store.ts`, same `UpstashReplayStore` class and credentials:
+`UPSTASH_REDIS_REST_*`, or `KV_REST_API_URL`/`KV_REST_API_TOKEN`; the read-only KV token is never read).
+- **Keys:** `hp:solana:replay:<sha256 of the tx message>`. Values use the XRPL encoding: `in_flight@<firstSeenMs>`,
+  `settled` (= DELIVERED), `settle_failed`, `settle_unconfirmed@<firstSeenMs>` (= charged-or-unknown, NOT delivered).
+  TTL REPLAY_TTL_MS (25 h).
+- **Claim:** atomic `SET NX PX` BEFORE verify, after the local map check. A slot held by any request or instance
+  → 409 `duplicate_payment` (no PayAI call). A store error → fail closed (Base-only 402, nothing charged).
+- **Tracking:** every local state write is mirrored to the shared store, and every release (nothing charged) does a
+  `DEL`. Writes are awaited before the answer. A failed write is logged and the slot keeps its previous value (at
+  worst `in_flight`, which blocks a second delivery; it never allows one).
+- **Probe:** `EVAL "return 1"` plus the self-test on a random `hp:solana:selftest:replay-eval:<id>` key (60 s TTL),
+  bounded at 3 s, in parallel with the token-account check and rail init, cached (ok 10 min / fail 60 s). A failure
+  means fail closed: Solana is not advertised on the 402, paid Solana gets the Base-only 402, and one HIGH ALERT
+  `solana_replay_eval_unavailable {reason}` fires per episode.
+- **No shared store configured:** the per-instance map only, which is unchanged behaviour.
+- **Not yet:** redeem on retry. A `settle_unconfirmed` slot currently answers 409. The redeem (CAS lease → on-chain
+  lookup of OUR message at slot > the stored start slot → deliver once → `settled`) reuses `findPaymentOnChain`
+  from the v2 ambiguous-settle branch and lands after it merges.
+- **Ops:** a restricted Upstash token must cover `hp:solana:*`. Otherwise the probe fails and Solana goes dark
+  (fail closed, HIGH alert).
