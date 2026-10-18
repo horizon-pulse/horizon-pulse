@@ -33,11 +33,12 @@ import {
   type XrplAlert,
 } from "@/lib/xrpl-rail";
 import { resetSolanaRailForTests } from "@/lib/solana-rail";
-import { CAS_ANY_SCRIPT, EVAL_PROBE_SCRIPT, MemoryReplayStore, UpstashReplayStore, encodeReplayValue, parseReplayValue } from "@/lib/xrpl-replay-store";
+import { Wallet, decode as decodeBlob, encode as encodeBlob } from "xrpl";
+import { CAS_ANY_SCRIPT, CAS_DELETE_SCRIPT, EVAL_PROBE_SCRIPT, MemoryReplayStore, UpstashReplayStore, encodeReplayValue, parseReplayValue } from "@/lib/xrpl-replay-store";
 import { RLUSD_CURRENCY_HEX, RLUSD_MAINNET_ISSUER, XRPL_PAYTO, XRPL_SELF_FACILITATOR } from "@/lib/xrpl-config";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
-import { installXrplFacilitators, installXrplRpc, makeXrplRpc, XRPL_PAYER, XRPL_TX_HASH, xrplPayload } from "./helpers/xrpl-env";
+import { installXrplFacilitators, installXrplRpc, makeXrplRpc, specTx, XRPL_PAYER, XRPL_TX_HASH, xrplPayload } from "./helpers/xrpl-env";
 
 const MAIN_ENV = {
   HP_XRPL_ENABLED: "true",
@@ -50,10 +51,11 @@ const MAIN_ENV = {
 };
 const rippleNow = (offsetS = 0) => Math.floor((Date.now() - 946_684_800_000) / 1000) + offsetS;
 
-type SchemeSettle = () => Promise<unknown>;
+type SchemeSettle = (p?: PaymentPayload) => Promise<unknown>;
 let settleImpl: SchemeSettle;
 let settleCalls = 0;
-const okSettle: SchemeSettle = async () => ({ success: true, transaction: XRPL_TX_HASH, network: "xrpl:0", payer: XRPL_PAYER });
+// Odin 12:07 F2: an honest facilitator reports the hash of the blob it submitted (ours).
+const okSettle: SchemeSettle = async (p) => ({ success: true, transaction: p ? hashOf(p) : XRPL_TX_HASH, network: "xrpl:0", payer: XRPL_PAYER });
 
 let store: MemoryReplayStore;
 function freshInstance() {
@@ -68,6 +70,7 @@ function freshInstance() {
     get: (k) => store.get(k),
     cas: (k, e, n, t) => store.cas(k, e, n, t),
     casAny: (k, e, n, t) => store.casAny(k, e, n, t),
+    casDelete: (k, e) => store.casDelete(k, e),
   });
 }
 
@@ -94,12 +97,12 @@ async function xrplAccept(): Promise<PaymentRequirements> {
 }
 
 /** A validated `tx` answer for the settled hash. */
-const ledgerTx = (accept: PaymentRequirements, over: { result?: string; value?: string; date?: number; meta?: boolean } = {}) => ({
+const ledgerTx = (accept: PaymentRequirements, over: { result?: string; value?: string; date?: number; meta?: boolean; account?: string } = {}) => ({
   validated: true,
   status: "success",
   hash: XRPL_TX_HASH,
   date: over.date ?? rippleNow(),
-  tx_json: { TransactionType: "Payment", Account: XRPL_PAYER, Destination: XRPL_PAYTO },
+  tx_json: { TransactionType: "Payment", Account: over.account ?? XRPL_PAYER, Destination: XRPL_PAYTO },
   ...(over.meta === false
     ? {}
     : { meta: { TransactionResult: over.result ?? "tesSUCCESS", delivered_amount: { currency: RLUSD_CURRENCY_HEX, issuer: RLUSD_MAINNET_ISSUER, value: over.value ?? accept.amount } } }),
@@ -124,7 +127,7 @@ beforeEach(() => {
   __setXrplFacilitatorSchemeLoaderForTests(async () => ({
     getExtra: () => ({ areFeesSponsored: false }),
     verify: async () => ({ isValid: true, payer: XRPL_PAYER }),
-    settle: () => (settleCalls++, settleImpl()),
+    settle: (p: PaymentPayload) => (settleCalls++, settleImpl(p)),
   }) as never);
   __setXrplTxLookupDelaysForTests([0, 1, 1, 1]);
   alerts = [];
@@ -147,7 +150,7 @@ async function expectDelivered(res: Response) {
   expect(await res.json()).toMatchObject({ ok: true, paid: "body" });
   const prh = res.headers.get("payment-response");
   expect(prh).toBeTruthy();
-  expect(JSON.parse(Buffer.from(prh!, "base64").toString())).toMatchObject({ success: true, transaction: XRPL_TX_HASH, network: "xrpl:0" });
+  expect(JSON.parse(Buffer.from(prh!, "base64").toString())).toMatchObject({ success: true, transaction: expect.stringMatching(/^[0-9A-F]{64}$/), network: "xrpl:0" });
   expect(res.headers.get("cache-control") ?? "").toContain("private");
 }
 
@@ -185,7 +188,7 @@ describe("settle reported validated tesSUCCESS (funds moved): the ledger re-read
       expect(alerts).toContainEqual({ kind: "xrpl_settled_unverified", severity: "high", field, reason });
       const rec = reconcile();
       expect(rec).toHaveLength(1);
-      expect(rec[0]).toMatchObject({ tag: "XRPL_RECONCILE", status: 200, reason, network: "xrpl:0", route: "/api/pulse", payer: XRPL_PAYER, txHash: XRPL_TX_HASH });
+      expect(rec[0]).toMatchObject({ tag: "XRPL_RECONCILE", status: 200, reason, network: "xrpl:0", route: "/api/pulse", payer: XRPL_PAYER, txHash: hashOf(p) });
       // The slot is consumed: the same payment again is a duplicate, never a second delivery or a 402.
       const again = await handler()(paid(p));
       expect(again.status).toBe(409);
@@ -210,7 +213,7 @@ describe("settle reported validated tesSUCCESS (funds moved): the ledger re-read
       expect(await res.json()).toEqual(SETTLEMENT_UNCONFIRMED_BODY);
       expect(res.headers.get("payment-response")).toBeNull();
       expect(alerts).toContainEqual({ kind: "xrpl_settled_unverified", severity: "high", field, reason });
-      expect(reconcile()).toEqual([expect.objectContaining({ status: 502, reason, txHash: XRPL_TX_HASH })]);
+      expect(reconcile()).toEqual([expect.objectContaining({ status: 502, reason, txHash: hashOf(p) })]);
       expect(slotStates()[0]).toMatch(/^settle_unconfirmed@\d+#[0-9A-F]{64}:\d+$/);
       const again = await handler()(paid(p));
       expect(again.status).toBe(502);
@@ -500,7 +503,7 @@ describe("(d) LastLedgerSequence: past it and not found ⇒ provably never lande
     };
   });
 
-  it("ambiguous settle, validated ledger past LLS, tx search over [LLS-999, LLS] says txnNotFound searched_all → 402, slot settle_failed, retries 402", async () => {
+  it("ambiguous settle, validated ledger past LLS, tx search over [LLS-999, LLS] says txnNotFound searched_all → 402, slot DELETED (N6); a re-signed payment with the same Sequence then pays and delivers", async () => {
     const accept = await xrplAccept();
     const calls = llsRpc();
     const p = xrplPayload(accept);
@@ -516,10 +519,16 @@ describe("(d) LastLedgerSequence: past it and not found ⇒ provably never lande
     expect(calls.map((c) => c.method)).toEqual(["ledger", "tx_range"]);
     expect(calls[0].params).toEqual({ ledger_index: "validated" });
     expect(calls[1].params).toMatchObject({ min_ledger: LLS - 999, max_ledger: LLS, binary: false });
-    expect(slotStates()).toEqual(["settle_failed"]);
+    expect(slotStates()).toEqual([]); // N6: deleted, not settle_failed
     expect(reconcile()).toEqual([expect.objectContaining({ status: 402, reason: "never_landed_past_last_ledger" })]);
-    expect((await handler()(paid(p))).status).toBe(402);
-    expect(settleCalls).toBe(1);
+    // N6: the same Sequence, re-signed (new LLS), is a fresh payment: claim → verify → settle → delivered.
+    settleImpl = okSettle;
+    const seq = (decodeTx(p) as { Sequence: number }).Sequence;
+    const p2 = xrplPayload(accept, { Sequence: seq, LastLedgerSequence: LLS + 50 });
+    llsRpc({ lookup: () => ledgerTx(accept) });
+    await expectDelivered(await handler()(paid(p2)));
+    expect(settleCalls).toBe(2);
+    expect((await handler()(paid(p2))).status).toBe(409);
   });
 
   it("validated index as a string (rippled ledger.ledger_index) is parsed → 402", async () => {
@@ -550,7 +559,7 @@ describe("(d) LastLedgerSequence: past it and not found ⇒ provably never lande
     });
   }
 
-  it("redeem path: first 504 (ledger not past LLS); later retry once past LLS and still not found → 402, slot settle_failed, never delivered", async () => {
+  it("redeem path: first 504 (ledger not past LLS); later retry once past LLS and still not found → 402, slot DELETED (N6), never delivered; then a re-signed same-Sequence payment pays", async () => {
     const accept = await xrplAccept();
     const p = xrplPayload(accept);
     llsRpc({ validated: LLS - 3 });
@@ -560,11 +569,16 @@ describe("(d) LastLedgerSequence: past it and not found ⇒ provably never lande
     expect(r2.status).toBe(402);
     expect(r2.headers.get("payment-response")).toBeNull();
     expect(decodePaymentRequiredHeader(r2.headers.get("payment-required")!).error).toBe("transaction_failed");
-    expect(slotStates()).toEqual(["settle_failed"]);
+    expect(slotStates()).toEqual([]); // N6
     expect(reconcile().map((r) => r.reason)).toContain("redeem_never_landed_past_last_ledger");
-    expect((await handler()(paid(p))).status).toBe(402);
     expect(ran).toBe(1);
     expect(settleCalls).toBe(1);
+    settleImpl = okSettle;
+    const seq = (decodeTx(p) as { Sequence: number }).Sequence;
+    const p2 = xrplPayload(accept, { Sequence: seq, LastLedgerSequence: LLS + 50 });
+    llsRpc({ lookup: () => ledgerTx(accept) });
+    await expectDelivered(await handler()(paid(p2)));
+    expect(settleCalls).toBe(2);
   });
 
   it("the ledger shows the payment → it is delivered, the never-landed check is not consulted", async () => {
@@ -601,6 +615,7 @@ describe("(e) BLOCKER: replay-store EVAL probe, fail closed", () => {
       get: (k) => store.get(k),
       cas: (k, e, n, t) => store.cas(k, e, n, t),
       casAny: (k, e, n, t) => store.casAny(k, e, n, t),
+      casDelete: (k, e) => store.casDelete(k, e),
       probeEval: () => (probes++, probeImpl()),
     });
   }
@@ -729,15 +744,38 @@ describe("(e) BLOCKER: replay-store EVAL probe, fail closed", () => {
 // ---------------------------------------------------------------------------
 
 const hashOf = (p: PaymentPayload) => xrplSignedTxHash(String((p.payload as { signedTxBlob: string }).signedTxBlob))!;
+const decodeTx = (p: PaymentPayload) => decodeBlob(String((p.payload as { signedTxBlob: string }).signedTxBlob)) as Record<string, unknown>;
+/** Odin 12:07 F1: REAL signatures (offline, xrpl Wallet). Nothing is submitted anywhere. */
+const walletA = Wallet.generate();
+const walletB = Wallet.generate();
+type SigMode = "master" | "regular_key" | "multisig" | "unsigned" | "bad_signature";
+function signedPayload(accept: PaymentRequirements, over: Record<string, unknown>, mode: SigMode = "master"): PaymentPayload {
+  const tx = specTx(accept, { Account: walletA.classicAddress, ...over });
+  delete tx.SigningPubKey;
+  let blob: string;
+  if (mode === "unsigned") blob = encodeBlob({ ...tx, SigningPubKey: "" } as never);
+  else if (mode === "regular_key") blob = walletB.sign(tx as never).tx_blob; // Account = A, key = B
+  else if (mode === "multisig") blob = walletB.sign(tx as never, true).tx_blob; // Signers array
+  else {
+    blob = walletA.sign(tx as never).tx_blob;
+    if (mode === "bad_signature") {
+      const d = decodeBlob(blob) as Record<string, unknown>;
+      const sig = String(d.TxnSignature);
+      d.TxnSignature = sig.slice(0, 10) + (sig[10] === "0" ? "1" : "0") + sig.slice(11);
+      blob = encodeBlob(d as never);
+    }
+  }
+  return xrplPayload(accept, {}, {}, blob);
+}
 const slotRaw = () => [...((store as unknown as { m: Map<string, { state: string }> }).m.values())].map((e) => e.state)[0];
 
 /** Ledger keyed by hash: `landed` = the hashes validated on-ledger; `validated` = validated ledger index. */
-function slotRpc(accept: PaymentRequirements, st: { landed: Set<string>; validated: number }) {
+function slotRpc(accept: PaymentRequirements, st: { landed: Set<string>; validated: number; account?: string }) {
   const lookups: string[] = [];
   const ranges: Record<string, unknown>[] = [];
   const base = makeXrplRpc("ready", (h) => {
     lookups.push(h);
-    return st.landed.has(h) ? { ...ledgerTx(accept), hash: h } : { status: "error", error: "txnNotFound" };
+    return st.landed.has(h) ? { ...ledgerTx(accept, { account: st.account }), hash: h } : { status: "error", error: "txnNotFound" };
   });
   __setXrplRpcForTests(async (url, method, params, t) => {
     if (method === "ledger") return { status: "success", validated: true, ledger_index: st.validated };
@@ -784,7 +822,7 @@ describe("H1 (BLOCKER): the retry blob only LOCATES the slot; lookups and the ne
     expect((await handler()(paid(b1))).status).toBe(409);
   });
 
-  it("forged blob AFTER the real tx landed: never a 402, the slot is never failed (redemption is by the stored hash; same exposure as the accepted public-blob race, N2)", async () => {
+  it("forged unsigned blob AFTER the real tx landed: F1 → 502, slot untouched, nothing looked up; the real buyer's retry then delivers", async () => {
     const accept = await xrplAccept();
     const S = 77_002;
     const b1 = xrplPayload(accept, { Sequence: S });
@@ -795,25 +833,27 @@ describe("H1 (BLOCKER): the retry blob only LOCATES the slot; lookups and the ne
     st.landed.add(h1);
     st.validated = 1_000_001; // past BOTH LLS values
     const forged = xrplPayload(accept, { Sequence: S, LastLedgerSequence: 900_000 });
+    const before = slotRaw();
+    rpc.lookups.length = 0;
     const r = await handler()(paid(forged));
-    expect(r.status).not.toBe(402);
-    expect(r.status).toBe(200);
-    expect(rpc.lookups).not.toContain(hashOf(forged));
+    expect(r.status).toBe(502);
+    expect(slotRaw()).toBe(before);
+    expect(rpc.lookups).toEqual([]);
     expect(rpc.ranges).toEqual([]);
-    expect(slotRaw()).toMatch(/^settled@/);
+    expect((await handler()(paid(b1))).status).toBe(200);
     expect((await handler()(paid(b1))).status).toBe(409);
   });
 
-  it("honest client RE-SIGNS (same Sequence, new LLS/Fee) after the original landed → the retry delivers the ORIGINAL (stored) tx once", async () => {
+  it("F1: honest MASTER-KEY re-signer (real signature, same Sequence, new LLS/Fee) after the original landed → gets the ORIGINAL's delivery once", async () => {
     const accept = await xrplAccept();
     const S = 77_003;
-    const b1 = xrplPayload(accept, { Sequence: S });
+    const b1 = signedPayload(accept, { Sequence: S });
     const h1 = hashOf(b1);
-    const st = { landed: new Set<string>(), validated: 999_000 };
+    const st = { landed: new Set<string>(), validated: 999_000, account: walletA.classicAddress };
     const rpc = slotRpc(accept, st);
     expect((await handler()(paid(b1))).status).toBe(504);
     st.landed.add(h1);
-    const b2 = xrplPayload(accept, { Sequence: S, LastLedgerSequence: 1_000_050, Fee: "15" });
+    const b2 = signedPayload(accept, { Sequence: S, LastLedgerSequence: 1_000_050, Fee: "15" });
     expect(hashOf(b2)).not.toBe(h1);
     const r = await handler()(paid(b2));
     expect(r.status).toBe(200);
@@ -827,12 +867,12 @@ describe("H1 (BLOCKER): the retry blob only LOCATES the slot; lookups and the ne
   it("honest client RE-SIGNS and the original NEVER landed → the never-landed proof runs on the ORIGINAL hash + LLS: 402 once past the ORIGINAL's LLS (even though the re-signed LLS is later)", async () => {
     const accept = await xrplAccept();
     const S = 77_004;
-    const b1 = xrplPayload(accept, { Sequence: S });
+    const b1 = signedPayload(accept, { Sequence: S });
     const h1 = hashOf(b1);
-    const st = { landed: new Set<string>(), validated: 999_000 };
+    const st = { landed: new Set<string>(), validated: 999_000, account: walletA.classicAddress };
     const rpc = slotRpc(accept, st);
     expect((await handler()(paid(b1))).status).toBe(504);
-    const b2 = xrplPayload(accept, { Sequence: S, LastLedgerSequence: 1_000_050, Fee: "15" });
+    const b2 = signedPayload(accept, { Sequence: S, LastLedgerSequence: 1_000_050, Fee: "15" });
     expect((await handler()(paid(b2))).status).toBe(502); // original's LLS not passed yet
     st.validated = 1_000_001; // past B1's LLS (1_000_000), NOT past B2's (1_000_050)
     const r = await handler()(paid(b2));
@@ -840,7 +880,16 @@ describe("H1 (BLOCKER): the retry blob only LOCATES the slot; lookups and the ne
     expect(decodePaymentRequiredHeader(r.headers.get("payment-required")!).error).toBe("transaction_failed");
     expect(rpc.ranges.at(-1)).toMatchObject({ transaction: h1, min_ledger: 1_000_000 - 999, max_ledger: 1_000_000 });
     expect(rpc.lookups).not.toContain(hashOf(b2));
-    expect(slotRaw()).toMatch(/^settle_failed/);
+    expect(slotRaw()).toBeUndefined(); // N6: deleted, not settle_failed
+    // N6: a re-signed payment with the SAME Sequence then pays and delivers (fresh claim → settle).
+    settleImpl = okSettle;
+    const b3 = signedPayload(accept, { Sequence: S, LastLedgerSequence: 1_000_100 });
+    st.landed.add(hashOf(b3));
+    const r3 = await handler()(paid(b3));
+    expect(r3.status).toBe(200);
+    expect(JSON.parse(Buffer.from(r3.headers.get("payment-response")!, "base64").toString())).toMatchObject({ success: true, transaction: hashOf(b3) });
+    expect(settleCalls).toBe(2);
+    expect((await handler()(paid(b3))).status).toBe(409);
   });
 
   it("legacy undelivered value without a stored tx → 502 bare body, slot unchanged, nothing looked up (never the retry blob)", async () => {
@@ -928,12 +977,12 @@ describe("M1: a stale in_flight (owner died after submit) is redeemable; a live 
     expect(codes.filter((c) => c !== 200).every((c) => c === 503 || c === 409)).toBe(true);
   });
 
-  it("stale in_flight, stored tx never landed and the ledger is past its LLS → Base-only 402, slot settle_failed", async () => {
+  it("stale in_flight, stored tx never landed and the ledger is past its LLS → Base-only 402, slot DELETED (N6)", async () => {
     const { b1, st } = await deadOwner(XRPL_IN_FLIGHT_STALE_MS + 1_000);
     st.validated = 1_000_001;
     const r = await handler()(paid(b1));
     expect(r.status).toBe(402);
-    expect(slotRaw()).toMatch(/^settle_failed/);
+    expect(slotRaw()).toBeUndefined();
   });
 
   it("stale in_flight, not visible yet → 502 (redeemable body), slot becomes undelivered with the stored tx", async () => {
@@ -1066,4 +1115,152 @@ describe("N3: the redeem failure reset is ONE atomic compare-and-set against exa
 
 it("L3: the redeemable 502/504 body says to retry within 24 hours", () => {
   expect(SETTLEMENT_UNCONFIRMED_BODY.message).toContain("retry within 24 hours");
+});
+
+// ---------------------------------------------------------------------------
+// Delta 4: Odin 12:07 PM ET (F1 retry binding, F2 settle-hash mismatch, N6 delete on never-landed)
+// ---------------------------------------------------------------------------
+
+describe("F1: a retry with another hash may redeem ONLY when it is master-key signed by the same Account (verified)", () => {
+  beforeEach(() => {
+    settleImpl = async () => {
+      throw new Error("ws closed");
+    };
+  });
+  async function stuck(S: number) {
+    const accept = await xrplAccept();
+    const b1 = signedPayload(accept, { Sequence: S });
+    const st = { landed: new Set<string>(), validated: 999_000, account: walletA.classicAddress };
+    const rpc = slotRpc(accept, st);
+    expect((await handler()(paid(b1))).status).toBe(504);
+    st.landed.add(hashOf(b1)); // even with the original ON the ledger, an unbound retry gets nothing
+    st.validated = 1_000_001; // and past LLS (a never-landed proof would be reachable)
+    return { accept, b1, st, rpc };
+  }
+
+  it("(a) exact blob (hash == stored hash) → redeems: 200 with the original", async () => {
+    const { b1 } = await stuck(78_001);
+    const r = await handler()(paid(b1));
+    expect(r.status).toBe(200);
+    expect(JSON.parse(Buffer.from(r.headers.get("payment-response")!, "base64").toString())).toMatchObject({ transaction: hashOf(b1) });
+  });
+
+  for (const [mode, label] of [
+    ["unsigned", "unsigned (empty SigningPubKey / no TxnSignature)"],
+    ["regular_key", "regular-key signed (key does NOT derive to Account)"],
+    ["multisig", "multisig (Signers)"],
+    ["bad_signature", "master key but the signature does NOT verify (tampered)"],
+  ] as const) {
+    it(`${label} → 502 bare, slot UNTOUCHED, nothing looked up, no delivery; the genuine blob still redeems`, async () => {
+      const S = 78_100 + mode.length;
+      const { accept, b1, rpc } = await stuck(S);
+      const before = slotRaw();
+      rpc.lookups.length = 0;
+      rpc.ranges.length = 0;
+      const ranBefore = ran;
+      const bad = signedPayload(accept, { Sequence: S, LastLedgerSequence: 1_000_050, Fee: "15" }, mode);
+      expect(hashOf(bad)).not.toBe(hashOf(b1));
+      const r = await handler()(paid(bad));
+      expect(r.status).toBe(502);
+      expect(r.headers.get("payment-response")).toBeNull();
+      expect(r.headers.get("payment-required")).toBeNull();
+      expect(slotRaw()).toBe(before);
+      expect(rpc.lookups).toEqual([]);
+      expect(rpc.ranges).toEqual([]);
+      expect(ran).toBe(ranBefore); // the handler is not even run for an unbound retry
+      expect(settleCalls).toBe(1);
+      expect((await handler()(paid(b1))).status).toBe(200);
+    });
+  }
+
+  it("unit: xrplMasterKeySigned classifies each class", async () => {
+    const { xrplMasterKeySigned } = await import("@/lib/xrpl-rail");
+    const accept = await xrplAccept();
+    const blob = (m: SigMode) => String((signedPayload(accept, { Sequence: 78_200 }, m).payload as { signedTxBlob: string }).signedTxBlob);
+    expect(await xrplMasterKeySigned(blob("master"))).toMatchObject({ ok: true });
+    expect(await xrplMasterKeySigned(blob("unsigned"))).toMatchObject({ ok: false, reason: "unsigned" });
+    expect(await xrplMasterKeySigned(blob("regular_key"))).toMatchObject({ ok: false, reason: "not_master_key" });
+    expect(await xrplMasterKeySigned(blob("multisig"))).toMatchObject({ ok: false, reason: "multisig" });
+    expect(await xrplMasterKeySigned(blob("bad_signature"))).toMatchObject({ ok: false, reason: "bad_signature" });
+    expect(await xrplMasterKeySigned("zz")).toMatchObject({ ok: false });
+  });
+});
+
+describe("F2: settle success whose facilitator hash differs from our blob hash → 502 + HIGH alert + manual reconcile (never 402/settle_failed)", () => {
+  it("success with another hash → bare 502, xrpl_settle_hash_mismatch HIGH, reconcile, only OUR hash ever looked up, slot undelivered (no stored tx)", async () => {
+    const accept = await xrplAccept();
+    const other = "CD".repeat(32);
+    const lookups: string[] = [];
+    // If anything looked up the facilitator hash it would read as a validated FAILURE (tec) — must never become a 402.
+    installXrplRpc("ready", (h: string) => (lookups.push(h), h === other ? { ...ledgerTx(accept, { result: "tecPATH_PARTIAL" }), hash: other } : { status: "error", error: "txnNotFound" }));
+    settleImpl = async () => ({ success: true, transaction: other, network: "xrpl:0", payer: XRPL_PAYER });
+    const p = xrplPayload(accept);
+    const r = await handler()(paid(p));
+    expect(r.status).toBe(502);
+    expect(await r.json()).toEqual({ error: "settlement_unconfirmed" });
+    expect(r.headers.get("payment-required")).toBeNull();
+    expect(r.headers.get("payment-response")).toBeNull();
+    expect(lookups).not.toContain(other);
+    expect(alerts.filter((a) => a.kind === "xrpl_settle_hash_mismatch")).toEqual([expect.objectContaining({ severity: "high" })]);
+    expect(reconcile()).toEqual([expect.objectContaining({ status: 502, reason: "settle_hash_mismatch", txHash: other })]);
+    expect(slotStates()).toHaveLength(1);
+    expect(slotStates()[0]).toMatch(/^settle_unconfirmed@\d+$/);
+    expect(slotStates()[0]).not.toMatch(/settle_failed/);
+    // A retry finds no stored tx → bare 502 (manual reconcile), never a 402.
+    const r2 = await handler()(paid(p));
+    expect(r2.status).toBe(502);
+    expect(settleCalls).toBe(1);
+  });
+
+  it("control: success with OUR hash (any case) → normal delivery, no mismatch alert", async () => {
+    const accept = await xrplAccept();
+    installXrplRpc("ready", () => ledgerTx(accept));
+    settleImpl = async (p) => ({ success: true, transaction: hashOf(p!).toLowerCase(), network: "xrpl:0", payer: XRPL_PAYER });
+    const p = xrplPayload(accept);
+    const r = await handler()(paid(p));
+    expect(r.status).toBe(200);
+    const pr = JSON.parse(Buffer.from(r.headers.get("payment-response")!, "base64").toString());
+    expect(String(pr.transaction).toUpperCase()).toBe(hashOf(p));
+    expect(alerts.some((a) => a.kind === "xrpl_settle_hash_mismatch")).toBe(false);
+  });
+});
+
+describe("N6: proven never-landed ⇒ atomic owner/value-checked DELETE (never settle_failed)", () => {
+  it("store: casDelete (memory) deletes only on an exact match; Upstash sends ONE EVAL with CAS_DELETE_SCRIPT", async () => {
+    const mem = new MemoryReplayStore();
+    await mem.set("k", "a", 1000);
+    expect(await mem.casDelete("k", "x")).toBe(false);
+    expect(await mem.get("k")).toBe("a");
+    expect(await mem.casDelete("k", "a")).toBe(true);
+    expect(await mem.get("k")).toBeNull();
+    expect(await mem.casDelete("missing", "a")).toBe(false);
+    const sent: unknown[] = [];
+    const fetchFn = (async (_u: string, init: RequestInit) => {
+      sent.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ result: 1 }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const up = new UpstashReplayStore("https://x.upstash.io", "t", fetchFn);
+    expect(await up.casDelete("k", "v1")).toBe(true);
+    expect(sent).toEqual([["EVAL", CAS_DELETE_SCRIPT, "1", "hp:xrpl:replay:k", "v1"]]);
+    expect(CAS_DELETE_SCRIPT).toContain("redis.call('GET', KEYS[1]) == ARGV[1]");
+    expect(CAS_DELETE_SCRIPT).toContain("redis.call('DEL', KEYS[1])");
+  });
+
+  it("the delete loses when the slot changed underneath (value-checked): the newer value survives, still a 402 for this request", async () => {
+    settleImpl = async () => {
+      throw new Error("ws closed");
+    };
+    const accept = await xrplAccept();
+    llsRpc();
+    const orig = store.casDelete.bind(store);
+    let swapped = "";
+    store.casDelete = async (k: string, e: string) => {
+      swapped = `settled@${Date.now()}`;
+      (store as unknown as { m: Map<string, { state: string; until: number }> }).m.set(k, { state: swapped, until: Date.now() + 60_000 });
+      return orig(k, e);
+    };
+    const r = await handler()(paid(xrplPayload(accept)));
+    expect(r.status).toBe(402);
+    expect(slotRaw()).toBe(swapped);
+  });
 });

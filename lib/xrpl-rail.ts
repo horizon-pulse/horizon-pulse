@@ -478,6 +478,8 @@ type Attempt = {
   paidRes?: Response;
   /** The SUBMITTED tx (hash computed from the blob we verified + submitted, its LastLedgerSequence), stored in the slot. */
   sub?: SubmittedTx;
+  /** The exact value our claim wrote (N6 compare-and-delete). */
+  claimValue?: string;
 };
 /** Stored in the replay slot from claim time on (Odin 11:56 H1): later lookups / never-landed proofs use ONLY this. */
 type SubmittedTx = { hash: string; lls: number };
@@ -608,6 +610,33 @@ export function xrplSignedTxHash(blobHex: string): string | null {
     .digest("hex")
     .slice(0, 64)
     .toUpperCase();
+}
+
+/**
+ * Odin 12:07 F1: is `blobHex` a validly signed tx whose SigningPubKey derives to its own Account (master key), with
+ * the signature cryptographically verified? Single-signed only: multisig (Signers), regular-key (SigningPubKey of
+ * another account) and unsigned blobs are rejected. Never throws (any error → not ok).
+ */
+export type XrplMasterSigResult = { ok: true } | { ok: false; reason: "unsigned" | "multisig" | "not_master_key" | "bad_signature" | "undecodable" };
+async function defaultMasterSigCheck(blobHex: string): Promise<XrplMasterSigResult> {
+  try {
+    const x = await import("xrpl");
+    const tx = x.decode(blobHex) as Record<string, unknown>;
+    if (tx.Signers !== undefined) return { ok: false, reason: "multisig" };
+    const pub = tx.SigningPubKey;
+    const sig = tx.TxnSignature;
+    if (typeof pub !== "string" || !/^[0-9A-Fa-f]{66}$/.test(pub) || typeof sig !== "string" || sig.length === 0) return { ok: false, reason: "unsigned" };
+    if (typeof tx.Account !== "string" || x.deriveAddress(pub) !== tx.Account) return { ok: false, reason: "not_master_key" };
+    return x.verifySignature(blobHex) ? { ok: true } : { ok: false, reason: "bad_signature" };
+  } catch {
+    return { ok: false, reason: "undecodable" };
+  }
+}
+let masterSigCheck: (blobHex: string) => Promise<XrplMasterSigResult> = defaultMasterSigCheck;
+export const xrplMasterKeySigned = (blobHex: string): Promise<XrplMasterSigResult> => masterSigCheck(blobHex);
+/** Tests only: replace the signature check (null = the real xrpl.js check). */
+export function __setXrplMasterSigCheckForTests(fn: ((blobHex: string) => Promise<XrplMasterSigResult>) | null): void {
+  masterSigCheck = fn ?? defaultMasterSigCheck;
 }
 
 /** Everything a human needs to reconcile one ambiguous XRPL settlement. */
@@ -1542,6 +1571,22 @@ async function markDelivered(key: string): Promise<void> {
   await replaySet(key, "settled");
   afterDeliveryMarkHook?.();
 }
+/**
+ * N6: a proven never-landed submitted tx frees the slot. Atomic compare-and-delete against exactly the value this
+ * request owns (its claim value, or its redemption lease). Lost the race (value changed) → leave it alone. A store
+ * without casDelete (custom/test stores) → leave the slot (its TTL expires); never settle_failed.
+ */
+async function neverLandedDelete(key: string, owned: string): Promise<void> {
+  if (!replay.casDelete) {
+    warn(`replay store has no compare-and-delete fp=${fp(key)}; never-landed slot left to expire`, undefined, false);
+    return;
+  }
+  try {
+    if (!(await replay.casDelete(key, owned))) warn(`never-landed delete lost (slot changed) fp=${fp(key)}; left as is`, undefined, false);
+  } catch (err) {
+    warn(`replay store compare-and-delete failed fp=${fp(key)}`, err, false);
+  }
+}
 async function replayRelease(key: string): Promise<void> {
   try {
     await replay.release(key);
@@ -1796,18 +1841,22 @@ type RedeemCtx = {
   requirement: PaymentRequirements;
   compare: (a: string, b: string) => number;
   payer: string;
+  /** The retry's signed blob (hex). F1: used ONLY to check it is bound to the stored tx; never looked up or stored. */
+  retryBlob: string | null;
   route: string;
   reject: (reason: string) => null;
 };
 
 /**
  * A retry of a payment we settled ambiguously (or that failed after settle) and NEVER delivered. Ledger-only:
- * nothing is verified or submitted again. Exactly one request wins the undelivered → redeeming CAS; it reads
- * the validated ledger for THIS request's blob hash and:
+ * nothing is verified or submitted again. Delta 4 F1: a retry whose blob hash differs from the STORED hash must be
+ * master-key signed by the same Account (signature verified) or it gets 502 with the slot untouched. Exactly one
+ * request wins the undelivered → redeeming CAS; it reads the validated ledger for the STORED submitted hash and:
  *   - exact payment to payTo, closed at/after firstSeen (−skew) → run the route, mark delivered (CAS), deliver;
  *   - exact payment but closed BEFORE we first saw it → not paid through our flow (a replay of a consumed blob):
  *     terminal, 409, never delivered;
  *   - validated, not tesSUCCESS → nothing moved: settle_failed, Base-only 402;
+ *   - not visible and provably never landed (past the stored LLS) → N6: slot atomically deleted, Base-only 402;
  *   - not visible / not checkable / mismatch → back to undelivered, 502 settlement_unconfirmed (retry later).
  * Losers of the CAS (or a live lease) get 503 payment_in_progress. If the route errors, the slot goes back to
  * undelivered and the client gets the route's own error (status ≥ 400) or 502 (route threw).
@@ -1843,6 +1892,18 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
     // is NEVER used for a lookup or a never-landed proof → manual reconcile, slot unchanged.
     warn(`undelivered XRPL payment fp=${fp(k)} has no stored submitted tx; not auto-redeemable, client gets 502`, undefined, false);
     return jsonError(502, "settlement_unconfirmed");
+  }
+  // F1 (Odin 12:07): a retry may redeem ONLY if (a) its blob hashes to the stored submitted hash, or (b) it is a
+  // validly signed tx whose SigningPubKey derives to the slot's Account (master key), signature verified (the
+  // payer re-signed the same Sequence). Anything else (unsigned, regular-key, multisig, bad signature) → 502 with
+  // the slot untouched: no lease, no takeover, no transition, no lookup.
+  const retryHash = ctx.retryBlob ? xrplSignedTxHash(ctx.retryBlob) : null;
+  if (retryHash !== rec.hash) {
+    const sig = ctx.retryBlob ? await xrplMasterKeySigned(ctx.retryBlob) : ({ ok: false, reason: "undecodable" } as const);
+    if (!sig.ok) {
+      warn(`XRPL retry not bound to the stored tx fp=${fp(k)} (${sig.reason}); slot untouched, client gets 502`, undefined, false);
+      return unconfirmed(502);
+    }
   }
   if (rec.state === "redeeming" && rec.lease !== undefined && now - rec.lease < XRPL_REDEEM_LEASE_MS) return inProgress(k);
   const firstSeen = rec.firstSeen;
@@ -1918,8 +1979,9 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
     }
     if (!looked && (await provablyNeverLanded(config, sub.hash, sub.lls))) {
       // The SUBMITTED tx: validated ledger past its LastLedgerSequence and not in any ledger up to it → it can never
-      // land. Nothing moved → Base-only 402.
-      await cas("settle_failed");
+      // land. Nothing moved → Base-only 402. N6 (Odin 12:07): DELETE the slot (atomic compare-and-delete against our
+      // own lease value) so the same Sequence can be re-signed and paid; never settle_failed (the sequence is unused).
+      await neverLandedDelete(k, mine);
       logXrplReconcile(rc, 402, "redeem_never_landed_past_last_ledger");
       warn(`redeem: validated ledger is past the submitted tx's LastLedgerSequence and the tx is not in it fp=${fp(k)}; never charged, Base-only 402`, undefined, false);
       return ctx.reject(settleFailReason("transaction_failed"));
@@ -2021,8 +2083,9 @@ export async function handleXrplPayment(
     const llsHere = check.tx.LastLedgerSequence;
     const subHere: SubmittedTx | undefined =
       blobHashHere && typeof llsHere === "number" && Number.isSafeInteger(llsHere) && llsHere > 0 ? { hash: blobHashHere, lls: llsHere } : undefined;
+    const claimValue = encodeReplayValue({ state: "in_flight", firstSeen, ...(subHere ?? {}) });
     try {
-      seen = await replay.claim(k, REPLAY_TTL_MS, encodeReplayValue({ state: "in_flight", firstSeen, ...(subHere ?? {}) }));
+      seen = await replay.claim(k, REPLAY_TTL_MS, claimValue);
     } catch (err) {
       // Fail closed: nothing verified or charged; caller serves the Base-only 402.
       // Reason code (Odin F4): our replay store is down, not the buyer's fault →
@@ -2049,6 +2112,7 @@ export async function handleXrplPayment(
         requirement,
         compare: rail.mods.compareDecimalStrings,
         payer: String(check.tx.Account),
+        retryBlob: blobOf(payload),
         route: (() => {
           try {
             return new URL(req.url).pathname;
@@ -2076,7 +2140,7 @@ export async function handleXrplPayment(
       blobHash: blobHashHere,
     };
     rcOuter = rc;
-    const att: Attempt = { handlerRan: false, handlerThrew: false, sub: subHere };
+    const att: Attempt = { handlerRan: false, handlerThrew: false, sub: subHere, claimValue };
     attempts.set(key, att);
 
     let entry = paidHandlers.get(routes as object);
@@ -2127,7 +2191,19 @@ export async function handleXrplPayment(
       // lag or fail (txnNotFound / validated:false / timeout). Rule (as Base/Solana): after funds moved, the
       // buyer gets the response, never a 5xx. Only a validated ledger answer proving the tx FAILED (nothing
       // moved) withholds it.
-      const looked = await lookupValidatedTx(config, att.settle.transaction);
+      // F2 (Odin 12:07): the facilitator's hash must equal OUR blob hash; we only ever look up ours. A different
+      // hash → 502 + HIGH ALERT + manual reconcile: nothing (no 402, no settle_failed, no delivery) is derived from
+      // a tx we did not submit. Slot undelivered WITHOUT a stored tx (not auto-redeemable).
+      const oursS = rc.blobHash ?? undefined;
+      const facS = wellFormedHash(att.settle.transaction)?.toUpperCase();
+      if (!oursS || (facS !== undefined && facS !== oursS.toUpperCase())) {
+        await replayMarkUndelivered(key, firstSeen, undefined);
+        logXrplReconcile(rc, 502, "settle_hash_mismatch", facS);
+        emitAlert({ kind: "xrpl_settle_hash_mismatch", severity: "high" });
+        warn(`settle success named a tx other than the one we submitted fp=${fp(key)}; not delivered, client gets 502 (manual reconcile)`, undefined, false);
+        return jsonError(502, "settlement_unconfirmed");
+      }
+      const looked = await lookupValidatedTx(config, oursS);
       const when = await settledBeforeRequest(looked, startedAt);
       // Self-verification against the validated ledger. Mainnet: must be
       // checkable AND ok to be clean. Testnet: checked when the result carries meta.
@@ -2220,8 +2296,9 @@ export async function handleXrplPayment(
         }
       } else if (await provablyNeverLanded(config, att.sub?.hash, att.sub?.lls)) {
         // Odin 11:44 (d): the validated ledger is past this tx's LastLedgerSequence and the tx is not in any ledger
-        // up to it → it can never land, nothing moved. Definitive: slot settle_failed, Base-only 402.
-        await replaySet(key, "settle_failed");
+        // up to it → it can never land, nothing moved: Base-only 402. N6 (Odin 12:07): the slot is DELETED (atomic
+        // compare-and-delete against exactly our claim value), so the same Sequence can be re-signed and paid.
+        if (att.claimValue) await neverLandedDelete(key, att.claimValue);
         logXrplReconcile(rc, 402, "never_landed_past_last_ledger", att.settle.transaction);
         warn(`ambiguous settle: validated ledger is past LastLedgerSequence and the tx is not in it fp=${fp(key)}; never charged, client gets the Base-only 402`, undefined, false);
         return reject(settleFailReason("transaction_failed"));

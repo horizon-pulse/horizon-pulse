@@ -35,6 +35,10 @@
  * owner nonce (`!<hex>`) so the failure reset can be an atomic compare-and-set against exactly our own values
  * (casAny, one Lua script).
  *
+ * Delta 4 (Odin 12:07 N6): a PROVEN never-landed submitted tx deletes the slot with an atomic compare-and-delete
+ * (casDelete, one Lua script, against exactly the value the deleter owns), so the same Account+Sequence can be
+ * re-signed and paid; settle_failed now only means "failed on the validated ledger" (sequence consumed).
+ *
  * Store errors fail CLOSED on claim (the XRPL payment is not accepted; the
  * caller serves the Base-only 402, nothing is charged) and are logged on
  * set/release.
@@ -98,6 +102,8 @@ export interface ReplayStore {
   cas?(key: string, expected: string, next: string, ttlMs: number): Promise<boolean>;
   /** Atomic compare-and-set against several exact values (one Lua script on Upstash). */
   casAny?(key: string, expected: readonly string[], next: string, ttlMs: number): Promise<boolean>;
+  /** Atomic compare-and-DELETE: remove the key only if its value is exactly `expected` (one Lua script on Upstash). */
+  casDelete?(key: string, expected: string): Promise<boolean>;
   /**
    * Shared stores only: run a trivial server-side script (`EVAL "return 1" 0`) and throw unless it answers 1.
    * cas depends on EVAL; the rail treats a failing probe as the XRPL rail confirmed absent (Odin 11:44 (e)).
@@ -156,6 +162,11 @@ export class MemoryReplayStore implements ReplayStore {
     this.put(key, next, ttlMs);
     return true;
   }
+  async casDelete(key: string, expected: string): Promise<boolean> {
+    if (this.read(key) !== expected) return false;
+    this.m.delete(key);
+    return true;
+  }
   async release(key: string): Promise<void> {
     this.m.delete(key);
   }
@@ -176,6 +187,9 @@ export const CAS_SCRIPT =
 /** KEYS[1]; ARGV = next, ttlMs, expected1, expected2, ... Swaps (returns 1) only if the current value equals one of them. */
 export const CAS_ANY_SCRIPT =
   "local cur = redis.call('GET', KEYS[1]) if not cur then return 0 end for i = 3, #ARGV do if cur == ARGV[i] then redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2]) return 1 end end return 0";
+
+/** KEYS[1]; ARGV[1] = expected. Deletes (returns 1) only if the current value equals it exactly. */
+export const CAS_DELETE_SCRIPT = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) return 1 else return 0 end";
 
 /** The trivial script probeEval runs: no keys, no data, answers 1. */
 export const EVAL_PROBE_SCRIPT = "return 1";
@@ -235,6 +249,11 @@ export class UpstashReplayStore implements ReplayStore {
   async casAny(key: string, expected: readonly string[], next: string, ttlMs: number): Promise<boolean> {
     if (expected.length === 0) return false;
     const r = await this.cmd(["EVAL", CAS_ANY_SCRIPT, 1, this.prefix + key, next, Math.max(1, Math.floor(ttlMs)), ...expected]);
+    return r === 1 || r === "1";
+  }
+  /** Atomic on the server: one Lua script (GET == expected → DEL). */
+  async casDelete(key: string, expected: string): Promise<boolean> {
+    const r = await this.cmd(["EVAL", CAS_DELETE_SCRIPT, 1, this.prefix + key, expected]);
     return r === 1 || r === "1";
   }
   async probeEval(): Promise<void> {
