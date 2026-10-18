@@ -1,20 +1,19 @@
 import type { NextConfig } from "next";
-import { darkRewrites } from "./lib/dark-paths";
+import { darkPageExtensions } from "./lib/dark-paths";
 import { API_SECURITY_HEADERS, API_SOURCE, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS, WELL_KNOWN_SECURITY_HEADERS, WELL_KNOWN_SOURCE } from "./lib/security-headers";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Dark routes (lib/dark-paths.ts): their route/page files carry a flag extension (route.pkg.ts ...)
+  // that is a page extension only when the flag is exactly "true" at build time. Flag off -> the file
+  // is not a route, the URL is a plain unknown path (every method, header, case and encoding).
+  pageExtensions: darkPageExtensions(),
   async headers() {
     return [
       { source: SITE_PAGES_SOURCE, headers: SITE_SECURITY_HEADERS.map((h) => ({ ...h })) },
       { source: API_SOURCE, headers: API_SECURITY_HEADERS.map((h) => ({ ...h })) },
       { source: WELL_KNOWN_SOURCE, headers: WELL_KNOWN_SECURITY_HEADERS.map((h) => ({ ...h })) },
     ];
-  },
-  // Dark routes (lib/dark-paths.ts): while a flag is off, its URLs are rewritten to a path that does
-  // not exist, so every method gets the platform's unknown-path 404 (no Allow, no route name).
-  async rewrites() {
-    return { beforeFiles: darkRewrites(), afterFiles: [], fallback: [] };
   },
   // Headless Chromium for /api/screenshot: keep out of the bundle, ship the
   // brotli'd binary with every function that can invoke the handler.

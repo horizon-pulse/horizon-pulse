@@ -6,8 +6,8 @@ import { optOutHandler } from "./handler";
  * GET /web-checks/opt-out?domain= : exact-domain yes/no, rate limited (see handler.ts).
  * Every other method is exported too and answers a bare 404, dark or live, so Next never
  * answers one itself with 405 or an auto-OPTIONS 204 carrying "Allow: GET, HEAD, OPTIONS"
- * (the 10:26 AM ET 10/18 smoke failure). While dark, prod never reaches this file at all:
- * next.config.ts rewrites the path to an unknown one (lib/dark-paths.ts).
+ * (the 10:26 AM ET 10/18 smoke failure). While dark this file is not a route at all: the .audit.ts
+ * extension is a page extension only when HP_AUDIT_SECURITY_ENABLED is "true" at build (lib/dark-paths.ts).
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

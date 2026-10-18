@@ -10,12 +10,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
-import { DARK_404_DESTINATION, DARK_METHODS, DARK_PATHS, darkRewrites } from "@/lib/dark-paths";
+import { BASE_PAGE_EXTENSIONS, DARK_METHODS, DARK_PATHS, darkPageExtensions } from "@/lib/dark-paths";
 import { DARK_FLAGS } from "@/lib/dark-routes";
-import * as pkgRoute from "@/app/api/package/check/route";
-import * as auditRoute from "@/app/api/audit/security/route";
-import * as injRoute from "@/app/api/injection/scan/route";
-import * as optOutRoute from "@/app/web-checks/opt-out/route";
+import * as pkgRoute from "@/app/api/package/check/route.pkg";
+import * as auditRoute from "@/app/api/audit/security/route.audit";
+import * as injRoute from "@/app/api/injection/scan/route.inj";
+import * as optOutRoute from "@/app/web-checks/opt-out/route.audit";
 
 const ROOT = path.resolve(__dirname, "..");
 const ROUTES = [
@@ -33,41 +33,52 @@ const shape = async (r: Response) => ({ status: r.status, headers: [...r.headers
 
 afterEach(() => vi.unstubAllEnvs());
 
-describe("line 1: next.config.ts rewrites every dark path to an unknown path while its flag is off", () => {
-  it("flags unset: all five dark paths rewritten, any method/query (path-only source), to a path that does not exist", () => {
-    expect(darkRewrites({})).toEqual(DARK_PATHS.map((d) => ({ source: d.path, destination: DARK_404_DESTINATION })));
+describe("line 1: dark route files are not routes at all unless their flag is 'true' at build (pageExtensions)", () => {
+  it("flags unset: pageExtensions are exactly Next's defaults, so no dark file is a route", () => {
+    expect(darkPageExtensions({})).toEqual([...BASE_PAGE_EXTENSIONS]);
     expect(DARK_PATHS.map((d) => d.path).sort()).toEqual(["/api/audit/security", "/api/injection/scan", "/api/package/check", "/web-checks", "/web-checks/opt-out"]);
-    expect(existsSync(path.join(ROOT, "app", DARK_404_DESTINATION.slice(1)))).toBe(false);
-    expect(existsSync(path.join(ROOT, "public", DARK_404_DESTINATION.slice(1)))).toBe(false);
   });
-  it("every dark route directory in app/ is covered, and the flags match DARK_FLAGS", () => {
-    for (const p of ["api/audit/security", "api/package/check", "api/injection/scan", "web-checks", "web-checks/opt-out"]) {
-      expect(existsSync(path.join(ROOT, "app", p))).toBe(true);
-      expect(DARK_PATHS.some((d) => d.path === `/${p}`)).toBe(true);
+  it("every dark file exists with its flag extension, and no plain route.ts / page.tsx is left beside it", () => {
+    for (const d of DARK_PATHS) {
+      expect(existsSync(path.join(ROOT, d.file)), d.file).toBe(true);
+      expect(path.basename(d.file)).toMatch(new RegExp(`^(route|page)\\.${d.ext}\\.tsx?$`));
+      const dir = path.dirname(path.join(ROOT, d.file));
+      for (const plain of ["route.ts", "route.tsx", "route.js", "page.tsx", "page.ts", "page.js"]) expect(existsSync(path.join(dir, plain)), `${dir}/${plain}`).toBe(false);
     }
+  });
+  it("the flags match DARK_FLAGS; extensions never collide with the defaults", () => {
     const flags = new Set(Object.values(DARK_FLAGS));
-    for (const d of DARK_PATHS) expect(flags.has(d.flag)).toBe(true);
+    for (const d of DARK_PATHS) {
+      expect(flags.has(d.flag)).toBe(true);
+      expect(BASE_PAGE_EXTENSIONS as readonly string[]).not.toContain(d.ext);
+    }
     expect(DARK_PATHS.filter((d) => d.path.startsWith("/web-checks")).every((d) => d.flag === DARK_FLAGS.audit)).toBe(true);
   });
-  it("a flag exactly 'true' removes only its own paths; anything else keeps them dark", () => {
-    expect(darkRewrites({ HP_PACKAGE_CHECK_ENABLED: "true" }).map((r) => r.source)).not.toContain("/api/package/check");
-    expect(darkRewrites({ HP_PACKAGE_CHECK_ENABLED: "true" })).toHaveLength(4);
-    expect(darkRewrites({ HP_AUDIT_SECURITY_ENABLED: "true" }).map((r) => r.source).sort()).toEqual(["/api/injection/scan", "/api/package/check"]);
-    for (const v of ["1", "TRUE", "yes", " true", ""]) expect(darkRewrites({ HP_PACKAGE_CHECK_ENABLED: v, HP_AUDIT_SECURITY_ENABLED: v, HP_INJECTION_SCAN_ENABLED: v })).toHaveLength(5);
-    expect(darkRewrites({ HP_PACKAGE_CHECK_ENABLED: "true", HP_AUDIT_SECURITY_ENABLED: "true", HP_INJECTION_SCAN_ENABLED: "true" })).toEqual([]);
+  it("a flag exactly 'true' adds only its own extensions; anything else keeps them dark", () => {
+    expect(darkPageExtensions({ HP_PACKAGE_CHECK_ENABLED: "true" })).toEqual([...BASE_PAGE_EXTENSIONS, "pkg.tsx", "pkg.ts"]);
+    expect(darkPageExtensions({ HP_AUDIT_SECURITY_ENABLED: "true" })).toEqual([...BASE_PAGE_EXTENSIONS, "audit.tsx", "audit.ts"]);
+    for (const v of ["1", "TRUE", "yes", " true", ""]) expect(darkPageExtensions({ HP_PACKAGE_CHECK_ENABLED: v, HP_AUDIT_SECURITY_ENABLED: v, HP_INJECTION_SCAN_ENABLED: v })).toEqual([...BASE_PAGE_EXTENSIONS]);
+    expect(darkPageExtensions({ HP_PACKAGE_CHECK_ENABLED: "true", HP_AUDIT_SECURITY_ENABLED: "true", HP_INJECTION_SCAN_ENABLED: "true" })).toHaveLength(10);
   });
-  it("next.config.ts serves them as beforeFiles rewrites (ahead of the route files)", async () => {
+  it("no other file in app/ uses a dark extension (so nothing else turns on with a flag)", () => {
+    const { execSync } = require("node:child_process") as typeof import("node:child_process");
+    const files = execSync("git ls-files app", { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
+    const dark = files.filter((f) => /\.(audit|pkg|inj)\.tsx?$/.test(f)).sort();
+    expect(dark).toEqual(DARK_PATHS.map((d) => d.file).sort());
+  });
+  it("next.config.ts uses darkPageExtensions() and has no dark rewrite (no x-nextjs-rewritten-path under RSC)", async () => {
     for (const f of Object.values(DARK_FLAGS)) vi.stubEnv(f, "");
-    const cfg = (await import("../next.config")).default;
-    const r = (await cfg.rewrites!()) as { beforeFiles: unknown[] };
-    expect(r.beforeFiles).toEqual(darkRewrites({}));
-    expect(readFileSync(path.join(ROOT, "next.config.ts"), "utf8")).toMatch(/beforeFiles: darkRewrites\(\)/);
+    const src = readFileSync(path.join(ROOT, "next.config.ts"), "utf8");
+    expect(src).toMatch(/pageExtensions: darkPageExtensions\(\)/);
+    expect(src).not.toMatch(/darkRewrites|_hp-dark-404/);
   });
-  it("the smoke script compares every dark URL x every method with a random unknown path", () => {
+  it("the smoke script compares every dark URL x every method x variants with an unknown path", () => {
     const s = readFileSync(path.join(ROOT, "scripts/smoke-dark-404.mjs"), "utf8");
     for (const m of DARK_METHODS) expect(s).toContain(`"${m}"`);
     for (const d of DARK_PATHS) expect(s).toContain(`"${d.path}`);
-    expect(s).toMatch(/zz-unknown-/);
+    for (const v of ["rsc", "next-router-state-tree", "next-router-prefetch", "x-payment", "payment-signature", "pct:", "pct2f:", "case:", "upper:", "%2F", "/API/PACKAGE/CHECK", "/api/%70ackage/check"]) expect(s.toLowerCase()).toContain(v.toLowerCase());
+    expect(s).toMatch(/function unknownTwin\(/);
+    expect(s).toMatch(/withVariant\(unknownTwin\(u\), v\)/);
   });
 });
 

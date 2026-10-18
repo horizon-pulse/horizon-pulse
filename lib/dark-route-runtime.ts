@@ -1,8 +1,8 @@
 /**
  * Route runtime shared by the three dark routes.
  *   flag unset            -> 404 on every verb (no 402, no discovery, no Allow). In prod the
- *                            request never reaches here: next.config.ts rewrites dark paths to
- *                            an unknown path (lib/dark-paths.ts). This is the second line.
+ *                            route file is not even built (route.<ext>.ts is a page extension
+ *                            only when the flag is on at build; lib/dark-paths.ts). Second line.
  *   PUT/PATCH/DELETE      -> 404 always (never 405, never an Allow header)
  *   unknown tier          -> 400 before any payment (not charged)
  *   disabled tier         -> 404 before any payment (opts.tierEnabled; audit

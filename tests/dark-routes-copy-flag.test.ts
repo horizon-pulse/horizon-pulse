@@ -11,7 +11,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { decodePaymentRequiredHeader } from "@x402/core/http";
-import * as auditRoute from "@/app/api/audit/security/route";
+import * as auditRoute from "@/app/api/audit/security/route.audit";
 import { auditHandler } from "@/app/api/audit/security/handler";
 import { AUDIT_DESCRIPTION_BASE, AUDIT_DESCRIPTION_HIGH_TIERS, AUDIT_HIGH_TIERS_FLAG, AUDIT_TIERS, DARK_DESCRIPTIONS, darkDescription, darkPaymentOpts, darkRouteConfig, resetRateLimitsForTests } from "@/lib/dark-routes";
 import { routeMetadata } from "@/lib/route-metadata";
@@ -149,7 +149,7 @@ describe("paid response method text and disclaimer", () => {
 
 describe("/web-checks page follows the flag", () => {
   async function render() {
-    const page = (await import("@/app/web-checks/page")).default;
+    const page = (await import("@/app/web-checks/page.audit")).default;
     const { renderToStaticMarkup } = await import("react-dom/server");
     return renderToStaticMarkup(page());
   }
@@ -170,7 +170,7 @@ describe("/web-checks page follows the flag", () => {
     }
   });
   it("still 404 while the audit route itself is dark, in both flag states", async () => {
-    const page = (await import("@/app/web-checks/page")).default;
+    const page = (await import("@/app/web-checks/page.audit")).default;
     for (const on of [false, true]) {
       flag(on);
       expect(() => page()).toThrow();
