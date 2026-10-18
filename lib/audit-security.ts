@@ -323,7 +323,7 @@ const DISCLAIMER_MD = "Automated, point-in-time web readiness checks; informatio
 
 export type AuditResult = { ok: true; report: Record<string, unknown> } | { ok: false; status: number; code: string; error: string };
 
-export async function runAudit(host: string, tier: AuditTier, deps: AuditDeps = defaultAuditDeps()): Promise<AuditResult> {
+export async function runAudit(host: string, tier: AuditTier, deps: AuditDeps = defaultAuditDeps(), optedOut: (host: string) => boolean = (h) => isOptedOut(h)): Promise<AuditResult> {
   const started = deps.now();
   const deadline = started + AUDIT_BUDGET_MS;
   const L = level(tier);
@@ -333,15 +333,18 @@ export async function runAudit(host: string, tier: AuditTier, deps: AuditDeps = 
   const w = <T,>(p: Promise<T>) => within(p, deadline, deps.now);
 
   // Every independent stage starts at once (Odin C2); each also keeps its own request timeout.
-  const homeP = w(deps.get(`https://${host}/`, { maxBytes: L >= 4 ? 300_000 : 64_000, timeoutMs: 8_000, maxRedirects: 5 }));
-  const plainP = w(deps.get(`http://${host}/`, { followRedirects: false, maxBytes: 1024, timeoutMs: 6_000 }));
+  const homeP = w(deps.get(`https://${host}/`, { maxBytes: L >= 4 ? 300_000 : 64_000, timeoutMs: 8_000, maxRedirects: 5, optedOut }));
+  const plainP = w(deps.get(`http://${host}/`, { followRedirects: false, maxBytes: 1024, timeoutMs: 6_000, optedOut }));
   const tlsP = w(deps.tls(host));
-  const stP = L >= 1 ? w(deps.get(`https://${host}/.well-known/security.txt`, { maxBytes: 4096, timeoutMs: 5_000, maxRedirects: 2 })) : null;
+  const stP = L >= 1 ? w(deps.get(`https://${host}/.well-known/security.txt`, { maxBytes: 4096, timeoutMs: 5_000, maxRedirects: 2, optedOut })) : null;
   const dnsP = L >= 2 ? w(dnsFindings(deps, host)) : null;
   const ctP = L >= 5 ? w(deps.ct(host)) : null;
   const [home0, plain0, tls0, st0, dns0, ct0] = await Promise.all([homeP, plainP, tlsP, stP, dnsP, ctP]);
   const home = home0 === TIMED_OUT ? ({ ok: false, code: "timeout", error: "time budget" } as const) : home0;
   const plain = plain0 === TIMED_OUT ? ({ ok: false, code: "timeout", error: "time budget" } as const) : plain0;
+  // Opt-out re-checked on every redirect hop (guardedGet): a hop into an opted-out host was never requested; refuse the whole check, not charged.
+  const optedHop = [home0, st0].find((x): x is { ok: false; code: "opted_out"; error: string } => typeof x === "object" && x !== null && !x.ok && x.code === "opted_out");
+  if (optedHop) return { ok: false, status: 403, code: "redirect_target_opted_out", error: `${optedHop.error} Check stopped; not charged.` };
 
   // HTTPS home page (required: nothing to check if the host answers neither https nor http).
   if (!home.ok && !plain.ok) return { ok: false, status: 502, code: "target_unreachable", error: `Host did not answer over https (${home.code}) or http (${plain.code}); not charged.` };

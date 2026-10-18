@@ -90,7 +90,8 @@ describe("enabled: unpaid 402 per tier, distinct price, pinned payTo, no Bazaar 
     expect(res.status).toBe(402);
     return decodePaymentRequiredHeader(res.headers.get("payment-required")!);
   }
-  it("audit: all seven tiers, each its own price ($1 ... $100), payTo pinned", async () => {
+  it("audit: all seven tiers, each its own price ($1 ... $100), payTo pinned (high tiers need HP_AUDIT_HIGH_TIERS_ENABLED=true)", async () => {
+    vi.stubEnv("HP_AUDIT_HIGH_TIERS_ENABLED", "true");
     const amounts: string[] = [];
     for (const t of AUDIT_TIERS) {
       const pr = await challenge(ROUTES[0], t.id);
@@ -116,7 +117,7 @@ describe("enabled: unpaid 402 per tier, distinct price, pinned payTo, no Bazaar 
     expect(res.status).toBe(400);
     const b = await res.json();
     expect(b).toMatchObject({ code: "bad_tier", charged: false });
-    expect(b.tiers).toHaveLength(7);
+    expect(b.tiers.map((x: { tier: string }) => x.tier)).toEqual(["quick", "standard", "extended", "report"]);
   });
 });
 
@@ -469,6 +470,7 @@ describe("security & readiness audit (passive)", () => {
     const d = deps();
     const safe = vi.fn(safeOk);
     const lim = vi.fn(allowAll);
+    vi.stubEnv("HP_AUDIT_HIGH_TIERS_ENABLED", "true");
     const res = await auditHandler(new NextRequest("https://horizonpulse.dev/api/audit/security?target=shop.optout.example"), AUDIT_TIERS[6]!, "hpr_o", d, { limiter: lim, optedOut: (h) => isOptedOut(h, ["optout.example"]), safeCheck: safe });
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ code: "target_opted_out", charged: false, disclaimer: DISCLAIMER });

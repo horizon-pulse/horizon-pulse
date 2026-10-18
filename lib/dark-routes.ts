@@ -29,6 +29,18 @@ export function darkEnabled(route: DarkRoute, env: Record<string, string | undef
   return env[DARK_FLAGS[route]] === "true";
 }
 
+/**
+ * Audit tiers full ($50), history ($75) and deep ($100) are HARD-DISABLED
+ * (Odin 11:07 PM ET 10/17): 404 before any payment even when
+ * HP_AUDIT_SECURITY_ENABLED=true, unless this SEPARATE flag is exactly "true".
+ * Defaults off. Not advertised in the bad_tier list or OPTIONS while off.
+ */
+export const AUDIT_HIGH_TIERS_FLAG = "HP_AUDIT_HIGH_TIERS_ENABLED";
+export const AUDIT_HIGH_TIER_IDS: readonly string[] = ["full", "history", "deep"];
+export function auditTierEnabled(t: Pick<Tier, "id">, env: Record<string, string | undefined> = process.env): boolean {
+  return !AUDIT_HIGH_TIER_IDS.includes(t.id) || env[AUDIT_HIGH_TIERS_FLAG] === "true";
+}
+
 // ---------------------------------------------------------------------------
 // Money (integer atomic units)
 // ---------------------------------------------------------------------------

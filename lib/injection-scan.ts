@@ -199,7 +199,7 @@ export async function scanInput(input: ScanInput, get: typeof guardedGet = guard
     return { ok: true, source: "text", ...scanText(text) };
   }
   const r = await get(url!, { maxBytes: INJECTION_MAX_URL_BYTES, timeoutMs: 8_000, maxRedirects: 3, headers: { Accept: "text/html, text/plain, application/json, text/markdown;q=0.9, */*;q=0.1" } });
-  if (!r.ok) return { ok: false, status: r.code === "bad_url" || r.code === "host_blocked" ? 400 : r.code === "timeout" ? 504 : 502, code: r.code, error: r.error };
+  if (!r.ok) return { ok: false, status: r.code === "opted_out" ? 403 : r.code === "bad_url" || r.code === "host_blocked" ? 400 : r.code === "timeout" ? 504 : 502, code: r.code === "opted_out" ? "target_opted_out" : r.code, error: r.error };
   if (r.status >= 400) return { ok: false, status: 502, code: "upstream", error: `Upstream returned HTTP ${r.status}` };
   return { ok: true, source: "url", finalUrl: r.finalUrl, upstreamStatus: r.status, ...scanText(r.body, { truncated: r.truncated }) };
 }

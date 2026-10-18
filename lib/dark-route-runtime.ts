@@ -2,6 +2,8 @@
  * Route runtime shared by the three dark routes.
  *   flag unset            -> 404 on every verb (no 402, no discovery)
  *   unknown tier          -> 400 before any payment (not charged)
+ *   disabled tier         -> 404 before any payment (opts.tierEnabled; audit
+ *                            full/history/deep unless HP_AUDIT_HIGH_TIERS_ENABLED)
  *   over the per-IP limit -> 429 (not charged). Counted only AFTER the payment
  *                            verifies (inside the paid callback, before any work;
  *                            a non-2xx never settles), so junk payment headers
@@ -30,7 +32,10 @@ export function makeDarkRoute(opts: {
   tiers: readonly Tier[];
   defaultTier: string;
   handler: TierHandler;
+  /** Per-request tier gate; a disabled tier is 404 (no 402, no payment), and is not listed. */
+  tierEnabled?: (t: Tier) => boolean;
 }) {
+  const enabled = (t: Tier) => (opts.tierEnabled ? opts.tierEnabled(t) : true);
   const paid = new Map<string, (req: NextRequest) => Promise<NextResponse>>();
   const tierHandler = (t: Tier) => {
     let h = paid.get(t.id);
@@ -60,14 +65,17 @@ export function makeDarkRoute(opts: {
     if (!darkEnabled(opts.route)) return notFound();
     const t = findTier(opts.tiers, req.nextUrl.searchParams.get("tier"), opts.defaultTier);
     if (!t) {
-      return NextResponse.json({ ok: false, code: "bad_tier", error: `tier must be one of ${opts.tiers.map((x) => x.id).join(", ")}`, tiers: opts.tiers.map((x) => ({ tier: x.id, priceUsd: x.usd, amountAtomic: x.atomicStr })), charged: false, disclaimer: DISCLAIMER }, { status: 400 });
+      const live = opts.tiers.filter(enabled);
+      return NextResponse.json({ ok: false, code: "bad_tier", error: `tier must be one of ${live.map((x) => x.id).join(", ")}`, tiers: live.map((x) => ({ tier: x.id, priceUsd: x.usd, amountAtomic: x.atomicStr })), charged: false, disclaimer: DISCLAIMER }, { status: 400 });
     }
+    if (!enabled(t)) return notFound();
     return tierHandler(t)(req);
   }
 
   async function OPTIONS(req: NextRequest) {
     if (!darkEnabled(opts.route)) return notFound();
     const t = findTier(opts.tiers, req.nextUrl.searchParams.get("tier"), opts.defaultTier) ?? findTier(opts.tiers, opts.defaultTier, opts.defaultTier)!;
+    if (!enabled(t)) return notFound();
     const res = await discoveryOptionsResponse(darkPaymentOpts(opts.path, t));
     res.headers.set("Allow", "GET, POST, OPTIONS");
     res.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
