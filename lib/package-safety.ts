@@ -59,7 +59,7 @@ export function assertAllowedSource(url: string): void {
 }
 
 export const PACKAGE_METHOD =
-  "Registry metadata from registry.npmjs.org or pypi.org, weekly downloads from api.npmjs.org or pypistats.org (cached 24 h), known vulnerabilities from OSV.dev (api.osv.dev/v1/query), build provenance as verified by deps.dev (and, on deep, the OpenSSF Scorecard of an attested source repository, via deps.dev) (cached 24 h), a cross-check of advisory CVEs against the CISA KEV catalog (cached 24 h), and a typosquat distance to a static list of popular names. Sources run in parallel under one 20 s deadline; a secondary source that misses it is listed in missing and the answer is marked partial; if OSV.dev cannot answer (error or deadline), no verdict is given and the call is not charged. The answer leads with verdict (no_known_issues, caution or block) by fixed rules; block is a recommendation based on the listed records, not a determination. No npm security or advisory data is used. Maintainers are reported as a count only.";
+  "Registry metadata from registry.npmjs.org or pypi.org, weekly downloads from api.npmjs.org or pypistats.org (cached 24 h), known vulnerabilities from OSV.dev (api.osv.dev/v1/query), build provenance as verified by deps.dev (and, on deep, the OpenSSF Scorecard of an attested source repository, via deps.dev) (cached 24 h), a cross-check of advisory CVEs against the CISA KEV catalog (cached 24 h), and a typosquat distance to a static list of popular names. Sources run in parallel under one 20 s deadline; a secondary source that misses it is listed in missing and the answer is marked partial; if OSV.dev cannot answer (error or deadline), no verdict is given and the call is not charged. The answer leads with verdict (no_known_issues, caution or block) by fixed rules; block is a recommendation based on the listed reasons, not a determination. No npm security or advisory data is used. Maintainers are reported as a count only.";
 const DOC_CAP = 6_000_000;
 const TIMEOUT = 8_000;
 
@@ -347,9 +347,9 @@ export type Verdict = "no_known_issues" | "caution" | "block";
 /** Counsel ruling 10/18, word for word. */
 export const VERDICT_NOTE_NO_KNOWN_ISSUES =
   "No known issues found in the sources checked (OSV, CISA KEV, deps.dev) at the time of the check. This is not a security review or a guarantee the package is safe; review it before installing.";
-/** Counsel 10/18: block is a recommendation based on the listed records, not a determination. */
+/** Counsel 10/18 (PASS on a4518ba with this edit), verbatim: block is a recommendation based on the listed reasons, not a determination. */
 export const VERDICT_NOTE_BLOCK =
-  "Recommendation not to install, based on the records listed in verdictReasons. This is not a determination that the package is malicious or unsafe; review the listed records.";
+  "Recommendation not to install, based on the reasons listed in verdictReasons. This is not a determination that the package is malicious or unsafe; review the listed reasons.";
 export const VERDICT_NOTE_CAUTION =
   "Signals that need review before installing are listed in verdictReasons. This is not a security review or a determination about the package.";
 export const VERDICT_NOTES: Record<Verdict, string> = { no_known_issues: VERDICT_NOTE_NO_KNOWN_ISSUES, caution: VERDICT_NOTE_CAUTION, block: VERDICT_NOTE_BLOCK };

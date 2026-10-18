@@ -232,7 +232,9 @@ describe("verdict: no_known_issues / caution / block, leading the answer (Counse
   });
   it("Counsel's exact notes; the value 'install' is gone", () => {
     expect(VERDICT_NOTE_NO_KNOWN_ISSUES).toBe("No known issues found in the sources checked (OSV, CISA KEV, deps.dev) at the time of the check. This is not a security review or a guarantee the package is safe; review it before installing.");
-    expect(VERDICT_NOTE_BLOCK).toMatch(/^Recommendation not to install, based on the records listed in verdictReasons\. This is not a determination/);
+    expect(VERDICT_NOTE_BLOCK).toBe("Recommendation not to install, based on the reasons listed in verdictReasons. This is not a determination that the package is malicious or unsafe; review the listed reasons.");
+    expect(PACKAGE_METHOD).toContain("block is a recommendation based on the listed reasons, not a determination.");
+    expect(PACKAGE_METHOD).not.toContain("listed records");
     expect(Object.keys(VERDICT_NOTES).sort()).toEqual(["block", "caution", "no_known_issues"]);
     const src = readFileSync(path.join(ROOT, "lib/package-safety.ts"), "utf8");
     expect(src).not.toMatch(/verdict: "install"|"install" \| "caution"/);
@@ -274,11 +276,12 @@ describe("Counsel re-read batch 2 deltas", () => {
 describe("OSV unavailable is never billed (Odin 10:05 AM ET 10/18)", () => {
   const PAYER = `0x${"22".repeat(20)}`;
   /** Live-route test: real handler + defaultDeps with a stubbed global fetch; facilitator mocked at the prototype. */
-  function stubSources(o: { osv: "down" | "up"; others: "down" | "up" }) {
+  function stubSources(o: { osv: "down" | "up"; others: "down" | "up"; registry?: "down" | "up" }) {
     const seen: string[] = [];
     vi.stubGlobal("fetch", (async (u: string | URL | Request) => {
       const url = String(u instanceof Request ? u.url : u);
       seen.push(url);
+      if (o.registry === "down" && url.startsWith("https://registry.npmjs.org/")) return new Response("x", { status: 503 });
       if (url.startsWith("https://api.osv.dev/")) return o.osv === "down" ? new Response("x", { status: 500 }) : Response.json({ vulns: [] });
       if (url.endsWith("/latest")) return Response.json({ version: "1.0.0", license: "MIT", maintainers: [{ name: "a" }] });
       if (url.startsWith("https://registry.npmjs.org/")) return Response.json({ time: { created: "2020-01-01T00:00:00Z", modified: "2026-10-01T00:00:00Z" }, versions: { "1.0.0": {} } });
@@ -289,7 +292,7 @@ describe("OSV unavailable is never billed (Odin 10:05 AM ET 10/18)", () => {
     }) as typeof fetch);
     return seen;
   }
-  async function paidCall() {
+  async function paidCall(url: string = PKG) {
     const { installFacilitatorMock } = await import("./helpers/facilitator-mock");
     const { setCdp } = await import("./helpers/xrpl-env");
     const { encodePaymentSignatureHeader } = await import("@x402/core/http");
@@ -301,11 +304,11 @@ describe("OSV unavailable is never billed (Odin 10:05 AM ET 10/18)", () => {
     });
     setCdp(true);
     vi.stubEnv("HP_PACKAGE_CHECK_ENABLED", "true");
-    const unpaid = await pkgRoute.GET(new NextRequest(PKG));
+    const unpaid = await pkgRoute.GET(new NextRequest(url));
     expect(unpaid.status).toBe(402);
     const accept = decodePaymentRequiredHeader(unpaid.headers.get("payment-required")!).accepts[0]! as unknown as Record<string, unknown>;
     const payload = { x402Version: 2, accepted: accept, payload: { signature: `0x${"cd".repeat(65)}`, authorization: { from: PAYER, to: accept.payTo, value: accept.amount, validAfter: "0", validBefore: "9999999999", nonce: `0x${"00".repeat(32)}` } } };
-    const res = await pkgRoute.GET(new NextRequest(PKG, { headers: { "payment-signature": encodePaymentSignatureHeader(payload as never), "x-real-ip": "198.51.100.20" } }));
+    const res = await pkgRoute.GET(new NextRequest(url, { headers: { "payment-signature": encodePaymentSignatureHeader(payload as never), "x-real-ip": "198.51.100.20" } }));
     return { res, calls };
   }
   it("checkPackage: OSV error -> 503 advisory_source_unavailable on base and deep, no verdict", async () => {
@@ -331,6 +334,27 @@ describe("OSV unavailable is never billed (Odin 10:05 AM ET 10/18)", () => {
     expect(calls.filter((c) => c.op === "verify")).toHaveLength(1);
     expect(calls.filter((c) => c.op === "settle")).toHaveLength(0);
     expect(seen.some((u) => u.startsWith("https://api.osv.dev/"))).toBe(true);
+  });
+  it("paid route: every refusal is uncharged and never settles - 400 bad input, 502 registry down, 503 OSV down (Counsel PASS a4518ba)", async () => {
+    const cases = [
+      { name: "400 bad input", url: "https://horizonpulse.dev/api/package/check?ecosystem=npm&name=", src: { osv: "up", others: "up" }, status: 400, code: null },
+      { name: "502 registry down", url: PKG, src: { osv: "up", others: "up", registry: "down" }, status: 502, code: "registry_unavailable" },
+      { name: "503 OSV down", url: PKG, src: { osv: "down", others: "up" }, status: 503, code: "advisory_source_unavailable" },
+    ] as const;
+    for (const c of cases) {
+      vi.restoreAllMocks();
+      stubSources(c.src);
+      const { res, calls } = await paidCall(c.url);
+      expect(res.status, c.name).toBe(c.status);
+      const b = await res.json();
+      expect(b, c.name).toMatchObject({ charged: false });
+      if (c.code) expect(b.code, c.name).toBe(c.code);
+      expect(b.verdict, c.name).toBeUndefined();
+      expect(b.receiptId, c.name).toMatch(/^hpr_/);
+      expect(calls.filter((x) => x.op === "verify"), c.name).toHaveLength(1);
+      expect(calls.filter((x) => x.op === "settle"), c.name).toHaveLength(0);
+      expect(res.headers.get("payment-response"), c.name).toBeNull();
+    }
   });
   it("paid route: OSV up, downloads / deps.dev / KEV down -> 200 with a verdict, billed (one settle)", async () => {
     stubSources({ osv: "up", others: "down" });
