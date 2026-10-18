@@ -18,6 +18,9 @@ import {
   validateSolanaPaymentPayload,
   SOLANA_SLOT_PROBE_INTERVAL_MS,
   SOLANA_SLOT_RATE_WINDOW_MS,
+  SOLANA_SLOT_ALERT_COOLDOWN_MS,
+  isSolanaSignature,
+  validateSolanaPayloadLocal,
   __setSolanaLedgerCheckDelaysForTests,
   __setSolanaRpcForTests,
   payloadSignatures,
@@ -619,7 +622,7 @@ describe("delta 3 (Odin 1:19): no start slot → 503 before PayAI; slot present 
     expect(slotAlerts()).toEqual([]);
     setup({ slot: down });
     await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
-    expect(slotAlerts()).toEqual([{ kind: "solana_start_slot_unavailable", severity: "high", trigger: "consecutive", consecutive: 5, failed: 5, sample: 5, windowMs: 60_000 }]);
+    expect(slotAlerts()).toEqual([{ kind: "solana_start_slot_unavailable", severity: "high", trigger: "consecutive", consecutive: 5, failed: 5, sample: 5, windowMs: 60_000, suppressedRetrips: 0 }]);
     setup({ slot: down });
     await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
     expect(slotAlerts()).toHaveLength(1); // same episode
@@ -633,9 +636,11 @@ describe("delta 3 (Odin 1:19): no start slot → 503 before PayAI; slot present 
     }
     expect(slotAlerts()).toHaveLength(1); // streak restarted from 0: 4 after the reset → no new alert yet
     setup({ slot: down });
-    await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
-    expect(slotAlerts()).toHaveLength(2); // new episode
-    expect(slotAlerts()[1]).toMatchObject({ kind: "solana_start_slot_unavailable", severity: "high", trigger: "consecutive", consecutive: 5 });
+    const retrip = await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
+    // New episode: the breaker re-opens (Base-only 402 rail_unavailable), but Odin 2:12 F3: the re-trip ALERT is held
+    // back by the 15 min cooldown (the alert after the cooldown is covered in the delta 5 tests).
+    expect(retrip.status).toBe(402);
+    expect(slotAlerts()).toHaveLength(1);
     setSolanaAlertHook(null);
   });
 });
@@ -809,7 +814,7 @@ describe("delta 4 (Odin 1:39) N1: getSlot breaker → Solana treated as absent u
     expect(trip.status).toBe(402);
     expect(railError(trip)).toBe("rail_unavailable");
     expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([
-      { kind: "solana_start_slot_unavailable", severity: "high", trigger: "rate", consecutive: 1, failed: 6, sample: 21, windowMs: 60_000 },
+      { kind: "solana_start_slot_unavailable", severity: "high", trigger: "rate", consecutive: 1, failed: 6, sample: 21, windowMs: 60_000, suppressedRetrips: 0 },
     ]);
     setup({ slot: down });
     expect(await unpaidNetworks()).not.toContain(SOLANA_MAINNET_CAIP2);
@@ -899,9 +904,9 @@ describe("delta 4 (Odin 1:39) N2 + LOW-1: our payment parsed before verify; PAYM
 
   it("N2 (unit): validation refuses a payment we cannot parse (unsigned / garbled message)", async () => {
     const accept = await solAccept();
-    for (const tx of [unsigned(), garbled()]) {
-      expect(validateSolanaPaymentPayload(solPayload(accept, tx), accept)).toEqual({ ok: false, reason: "payload.transaction is not a parseable signed transaction" });
-    }
+    // Odin 2:12 F1: an unsigned buyer slot now has its own reason (the message parses; the buyer slot is empty).
+    expect(validateSolanaPaymentPayload(solPayload(accept, unsigned()), accept)).toEqual({ ok: false, reason: "payload.transaction buyer slot is not signed" });
+    expect(validateSolanaPaymentPayload(solPayload(accept, garbled()), accept)).toEqual({ ok: false, reason: "payload.transaction is not a parseable signed transaction" });
     expect(validateSolanaPaymentPayload(solPayload(accept, payTx(0xe2).tx), accept)).toEqual({ ok: true });
   });
 
@@ -946,7 +951,241 @@ describe("delta 4 (Odin 1:39) N2 + LOW-1: our payment parsed before verify; PAYM
       transaction: payaiTx,
       network: SOLANA_MAINNET_CAIP2,
       payer: SOL_PAYER,
-      extra: { settlementVerified: false, transactionSource: "facilitator" },
+      // Odin 2:13 (2): marker under the spec's `extensions`, no `extra`.
+      extensions: { settlementVerified: false, transactionSource: "facilitator" },
     });
+  });
+});
+
+// ===========================================================================
+// Odin 2:12 / 2:13 PM ET delta 5: F1 signer layout by index, F2 (= Sentinel LOW-A) local checks before getSlot +
+// only validated requests count, F3 alert cooldown, `extensions` marker, validated facilitator tx id.
+// ===========================================================================
+describe("delta 5 (Odin 2:12/2:13): F1 fee-payer slot + buyer slot by index; F2 validate before getSlot; F3 alert cooldown; extensions + tx-id echo", () => {
+  let facilitator: string[] = [];
+  let clock = 0;
+  const down = () => {
+    throw new Error("down");
+  };
+  const okSettle = () => ({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER });
+  const timeoutSettle = () => {
+    throw new FacilitatorTimeoutError("settle", 12_000);
+  };
+  beforeEach(() => {
+    facilitator = [];
+    installBothFacilitators({
+      verify: (url: string) => (url.startsWith(CDP_URL_PREFIX) ? { isValid: true, payer: BASE_PAYER } : (facilitator.push("verify"), { isValid: true, payer: SOL_PAYER })),
+      settle: async (url: string, _p: PaymentPayload, r: PaymentRequirements) => {
+        if (url.startsWith(CDP_URL_PREFIX)) return { success: true, transaction: `0x${"ab".repeat(32)}`, network: r.network, payer: BASE_PAYER };
+        facilitator.push("settle");
+        return settle();
+      },
+    } as never);
+    settle = okSettle;
+    clock = 1_900_000_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => clock);
+  });
+  const railError = (res: Response) => decodePaymentRequiredHeader(res.headers.get("payment-required")!).error;
+  const slotCalls = (calls: RpcCall[]) => calls.filter((c) => c.method === "getSlot");
+  /** A wire tx with `n` signature slots and header numRequiredSignatures = `required`. */
+  function wireN(fills: number[], required: number, tag: number): string {
+    const keys = Array.from({ length: Math.max(4, fills.length + 2) }, (_, i) => Buffer.alloc(32, 0x31 + i));
+    const msg = Buffer.concat([Buffer.from([required, 0, 1, keys.length]), ...keys, Buffer.alloc(40, tag)]);
+    return Buffer.concat([Buffer.from([fills.length]), ...fills.map((f) => Buffer.alloc(64, f)), msg]).toString("base64");
+  }
+  /** A paid request whose payload is locally valid; slotOk=false → both getSlot tries fail. */
+  async function validOnce(accept: PaymentRequirements, slotOk: boolean) {
+    const { tx, msg } = payTx(0xe8);
+    const calls = setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xe8, msg, FEE), accept.amount) : null), slot: slotOk ? undefined : down });
+    return { res: await handler()(paid(solPayload(accept, tx))), calls };
+  }
+  /** Locally fine (parses, layout ok) but does not match the requirement (wrong amount): reaches getSlot, never PayAI. */
+  async function mismatchOnce(accept: PaymentRequirements, slotOk: boolean) {
+    const calls = setup({ slot: slotOk ? undefined : down });
+    return { res: await handler()(paid(solPayload({ ...accept, amount: "1" }, payTx(0xe9).tx))), calls };
+  }
+
+  // ---- F1 ----
+  for (const [mode, s] of [["settle would succeed", okSettle], ["settle would be ambiguous", timeoutSettle]] as const) {
+    it(`F1 (${mode}): a NON-ZERO fee-payer placeholder slot → Base-only 402 invalid_payload before PayAI (no verify/settle, no handler, no getSlot); previously charged + 502/504`, async () => {
+      const accept = await solAccept();
+      settle = s;
+      const { msg } = payTx(0xea);
+      const tx = wire(0xaa, msg, 0x55); // fee-payer slot 0 non-zero (client-filled placeholder), buyer slot 1 signed
+      const calls = setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xaa, msg, FEE), accept.amount) : null) });
+      const res = await handler()(paid(solPayload(accept, tx)));
+      expect(res.status).toBe(402);
+      expect(railError(res)).toBe("invalid_payload");
+      expect(facilitator).toEqual([]);
+      expect(ran).toBe(0);
+      expect(slotCalls(calls)).toEqual([]);
+      expect(reconcileLines()).toEqual([]);
+    });
+    it(`F1 (${mode}): the buyer is slot 1 by INDEX (fee-payer slot 0 empty): bound + delivered with payer = key 1`, async () => {
+      const accept = await solAccept();
+      settle = s;
+      const { tx, msg } = payTx(0xeb);
+      setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xeb, msg, FEE), accept.amount) : null), list: () => [{ signature: txidOf(), slot: START_SLOT + 5 }] });
+      const res = await handler()(paid(solPayload(accept, tx)));
+      expect(res.status).toBe(200);
+      expect(decodePaymentResponseHeader(res.headers.get("payment-response")!)).toEqual({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER });
+      expect(facilitator).toEqual(["verify", "settle"]);
+    });
+  }
+
+  it("F1 (unit): signer layout — exactly 2 signers, slot 0 unsigned placeholder, slot 1 signed; buyer = slot 1 / key 1, never first-non-zero", () => {
+    const { msg } = payTx(0xec);
+    expect(ourPayment(wire(0xaa, msg))).toMatchObject({ slot: 1, signature: buyerSigOf(0xaa), payer: SOL_PAYER });
+    expect(ourPayment(wire(0xaa, msg, 0x55))).toBeNull(); // fee-payer slot signed
+    expect(ourPayment(wire(0, msg, 0x55))).toBeNull(); // old first-non-zero would have bound slot 0 as "the buyer"
+    expect(ourPayment(wireN([0, 0, 0xaa], 3, 1))).toBeNull(); // 3 signers: old pick = slot 2
+    expect(ourPayment(wireN([0, 0xaa], 1, 2))).toBeNull(); // header says 1 signer, 2 slots
+    expect(ourPayment(wireN([0, 0xaa], 2, 3))).toMatchObject({ slot: 1 });
+    const p = (tx: string) => ({ x402Version: 2, accepted: { scheme: "exact" }, payload: { transaction: tx } }) as unknown as PaymentPayload;
+    expect(validateSolanaPayloadLocal(p(wire(0xaa, msg, 0x55)))).toEqual({ ok: false, reason: "payload.transaction fee-payer slot must be the unsigned placeholder" });
+    expect(validateSolanaPayloadLocal(p(wireN([0, 0, 0xaa], 3, 4)))).toEqual({ ok: false, reason: "payload.transaction must have exactly 2 signers (has 3, 3 slots)" });
+    expect(validateSolanaPayloadLocal(p(wire(0, msg)))).toEqual({ ok: false, reason: "payload.transaction buyer slot is not signed" });
+    expect(validateSolanaPayloadLocal(p(wire(0xaa, msg)))).toEqual({ ok: true });
+  });
+
+  // ---- F2 / Sentinel LOW-A ----
+  it("F2: locally invalid payloads (garbled, unsigned, fee slot signed, 3 signers, not base64) → invalid_payload with NO getSlot and no PayAI", async () => {
+    const accept = await solAccept();
+    const { msg } = payTx(0xed);
+    const junk = [
+      Buffer.concat([Buffer.from([2]), Buffer.alloc(64, 0), Buffer.alloc(64, 0xaa), Buffer.alloc(20, 0xff)]).toString("base64"),
+      wire(0, msg),
+      wire(0xaa, msg, 0x55),
+      wireN([0, 0, 0xaa], 3, 5),
+      "%%%not-base64%%%",
+    ];
+    for (const tx of junk) {
+      const calls = setup({ slot: down });
+      const res = await handler()(paid(solPayload(accept, tx)));
+      expect(res.status).toBe(402);
+      expect(railError(res)).toBe("invalid_payload");
+      expect(slotCalls(calls)).toEqual([]);
+    }
+    expect(facilitator).toEqual([]);
+  });
+
+  it("F2 (streak): requests that fail validation never count — 20 requirement-mismatched requests with getSlot down do not trip; 5 VALID no-slot requests do", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    for (let i = 0; i < 20; i++) {
+      const { res } = await mismatchOnce(accept, false);
+      expect(res.status).toBe(402);
+      expect(railError(res)).toBe("invalid_payload"); // not 503: validation answers first
+    }
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([]);
+    for (let i = 0; i < 4; i++) expect((await validOnce(accept, false)).res.status).toBe(503);
+    const fifth = (await validOnce(accept, false)).res;
+    expect(fifth.status).toBe(402);
+    expect(railError(fifth)).toBe("rail_unavailable");
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toMatchObject([{ trigger: "consecutive", consecutive: 5, failed: 5, sample: 5 }]);
+    expect(facilitator).toEqual([]);
+    setSolanaAlertHook(null);
+  });
+
+  it("F2 (streak): an invalid request whose getSlot SUCCEEDS does not reset the streak of valid failures", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    for (let i = 0; i < 4; i++) expect((await validOnce(accept, false)).res.status).toBe(503);
+    expect((await mismatchOnce(accept, true)).res.status).toBe(402); // junk, RPC answers: not counted either way
+    const fifth = (await validOnce(accept, false)).res;
+    expect(fifth.status).toBe(402);
+    expect(railError(fifth)).toBe("rail_unavailable");
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toMatchObject([{ trigger: "consecutive", consecutive: 5 }]);
+    setSolanaAlertHook(null);
+  });
+
+  it("F2 (rate window): invalid requests are not samples — 16 valid ok + 4 valid no-slot (20%) + 30 junk no-slot → no trip", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    for (let i = 0; i < 20; i++) {
+      const fail = i % 5 === 4;
+      expect((await validOnce(accept, !fail)).res.status).toBe(fail ? 503 : 200);
+      if (fail) for (let j = 0; j < 6; j++) expect((await mismatchOnce(accept, false)).res.status).toBe(402);
+    }
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([]);
+    expect((await validOnce(accept, true)).res.status).toBe(200);
+    setSolanaAlertHook(null);
+  });
+
+  it("F2: an invalid request's good getSlot still CLOSES an open breaker (recovery = any good getSlot; it is not a trigger)", async () => {
+    const accept = await solAccept();
+    for (let i = 0; i < 5; i++) await validOnce(accept, false);
+    expect((await validOnce(accept, false)).res.status).toBe(402);
+    expect((await mismatchOnce(accept, true)).res.status).toBe(402);
+    expect((await validOnce(accept, false)).res.status).toBe(503); // breaker closed: back to the plain no-slot 503
+  });
+
+  // ---- F3 ----
+  it("F3: re-trip within 15 min → breaker re-opens (402 rail_unavailable) but NO second alert; after the cooldown the next trip alerts with suppressedRetrips", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const slotAlerts = () => alerts.filter((a) => a.kind === "solana_start_slot_unavailable");
+    const accept = await solAccept();
+    const trip = async () => {
+      for (let i = 0; i < 4; i++) expect((await validOnce(accept, false)).res.status).toBe(503);
+      const r = (await validOnce(accept, false)).res;
+      expect(r.status).toBe(402);
+      expect(railError(r)).toBe("rail_unavailable");
+    };
+    await trip();
+    expect(slotAlerts()).toHaveLength(1);
+    expect((await validOnce(accept, true)).res.status).toBe(200); // recovery
+    clock += SOLANA_SLOT_ALERT_COOLDOWN_MS - 1_000;
+    await trip(); // breaker opens again; alert suppressed
+    expect(slotAlerts()).toHaveLength(1);
+    expect((await validOnce(accept, true)).res.status).toBe(200);
+    clock += 1_000; // exactly 15 min after the first alert
+    await trip();
+    expect(slotAlerts()).toHaveLength(2);
+    expect(slotAlerts()[1]).toMatchObject({ trigger: "consecutive", consecutive: 5, suppressedRetrips: 1 });
+    expect(SOLANA_SLOT_ALERT_COOLDOWN_MS).toBe(15 * 60_000);
+    setSolanaAlertHook(null);
+  });
+
+  // ---- extensions marker + facilitator tx-id echo ----
+  const failOpen = async (payaiTx: unknown) => {
+    const accept = await solAccept();
+    const { tx } = payTx(0xee);
+    settle = () => ({ success: true, transaction: payaiTx, network: SOLANA_MAINNET_CAIP2, payer: "11111111111111111111111111111111" });
+    setup({ list: down, tx: down });
+    const res = await handler()(paid(solPayload(accept, tx)));
+    expect(res.status).toBe(200);
+    return decodePaymentResponseHeader(res.headers.get("payment-response")!) as unknown as Record<string, unknown>;
+  };
+  it("extensions + tx id: fail-open marker under `extensions` (no `extra`); a valid Solana signature from PayAI is echoed", async () => {
+    const h = await failOpen(buyerSigOf(0x44));
+    expect(h).toEqual({ success: true, transaction: buyerSigOf(0x44), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER, extensions: { settlementVerified: false, transactionSource: "facilitator" } });
+    expect("extra" in h).toBe(false);
+  });
+  for (const [name, bad] of [
+    ["not base58", "0x" + "ab".repeat(32)],
+    ["base58 that decodes to 65 bytes", "z".repeat(88)],
+    ["base58 that decodes to 47 bytes", "2".repeat(64)],
+    ["too short", buyerSigOf(0x44).slice(0, 40)],
+    ["markup", "<script>alert(1)</script>"],
+  ] as const) {
+    it(`tx id: PayAI's transaction ${name} → omitted from the fail-open PAYMENT-RESPONSE (marker kept)`, async () => {
+      const h = await failOpen(bad);
+      expect("transaction" in h).toBe(false);
+      expect(h).toEqual({ success: true, network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER, extensions: { settlementVerified: false, transactionSource: "facilitator" } });
+    });
+  }
+  it("isSolanaSignature (unit): base58 that decodes to exactly 64 bytes", () => {
+    expect(isSolanaSignature(buyerSigOf(0x44))).toBe(true);
+    expect(isSolanaSignature(base58Encode(new Uint8Array(64)))).toBe(true); // 64 zero bytes = "1"×64
+    expect(isSolanaSignature(base58Encode(new Uint8Array(65).fill(1)))).toBe(false);
+    expect(isSolanaSignature(base58Encode(new Uint8Array(63).fill(0xff)))).toBe(false);
+    expect(isSolanaSignature("z".repeat(88))).toBe(false); // passes the regex, decodes to 65 bytes
+    expect(isSolanaSignature("2".repeat(64))).toBe(false); // passes the regex, decodes to 47 bytes
+    expect(isSolanaSignature(undefined)).toBe(false);
+    expect(isSolanaSignature(42)).toBe(false);
   });
 });

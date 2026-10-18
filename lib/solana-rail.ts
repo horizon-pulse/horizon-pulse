@@ -111,6 +111,7 @@ import {
   SOLANA_PAYTO_USDC_ATA,
   SPL_TOKEN_PROGRAM,
   USDC_SOLANA_MINT,
+  base58Decode,
   base58Encode,
   isValidSolanaPubkey,
   type SolanaRailConfig,
@@ -275,6 +276,8 @@ export function resetSolanaRailForTests(): void {
   slotBreakerOpen = false;
   slotProbe = null;
   slotProbeAt = 0;
+  slotLastAlertAt = -Infinity;
+  slotSuppressedRetrips = 0;
   attempts.clear();
   warnTimes = [];
   warnAlertedAt = 0;
@@ -353,6 +356,8 @@ export type SolanaAlert =
       failed: number;
       sample: number;
       windowMs: number;
+      /** Odin 2:12 F3: re-trips whose alert was suppressed by the cooldown since the last alert sent. */
+      suppressedRetrips: number;
     }
   | {
       kind: "payai_allowance";
@@ -1124,21 +1129,35 @@ const fail = (reason: string): WireCheck => ({ ok: false, reason });
  * compute budget, signatures, simulation) is checked by the facilitator.
  */
 export function validateSolanaPaymentPayload(payload: PaymentPayload, requirement: PaymentRequirements): WireCheck {
-  if (!payload || payload.x402Version !== 2) return fail("x402Version must be 2");
+  const local = validateSolanaPayloadLocal(payload);
+  if (!local.ok) return local;
   const accepted = payload.accepted;
-  if (!accepted || accepted.scheme !== "exact") return fail("accepted.scheme must be exact");
   for (const f of ["scheme", "network", "asset", "payTo", "amount", "maxTimeoutSeconds"] as const) {
     if (accepted[f] !== requirement[f]) return fail(`accepted.${f} does not match requirements`);
   }
   const aFee = (accepted.extra as Record<string, unknown> | undefined)?.feePayer;
   const rFee = (requirement.extra as Record<string, unknown> | undefined)?.feePayer;
   if (aFee !== rFee) return fail("accepted.extra.feePayer does not match requirements");
+  return { ok: true };
+}
+
+/**
+ * Odin 2:12 F2 / Sentinel LOW-A: the cheap LOCAL checks (no network, no rail, no requirement): version, scheme,
+ * base64 size, and the wire tx itself (Odin 1:39 N2 parse + Odin 2:12 F1 signer layout). Run on every Solana-paid
+ * request BEFORE getSlot / rail init, so a junk header never reaches the RPC; validateSolanaPaymentPayload repeats it.
+ */
+export function validateSolanaPayloadLocal(payload: PaymentPayload): WireCheck {
+  if (!payload || payload.x402Version !== 2) return fail("x402Version must be 2");
+  const accepted = payload.accepted;
+  if (!accepted || accepted.scheme !== "exact") return fail("accepted.scheme must be exact");
   const tx = (payload.payload as Record<string, unknown> | undefined)?.transaction;
   if (typeof tx !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(tx)) return fail("payload.transaction must be base64");
   const len = Buffer.from(tx, "base64").length;
   if (len === 0 || len > MAX_TX_BYTES) return fail(`payload.transaction is ${len} bytes`);
   // Odin 1:39 N2: we must be able to bind the payment on-chain later (message + buyer slot/signature + payer).
-  if (!ourPayment(tx)) return fail("payload.transaction is not a parseable signed transaction");
+  // Odin 2:12 F1: and the signer layout must be the x402 exact one (fee-payer placeholder unsigned, buyer signed).
+  const shape = paymentShape(tx);
+  if (!shape.ok) return fail(shape.reason);
   return { ok: true };
 }
 
@@ -1336,7 +1355,7 @@ export function payloadSignatures(txB64: string): string[] {
  * Wire tx parts: signature slots and the MESSAGE bytes (exactly what every signer signed). Signer i signs slot i and
  * is account key i of the message (legacy and v0 share the header/key layout after the optional version byte).
  */
-type WireTx = { sigs: Uint8Array[]; message: Uint8Array; keys: Uint8Array[] };
+type WireTx = { sigs: Uint8Array[]; message: Uint8Array; keys: Uint8Array[]; required: number };
 export function parseWireTx(bytes: Uint8Array): WireTx | null {
   const b = Buffer.from(bytes);
   const cu16 = (at: number): [number, number] | null => {
@@ -1358,6 +1377,8 @@ export function parseWireTx(bytes: Uint8Array): WireTx | null {
   for (let j = 0; j < n; j++) sigs.push(Uint8Array.from(b.subarray(sigStart + 64 * j, sigStart + 64 * (j + 1))));
   const message = Uint8Array.from(b.subarray(msgStart));
   let at = message[0] & 0x80 ? 1 : 0; // v0 prefix
+  if (at >= message.length) return null;
+  const required = message[at]; // header byte 0: numRequiredSignatures (= the first `required` account keys sign)
   at += 3; // header: numRequiredSignatures, numReadonlySigned, numReadonlyUnsigned
   const mb = Buffer.from(message);
   let nk = 0;
@@ -1373,7 +1394,7 @@ export function parseWireTx(bytes: Uint8Array): WireTx | null {
   if (at + 32 * nk > mb.length || nk < n) return null;
   const keys: Uint8Array[] = [];
   for (let j = 0; j < nk; j++) keys.push(Uint8Array.from(mb.subarray(at + 32 * j, at + 32 * (j + 1))));
-  return { sigs, message, keys };
+  return { sigs, message, keys, required };
 }
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -1404,12 +1425,35 @@ function usdcReceivedByPayTo(tx: ChainTx): bigint | null {
 
 /** Our own payment as we verified it: message bytes, the buyer's slot + signature, and the payer (key of that slot). */
 export type OurPayment = { message: Uint8Array; slot: number; signature: string; payer: string };
-export function ourPayment(txB64: string): OurPayment | null {
+/**
+ * Odin 2:12 F1: the x402 exact SVM signer layout, by INDEX (never "first non-zero slot"):
+ *   - exactly 2 required signers, and exactly 2 signature slots (header numRequiredSignatures = slot count);
+ *   - slot 0 = account key 0 = the FEE PAYER (Solana: the fee payer is always signer 0). The facilitator signs it at
+ *     settle, so in the buyer's payload it MUST be the all-zero placeholder. A non-zero slot 0 is refused
+ *     (invalid_payload, before PayAI): the old first-non-zero pick bound a fee-payer placeholder as "the buyer", so
+ *     PayAI could settle while our on-chain binding could never match → charged, never delivered (502/504);
+ *   - slot 1 = account key 1 = the BUYER (transfer authority): must be signed (non-zero).
+ */
+export const SOLANA_FEE_PAYER_SLOT = 0;
+export const SOLANA_BUYER_SLOT = 1;
+function paymentShape(txB64: string): { ok: true; ours: OurPayment } | { ok: false; reason: string } {
   const w = parseWireTx(Buffer.from(txB64, "base64"));
-  if (!w) return null;
-  const slot = w.sigs.findIndex((x) => x.some((y) => y !== 0));
-  if (slot < 0) return null;
-  return { message: w.message, slot, signature: base58Encode(w.sigs[slot]), payer: base58Encode(w.keys[slot]) };
+  if (!w) return { ok: false, reason: "payload.transaction is not a parseable signed transaction" };
+  if (w.sigs.length !== 2 || w.required !== 2) return { ok: false, reason: `payload.transaction must have exactly 2 signers (has ${w.required}, ${w.sigs.length} slots)` };
+  if (w.sigs[SOLANA_FEE_PAYER_SLOT].some((y) => y !== 0)) return { ok: false, reason: "payload.transaction fee-payer slot must be the unsigned placeholder" };
+  const sig = w.sigs[SOLANA_BUYER_SLOT];
+  if (!sig.some((y) => y !== 0)) return { ok: false, reason: "payload.transaction buyer slot is not signed" };
+  return { ok: true, ours: { message: w.message, slot: SOLANA_BUYER_SLOT, signature: base58Encode(sig), payer: base58Encode(w.keys[SOLANA_BUYER_SLOT]) } };
+}
+export function ourPayment(txB64: string): OurPayment | null {
+  const r = paymentShape(txB64);
+  return r.ok ? r.ours : null;
+}
+
+/** Odin 2:13 (3): a Solana transaction signature = base58 that decodes to exactly 64 bytes. */
+export function isSolanaSignature(v: unknown): v is string {
+  if (typeof v !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(v)) return false;
+  return base58Decode(v)?.length === 64;
 }
 
 type ChainFind =
@@ -1441,7 +1485,6 @@ export async function readStartSlot(config: SolanaRailConfig, counted = true): P
       const s = await withTimeout(rpc(config.rpcUrl, "getSlot", [{ commitment: "confirmed" }], cap), cap, "getSlot");
       if (typeof s === "number" && Number.isSafeInteger(s) && s > 0) {
         noteStartSlot(true, counted);
-        if (counted) noteSlotSample(true);
         return s;
       }
     } catch {
@@ -1479,6 +1522,15 @@ let slotWindow: Array<{ t: number; ok: boolean }> = [];
 let slotBreakerOpen = false;
 let slotProbe: Promise<void> | null = null;
 let slotProbeAt = 0;
+/**
+ * Odin 2:12 F3 (Sentinel INFO-2): cooldown on the breaker (re-)trip ALERT only. The breaker itself still opens on
+ * every trip and closes on the next good getSlot; only the HIGH alert is held back if one was sent < 15 min ago
+ * (a flapping partial outage = one page, not one per re-trip). Suppressed re-trips are logged and counted in the next
+ * alert (suppressedRetrips).
+ */
+export const SOLANA_SLOT_ALERT_COOLDOWN_MS = 15 * 60_000;
+let slotLastAlertAt = -Infinity;
+let slotSuppressedRetrips = 0;
 
 /** Odin 1:39 N1: true while the getSlot breaker is open (Solana treated as absent until a good getSlot). */
 export function solanaSlotBreakerOpen(): boolean {
@@ -1486,13 +1538,17 @@ export function solanaSlotBreakerOpen(): boolean {
 }
 
 /**
- * Record one request-start getSlot outcome. counted=false (breaker probes) can only CLOSE the breaker: probes are not
- * paid requests and never count toward the triggers.
+ * Record one request-start getSlot outcome. counted=false can only CLOSE the breaker (recovery) and never touches the
+ * triggers (streak or rate window): breaker probes, and (Odin 2:12 F2) a paid request's read before its payload has
+ * passed validation — that request is counted afterwards via countStartSlot only if it validates.
  */
 function noteStartSlot(ok: boolean, counted = true): void {
   const now = Date.now();
   if (ok) {
-    slotFailStreak = 0;
+    if (counted) {
+      slotFailStreak = 0;
+      noteSlotSample(true);
+    }
     if (slotBreakerOpen || slotAlerted) {
       // Recovery (the next good getSlot, from a paid request or a probe): breaker closed, alert re-armed, and the rate
       // window starts over so the outage's failures cannot re-trip it at once.
@@ -1500,6 +1556,7 @@ function noteStartSlot(ok: boolean, counted = true): void {
       slotAlerted = false;
       slotBreakerOpen = false;
       slotWindow = [];
+      slotFailStreak = 0;
     }
     return;
   }
@@ -1517,6 +1574,14 @@ function noteStartSlot(ok: boolean, counted = true): void {
     slotBreakerOpen = true;
     slotProbeAt = now;
     warn("getSlot breaker OPEN: Solana dropped from the 402, paid Solana → Base-only 402 until a good getSlot", undefined, false);
+    if (now - slotLastAlertAt < SOLANA_SLOT_ALERT_COOLDOWN_MS) {
+      slotSuppressedRetrips++;
+      warn(`getSlot breaker re-trip alert suppressed (cooldown ${SOLANA_SLOT_ALERT_COOLDOWN_MS / 60_000} min, ${slotSuppressedRetrips} suppressed)`, undefined, false);
+      return;
+    }
+    slotLastAlertAt = now;
+    const suppressedRetrips = slotSuppressedRetrips;
+    slotSuppressedRetrips = 0;
     emitAlert({
       kind: "solana_start_slot_unavailable",
       severity: "high",
@@ -1525,8 +1590,14 @@ function noteStartSlot(ok: boolean, counted = true): void {
       failed,
       sample,
       windowMs: SOLANA_SLOT_RATE_WINDOW_MS,
+      suppressedRetrips,
     });
   }
+}
+
+/** Odin 2:12 F2: a paid request whose payload PASSED validation now counts its request-start getSlot outcome. */
+function countStartSlot(ok: boolean): void {
+  noteStartSlot(ok, true);
 }
 
 /** A paid request got a slot: it counts in the rate window as a success (the streak/breaker reset is in noteStartSlot). */
@@ -1719,13 +1790,31 @@ export async function handleSolanaPayment(
   let decision: Decision;
   let reconcile: { reason: string; ours: OurPayment | null } | null = null;
   try {
+    // Odin 2:12 F2 / Sentinel LOW-A: decode + the cheap LOCAL checks FIRST (no RPC, no rail): a junk / unbindable
+    // header is refused (invalid_payload, Base-only 402) without spending a getSlot and without touching the breaker.
+    const received = decodePaymentSignatureHeader(req.headers.get("payment-signature")!.trim()) as PaymentPayload;
+    const payload = stripBazaar(received);
+    const local = validateSolanaPayloadLocal(payload);
+    if (!local.ok) {
+      warn(`rejected Solana payload before getSlot/facilitator (${local.reason})`);
+      return reject(RAIL_REJECT.invalidPayload);
+    }
     // N3: token-account check and rail init in parallel.
     // Odin 12:31 S1: the chain slot at request start (before verify/settle) orders any later on-chain match.
-    const [ready, rail, startSlot] = await Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config)]);
+    // Odin 2:12 F2: read UNCOUNTED here (a good read can still close an open breaker); counted below only once the
+    // payload has also passed the requirement checks, so junk can trip neither the streak nor the rate window.
+    const [ready, rail, startSlot] = await Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config, false)]);
     if (!ready || !rail) return reject(RAIL_REJECT.unavailable);
+    const requirement = await buildSolanaRequirement(rail, atomicUsdc);
+    const check = validateSolanaPaymentPayload(payload, requirement);
+    if (!check.ok) {
+      warn(`rejected Solana payload before facilitator (${check.reason})`);
+      return reject(RAIL_REJECT.invalidPayload);
+    }
+    countStartSlot(startSlot !== undefined);
     // Odin 1:19/1:21: no request-start slot (both getSlot tries failed / timed out) → 503 + Retry-After with a FIXED
-    // body, right after the rail-ready check: no PayAI verify/settle, no handler, no replay key. Nothing is charged
-    // and no later on-chain match would be unorderable (no replay window, no wall-clock fallback).
+    // body, right after the rail-ready + payload checks: no PayAI verify/settle, no handler, no replay key. Nothing is
+    // charged and no later on-chain match would be unorderable (no replay window, no wall-clock fallback).
     if (startSlot === undefined) {
       // Odin 1:39 N1: once the breaker is open (sustained / partial getSlot outage) Solana is treated as absent: the
       // paid request gets main's Base-only 402 with rail_unavailable (nothing charged), as on a confirmed absence.
@@ -1737,14 +1826,6 @@ export async function handleSolanaPayment(
       return noStartSlotResponse();
     }
 
-    const requirement = await buildSolanaRequirement(rail, atomicUsdc);
-    const received = decodePaymentSignatureHeader(req.headers.get("payment-signature")!.trim()) as PaymentPayload;
-    const payload = stripBazaar(received);
-    const check = validateSolanaPaymentPayload(payload, requirement);
-    if (!check.ok) {
-      warn(`rejected Solana payload before facilitator (${check.reason})`);
-      return reject(RAIL_REJECT.invalidPayload);
-    }
     // Odin 1:39 N2: our payment (message, buyer slot + signature, payer) is parsed BEFORE verify; validation already
     // refused anything unparseable, so `ours` is always set below (no unchecked serve branch).
     const ours = ourPayment(txOf(payload)!)!;
@@ -1830,12 +1911,15 @@ export async function handleSolanaPayment(
           // (network + payer from OUR message) and MARKED unverified; the tx id is PayAI's (the only source: the fee
           // payer's slot-0 signature is not in the buyer's payload) and is labelled as such.
           warn(`could not bind the settled tx on-chain fp=${fp(key)}; serving the paid response (PAYMENT-RESPONSE marked unverified)`, undefined, false);
+          // Odin 2:13 (2): the marker sits under the spec's `extensions` (a spec-aware client keeps it), not `extra`.
+          // Odin 2:13 (3): PayAI's tx id is echoed ONLY if it is a Solana signature (base58, 64 bytes); else omitted.
+          const facTx = att.settle.transaction;
           res = withPaymentResponse(res, {
             success: true,
-            transaction: att.settle.transaction,
+            ...(isSolanaSignature(facTx) ? { transaction: facTx } : {}),
             network: config.network,
             payer: ours.payer,
-            extra: { settlementVerified: false, transactionSource: "facilitator" },
+            extensions: { settlementVerified: false, transactionSource: "facilitator" },
           } as SettleResponse);
         } else {
           // "paid": OUR message, exact amount, slot > start slot → the normal paid response. Odin 1:39 LOW-1: the

@@ -113,15 +113,31 @@ code change + owner approval; env can only turn the rail on/off.
     partial outage, e.g. every 3rd read failing, never makes 5 in a row). 60 s collects a sample on a busy instance and
     ages old failures out fast; below 20 samples one or two unlucky 503s would already be ≥ 25% (20 × 25% = 5, the
     same count as the consecutive trigger). A quiet instance never reaches 20, so the consecutive trigger covers it.
-  - on trip: one HIGH ALERT `solana_start_slot_unavailable {trigger: consecutive|rate, consecutive, failed, sample,
-    windowMs}`; Solana is treated as a confirmed absence: dropped from the unpaid 402, and a paid Solana request gets
-    main's Base-only 402 with `rail_unavailable` (instead of the 503) — nothing verified or charged.
+  - only requests whose payload PASSED validation count (Odin 2:12 F2 / Sentinel LOW-A), for both the streak and the
+    rate window: the cheap local checks (decode, version, scheme, base64 size, wire parse + signer layout) run BEFORE
+    getSlot and refuse junk with `invalid_payload` without any RPC call; the requirement checks run after init, and
+    only then is the request's getSlot outcome counted. A good getSlot from an invalid request can still CLOSE an open
+    breaker (recovery), but never resets the streak or adds a sample.
+  - on trip: HIGH ALERT `solana_start_slot_unavailable {trigger: consecutive|rate, consecutive, failed, sample,
+    windowMs, suppressedRetrips}`; Solana is treated as a confirmed absence: dropped from the unpaid 402, and a paid
+    Solana request gets a 402 with `rail_unavailable` (instead of the 503) — nothing verified or charged.
+  - alert cooldown (Odin 2:12 F3): a re-trip less than 15 min after the last alert re-opens the breaker as usual but
+    sends no alert (logged, counted in the next alert's `suppressedRetrips`). Breaker behaviour is unchanged.
   - recovery = the next good getSlot: paid requests still read it (in parallel with init, no added latency), and the
     unpaid 402 path probes it at most once per 15 s per instance (single-flight, bounded by the init window). A good
     answer closes the breaker (the 402 that ran the probe already lists Solana), re-arms the alert, clears the window.
 - **Parse before verify (Odin 1:39 N2):** the preflight refuses a transaction we cannot bind later (unparseable wire
-  format, or no signed buyer slot) → Base-only 402 `invalid_payload` before PayAI. `ours` (message, buyer slot +
+  format, or no signed buyer slot) → 402 `invalid_payload` before PayAI. `ours` (message, buyer slot +
   signature, payer) is always known after it; the old "could not read our payment → serve" branch is gone.
+- **Signer layout by index (Odin 2:12 F1):** exactly 2 required signers and 2 signature slots; slot 0 = account key 0
+  = the fee payer, which the facilitator signs at settle, so it MUST be the all-zero placeholder in the buyer's
+  payload (a non-zero slot 0 → `invalid_payload` before PayAI); slot 1 = key 1 = the buyer, which must be signed.
+  The old "first non-zero slot" pick bound a client-filled fee-payer placeholder as the buyer: PayAI could settle while
+  our binding never matched (charged, never delivered, 502/504).
+- **Reject / unavailable 402 lists every healthy rail (Odin 2:13 (4), Sentinel INFO-3):** a Solana payment that is
+  refused or cannot be served gets a 402 with Base plus XRPL and Polygon when enabled and ready (each appended exactly
+  as on the unpaid 402, same payTo pins; Solana itself is not re-offered), with `PAYMENT-REQUIRED.error` = reason.
+  With XRPL and Polygon off or not ready it is byte-identical to the Base-only golden reject.
 - **Duplicates (S1; widened by Odin 12:51 C1):** `duplicate_settlement`, ANY facilitator 409 (any reason, or a non-JSON
   409, which the SDK reports as `Facilitator settle failed (409)`), and any reason matching `/duplicate|already|in_flight/`
   (also on a 200 `success:false` without a signature, which used to be a terminal 402): never searched, never
@@ -135,8 +151,10 @@ code change + owner approval; env can only turn the rail on/off.
     502 `settlement_unconfirmed` + reconcile (`settle_success_unbound` / `settle_success_failed_on_chain`), never a 402;
   - RPC down / not indexed within the deadline → paid response (fail open, as before: PayAI confirmed the settle);
     PAYMENT-RESPONSE is **rebuilt and marked unverified** (Odin 1:39 LOW-1): `{success, transaction: <PayAI's id>,
-    network, payer: <buyer key of OUR message>, extra: {settlementVerified: false, transactionSource: "facilitator"}}`
-    (the tx id can only come from PayAI: the fee payer's slot-0 signature is not in the buyer's payload);
+    network, payer: <buyer key of OUR message>, extensions: {settlementVerified: false, transactionSource: "facilitator"}}`
+    (the tx id can only come from PayAI: the fee payer's slot-0 signature is not in the buyer's payload). Odin 2:13:
+    the marker is under the spec's `extensions` (not `extra`), and PayAI's tx id is echoed only if it is a Solana
+    signature (base58 decoding to exactly 64 bytes); otherwise `transaction` is omitted;
   - our tx confirmed → PAYMENT-RESPONSE is **always rebuilt** from the chain + OUR message (tx id = our bound tx,
     payer = buyer key of OUR message), whatever PayAI's header said (Odin 1:21, always since 1:39 LOW-1);
   - no start slot cannot reach this path (503 before PayAI). The old wall-clock fallback (`settledBeforeRequest`,

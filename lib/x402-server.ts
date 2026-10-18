@@ -1485,11 +1485,24 @@ export function createX402GetHandler(
       const paid = await handleSolanaPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, solana.config, (r) => {
         rejected = r;
       });
-      // Solana unavailable / rejected / threw → the Base-only 402 (built from
-      // a copy of the request WITHOUT the Solana payment header, so the Base
-      // server never even parses a Solana payload).
-      // Rejected (nothing charged, no body): Base-only 402 + PAYMENT-REQUIRED.error = reason, as Base does.
-      return withVary(paid ?? (await withRejectReason(await baseChallenge(withoutPaymentHeaders(req), cdpReady), rejected))) as NextResponse;
+      if (paid) return withVary(paid) as NextResponse;
+      // Solana unavailable / rejected / threw → a 402 built from a copy of the
+      // request WITHOUT the Solana payment header (so the Base server never
+      // even parses a Solana payload). Odin 2:13 (4): it lists every rail that
+      // is healthy right now: Base, plus XRPL and Polygon when enabled and
+      // ready (each appended exactly as on the unpaid 402, so payTo pins are
+      // the same; a rail whose accept is unavailable is simply left out).
+      // Solana itself is not re-offered. Rejected (nothing charged, no body):
+      // PAYMENT-REQUIRED.error = reason, as Base does.
+      const clean = withoutPaymentHeaders(req);
+      let challenge: NextResponse = await baseChallenge(clean, cdpReady);
+      if (xrpl.enabled && challenge.status === 402) {
+        challenge = await withXrplAccept(challenge, xrpl.config, paymentOpts.maxAmountRequired);
+      }
+      if (polygon.enabled && challenge.status === 402) {
+        challenge = await withPolygonAccept(challenge, polygon.config, paymentOpts.maxAmountRequired);
+      }
+      return withVary(await withRejectReason(challenge, rejected)) as NextResponse;
     }
     if (xrpl.enabled && isXrplPaymentRequest(req)) {
       let rejected: string | null = null;

@@ -347,7 +347,11 @@ describe("fix 2: replay guard (before verify)", () => {
     const [, sol] = await accepts();
     const run = handler();
     expect((await run.handler(paid(solPayload(sol, wireTx(9, 0))))).status).toBe(200);
-    expect((await run.handler(paid(solPayload(sol, wireTx(9, 0x55))))).status).toBe(409);
+    // Odin 2:12 F1: a non-zero fee-payer slot is now refused outright (invalid_payload, before PayAI), even for a
+    // message already served; the key equality above still holds for the replay guard.
+    const tampered = await run.handler(paid(solPayload(sol, wireTx(9, 0x55))));
+    expect(tampered.status).toBe(402);
+    expect(decodePaymentRequiredHeader(tampered.headers.get("payment-required")!).error).toBe("invalid_payload");
     expect(payai("verify")).toBe(1);
   });
 
