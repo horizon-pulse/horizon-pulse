@@ -9,6 +9,8 @@
  * the first tag is the route's category.
  */
 
+import { DARK_DESCRIPTIONS, darkDescription } from "./dark-routes";
+
 export type RouteMetadata = {
   description: string;
   tags: string[];
@@ -157,6 +159,27 @@ export const ROUTE_METADATA = {
     description:
       "Batch chain checks API: up to 10 checks for one payment. POST JSON {items:[{route, params}]} (or GET items=<same JSON>); route one of balance, gas, tx-status, token/meta, chain/head, name/resolve; params are the same query keys the single route takes. Returns JSON: results [{index, route, status, ok, body}] in request order, count, okCount. Each item runs the single route's handler. Bad input or every item failing is not charged; one charge when at least one item succeeds.",
     tags: ["batch", "multichain", "wallet-checks", "chain-data", "bulk"],
+  },
+  // DARK routes 10/17 (404 unless their HP_*_ENABLED flag is "true"); not in the live catalog,
+  // /.well-known/x402, openapi, llms or related-routes; no Bazaar extension. Entries exist only so
+  // the no-CDP fallback 402 (buildPaymentRequirements) can name them. Description single-sourced.
+  "/api/audit/security": {
+    // Read per access: follows HP_AUDIT_HIGH_TIERS_ENABLED (no full/history/deep or CT history when off).
+    get description(): string {
+      return darkDescription("/api/audit/security");
+    },
+    tags: ["web-headers", "tls-dns-checks", "readiness-checks", "dns-email-auth", "outside-in-checks"],
+  },
+  "/api/package/check": {
+    // Read per access: follows HP_PACKAGE_DEEP_ENABLED (base tier only when off).
+    get description(): string {
+      return darkDescription("/api/package/check");
+    },
+    tags: ["supply-chain", "package-signals", "npm-pypi", "typosquat", "osv-vulns"],
+  },
+  "/api/injection/scan": {
+    description: DARK_DESCRIPTIONS["/api/injection/scan"],
+    tags: ["prompt-injection-heuristics", "prompt-injection", "text-scan", "hidden-text", "agent-tools"],
   },
 } as const satisfies Record<string, RouteMetadata>;
 
