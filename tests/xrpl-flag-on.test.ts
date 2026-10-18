@@ -17,6 +17,8 @@ import { CDP_URL_PREFIX } from "./helpers/facilitator-mock";
 import { PINNED_XRPL_PAYTO, payToForNet, T54_MAINNET, XRPL_FAC, installXrplFacilitators, setCdp, stubXrplOn } from "./helpers/xrpl-env";
 import { PAYAI_FEE_PAYER, installRpc } from "./helpers/solana-env";
 import { SOLANA_PAYTO } from "@/lib/solana-config";
+import { setSolanaSharedStoreForTests as __v4SetSolanaStore } from "@/lib/solana-rail";
+import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
 
 const golden = JSON.parse(readFileSync(path.join(__dirname, "fixtures", "x402-flag-off.golden.json"), "utf8"));
 
@@ -104,6 +106,7 @@ describe("XRPL flag on", () => {
   beforeEach(() => {
     resetXrplRailForTests();
     resetSolanaRailForTests();
+    __v4SetSolanaStore(new MemoryReplayStore()); // v4 F2: Solana needs the shared claim store (fail closed without)
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
   afterEach(() => {

@@ -146,7 +146,9 @@ code change + owner approval; env can only turn the rail on/off.
   EVAL probe passed); that path never starts XRPL init, the readiness RPC or the EVAL probe, so its time margin holds. Solana itself (Odin 2:29 (b)
   delta6) is re-offered, via the unpaid 402's own builder, ONLY for a client-caused rejection (`invalid_payload`)
   while the getSlot breaker is closed and the rail is otherwise present (token account + rail ready); it stays out on
-  `rail_unavailable`, an open breaker or an absent rail. A `rail_unavailable` with XRPL and Polygon off or not ready
+  `rail_unavailable`, an open breaker or an absent rail. The re-offer is driven by an internal flag (`reofferSolana`)
+  that only OUR two local payload checks set (shared claim v3, Sentinel LOW): a facilitator reason passed through as
+  `invalid_payload` (e.g. PayAI's verify) never re-offers Solana. A `rail_unavailable` with XRPL and Polygon off or not ready
   is byte-identical to the Base-only golden reject.
 - **Duplicates (S1; widened by Odin 12:51 C1):** `duplicate_settlement`, ANY facilitator 409 (any reason, or a non-JSON
   409, which the SDK reports as `Facilitator settle failed (409)`), and any reason matching `/duplicate|already|in_flight/`
@@ -174,8 +176,10 @@ code change + owner approval; env can only turn the rail on/off.
   deduped per payment message, i.e. the full sha256 replay key, for 25 h: Odin 1:21 / 1:39 LOW-2) and logs (every occurrence) `[solana-rail] SOLANA_RECONCILE {status, reason, fp, payer, amount,
   asset, payTo, buyerSignature[, txid]}` (public chain data only) for manual refunds.
 - **Time budget (corrected Odin 12:51 C2):** a cold token-account check makes up to 2 tries × init, so the worst case is
-  2 × init + 10 + 12 + 4: 31 s by default (SOLANA_WORST_CASE_MS) and 40 s at the largest accepted init timeout
-  (`HP_SOLANA_INIT_TIMEOUT_MS` is now clamped to SOLANA_MAX_INIT_TIMEOUT_MS = 7 s; SOLANA_MAX_WORST_CASE_MS). Every
+  2 × init + 10 + 12 + 4 + (shared claim v4 C1) 2 claim-store calls × 1 s: 33 s by default (SOLANA_WORST_CASE_MS) and
+  40 s at the largest accepted init timeout (`HP_SOLANA_INIT_TIMEOUT_MS` is clamped to SOLANA_MAX_INIT_TIMEOUT_MS = 6 s,
+  was 7 s before the store calls were counted; SOLANA_MAX_WORST_CASE_MS). The redeem path (5 store calls + init + 4 s
+  ledger check, no verify/settle) is 21 s at most (SOLANA_MAX_REDEEM_WORST_CASE_MS). Every
   route whose import graph reaches lib/solana-rail.ts (route.ts and dark route.<flag>.ts) needs maxDuration ≥ 40 s + 20 s. route.inj.ts was raised
   30 → 60 s. /mcp (30 s) is exempt: its payment path is the Base-only @x402/mcp wrapper (tests/solana-time-budget.test.ts).
 
@@ -193,9 +197,8 @@ the client to sign and pay again (double charge).
   `settle_failed`, kept for `REPLAY_TTL_MS` = **25 h** (≥ the 300 s
   `maxTimeoutSeconds`). Released (deleted) when nothing could have been charged:
   verify rejected/failed, or the handler failed before settle.
-- In-memory, **per instance**. A fully global guard needs a shared store (e.g.
-  KV) = an account → owner decision. Instead, a cheap cross-instance check
-  (N1, below) catches replays that land on another instance.
+- Local map per instance, in front of the **shared claim store** (below), which shared claim v4 makes mandatory on
+  mainnet (F2: no store → Solana unavailable). The cross-instance check (N1, below) stays as a second line.
 
 **PayAI duplicate handling (from PayAI's own docs, read 2026-10-08):**
 - `facilitator.payai.network/developers.md`: "`POST /settle` … Idempotent:
@@ -338,3 +341,66 @@ Still applies:
   `node scripts/smoke-solana-rail.mjs <base> <out.json>` and
   `SMOKE_FLAG_ON_JSON=<out.json> npx vitest run -c vitest.smoke.config.mts`
   (read-only PayAI `/supported` + mainnet RPC reads).
+
+## Shared claim store (Odin 12:51 PM ET 10/18, item (d); v2 with redeem-on-retry, Odin 1:39 (3); v4 Odin 5:57 / 6:14 PM ET)
+
+Modeled on the XRPL replay store (`lib/xrpl-replay-store.ts`, same `UpstashReplayStore` class and credentials:
+`UPSTASH_REDIS_REST_*`, or `KV_REST_API_URL`/`KV_REST_API_TOKEN`; the read-only KV token is never read).
+- **Keys:** `hp:solana:replay:<sha256 of the tx message>`, TTL REPLAY_TTL_MS (25 h). Values use the XRPL encoding,
+  but the `@firstSeen` number is the first request's **start SLOT** (the freshness bound), and `@lease` is wall-clock ms:
+  `in_flight@<startSlot>@<claimMs>!<owner>~<rq>`, `settle_unconfirmed@<startSlot>~<rq>` (charged-or-unknown, NOT
+  delivered), `redeeming@<startSlot>@<leaseMs>!<owner>~<rq>`, `settled~<rq>` (DELIVERED by the first request),
+  `settled!<owner>~<rq>` (DELIVERED by a redeem), `settle_failed~<rq>`. `<rq>` = the paying request's fingerprint (v4 F1).
+- **v4 F1, request binding (same as the XRPL hotfix, `lib/request-fingerprint.ts`):** the first request stores its
+  fingerprint (sha256 over method, path, the query stable-sorted by key only, sha256(body)) in the claim; every later
+  write keeps it. The message + buyer signature are public once the tx lands, so they cannot prove which request was
+  paid for. A redeem runs only for a retry with the same fingerprint, checked before the lease CAS and before ANY
+  ledger read:
+  - mismatch → **409** `duplicate_payment`, `SOLANA_RECONCILE` (409, `redeem_fingerprint_mismatch`) on **every**
+    mismatching request, HIGH alert `solana_redeem_fingerprint_mismatch` once per slot per 15 min
+    (`SOLANA_FP_ALERT_COOLDOWN_MS`; in-process, per instance, not shared across instances); slot untouched;
+  - slot without a fingerprint (none on prod: v3 never shipped) → 502 + reconcile `redeem_legacy_no_fingerprint`,
+    slot untouched, never auto-redeemed;
+  - a later duplicate of a slot delivered BY A REDEEM → 409 + reconcile `duplicate_after_redeem`.
+  - Buyer rule (public/llms.txt): a redeem retry must resend the identical URL (path + query) and body.
+  - Residual (accepted, backlog item below): a query-less / body-less request is guessable by a chain watcher.
+- **v4 F2, fail closed without a store:** Solana is mainnet-only, so missing, half-set (either family), non-https or
+  unusable credentials make Solana **unavailable** (not on the 402; paid Solana → Base-only 402 `rail_unavailable`,
+  nothing claimed or charged) with ONE HIGH alert `solana_claim_store_unconfigured {reason: missing | half_set |
+  not_https | invalid}` per episode; `/status` meta says `unavailable`. No silent per-instance fallback.
+- **v4 F3, owner-checked writes:** every final write of a request (delivered / unconfirmed / failed mark) is a CAS
+  from exactly the value its own claim wrote (owner-tagged), and the release is a compare-and-delete against it. A
+  slot taken over meanwhile (e.g. by a redeemer after the 90 s lease) is never overwritten or deleted.
+- **v4 LOW (Class A L1/L2):** a delivered mark or release that errors or loses its CAS raises a LOW alert
+  `solana_claim_write_failed {write: settled | release, reason: error | lost}` (plus the warn line).
+- **Claim:** atomic `SET NX PX` BEFORE verify. With a shared store, only `settled` / `settle_failed` are final in the
+  local map (409); anything else goes to the shared slot. Held `settled` / `settle_failed` → 409 `duplicate_payment`.
+  A store error → fail closed (Base-only 402, nothing charged).
+- **Redeem on retry (Odin 1:39 (3), modeled on XRPL):** a held slot that is not delivered (`settle_unconfirmed`, an
+  `in_flight` older than 90 s = a dead request, or a `redeeming` lease older than 90 s) is redeemed by the retry,
+  ledger-only (no PayAI verify, no settle):
+  - the exact stored value is read (`GET`) and swapped by CAS to an owner-tagged `redeeming` lease; losing the CAS, a
+    live lease or a live `in_flight` → 503 `payment_in_progress` (Retry-After 5);
+  - `findPaymentOnChain` with no PayAI hint: OUR message bytes AND the buyer signature from THIS payload must match a
+    tx in the payTo ATA history at slot > the stored start slot, exact amount;
+  - paid → the route runs, the slot goes to `settled` (CAS against our lease), the response carries PAYMENT-RESPONSE
+    from the chain (tx id) + OUR message (payer);
+  - failed on-chain (confirmed + finalized) → `settle_failed`, Base-only 402;
+  - not visible / RPC down / route error / throw → back to `settle_unconfirmed@<startSlot>` (CAS against our lease),
+    502 `settlement_unconfirmed` + reconcile `redeem_not_found`; a later retry can redeem;
+  - a tx at or before the stored start slot is never a candidate (not delivered, stays undelivered for a human).
+  - store error on GET / the lease CAS → fail closed (Base-only 402).
+- **Tracking:** every local state write is mirrored to the shared store (owner-checked CAS, v4 F3), and every release
+  (nothing charged) is a compare-and-delete. Writes are awaited before the answer; store commands are bounded at 1 s
+  (`SOLANA_STORE_TIMEOUT_MS`, counted in the time budget). A failed write is logged and the slot keeps its previous value (at
+  worst `in_flight`, which blocks a second delivery; it never allows one).
+- **Probe:** `EVAL "return 1"` plus the self-test on a random `hp:solana:selftest:replay-eval:<id>` key (60 s TTL),
+  bounded at 3 s, in parallel with the token-account check and rail init, cached (ok 10 min / fail 60 s). A failure
+  means fail closed: Solana is not advertised on the 402, paid Solana gets the Base-only 402, and one HIGH ALERT
+  `solana_replay_eval_unavailable {reason}` fires per episode.
+- **No shared store configured:** v4 F2: Solana unavailable (fail closed + HIGH alert), see above.
+- **/status meta:** `<meta name="hp-solana-replay-eval" content="ok|unavailable|not_applicable">` (non-secret, like
+  `hp-xrpl-replay-eval`): not_applicable when the Solana rail is off; unavailable when the probe fails or no shared
+  store is configured (v4 F2).
+- **Ops:** a restricted Upstash token must cover `hp:solana:*`. Otherwise the probe fails and Solana goes dark
+  (fail closed, HIGH alert).

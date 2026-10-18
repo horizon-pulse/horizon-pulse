@@ -7,6 +7,7 @@ import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { xrplReplayEvalStatus } from "@/lib/xrpl-rail";
+import { solanaReplayEvalStatus } from "@/lib/solana-rail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +21,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Status | Horizon Pulse",
     description: "Live on-chain USDC balance of the Horizon Pulse payTo on Base, the paid route catalog, and where to pay on Base, Solana, Polygon and the XRP Ledger.",
-    other: { "hp-xrpl-replay-eval": await xrplReplayEvalStatus() },
+    // Odin 1:39 (3): same non-secret field for the Solana shared claim store (ok|unavailable|not_applicable).
+    other: { "hp-xrpl-replay-eval": await xrplReplayEvalStatus(), "hp-solana-replay-eval": await solanaReplayEvalStatus() },
   };
 }
 

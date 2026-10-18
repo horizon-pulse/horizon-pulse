@@ -35,6 +35,8 @@ import { TOOLS } from "@/lib/mcp-server";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { discourseSplitRouteConfig } from "@/lib/x402-server";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
+import { setSolanaSharedStoreForTests as __v4SetSolanaStore } from "@/lib/solana-rail";
+import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
 
 const ROOT = path.resolve(__dirname, "..");
 
@@ -295,6 +297,7 @@ describe("four-rail 402 at $0.03", () => {
   it("unpaid GET lists Base, Solana, XRPL RLUSD and Polygon, each at $0.03", async () => {
     resetXrplRailForTests();
     resetSolanaRailForTests();
+    __v4SetSolanaStore(new MemoryReplayStore()); // v4 F2: Solana needs the shared claim store (fail closed without)
     vi.spyOn(console, "warn").mockImplementation(() => {});
     installXrplFacilitators();
     installRpc("present");

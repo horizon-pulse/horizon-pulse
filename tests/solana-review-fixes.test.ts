@@ -332,7 +332,10 @@ describe("fix 2: replay guard (before verify)", () => {
     const first = run.handler(paid(p));
     await new Promise((r) => setTimeout(r, 20));
     const second = await run.handler(paid(p)); // first is still settling
-    expect(second.status).toBe(409);
+    // v4 F2: mainnet always has the shared claim store now; a live claim held by another request is
+    // "in progress" (503 + Retry-After), not a duplicate (Odin 1:39 (3)). Still exactly one reaches PayAI.
+    expect(second.status).toBe(503);
+    expect(await second.json()).toEqual({ error: "payment_in_progress" });
     release();
     expect((await first).status).toBe(200);
     expect(payai("verify")).toBe(1);
@@ -367,15 +370,17 @@ describe("fix 2: replay guard (before verify)", () => {
     expect((await run.handler(paid(p))).status).toBe(200);
   });
 
-  it("(2) ambiguous settle keeps the key: retrying the same tx => 409, never 402, PayAI not re-asked", async () => {
+  it("(2) ambiguous settle keeps the key: retrying the same tx => redeem path (not visible on-chain → 502), never 402, PayAI not re-asked", async () => {
     const { payai } = facilitators({ settle: () => { throw new FacilitatorTimeoutError("settle", 12_000); } });
     stubSolanaOn();
     const [, sol] = await accepts();
     const run = handler();
     const p = solPayload(sol);
     expect((await run.handler(paid(p))).status).toBe(504);
-    expect((await run.handler(paid(p))).status).toBe(409);
+    // v4 F2: with the (now mandatory) shared store the undelivered slot is redeemable by the SAME request, read-only.
+    expect((await run.handler(paid(p))).status).toBe(502);
     expect(payai("settle")).toBe(1);
+    expect(payai("verify")).toBe(1);
   });
 
   it("(2) retention ≥ 300 s (25 h: covers PayAI's 24 h replay of recorded outcomes), then expires", async () => {

@@ -55,6 +55,7 @@ import {
 import { installRpc as installSolanaRpc } from "./helpers/solana-env";
 import { SOLANA_PAYTO } from "@/lib/solana-config";
 import { RLUSD_CURRENCY_HEX, rlusdIssuerFor, usdcAtomicToRlusdValue, type XrplRailNetwork } from "@/lib/xrpl-config";
+import { setSolanaSharedStoreForTests as __v4SetSolanaStore } from "@/lib/solana-rail";
 
 const golden = JSON.parse(readFileSync(path.join(__dirname, "fixtures", "x402-flag-off.golden.json"), "utf8"));
 
@@ -125,6 +126,7 @@ describe("unpaid isolation: XRPL failures serve the exact main 402", () => {
   beforeEach(() => {
     resetXrplRailForTests();
     resetSolanaRailForTests();
+    __v4SetSolanaStore(new MemoryReplayStore()); // v4 F2: Solana needs the shared claim store (fail closed without)
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
   afterEach(() => {
@@ -293,6 +295,7 @@ describe("unpaid isolation: XRPL failures serve the exact main 402", () => {
     vi.stubEnv("HP_SOLANA_PAYTO", SOLANA_PAYTO);
     const solanaOnly = await captureAll();
     resetSolanaRailForTests();
+    __v4SetSolanaStore(new MemoryReplayStore()); // v4 F2: Solana needs the shared claim store (fail closed without)
     installSolanaRpc("present");
     stubXrplOn({}, true, "unactivated", true);
     __setXrplModuleLoaderForTests(() => Promise.reject(new Error("import boom")));
@@ -374,6 +377,7 @@ describe("paid isolation", () => {
   beforeEach(() => {
     resetXrplRailForTests();
     resetSolanaRailForTests();
+    __v4SetSolanaStore(new MemoryReplayStore()); // v4 F2: Solana needs the shared claim store (fail closed without)
     vi.spyOn(console, "warn").mockImplementation(() => {});
   });
   afterEach(() => {

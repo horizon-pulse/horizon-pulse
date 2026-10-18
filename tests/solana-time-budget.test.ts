@@ -1,7 +1,8 @@
 /**
  * Odin 12:31 PM ET: Solana time budget, like tests/xrpl-time-budget.test.ts. The route list is DERIVED from the code:
  * every route.ts / dark route.<flag>.ts under app/ whose static import graph reaches lib/solana-rail.ts. Each must
- * give the Solana worst case at the LARGEST accepted HP_SOLANA_INIT_TIMEOUT_MS (Odin 12:51 C2: 2 × 7 + 10 + 12 + 4 = 40 s)
+ * give the Solana worst case at the LARGEST accepted HP_SOLANA_INIT_TIMEOUT_MS (Odin 12:51 C2; v4 C1 counts the claim-store
+ * calls: 2 × 6 + 10 + 12 + 4 + 2 × 1 = 40 s)
  * plus a 20 s handler margin, unless its payment path provably cannot take Solana
  * (only /mcp today: @x402/mcp wrapper with the Base-only accepts from buildPaymentRequirements, CDP resource server).
  */
@@ -17,6 +18,11 @@ import {
   SOLANA_START_SLOT_TIMEOUT_MS,
   SOLANA_VERIFY_TIMEOUT_MS,
   SOLANA_WORST_CASE_MS,
+  SOLANA_EVAL_PROBE_DEADLINE_MS,
+  SOLANA_MAX_REDEEM_WORST_CASE_MS,
+  SOLANA_STORE_CALLS_PAID_PATH,
+  SOLANA_STORE_CALLS_REDEEM_PATH,
+  SOLANA_STORE_TIMEOUT_MS,
 } from "@/lib/solana-rail";
 import { buildPaymentRequirements } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
@@ -73,16 +79,31 @@ const maxDurationOf = (rel: string) => {
 };
 
 describe("Solana time budget (Odin 12:31)", () => {
-  it("worst case (cold: 2 token-account tries × init) = 2 × 2.5 + 10 + 12 + 4 = 31 s by default, 2 × 7 + 26 = 40 s at the max init; the start-slot read is capped below init", () => {
+  it("worst case (cold: 2 token-account tries × init) incl. the claim-store calls (v4 C1) = 2 × 2.5 + 10 + 12 + 4 + 2 × 1 = 33 s by default, 2 × 6 + 26 + 2 = 40 s at the max init; the start-slot read is capped below init", () => {
     expect([SOLANA_DEFAULT_INIT_TIMEOUT_MS, SOLANA_VERIFY_TIMEOUT_MS, SOLANA_SETTLE_TIMEOUT_MS, SOLANA_LEDGER_CHECK_DEADLINE_MS]).toEqual([2500, 10000, 12000, 4000]);
     expect(ATA_COLD_ATTEMPTS).toBe(2);
-    expect(SOLANA_WORST_CASE_MS).toBe(31_000);
-    expect(SOLANA_MAX_INIT_TIMEOUT_MS).toBe(7_000);
-    expect(SOLANA_MAX_WORST_CASE_MS).toBe(ATA_COLD_ATTEMPTS * SOLANA_MAX_INIT_TIMEOUT_MS + SOLANA_VERIFY_TIMEOUT_MS + SOLANA_SETTLE_TIMEOUT_MS + SOLANA_LEDGER_CHECK_DEADLINE_MS);
+    // v4 C1: claim (SET NX) + exactly one final write (owner-checked CAS / compare-and-delete), each ≤ 1 s.
+    expect(SOLANA_STORE_TIMEOUT_MS).toBe(1_000);
+    expect(SOLANA_STORE_CALLS_PAID_PATH).toBe(2);
+    expect(SOLANA_WORST_CASE_MS).toBe(33_000);
+    expect(SOLANA_MAX_INIT_TIMEOUT_MS).toBe(6_000);
+    expect(SOLANA_MAX_WORST_CASE_MS).toBe(
+      ATA_COLD_ATTEMPTS * SOLANA_MAX_INIT_TIMEOUT_MS + SOLANA_VERIFY_TIMEOUT_MS + SOLANA_SETTLE_TIMEOUT_MS + SOLANA_LEDGER_CHECK_DEADLINE_MS + SOLANA_STORE_CALLS_PAID_PATH * SOLANA_STORE_TIMEOUT_MS,
+    );
     expect(SOLANA_MAX_WORST_CASE_MS).toBe(40_000);
+    // Redeem path (held undelivered slot): 5 store calls + token-account phase + ledger check; no verify / settle.
+    expect(SOLANA_STORE_CALLS_REDEEM_PATH).toBe(5);
+    expect(SOLANA_MAX_REDEEM_WORST_CASE_MS).toBe(ATA_COLD_ATTEMPTS * SOLANA_MAX_INIT_TIMEOUT_MS + SOLANA_LEDGER_CHECK_DEADLINE_MS + SOLANA_STORE_CALLS_REDEEM_PATH * SOLANA_STORE_TIMEOUT_MS);
+    expect(SOLANA_MAX_REDEEM_WORST_CASE_MS).toBeLessThanOrEqual(SOLANA_MAX_WORST_CASE_MS);
+    // The Solana store is built with the counted per-command timeout.
+    expect(readFileSync(path.join(ROOT, "lib", "solana-rail.ts"), "utf8")).toContain("new UpstashReplayStore(c.url, c.token, fetchFn, SOLANA_STORE_TIMEOUT_MS, SOLANA_REPLAY_PREFIX, SOLANA_SELFTEST_KEY_PREFIX)");
     expect(SOLANA_START_SLOT_TIMEOUT_MS).toBeLessThanOrEqual(SOLANA_DEFAULT_INIT_TIMEOUT_MS);
     const src = readFileSync(path.join(ROOT, "lib", "solana-rail.ts"), "utf8");
-    expect(src).toContain("Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config, false)])"); // Odin 2:12 F2: counted after validation
+    // Odin 2:12 F2: getSlot read uncounted (counted after validation). Odin 1:39 (3): the shared claim store probe
+    // (≤ SOLANA_EVAL_PROBE_DEADLINE_MS) runs in the same parallel init phase and finishes inside the cold
+    // token-account budget (2 × init), so the worst case is unchanged.
+    expect(src).toContain("Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config, false), solanaReplayEvalOk()])");
+    expect(SOLANA_EVAL_PROBE_DEADLINE_MS).toBeLessThanOrEqual(ATA_COLD_ATTEMPTS * SOLANA_DEFAULT_INIT_TIMEOUT_MS);
   });
 
   it("every derived Solana-capable route (route.ts and dark route.<flag>.ts) has maxDuration ≥ worst case + handler margin", () => {
@@ -101,9 +122,11 @@ describe("Solana time budget (Odin 12:31)", () => {
 
   it("C2: HP_SOLANA_INIT_TIMEOUT_MS is clamped to SOLANA_MAX_INIT_TIMEOUT_MS (an operator env change cannot void the budget)", () => {
     const on = (t: string) => getSolanaRailConfig({ HP_SOLANA_ENABLED: "true", HP_SOLANA_PAYTO: SOLANA_PAYTO, HP_SOLANA_INIT_TIMEOUT_MS: t });
-    expect(on("7000")).toMatchObject({ config: { initTimeoutMs: 7000 } });
-    expect(on("7001")).toMatchObject({ config: { initTimeoutMs: 7000 } });
-    expect(on("30000")).toMatchObject({ config: { initTimeoutMs: 7000 } });
+    // v4 C1: max 6 s (was 7 s) so the counted claim-store calls keep the 20 s handler margin.
+    expect(on("6000")).toMatchObject({ config: { initTimeoutMs: 6000 } });
+    expect(on("6001")).toMatchObject({ config: { initTimeoutMs: 6000 } });
+    expect(on("7000")).toMatchObject({ config: { initTimeoutMs: 6000 } });
+    expect(on("30000")).toMatchObject({ config: { initTimeoutMs: 6000 } });
     expect(on("2500")).toMatchObject({ config: { initTimeoutMs: 2500 } });
     expect(on("")).toMatchObject({ config: { initTimeoutMs: SOLANA_DEFAULT_INIT_TIMEOUT_MS } });
   });
