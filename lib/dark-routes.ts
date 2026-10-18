@@ -1,6 +1,6 @@
 /**
- * Dark routes (Michael via Odin 10:28 PM ET 10/17): security & readiness audit,
- * package safety check, prompt-injection scan. Built and deployable DARK:
+ * Dark routes (Michael via Odin 10:28 PM ET 10/17): web readiness checks,
+ * package signals check, prompt-injection heuristics scan (Counsel wording 10/18). Built and deployable DARK:
  *   - each route is 404 on every verb unless its own flag is exactly "true";
  *   - not in the live catalog, /.well-known/x402, llms.txt, OpenAPI or
  *     related-routes; no Bazaar discovery extension (lib/route-metadata.ts
@@ -8,7 +8,8 @@
  *   - going live and listing need Michael's own yes on the exact routes.
  * Money is integer atomic USDC (6 decimals) as decimal strings; USD labels are
  * derived from the atomic amount, never typed separately.
- * Copy is informational only: no "secure", "guaranteed" or "certified" claims.
+ * Copy is informational only: no "secure", "guaranteed" or "certified" claims;
+ * every response carries Counsel's disclaimer (lib/dark-checks-shared.ts).
  */
 import { randomUUID } from "node:crypto";
 import type { RoutesConfig } from "@x402/core/server";
@@ -46,22 +47,22 @@ const tier = (id: string, atomic: number, label: string): Tier => ({ id, atomic,
 
 /** Audit ladder = Michael's FINAL ladder $1/$5/$10/$20/$50/$75/$100 (Odin 10:58 AM ET 10/17). */
 export const AUDIT_TIERS: readonly Tier[] = [
-  tier("quick", 1_000_000, "Quick scan: HTTPS, TLS certificate and expiry, core security headers"),
-  tier("standard", 5_000_000, "Adds CORS, cookie flags, exposed /.env and /.git, security.txt, server disclosure"),
+  tier("quick", 1_000_000, "Quick scan: HTTPS, TLS certificate and expiry, core HTTP response headers"),
+  tier("standard", 5_000_000, "Adds negotiated TLS version, Permissions-Policy, cookie flags, security.txt, server version disclosure"),
   tier("extended", 10_000_000, "Adds DNS records, SPF, DMARC, DKIM selector hints, CAA, www/apex consistency"),
   tier("report", 20_000_000, "Extended checks plus a fix line per finding and a markdown report"),
-  tier("full", 50_000_000, "Report plus certificate SAN hosts (up to 10) checked and page hints (mixed content, storage bucket hosts, third-party scripts)"),
-  tier("history", 75_000_000, "Full plus certificate-transparency history (365 days) and up to 20 hosts checked"),
-  tier("deep", 100_000_000, "History plus up to 30 hosts and a prioritized fix list with config snippets"),
+  tier("full", 50_000_000, "Report plus home-page hints (mixed content, storage bucket hosts, third-party scripts without SRI)"),
+  tier("history", 75_000_000, "Full plus certificate-transparency history for the host (365 days, via crt.sh)"),
+  tier("deep", 100_000_000, "History plus suggested fixes for the findings above and config snippets"),
 ] as const;
 
-/** Package check: PROPOSED base $0.02 and deep $0.10 (Michael's yes needed on both). */
+/** Package signals check: base $0.02 and deep $0.10 (confirmed by Odin 10:47 PM ET 10/17). */
 export const PACKAGE_TIERS: readonly Tier[] = [
   tier("base", 20_000, "Exists, age, downloads, maintainers count, license, typosquat distance, known-vulnerability count"),
   tier("deep", 100_000, "Base plus vulnerability details (ids, severity, fixed versions), install scripts, deprecation, release cadence, repository link"),
 ] as const;
 
-/** Prompt-injection scan: PROPOSED base $0.01. */
+/** Prompt-injection heuristics scan: base $0.01 (confirmed by Odin 10:47 PM ET 10/17). */
 export const INJECTION_TIERS: readonly Tier[] = [tier("base", 10_000, "Rule-based prompt-injection pattern scan of supplied text or a public URL")] as const;
 
 export function findTier(tiers: readonly Tier[], id: string | null | undefined, fallback: string): Tier | null {
@@ -74,11 +75,11 @@ export function findTier(tiers: readonly Tier[], id: string | null | undefined, 
 // ---------------------------------------------------------------------------
 export const DARK_DESCRIPTIONS = {
   "/api/audit/security":
-    "Passive outside-in web readiness checks for one public host: HTTPS and TLS certificate expiry, security headers (HSTS, CSP, frame, nosniff, referrer), CORS, exposed /.env or /.git (single GET each), DNS, SPF, DMARC and DKIM hints. tier=quick|standard|extended|report|full|history|deep; deeper tiers add checks, history and fix lines. No exploits, no login attempts. Results are informational, not a certification. Bad input or target unreachable: not charged.",
+    "Web readiness checks for one public host: HTTPS redirect, TLS certificate and expiry, HTTP response headers (HSTS, CSP, frame-embedding, nosniff, referrer), security.txt, DNS, SPF, DMARC and DKIM hints. tier=quick|standard|extended|report|full|history|deep; deeper tiers add checks, CT history and suggested fixes. Automated checks, not a professional audit or penetration test; informational only, no warranty. Callers need the right to check the target. Bad input or unreachable: not charged.",
   "/api/package/check":
-    "npm or PyPI package check before install: exists, first publish age, weekly downloads, maintainer count, license, typosquat distance to popular names, known vulnerabilities from OSV.dev. GET ecosystem (npm|pypi), name, optional version, tier=base|deep (deep adds vulnerability details, install scripts, deprecation, release cadence). Results are informational. Bad input or registry down: not charged.",
+    "npm or PyPI package signals before install: exists, first publish age, weekly downloads, maintainer count, license, typosquat distance to popular names, known vulnerabilities from OSV.dev (attributed per record). GET ecosystem (npm|pypi), name, optional version, tier=base|deep (deep adds vulnerability details, install scripts, deprecation, release cadence). Informational only, no warranty. Bad input or registry down: not charged.",
   "/api/injection/scan":
-    "Prompt-injection pattern scan of supplied text (POST JSON {text} or GET text, max 50 KB) or a public URL (url; same SSRF guards as /api/fetch, raw HTML scanned incl. comments and hidden text). Returns a 0-100 risk score, level, and findings with rule, category, severity and a short excerpt. Rule-based heuristics; a low score is not a clearance. Bad input or fetch errors: not charged.",
+    "Prompt-injection heuristics scan of supplied text (POST JSON {text} or GET text, max 50 KB) or a public URL (url; same SSRF guards as /api/fetch, raw HTML scanned incl. comments and hidden text). Returns a 0-100 risk score, level, and findings with rule, category, severity and a short excerpt. Heuristic patterns only; a low score is not a clearance. Informational only, no warranty. Bad input or fetch errors: not charged.",
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -111,14 +112,16 @@ export function newReceiptId(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Rate limits (per instance, best effort; applied BEFORE payment: 429 never charges)
+// Rate limits. Per-IP: per instance, best effort, BEFORE payment (429 never charges).
+// Per-target (web readiness checks): SHARED in Upstash, inside the paid handler
+// before any outbound request (Counsel C2); see app/api/audit/security/handler.ts.
 // ---------------------------------------------------------------------------
 export const DARK_RATE_LIMITS: Record<DarkRoute, { perMinute: number }> = {
   audit: { perMinute: 6 },
   pkg: { perMinute: 60 },
   injection: { perMinute: 60 },
 };
-/** Per target host: at most this many audits per minute from this instance (we must not hammer a site). */
+/** Per target host: at most this many checks per minute across ALL instances (shared Upstash counter). */
 export const AUDIT_TARGET_PER_MINUTE = 3;
 
 type Bucket = { windowStart: number; count: number };

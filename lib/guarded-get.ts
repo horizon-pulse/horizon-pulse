@@ -6,6 +6,7 @@
  * re-checked. Returns the raw body (capped) so callers can inspect HTML
  * comments, hidden text and headers. FLAG FOR SENTINEL: new caller of the guard.
  */
+import { CHECK_USER_AGENT } from "./dark-checks-shared";
 import { assertSafePublicUrl } from "./fetch-url";
 import { guardedFetch, isSsrfBlockedError } from "./net-guard";
 
@@ -42,7 +43,7 @@ export async function guardedGet(
         method: "GET",
         redirect: "manual",
         signal: AbortSignal.timeout(remaining),
-        headers: { "User-Agent": "HorizonPulseCheck/1.0 (+https://horizonpulse.dev)", Accept: "*/*", ...(opts.headers ?? {}) },
+        headers: { Accept: "*/*", ...(opts.headers ?? {}), "User-Agent": CHECK_USER_AGENT },
       });
     } catch (err) {
       if (isSsrfBlockedError(err)) return { ok: false, code: "host_blocked", error: err.message };

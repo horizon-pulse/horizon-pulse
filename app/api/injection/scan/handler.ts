@@ -1,13 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pricedBlock } from "@/lib/paid-rail";
 import type { Tier } from "@/lib/dark-routes";
-import { scanInput } from "@/lib/injection-scan";
+import { INJECTION_METHOD, scanInput } from "@/lib/injection-scan";
 import { guardedGet } from "@/lib/guarded-get";
+import { DISCLAIMER, INJECTION_DISCLAIMER_ADDENDUM } from "@/lib/dark-checks-shared";
 
-/** DARK (HP_INJECTION_SCAN_ENABLED). Any scored answer is billed; 400/413 bad input, blocked host, 502/504 fetch errors: not charged. */
+/** DARK (HP_INJECTION_SCAN_ENABLED). Any scored answer is billed; 400/413 bad input, blocked host, 502/504 fetch errors: not charged. Every body carries the disclaimer. */
 export async function injectionScanHandler(req: NextRequest, tier: Tier, receiptId: string, get: typeof guardedGet = guardedGet): Promise<NextResponse> {
   const TIER_PRICE_USD = tier.usd;
   const TIER_PRICE_ATOMIC = tier.atomicStr;
+  const refuse = (status: number, code: string, error: string) =>
+    NextResponse.json({ ok: false, code, error, charged: false, receiptId, disclaimer: DISCLAIMER, heuristicsNote: INJECTION_DISCLAIMER_ADDENDUM }, { status });
   let text: string | null = null;
   let url: string | null = null;
   if (req.method === "POST") {
@@ -16,14 +19,14 @@ export async function injectionScanHandler(req: NextRequest, tier: Tier, receipt
       text = typeof b?.text === "string" ? b.text : null;
       url = typeof b?.url === "string" ? b.url : null;
     } catch {
-      return NextResponse.json({ ok: false, code: "bad_input", error: "Body must be JSON {text} or {url}", charged: false, receiptId }, { status: 400 });
+      return refuse(400, "bad_input", "Body must be JSON {text} or {url}");
     }
   } else {
     text = req.nextUrl.searchParams.get("text");
     url = req.nextUrl.searchParams.get("url");
   }
   const r = await scanInput({ text, url }, get);
-  if (!r.ok) return NextResponse.json({ ok: false, code: r.code, error: r.error, charged: false, receiptId }, { status: r.status });
+  if (!r.ok) return refuse(r.status, r.code, r.error);
   const { ok: _ok, source: inputKind, ...scan } = r;
   return NextResponse.json({
     source: "injection-scan",
@@ -32,5 +35,8 @@ export async function injectionScanHandler(req: NextRequest, tier: Tier, receipt
     asOf: new Date().toISOString(),
     input: inputKind,
     ...scan,
+    method: INJECTION_METHOD,
+    disclaimer: DISCLAIMER,
+    heuristicsNote: INJECTION_DISCLAIMER_ADDENDUM,
   });
 }

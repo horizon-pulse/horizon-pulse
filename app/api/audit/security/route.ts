@@ -1,5 +1,5 @@
 import { makeDarkRoute } from "@/lib/dark-route-runtime";
-import { AUDIT_TARGET_PER_MINUTE, AUDIT_TIERS } from "@/lib/dark-routes";
+import { AUDIT_TIERS } from "@/lib/dark-routes";
 import { auditHandler } from "./handler";
 
 export const runtime = "nodejs";
@@ -13,10 +13,6 @@ const r = makeDarkRoute({
   tiers: AUDIT_TIERS,
   defaultTier: "quick",
   handler: (req, tier, receiptId) => auditHandler(req, tier, receiptId),
-  extraLimit: (req) => {
-    const t = (req.nextUrl.searchParams.get("target") ?? req.nextUrl.searchParams.get("url") ?? "").trim().toLowerCase().replace(/^[a-z]+:\/\//, "").split(/[/?#]/)[0];
-    return t ? { key: `target:${t}`, perMinute: AUDIT_TARGET_PER_MINUTE } : null;
-  },
 });
 export const GET = r.GET;
 export const POST = r.POST;

@@ -1,13 +1,30 @@
 /**
- * Package safety check (dark route /api/package/check), npm and PyPI.
+ * Package signals check (dark route /api/package/check), npm and PyPI.
  * Public sources only, fixed hosts: registry.npmjs.org, api.npmjs.org,
  * pypi.org, pypistats.org, api.osv.dev. Informational; not a clearance.
+ * Counsel C6 (10/18): NO npm security/advisory/audit data (npm Open Source
+ * Terms bar redistributing it; vulnerability data comes from OSV.dev only, with
+ * per-record attribution); no maintainer personal data (a count only);
+ * pypistats cached 24 h per package.
  */
-export type Ecosystem = "npm" | "pypi";
-export type Deps = { fetch: typeof fetch; now: () => number };
-export const defaultDeps = (): Deps => ({ fetch: (...a) => fetch(...a), now: () => Date.now() });
+import { DATA_USER_AGENT, OSV_ATTRIBUTION, readTextCapped, BodyTooLargeError, upstashCache, type SharedCache } from "./dark-checks-shared";
 
-const UA = { "user-agent": "HorizonPulse/1.0 (+https://horizonpulse.dev)" };
+export type Ecosystem = "npm" | "pypi";
+export type Deps = { fetch: typeof fetch; now: () => number; cache?: SharedCache };
+export const defaultDeps = (): Deps => ({ fetch: (...a) => fetch(...a), now: () => Date.now(), cache: upstashCache() });
+
+const UA = { "user-agent": DATA_USER_AGENT };
+export const PYPISTATS_CACHE_TTL_S = 24 * 3600;
+
+/** Only these source URLs are ever requested; npm security/advisory/audit endpoints are refused outright. */
+const ALLOWED_SOURCE = /^https:\/\/(registry\.npmjs\.org|api\.npmjs\.org\/downloads\/|pypi\.org\/pypi\/|pypistats\.org\/api\/packages\/|api\.osv\.dev\/v1\/query$)/;
+const NPM_SECURITY = /npmjs\.(org|com)\/-\/npm\/v1\/security|\/-\/npm\/v1\/security|advisor|\/audits?\b/i;
+export function assertAllowedSource(url: string): void {
+  if (NPM_SECURITY.test(url) || !ALLOWED_SOURCE.test(url)) throw new Error(`source not allowed: ${url.slice(0, 80)}`);
+}
+
+export const PACKAGE_METHOD =
+  "Registry metadata from registry.npmjs.org or pypi.org, weekly downloads from api.npmjs.org or pypistats.org (cached 24 h), known vulnerabilities from OSV.dev (api.osv.dev/v1/query), and a typosquat distance to a static list of popular names. No npm security or advisory data is used. Maintainers are reported as a count only.";
 const DOC_CAP = 6_000_000;
 const TIMEOUT = 8_000;
 
@@ -102,21 +119,29 @@ export function parsePkgInput(q: { ecosystem: string | null; name: string | null
 class SourceDown extends Error {}
 
 async function getJson(deps: Deps, url: string, init: RequestInit = {}): Promise<{ status: number; json: unknown; truncated: boolean }> {
+  assertAllowedSource(url);
   let res: Response;
   try {
     res = await deps.fetch(url, { ...init, headers: { ...UA, accept: "application/json", ...(init.headers as Record<string, string> | undefined) }, signal: AbortSignal.timeout(TIMEOUT) });
   } catch (e) {
     throw new SourceDown(`${new URL(url).host}: ${e instanceof Error ? e.message : "unreachable"}`);
   }
-  if (res.status === 404) return { status: 404, json: null, truncated: false };
-  if (!res.ok) throw new SourceDown(`${new URL(url).host} answered ${res.status}`);
-  const len = Number(res.headers.get("content-length") ?? 0);
-  if (len > DOC_CAP) {
+  if (res.status === 404) {
     await res.body?.cancel().catch(() => {});
-    return { status: res.status, json: null, truncated: true };
+    return { status: 404, json: null, truncated: false };
   }
-  const text = await res.text();
-  if (text.length > DOC_CAP) return { status: res.status, json: null, truncated: true };
+  if (!res.ok) {
+    await res.body?.cancel().catch(() => {});
+    throw new SourceDown(`${new URL(url).host} answered ${res.status}`);
+  }
+  // Cap enforced while streaming, with or without content-length (Odin C3).
+  let text: string;
+  try {
+    text = await readTextCapped(res, DOC_CAP);
+  } catch (e) {
+    if (e instanceof BodyTooLargeError) return { status: res.status, json: null, truncated: true };
+    throw new SourceDown(`${new URL(url).host}: ${e instanceof Error ? e.message : "read failed"}`);
+  }
   try {
     return { status: res.status, json: JSON.parse(text), truncated: false };
   } catch {
@@ -124,23 +149,36 @@ async function getJson(deps: Deps, url: string, init: RequestInit = {}): Promise
   }
 }
 
-type Vuln = { id: string; aliases: string[]; summary: string; severity: string | null; fixedIn: string[]; published: string | null };
+type Vuln = { id: string; aliases: string[]; summary: string; severity: string | null; fixedIn: string[]; published: string | null; source: string; license: string; sourceUrl: string; recordUrl: string };
+
+/** Per-record attribution (Counsel C6): the aggregated source, its licence and a link. */
+export function osvAttribution(id: string): { source: string; license: string; sourceUrl: string; recordUrl: string } {
+  const recordUrl = `https://osv.dev/vulnerability/${encodeURIComponent(id)}`;
+  if (id.startsWith("GHSA-")) return { source: "GitHub Advisory Database", license: "CC-BY 4.0", sourceUrl: `https://github.com/advisories/${encodeURIComponent(id)}`, recordUrl };
+  if (id.startsWith("PYSEC-")) return { source: "PyPI Advisory Database", license: "CC-BY 4.0", sourceUrl: "https://github.com/pypa/advisory-database", recordUrl };
+  if (id.startsWith("MAL-")) return { source: "OpenSSF Malicious Packages", license: "Apache 2.0", sourceUrl: "https://github.com/ossf/malicious-packages", recordUrl };
+  return { source: "OSV.dev", license: "see record", sourceUrl: recordUrl, recordUrl };
+}
 async function osv(deps: Deps, eco: Ecosystem, name: string, version: string | null): Promise<{ status: "ok"; vulns: Vuln[] } | { status: "unavailable"; error: string }> {
   try {
+    assertAllowedSource("https://api.osv.dev/v1/query");
     const res = await deps.fetch("https://api.osv.dev/v1/query", {
       method: "POST",
       headers: { ...UA, "content-type": "application/json" },
       body: JSON.stringify({ package: { name, ecosystem: eco === "npm" ? "npm" : "PyPI" }, ...(version ? { version } : {}) }),
       signal: AbortSignal.timeout(TIMEOUT),
     });
-    if (!res.ok) return { status: "unavailable", error: `api.osv.dev answered ${res.status}` };
-    const j = (await res.json()) as { vulns?: Record<string, unknown>[] };
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
+      return { status: "unavailable", error: `api.osv.dev answered ${res.status}` };
+    }
+    const j = JSON.parse(await readTextCapped(res, DOC_CAP)) as { vulns?: Record<string, unknown>[] };
     const vulns = (j.vulns ?? []).slice(0, 100).map((v): Vuln => {
       const sev = (v.database_specific as { severity?: string } | undefined)?.severity ?? ((v.severity as { score?: string }[] | undefined)?.[0]?.score ?? null);
       const fixed = new Set<string>();
       for (const a of (v.affected as { ranges?: { events?: { fixed?: string }[] }[] }[] | undefined) ?? [])
         for (const r of a.ranges ?? []) for (const e of r.events ?? []) if (e.fixed) fixed.add(e.fixed);
-      return { id: String(v.id ?? ""), aliases: ((v.aliases as string[] | undefined) ?? []).slice(0, 5), summary: String(v.summary ?? "").slice(0, 300), severity: sev ? String(sev) : null, fixedIn: [...fixed].slice(0, 10), published: (v.published as string | undefined) ?? null };
+      return { id: String(v.id ?? ""), aliases: ((v.aliases as string[] | undefined) ?? []).slice(0, 5), summary: String(v.summary ?? "").slice(0, 300), severity: sev ? String(sev) : null, fixedIn: [...fixed].slice(0, 10), published: (v.published as string | undefined) ?? null, ...osvAttribution(String(v.id ?? "")) };
     });
     return { status: "ok", vulns };
   } catch (e) {
@@ -223,8 +261,16 @@ export async function checkPackage(input: PkgInput, tier: "base" | "deep", deps:
           const dl = await getJson(deps, `https://api.npmjs.org/downloads/point/last-week/${name.startsWith("@") ? name : encodeURIComponent(name)}`);
           downloads = { lastWeek: Number((dl.json as { downloads?: number } | null)?.downloads ?? NaN) || 0, source: "api.npmjs.org" };
         } else {
-          const dl = await getJson(deps, `https://pypistats.org/api/packages/${encodeURIComponent(name)}/recent`);
-          downloads = { lastWeek: Number((dl.json as { data?: { last_week?: number } } | null)?.data?.last_week ?? NaN) || 0, source: "pypistats.org" };
+          // pypistats updates once a day and asks callers to cache: 24 h shared cache per package (Counsel C6).
+          const key = `pypistats:${name}`;
+          const cached = await deps.cache?.get(key);
+          let lastWeek = cached != null && /^\d+$/.test(cached) ? Number(cached) : null;
+          if (lastWeek == null) {
+            const dl = await getJson(deps, `https://pypistats.org/api/packages/${encodeURIComponent(name)}/recent`);
+            lastWeek = Number((dl.json as { data?: { last_week?: number } } | null)?.data?.last_week ?? NaN) || 0;
+            await deps.cache?.set(key, String(lastWeek), PYPISTATS_CACHE_TTL_S);
+          }
+          downloads = { lastWeek, source: "pypistats.org" };
         }
       } catch {
         /* downloads are best effort */
@@ -261,7 +307,7 @@ export async function checkPackage(input: PkgInput, tier: "base" | "deep", deps:
       maintainerCount: meta.maintainers,
       license: meta.license,
       typosquat: { isPopularName: squat.isPopular, nearestPopular: squat.nearest },
-      vulnerabilities: vuln.status === "ok" ? { status: "ok", count: vuln.vulns.length, source: "api.osv.dev", checkedVersion: version ?? meta.latest } : { status: "unavailable", error: vuln.error },
+      vulnerabilities: vuln.status === "ok" ? { status: "ok", count: vuln.vulns.length, source: "api.osv.dev", checkedVersion: version ?? meta.latest, attribution: OSV_ATTRIBUTION } : { status: "unavailable", error: vuln.error },
       signals,
     };
     if (tier === "deep") {

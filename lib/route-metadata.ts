@@ -165,15 +165,15 @@ export const ROUTE_METADATA = {
   // the no-CDP fallback 402 (buildPaymentRequirements) can name them. Description single-sourced.
   "/api/audit/security": {
     description: DARK_DESCRIPTIONS["/api/audit/security"],
-    tags: ["web-security", "readiness-audit", "tls-headers", "dns-email-auth", "passive-checks"],
+    tags: ["web-headers", "tls-dns-checks", "readiness-checks", "dns-email-auth", "outside-in-checks"],
   },
   "/api/package/check": {
     description: DARK_DESCRIPTIONS["/api/package/check"],
-    tags: ["supply-chain", "package-check", "npm-pypi", "typosquat", "osv-vulns"],
+    tags: ["supply-chain", "package-signals", "npm-pypi", "typosquat", "osv-vulns"],
   },
   "/api/injection/scan": {
     description: DARK_DESCRIPTIONS["/api/injection/scan"],
-    tags: ["ai-safety", "prompt-injection", "text-scan", "hidden-text", "agent-tools"],
+    tags: ["prompt-injection-heuristics", "prompt-injection", "text-scan", "hidden-text", "agent-tools"],
   },
 } as const satisfies Record<string, RouteMetadata>;
 
