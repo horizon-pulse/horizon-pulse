@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { callerIp } from "@/lib/caller-ip";
 import { defaultMmrDeps, moneyMarketRates, MmrUpstreamLimited, parseQuery } from "@/lib/money-market-rates";
 
 export const runtime = "nodejs";
@@ -10,8 +11,9 @@ export async function GET(req: NextRequest) {
   const p = parseQuery(req.nextUrl.searchParams);
   if (!p.ok) return NextResponse.json({ ok: false, code: "bad_request", error: p.error }, { status: 400 });
   console.log(JSON.stringify({ evt: "free_call", route: "/api/money-market-rates", paid: false, kind: p.query.kind }));
-  // Vercel sets x-real-ip to the client address (what @vercel/functions ipAddress() reads); XFF first entry is the fallback.
-  const ip = req.headers.get("x-real-ip")?.trim() || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
+  // Shared caller-IP helper (lib/caller-ip.ts: Vercel ipAddress() source, x-real-ip; XFF never read).
+  // No usable IP -> the shared "unknown" bucket, as before.
+  const ip = callerIp(req) ?? undefined;
   try {
     // Spec v2 §6: `public, max-age=60` only. No s-maxage: a shared/CDN copy would
     // pin served_at to the first request's time (live-check 10/13).

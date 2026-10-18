@@ -22,6 +22,8 @@ import { NextRequest, type NextResponse } from "next/server";
 import { z } from "zod";
 import { buildPaymentRequirements, getResourceServer } from "./x402-server";
 import { PUBLIC_BASE_URL } from "./config";
+import { CALLER_IP_HEADER, platformIp } from "./caller-ip";
+import { scheduleMarkPayer } from "./free-tier";
 import { MMR_DESCRIPTION } from "./money-market-rates";
 import { GET as moneyMarketRatesGET } from "@/app/api/money-market-rates/route";
 
@@ -57,13 +59,28 @@ type PaymentOpts = { maxAmountRequired: string; resource: string; description: s
 type Handler = (req: NextRequest) => Promise<NextResponse>;
 
 /** Build the internal request the REST handler expects. */
-/** Client IP of the incoming /mcp request (x-real-ip, else first x-forwarded-for entry), set by app/mcp/route.ts. */
+/**
+ * Client IP of the incoming /mcp request, set by app/mcp/route.ts. Shared helper
+ * lib/caller-ip.ts (Vercel ipAddress() source, x-real-ip; x-forwarded-for is never read).
+ * Raw single address (validated), forwarded as-is on internal requests so the route's own
+ * call to the same helper sees the MCP caller, not a shared bucket.
+ */
 const mcpCaller = new AsyncLocalStorage<{ ip?: string }>();
 export function mcpClientIp(headers: Headers): string | undefined {
-  return headers.get("x-real-ip")?.trim() || headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined;
+  return platformIp(headers);
 }
 export function withMcpCaller<T>(req: Request, fn: () => T): T {
   return mcpCaller.run({ ip: mcpClientIp(req.headers) }, fn);
+}
+
+/** Mark the current /mcp caller (shared helper IP) as a known payer. No IP -> nothing. Never throws. */
+export function markMcpPayer(): void {
+  try {
+    const ip = mcpCaller.getStore()?.ip;
+    if (ip) scheduleMarkPayer(new Headers({ [CALLER_IP_HEADER]: ip }));
+  } catch {
+    /* never affect the tool result */
+  }
 }
 
 function makeRequest(path: string, query: Record<string, string | undefined>, jsonBody?: unknown): NextRequest {
@@ -71,7 +88,7 @@ function makeRequest(path: string, query: Record<string, string | undefined>, js
   for (const [k, v] of Object.entries(query)) if (v != null && v !== "") url.searchParams.set(k, v);
   // Forward the MCP caller's IP so per-IP limits (e.g. money_market_rates) are per user, not one shared bucket.
   const ip = mcpCaller.getStore()?.ip;
-  const fwd: Record<string, string> = ip ? { "x-real-ip": ip } : {};
+  const fwd: Record<string, string> = ip ? { [CALLER_IP_HEADER]: ip } : {};
   if (jsonBody === undefined) return new NextRequest(url, { method: "GET", headers: fwd });
   return new NextRequest(url, {
     method: "POST",
@@ -402,6 +419,10 @@ export function buildMcpServer(): McpServer {
         tags: pr.resource.tags,
         iconUrl: pr.resource.iconUrl,
       },
+      // Known-payer guard (lib/free-tier.ts): a settled paid MCP call marks the /mcp caller's
+      // IP, same as a settled paid REST call. Fires only after a successful settlement (the
+      // wrapper skips settlement on isError). Fire-and-forget; never affects the tool result.
+      hooks: { onAfterSettlement: () => markMcpPayer() },
     });
     server.tool(t.name, mcpToolDescription(t.name, t.opts), t.schema, mcpToolAnnotations(t.name), paid(async (args) => t.call(args as Record<string, unknown>)));
   }

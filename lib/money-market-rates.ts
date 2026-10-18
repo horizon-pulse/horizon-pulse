@@ -164,7 +164,7 @@ export type Deps = {
   fetchJson: (url: string, timeoutMs: number) => Promise<unknown>;
   fetchText: (url: string, timeoutMs: number) => Promise<string>;
   now: () => Date;
-  /** Caller IP for the per-IP upstream budget (route passes x-real-ip, else first x-forwarded-for entry). */
+  /** Caller IP for the per-IP upstream budget (route passes lib/caller-ip.ts callerIp(): canonical x-real-ip, XFF never read). */
   clientIp?: string;
 };
 

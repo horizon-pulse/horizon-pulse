@@ -38,7 +38,7 @@
  *     no IP) -> no advert. Public docs/OPTIONS are not per-caller and stay advertised.
  */
 import { createHash } from "node:crypto";
-import { isIP } from "node:net";
+import { CALLER_IP_HEADER, callerIp } from "./caller-ip";
 import { PUBLIC_BASE_URL } from "./config";
 import { resolveSharedReplayStoreEnv } from "./xrpl-replay-store";
 import { readFileSync } from "node:fs";
@@ -182,60 +182,17 @@ export function wantsFree(req: Request): boolean {
   return yes(req.headers.get(FREE_HEADER));
 }
 
-/** The only header the caller IP is read from (Vercel-set; see normalizeCallerIp). */
-export const TRUSTED_IP_HEADER = "x-vercel-forwarded-for";
+/** The only header the caller IP is read from (lib/caller-ip.ts: what Vercel's ipAddress() reads). */
+export const TRUSTED_IP_HEADER = CALLER_IP_HEADER;
 
 /**
- * Canonical caller IP, from Vercel's x-vercel-forwarded-for ONLY. Odin 9:06 AM ET 10/18;
- * https://vercel.com/docs/headers/request-headers: x-forwarded-for is "The public IP address
- * of the client"; Vercel "overwrite[s] the X-Forwarded-For header and do[es] not forward
- * external IPs ... to prevent IP spoofing"; x-vercel-forwarded-for "is identical to the
- * x-forwarded-for header. However, x-forwarded-for could be overwritten if you're using a
- * proxy on top of Vercel."
- * x-real-ip and x-forwarded-for are never read (client-settable off Vercel / behind a proxy).
- * No trusted header -> null (the caller gets the normal 402, no free call, no advert).
- * If the header ever carries a list, the LAST hop is used: that is the one the platform
- * added; earlier entries could come from the client.
- * Lowercased, brackets/ports/zone ids dropped, IPv4-mapped IPv6 folded to IPv4, IPv6
- * truncated to its /64 (one end-user allocation). null if unusable.
+ * Canonical caller IP via the shared helper lib/caller-ip.ts (Odin 9:12 AM ET 10/18:
+ * Vercel's ipAddress() source, x-real-ip). x-forwarded-for / x-vercel-forwarded-for are
+ * never read; a list or a non-IP -> null. No caller IP -> the normal 402, no free call,
+ * no advert, no store call.
  */
 export function normalizeCallerIp(headers: Headers): string | null {
-  const hops = (headers.get(TRUSTED_IP_HEADER) ?? "").split(",").map((h) => h.trim()).filter(Boolean);
-  const raw = (hops[hops.length - 1] ?? "").toLowerCase();
-  if (!raw) return null;
-  let ip = raw;
-  const bracket = /^\[([^\]]+)\](?::\d+)?$/.exec(ip);
-  if (bracket) ip = bracket[1];
-  else if (/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(ip)) ip = ip.slice(0, ip.lastIndexOf(":"));
-  ip = ip.replace(/%.*$/, "");
-  const mapped = /^(?:0{0,4}:){0,5}(?:0{0,4}:)?ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(ip) ?? /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(ip);
-  if (mapped) ip = mapped[1];
-  const kind = isIP(ip);
-  if (kind === 4) return ip.split(".").map((o) => String(Number(o))).join(".");
-  if (kind === 6) return ipv6Prefix64(ip);
-  return null;
-}
-
-function ipv6Prefix64(ip: string): string | null {
-  let parts: string[];
-  if (ip.includes("::")) {
-    const [a, b] = ip.split("::");
-    const left = a ? a.split(":") : [];
-    const right = b ? b.split(":") : [];
-    if (right.length && right[right.length - 1].includes(".")) return null; // embedded IPv4 other than ::ffff: is not a client form we key
-    parts = [...left, ...Array(8 - left.length - right.length).fill("0"), ...right];
-  } else parts = ip.split(":");
-  if (parts.length !== 8 || parts.some((h) => !/^[0-9a-f]{1,4}$/.test(h))) return null;
-  const hex = parts.map((h) => parseInt(h, 16).toString(16));
-  if (hex.slice(0, 4).every((h) => h === "0")) {
-    // Not a routed end-user /64: hex-form IPv4-mapped -> IPv4, else the full address.
-    if (hex.slice(4, 6).join(":") === "0:ffff") {
-      const v = (parseInt(hex[6], 16) << 16) + parseInt(hex[7], 16);
-      return [v >>> 24, (v >>> 16) & 255, (v >>> 8) & 255, v & 255].join(".");
-    }
-    return hex.join(":");
-  }
-  return `${hex.slice(0, 4).join(":")}::/64`;
+  return callerIp(headers);
 }
 
 /** America/New_York calendar date. */
