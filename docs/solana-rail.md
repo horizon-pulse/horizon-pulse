@@ -107,8 +107,47 @@ code change + owner approval; env can only turn the rail on/off.
 - **No start slot (Odin 1:19 / 1:21):** getSlot is tried up to twice, all inside the init window (each try ≤ 1.5 s and
   ≤ what is left of initTimeoutMs). If both fail, the answer is **503** `{"error":"solana_rpc_unavailable"}` (fixed
   body, `Retry-After: 5`, `Cache-Control: no-store`) right after the rail-ready check: no PayAI verify or settle, no
-  handler, no replay key, nothing charged. The same payload works on retry. 5 consecutive no-slot requests on one
-  instance raise one HIGH ALERT `solana_start_slot_unavailable` per episode (reset by the next good read).
+  handler, no replay key, nothing charged. The same payload works on retry.
+- **getSlot breaker (Odin 1:39 N1):** per instance, over PAID requests (each sample = both getSlot tries failed):
+  - trips on **5 consecutive** no-slot requests, or on a **rate**: ≥ 25% of ≥ 20 paid requests in the last 60 s (a
+    partial outage, e.g. every 3rd read failing, never makes 5 in a row). 60 s collects a sample on a busy instance and
+    ages old failures out fast; below 20 samples one or two unlucky 503s would already be ≥ 25% (20 × 25% = 5, the
+    same count as the consecutive trigger). A quiet instance never reaches 20, so the consecutive trigger covers it.
+  - only requests whose payload PASSED validation count (Odin 2:12 F2 / Sentinel LOW-A), for both the streak and the
+    rate window: the cheap local checks (decode, version, scheme, base64 size, wire parse + signer layout) run BEFORE
+    getSlot and refuse junk with `invalid_payload` without any RPC call; the requirement checks run after init, and
+    only then is the request's getSlot outcome counted. A good getSlot from an invalid request can still CLOSE an open
+    breaker (recovery), but never resets the streak or adds a sample.
+  - on trip: HIGH ALERT `solana_start_slot_unavailable {trigger: consecutive|rate, consecutive, failed, sample,
+    windowMs, suppressedRetrips}`; Solana is treated as a confirmed absence: dropped from the unpaid 402, and a paid
+    Solana request gets a 402 with `rail_unavailable` (instead of the 503) — nothing verified or charged.
+  - alert cooldown (Odin 2:12 F3): a re-trip less than 15 min after the last alert re-opens the breaker as usual but
+    sends no alert (logged, counted in the next alert's `suppressedRetrips`). Breaker behaviour is unchanged.
+  - recovery = the next good getSlot: paid requests still read it (in parallel with init, no added latency), and the
+    unpaid 402 path probes it at most once per 15 s per instance (single-flight, bounded by the init window). A good
+    answer closes the breaker (the 402 that ran the probe already lists Solana), re-arms the alert, clears the window.
+- **Parse before verify (Odin 1:39 N2):** the preflight refuses a transaction we cannot bind later (unparseable wire
+  format, or no signed buyer slot) → 402 `invalid_payload` before PayAI. `ours` (message, buyer slot +
+  signature, payer) is always known after it; the old "could not read our payment → serve" branch is gone.
+- **Constant checks and fee payer before getSlot (Odin 2:32 (3)/(4), Sentinel residual + INFO-B):** the local preflight
+  also checks the constant requirement fields (network = Solana mainnet, payTo = the pinned payTo, asset = the USDC
+  mint, amount = the route price, maxTimeoutSeconds) and that the transaction's fee payer (account key 0) equals
+  `accepted.extra.feePayer`, all before getSlot / init / PayAI. After init, `accepted.extra.feePayer` must equal the
+  facilitator's (PayAI's) fee payer, so a tx naming any other fee payer is refused with `invalid_payload`.
+- **Signer layout by index (Odin 2:12 F1):** exactly 2 required signers and 2 signature slots; slot 0 = account key 0
+  = the fee payer, which the facilitator signs at settle, so it MUST be the all-zero placeholder in the buyer's
+  payload (a non-zero slot 0 → `invalid_payload` before PayAI); slot 1 = key 1 = the buyer, which must be signed.
+  The old "first non-zero slot" pick bound a client-filled fee-payer placeholder as the buyer: PayAI could settle while
+  our binding never matched (charged, never delivered, 502/504).
+- **Reject / unavailable 402 lists every healthy rail (Odin 2:13 (4), Sentinel INFO-3):** a Solana payment that is
+  refused or cannot be served gets a 402 with Base plus XRPL and Polygon when enabled and ready (each appended exactly
+  as on the unpaid 402, same payTo pins), with `PAYMENT-REQUIRED.error` = reason. XRPL is listed there only if it is
+  already WARM on the instance (Odin 2:32 (2), LOW-1: rail built, payTo readiness known and not a confirmed absence,
+  EVAL probe passed); that path never starts XRPL init, the readiness RPC or the EVAL probe, so its time margin holds. Solana itself (Odin 2:29 (b)
+  delta6) is re-offered, via the unpaid 402's own builder, ONLY for a client-caused rejection (`invalid_payload`)
+  while the getSlot breaker is closed and the rail is otherwise present (token account + rail ready); it stays out on
+  `rail_unavailable`, an open breaker or an absent rail. A `rail_unavailable` with XRPL and Polygon off or not ready
+  is byte-identical to the Base-only golden reject.
 - **Duplicates (S1; widened by Odin 12:51 C1):** `duplicate_settlement`, ANY facilitator 409 (any reason, or a non-JSON
   409, which the SDK reports as `Facilitator settle failed (409)`), and any reason matching `/duplicate|already|in_flight/`
   (also on a 200 `success:false` without a signature, which used to be a terminal 402): never searched, never
@@ -121,13 +160,18 @@ code change + owner approval; env can only turn the rail on/off.
   - PayAI's signature resolves to a tx that is NOT ours and ours is not in the recent history, or OUR tx failed →
     502 `settlement_unconfirmed` + reconcile (`settle_success_unbound` / `settle_success_failed_on_chain`), never a 402;
   - RPC down / not indexed within the deadline → paid response (fail open, as before: PayAI confirmed the settle);
-  - our tx found, but PayAI's signature was not ours → paid response with PAYMENT-RESPONSE rewritten from the chain
-    result (tx id = our bound tx, payer = buyer key of OUR message) (Odin 1:21);
+    PAYMENT-RESPONSE is **rebuilt and marked unverified** (Odin 1:39 LOW-1): `{success, transaction: <PayAI's id>,
+    network, payer: <buyer key of OUR message>, extensions: {settlementVerified: false, transactionSource: "facilitator"}}`
+    (the tx id can only come from PayAI: the fee payer's slot-0 signature is not in the buyer's payload). Odin 2:13:
+    the marker is under the spec's `extensions` (not `extra`), and PayAI's tx id is echoed only if it is a Solana
+    signature (base58 decoding to exactly 64 bytes); otherwise `transaction` is omitted;
+  - our tx confirmed → PAYMENT-RESPONSE is **always rebuilt** from the chain + OUR message (tx id = our bound tx,
+    payer = buyer key of OUR message), whatever PayAI's header said (Odin 1:21, always since 1:39 LOW-1);
   - no start slot cannot reach this path (503 before PayAI). The old wall-clock fallback (`settledBeforeRequest`,
     `REPLAY_CONFIRM_SKEW_MS`) was removed.
 - **Reconcile:** every 502/504/409 from this path (and every 502 from the success-path binding) raises a
   `solana_reconcile` ALERT through `setSolanaAlertHook` (default `[solana-rail][ALERT] {...}` console.error line;
-  deduped per buyer signature for 25 h, Odin 1:21) and logs (every occurrence) `[solana-rail] SOLANA_RECONCILE {status, reason, fp, payer, amount,
+  deduped per payment message, i.e. the full sha256 replay key, for 25 h: Odin 1:21 / 1:39 LOW-2) and logs (every occurrence) `[solana-rail] SOLANA_RECONCILE {status, reason, fp, payer, amount,
   asset, payTo, buyerSignature[, txid]}` (public chain data only) for manual refunds.
 - **Time budget (corrected Odin 12:51 C2):** a cold token-account check makes up to 2 tries × init, so the worst case is
   2 × init + 10 + 12 + 4: 31 s by default (SOLANA_WORST_CASE_MS) and 40 s at the largest accepted init timeout
@@ -270,6 +314,14 @@ Still applies:
 - **No Coinbase Bazaar credit.** PayAI-facilitated Solana sales do not count
   toward the Coinbase Bazaar settlement window.
 - **No Solana MCP.** Hosted `/mcp` (all tools, including `discourse_split`) and the local MCP client are Base only.
+
+## Backlog / follow-ups
+
+- **Per-IP limit on Solana-paid requests: DEFERRED (Odin 2:29 PM ET 10/18, decision (c)).** Sentinel LOW-A follow-up:
+  delta5 (F2) stops junk headers from reaching getSlot and from tripping the breaker, but a caller who copies the
+  public requirement can still send locally valid (not really signed) payloads that cost one getSlot each. A per-IP
+  (hashed) rate limit on Solana-paid requests would cap that RPC spend. Not built; revisit if RPC quota or rate-limit
+  errors show up, or with the next Solana hardening pass.
 
 ## Tests / smoke
 - `npm test` (vitest): flag-off identity, flag-on shape, config/pin validation,

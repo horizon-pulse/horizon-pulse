@@ -111,6 +111,7 @@ import {
   SOLANA_PAYTO_USDC_ATA,
   SPL_TOKEN_PROGRAM,
   USDC_SOLANA_MINT,
+  base58Decode,
   base58Encode,
   isValidSolanaPubkey,
   type SolanaRailConfig,
@@ -271,6 +272,12 @@ export function resetSolanaRailForTests(): void {
   reconcileAlerted.clear();
   slotFailStreak = 0;
   slotAlerted = false;
+  slotWindow = [];
+  slotBreakerOpen = false;
+  slotProbe = null;
+  slotProbeAt = 0;
+  slotLastAlertAt = -Infinity;
+  slotSuppressedRetrips = 0;
   attempts.clear();
   warnTimes = [];
   warnAlertedAt = 0;
@@ -336,10 +343,21 @@ export type SolanaAlert =
       txid?: string;
     }
   | {
-      /** Odin 1:21: SOLANA_SLOT_ALERT_CONSECUTIVE paid requests in a row got no request-start slot (503, nothing charged). */
+      /**
+       * Odin 1:21 / 1:39 N1: the getSlot breaker tripped (Solana dropped from the 402, paid Solana → Base-only 402
+       * rail_unavailable until a good getSlot). trigger "consecutive": SOLANA_SLOT_ALERT_CONSECUTIVE paid requests in
+       * a row got no slot; "rate": ≥ SOLANA_SLOT_FAIL_RATE of ≥ SOLANA_SLOT_RATE_MIN_SAMPLE paid requests in the last
+       * SOLANA_SLOT_RATE_WINDOW_MS got no slot.
+       */
       kind: "solana_start_slot_unavailable";
       severity: "high";
+      trigger: "consecutive" | "rate";
       consecutive: number;
+      failed: number;
+      sample: number;
+      windowMs: number;
+      /** Odin 2:12 F3: re-trips whose alert was suppressed by the cooldown since the last alert sent. */
+      suppressedRetrips: number;
     }
   | {
       kind: "payai_allowance";
@@ -973,8 +991,10 @@ async function buildSolanaRequirement(rail: Rail, atomicUsdc: string): Promise<P
 export async function getSolanaAccept(config: SolanaRailConfig, atomicUsdc: string): Promise<PaymentRequirements | null> {
   try {
     // N3: token-account check and rail init run in parallel (cold start ≤ one initTimeoutMs).
-    const [ready, rail] = await Promise.all([solanaTokenAccountReady(config), getRail(config)]);
-    if (!ready || !rail) return null;
+    // Odin 1:39 N1: while the getSlot breaker is open Solana is treated as absent (a payment could only get a 503 /
+    // Base-only 402); a due probe runs in parallel and a good answer brings Solana back in this same 402.
+    const [ready, rail] = await Promise.all([solanaTokenAccountReady(config), getRail(config), probeSlotIfDue(config)]);
+    if (!ready || !rail || slotBreakerOpen) return null;
     return await buildSolanaRequirement(rail, atomicUsdc);
   } catch (err) {
     warn("could not build Solana requirement", err);
@@ -1109,19 +1129,47 @@ const fail = (reason: string): WireCheck => ({ ok: false, reason });
  * compute budget, signatures, simulation) is checked by the facilitator.
  */
 export function validateSolanaPaymentPayload(payload: PaymentPayload, requirement: PaymentRequirements): WireCheck {
-  if (!payload || payload.x402Version !== 2) return fail("x402Version must be 2");
+  const local = validateSolanaPayloadLocal(payload, requirement.amount);
+  if (!local.ok) return local;
   const accepted = payload.accepted;
-  if (!accepted || accepted.scheme !== "exact") return fail("accepted.scheme must be exact");
   for (const f of ["scheme", "network", "asset", "payTo", "amount", "maxTimeoutSeconds"] as const) {
     if (accepted[f] !== requirement[f]) return fail(`accepted.${f} does not match requirements`);
   }
   const aFee = (accepted.extra as Record<string, unknown> | undefined)?.feePayer;
   const rFee = (requirement.extra as Record<string, unknown> | undefined)?.feePayer;
   if (aFee !== rFee) return fail("accepted.extra.feePayer does not match requirements");
+  return { ok: true };
+}
+
+/**
+ * Odin 2:12 F2 / Sentinel LOW-A: the cheap LOCAL checks (no network, no rail, no requirement): version, scheme,
+ * base64 size, and the wire tx itself (Odin 1:39 N2 parse + Odin 2:12 F1 signer layout). Run on every Solana-paid
+ * request BEFORE getSlot / rail init, so a junk header never reaches the RPC; validateSolanaPaymentPayload repeats it.
+ */
+export function validateSolanaPayloadLocal(payload: PaymentPayload, atomicUsdc: string): WireCheck {
+  if (!payload || payload.x402Version !== 2) return fail("x402Version must be 2");
+  const accepted = payload.accepted;
+  if (!accepted || accepted.scheme !== "exact") return fail("accepted.scheme must be exact");
+  // Odin 2:32 (3), Sentinel residual: the CONSTANT parts of the requirement (pinned payTo, USDC mint, mainnet, price,
+  // timeout) are checked here, before getSlot / init; only the facilitator-dependent fee payer waits for the rail.
+  const constant = { network: SOLANA_MAINNET_CAIP2, payTo: SOLANA_PAYTO, asset: USDC_SOLANA_MINT, amount: atomicUsdc, maxTimeoutSeconds: MAX_TIMEOUT_SECONDS } as const;
+  for (const f of ["network", "payTo", "asset", "amount", "maxTimeoutSeconds"] as const) {
+    if (accepted[f] !== constant[f]) return fail(`accepted.${f} does not match requirements`);
+  }
   const tx = (payload.payload as Record<string, unknown> | undefined)?.transaction;
   if (typeof tx !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(tx)) return fail("payload.transaction must be base64");
   const len = Buffer.from(tx, "base64").length;
   if (len === 0 || len > MAX_TX_BYTES) return fail(`payload.transaction is ${len} bytes`);
+  // Odin 1:39 N2: we must be able to bind the payment on-chain later (message + buyer slot/signature + payer).
+  // Odin 2:12 F1: and the signer layout must be the x402 exact one (fee-payer placeholder unsigned, buyer signed).
+  const shape = paymentShape(tx);
+  if (!shape.ok) return fail(shape.reason);
+  // Odin 2:32 (4), Sentinel INFO-B: the tx's fee payer (account key 0) must be the fee payer the client accepted;
+  // validateSolanaPaymentPayload then requires accepted.extra.feePayer === the facilitator's (PayAI's) key, so a tx
+  // that names any other fee payer is refused (invalid_payload) before PayAI.
+  const feePayer = (accepted.extra as Record<string, unknown> | undefined)?.feePayer;
+  if (!isValidSolanaPubkey(feePayer)) return fail("accepted.extra.feePayer is not a Solana public key");
+  if (shape.feePayer !== feePayer) return fail("payload.transaction fee payer (key 0) does not match accepted.extra.feePayer");
   return { ok: true };
 }
 
@@ -1319,7 +1367,7 @@ export function payloadSignatures(txB64: string): string[] {
  * Wire tx parts: signature slots and the MESSAGE bytes (exactly what every signer signed). Signer i signs slot i and
  * is account key i of the message (legacy and v0 share the header/key layout after the optional version byte).
  */
-type WireTx = { sigs: Uint8Array[]; message: Uint8Array; keys: Uint8Array[] };
+type WireTx = { sigs: Uint8Array[]; message: Uint8Array; keys: Uint8Array[]; required: number };
 export function parseWireTx(bytes: Uint8Array): WireTx | null {
   const b = Buffer.from(bytes);
   const cu16 = (at: number): [number, number] | null => {
@@ -1341,6 +1389,8 @@ export function parseWireTx(bytes: Uint8Array): WireTx | null {
   for (let j = 0; j < n; j++) sigs.push(Uint8Array.from(b.subarray(sigStart + 64 * j, sigStart + 64 * (j + 1))));
   const message = Uint8Array.from(b.subarray(msgStart));
   let at = message[0] & 0x80 ? 1 : 0; // v0 prefix
+  if (at >= message.length) return null;
+  const required = message[at]; // header byte 0: numRequiredSignatures (= the first `required` account keys sign)
   at += 3; // header: numRequiredSignatures, numReadonlySigned, numReadonlyUnsigned
   const mb = Buffer.from(message);
   let nk = 0;
@@ -1356,7 +1406,7 @@ export function parseWireTx(bytes: Uint8Array): WireTx | null {
   if (at + 32 * nk > mb.length || nk < n) return null;
   const keys: Uint8Array[] = [];
   for (let j = 0; j < nk; j++) keys.push(Uint8Array.from(mb.subarray(at + 32 * j, at + 32 * (j + 1))));
-  return { sigs, message, keys };
+  return { sigs, message, keys, required };
 }
 const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i]);
 
@@ -1387,12 +1437,39 @@ function usdcReceivedByPayTo(tx: ChainTx): bigint | null {
 
 /** Our own payment as we verified it: message bytes, the buyer's slot + signature, and the payer (key of that slot). */
 export type OurPayment = { message: Uint8Array; slot: number; signature: string; payer: string };
-export function ourPayment(txB64: string): OurPayment | null {
+/**
+ * Odin 2:12 F1: the x402 exact SVM signer layout, by INDEX (never "first non-zero slot"):
+ *   - exactly 2 required signers, and exactly 2 signature slots (header numRequiredSignatures = slot count);
+ *   - slot 0 = account key 0 = the FEE PAYER (Solana: the fee payer is always signer 0). The facilitator signs it at
+ *     settle, so in the buyer's payload it MUST be the all-zero placeholder. A non-zero slot 0 is refused
+ *     (invalid_payload, before PayAI): the old first-non-zero pick bound a fee-payer placeholder as "the buyer", so
+ *     PayAI could settle while our on-chain binding could never match → charged, never delivered (502/504);
+ *   - slot 1 = account key 1 = the BUYER (transfer authority): must be signed (non-zero).
+ */
+export const SOLANA_FEE_PAYER_SLOT = 0;
+export const SOLANA_BUYER_SLOT = 1;
+function paymentShape(txB64: string): { ok: true; ours: OurPayment; feePayer: string } | { ok: false; reason: string } {
   const w = parseWireTx(Buffer.from(txB64, "base64"));
-  if (!w) return null;
-  const slot = w.sigs.findIndex((x) => x.some((y) => y !== 0));
-  if (slot < 0) return null;
-  return { message: w.message, slot, signature: base58Encode(w.sigs[slot]), payer: base58Encode(w.keys[slot]) };
+  if (!w) return { ok: false, reason: "payload.transaction is not a parseable signed transaction" };
+  if (w.sigs.length !== 2 || w.required !== 2) return { ok: false, reason: `payload.transaction must have exactly 2 signers (has ${w.required}, ${w.sigs.length} slots)` };
+  if (w.sigs[SOLANA_FEE_PAYER_SLOT].some((y) => y !== 0)) return { ok: false, reason: "payload.transaction fee-payer slot must be the unsigned placeholder" };
+  const sig = w.sigs[SOLANA_BUYER_SLOT];
+  if (!sig.some((y) => y !== 0)) return { ok: false, reason: "payload.transaction buyer slot is not signed" };
+  return {
+    ok: true,
+    ours: { message: w.message, slot: SOLANA_BUYER_SLOT, signature: base58Encode(sig), payer: base58Encode(w.keys[SOLANA_BUYER_SLOT]) },
+    feePayer: base58Encode(w.keys[SOLANA_FEE_PAYER_SLOT]),
+  };
+}
+export function ourPayment(txB64: string): OurPayment | null {
+  const r = paymentShape(txB64);
+  return r.ok ? r.ours : null;
+}
+
+/** Odin 2:13 (3): a Solana transaction signature = base58 that decodes to exactly 64 bytes. */
+export function isSolanaSignature(v: unknown): v is string {
+  if (typeof v !== "string" || !/^[1-9A-HJ-NP-Za-km-z]{64,88}$/.test(v)) return false;
+  return base58Decode(v)?.length === 64;
 }
 
 type ChainFind =
@@ -1414,7 +1491,7 @@ export const SOLANA_START_SLOT_MIN_RETRY_MS = 100;
  * at min(SOLANA_START_SLOT_TIMEOUT_MS, what is left of the window), enforced here as well as by the transport.
  * undefined = no slot → the caller answers 503 before PayAI.
  */
-export async function readStartSlot(config: SolanaRailConfig): Promise<number | undefined> {
+export async function readStartSlot(config: SolanaRailConfig, counted = true): Promise<number | undefined> {
   const deadline = Date.now() + config.initTimeoutMs;
   for (let i = 0; i < 2; i++) {
     const left = deadline - Date.now();
@@ -1423,14 +1500,14 @@ export async function readStartSlot(config: SolanaRailConfig): Promise<number | 
     try {
       const s = await withTimeout(rpc(config.rpcUrl, "getSlot", [{ commitment: "confirmed" }], cap), cap, "getSlot");
       if (typeof s === "number" && Number.isSafeInteger(s) && s > 0) {
-        noteStartSlot(true);
+        noteStartSlot(true, counted);
         return s;
       }
     } catch {
       /* retry once within the window */
     }
   }
-  noteStartSlot(false);
+  noteStartSlot(false, counted);
   return undefined;
 }
 
@@ -1441,19 +1518,131 @@ export async function readStartSlot(config: SolanaRailConfig): Promise<number | 
  * episode (reset by the next successful read).
  */
 export const SOLANA_SLOT_ALERT_CONSECUTIVE = 5;
+/**
+ * Odin 1:39 N1, rate trigger (partial outages: e.g. every 3rd getSlot failing never makes 5 in a row). Over the last
+ * 60 s of PAID requests on this instance, trip when ≥ 25% got no slot, but only with ≥ 20 paid requests in the window:
+ *   - 60 s: long enough to collect a sample on a busy instance, short enough that a partial outage is acted on within
+ *     a minute (and old failures age out quickly after recovery).
+ *   - 20 minimum: with fewer, one or two unlucky 503s would already be ≥ 25% (2/5 = 40%); at 20 it takes ≥ 5 failures,
+ *     the same count as the consecutive trigger. A quiet instance never reaches 20 → the consecutive trigger covers it.
+ * Each sample is a request whose BOTH getSlot tries failed, so a single RPC blip does not count.
+ */
+export const SOLANA_SLOT_RATE_WINDOW_MS = 60_000;
+export const SOLANA_SLOT_RATE_MIN_SAMPLE = 20;
+export const SOLANA_SLOT_FAIL_RATE = 0.25;
+/** While the breaker is open, the unpaid-402 path probes getSlot at most this often (per instance). */
+export const SOLANA_SLOT_PROBE_INTERVAL_MS = 15_000;
 let slotFailStreak = 0;
 let slotAlerted = false;
-function noteStartSlot(ok: boolean): void {
+let slotWindow: Array<{ t: number; ok: boolean }> = [];
+let slotBreakerOpen = false;
+let slotProbe: Promise<void> | null = null;
+let slotProbeAt = 0;
+/**
+ * Odin 2:12 F3 (Sentinel INFO-2): cooldown on the breaker (re-)trip ALERT only. The breaker itself still opens on
+ * every trip and closes on the next good getSlot; only the HIGH alert is held back if one was sent < 15 min ago
+ * (a flapping partial outage = one page, not one per re-trip). Suppressed re-trips are logged and counted in the next
+ * alert (suppressedRetrips).
+ */
+export const SOLANA_SLOT_ALERT_COOLDOWN_MS = 15 * 60_000;
+let slotLastAlertAt = -Infinity;
+let slotSuppressedRetrips = 0;
+
+/** Odin 1:39 N1: true while the getSlot breaker is open (Solana treated as absent until a good getSlot). */
+export function solanaSlotBreakerOpen(): boolean {
+  return slotBreakerOpen;
+}
+
+/**
+ * Record one request-start getSlot outcome. counted=false can only CLOSE the breaker (recovery) and never touches the
+ * triggers (streak or rate window): breaker probes, and (Odin 2:12 F2) a paid request's read before its payload has
+ * passed validation — that request is counted afterwards via countStartSlot only if it validates.
+ */
+function noteStartSlot(ok: boolean, counted = true): void {
+  const now = Date.now();
   if (ok) {
-    slotFailStreak = 0;
-    slotAlerted = false;
+    if (counted) {
+      slotFailStreak = 0;
+      noteSlotSample(true);
+    }
+    if (slotBreakerOpen || slotAlerted) {
+      // Recovery (the next good getSlot, from a paid request or a probe): breaker closed, alert re-armed, and the rate
+      // window starts over so the outage's failures cannot re-trip it at once.
+      if (slotBreakerOpen) warn("getSlot answered again; Solana rail back (breaker closed)", undefined, false);
+      slotAlerted = false;
+      slotBreakerOpen = false;
+      slotWindow = [];
+      slotFailStreak = 0;
+    }
     return;
   }
+  if (!counted) return;
   slotFailStreak++;
-  if (slotFailStreak >= SOLANA_SLOT_ALERT_CONSECUTIVE && !slotAlerted) {
+  slotWindow.push({ t: now, ok: false });
+  slotWindow = slotWindow.filter((e) => now - e.t < SOLANA_SLOT_RATE_WINDOW_MS);
+  if (slotWindow.length > 10_000) slotWindow = slotWindow.slice(-10_000);
+  const failed = slotWindow.filter((e) => !e.ok).length;
+  const sample = slotWindow.length;
+  const byStreak = slotFailStreak >= SOLANA_SLOT_ALERT_CONSECUTIVE;
+  const byRate = sample >= SOLANA_SLOT_RATE_MIN_SAMPLE && failed / sample >= SOLANA_SLOT_FAIL_RATE;
+  if ((byStreak || byRate) && !slotAlerted) {
     slotAlerted = true;
-    emitAlert({ kind: "solana_start_slot_unavailable", severity: "high", consecutive: slotFailStreak });
+    slotBreakerOpen = true;
+    slotProbeAt = now;
+    warn("getSlot breaker OPEN: Solana dropped from the 402, paid Solana → Base-only 402 until a good getSlot", undefined, false);
+    if (now - slotLastAlertAt < SOLANA_SLOT_ALERT_COOLDOWN_MS) {
+      slotSuppressedRetrips++;
+      warn(`getSlot breaker re-trip alert suppressed (cooldown ${SOLANA_SLOT_ALERT_COOLDOWN_MS / 60_000} min, ${slotSuppressedRetrips} suppressed)`, undefined, false);
+      return;
+    }
+    slotLastAlertAt = now;
+    const suppressedRetrips = slotSuppressedRetrips;
+    slotSuppressedRetrips = 0;
+    emitAlert({
+      kind: "solana_start_slot_unavailable",
+      severity: "high",
+      trigger: byStreak ? "consecutive" : "rate",
+      consecutive: slotFailStreak,
+      failed,
+      sample,
+      windowMs: SOLANA_SLOT_RATE_WINDOW_MS,
+      suppressedRetrips,
+    });
   }
+}
+
+/** Odin 2:12 F2: a paid request whose payload PASSED validation now counts its request-start getSlot outcome. */
+function countStartSlot(ok: boolean): void {
+  noteStartSlot(ok, true);
+}
+
+/** A paid request got a slot: it counts in the rate window as a success (the streak/breaker reset is in noteStartSlot). */
+function noteSlotSample(ok: boolean): void {
+  if (!ok) return;
+  const now = Date.now();
+  slotWindow.push({ t: now, ok: true });
+  slotWindow = slotWindow.filter((e) => now - e.t < SOLANA_SLOT_RATE_WINDOW_MS);
+  if (slotWindow.length > 10_000) slotWindow = slotWindow.slice(-10_000);
+}
+
+/**
+ * Breaker recovery on the unpaid path: while open, at most one getSlot probe per SOLANA_SLOT_PROBE_INTERVAL_MS per
+ * instance (single-flight, bounded by the init window like every getSlot). A good answer closes the breaker; the 402
+ * that ran the probe already includes Solana again. Paid requests always read getSlot (in parallel with init), so the
+ * next good paid read closes it too.
+ */
+function probeSlotIfDue(config: SolanaRailConfig): Promise<void> {
+  if (!slotBreakerOpen) return Promise.resolve();
+  if (slotProbe) return slotProbe;
+  if (Date.now() - slotProbeAt < SOLANA_SLOT_PROBE_INTERVAL_MS) return Promise.resolve();
+  slotProbeAt = Date.now();
+  const p: Promise<void> = readStartSlot(config, false)
+    .then(() => undefined)
+    .finally(() => {
+      if (slotProbe === p) slotProbe = null;
+    });
+  slotProbe = p;
+  return p;
 }
 
 /**
@@ -1535,7 +1724,7 @@ async function findPaymentOnChain(
  * only: payer (from OUR message), amount (server requirement), the buyer's signature from OUR payload, the chain tx
  * id when found, outcome. Never facilitator text.
  */
-/** Buyer signatures already alerted (insertion-ordered, bounded; entries older than REPLAY_TTL_MS re-alert). */
+/** Payment messages (full sha256 key) already alerted (insertion-ordered, bounded; entries older than REPLAY_TTL_MS re-alert). */
 const reconcileAlerted = new Map<string, number>();
 const RECONCILE_ALERT_DEDUPE_MAX = 10_000;
 function logSolanaReconcile(o: { status: number; reason: string; key: string; ours: OurPayment | null; amount: string; txid?: string }): void {
@@ -1552,8 +1741,9 @@ function logSolanaReconcile(o: { status: number; reason: string; key: string; ou
   };
   console.warn(`[solana-rail] SOLANA_RECONCILE ${JSON.stringify(line)}`);
   // Odin 12:51: also an ALERT through the existing sink (setSolanaAlertHook; default one [ALERT] console.error line).
-  // Odin 1:21: deduped per buyer signature (one alert per possible refund; the log line stays per occurrence).
-  const dedupeKey = line.buyerSignature ?? `fp:${line.fp}`;
+  // Odin 1:21 / 1:39 LOW-2: deduped per payment MESSAGE (full sha256 of the tx message, the replay key; one alert per
+  // possible refund however the signatures are re-encoded; the log line stays per occurrence).
+  const dedupeKey = o.key;
   const now = Date.now();
   const seenAt = reconcileAlerted.get(dedupeKey);
   if (seenAt !== undefined && now - seenAt < REPLAY_TTL_MS) return;
@@ -1562,6 +1752,9 @@ function logSolanaReconcile(o: { status: number; reason: string; key: string; ou
   while (reconcileAlerted.size > RECONCILE_ALERT_DEDUPE_MAX) reconcileAlerted.delete(reconcileAlerted.keys().next().value!);
   emitAlert({ kind: "solana_reconcile", ...line });
 }
+
+/** Tests only: the reconcile log + deduped alert (Odin 1:39 LOW-2 unit test). */
+export const __solanaReconcileForTests = logSolanaReconcile;
 
 /** Same response, PAYMENT-RESPONSE replaced (Odin 1:21: chain result instead of PayAI's foreign signature). */
 function withPaymentResponse(res: NextResponse, settle: SettleResponse): NextResponse {
@@ -1612,28 +1805,46 @@ export async function handleSolanaPayment(
   let key: string | null = null;
   let decision: Decision;
   let reconcile: { reason: string; ours: OurPayment | null } | null = null;
-  const startedAt = Date.now();
   try {
-    // N3: token-account check and rail init in parallel.
-    // Odin 12:31 S1: the chain slot at request start (before verify/settle) orders any later on-chain match.
-    const [ready, rail, startSlot] = await Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config)]);
-    if (!ready || !rail) return reject(RAIL_REJECT.unavailable);
-    // Odin 1:19/1:21: no request-start slot (both getSlot tries failed / timed out) → 503 + Retry-After with a FIXED
-    // body, right after the rail-ready check: no PayAI verify/settle, no handler, no replay key. Nothing is charged
-    // and no later on-chain match would be unorderable (no replay window, no wall-clock fallback).
-    if (startSlot === undefined) {
-      warn("no request-start slot (getSlot failed twice or timed out); client gets 503 before PayAI (nothing charged)", undefined, false);
-      return noStartSlotResponse();
-    }
-
-    const requirement = await buildSolanaRequirement(rail, atomicUsdc);
+    // Odin 2:12 F2 / Sentinel LOW-A: decode + the cheap LOCAL checks FIRST (no RPC, no rail): a junk / unbindable
+    // header is refused (invalid_payload, Base-only 402) without spending a getSlot and without touching the breaker.
     const received = decodePaymentSignatureHeader(req.headers.get("payment-signature")!.trim()) as PaymentPayload;
     const payload = stripBazaar(received);
+    const local = validateSolanaPayloadLocal(payload, atomicUsdc);
+    if (!local.ok) {
+      warn(`rejected Solana payload before getSlot/facilitator (${local.reason})`);
+      return reject(RAIL_REJECT.invalidPayload);
+    }
+    // N3: token-account check and rail init in parallel.
+    // Odin 12:31 S1: the chain slot at request start (before verify/settle) orders any later on-chain match.
+    // Odin 2:12 F2: read UNCOUNTED here (a good read can still close an open breaker); counted below only once the
+    // payload has also passed the requirement checks, so junk can trip neither the streak nor the rate window.
+    const [ready, rail, startSlot] = await Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config, false)]);
+    if (!ready || !rail) return reject(RAIL_REJECT.unavailable);
+    const requirement = await buildSolanaRequirement(rail, atomicUsdc);
     const check = validateSolanaPaymentPayload(payload, requirement);
     if (!check.ok) {
       warn(`rejected Solana payload before facilitator (${check.reason})`);
       return reject(RAIL_REJECT.invalidPayload);
     }
+    countStartSlot(startSlot !== undefined);
+    // Odin 1:19/1:21: no request-start slot (both getSlot tries failed / timed out) → 503 + Retry-After with a FIXED
+    // body, right after the rail-ready + payload checks: no PayAI verify/settle, no handler, no replay key. Nothing is
+    // charged and no later on-chain match would be unorderable (no replay window, no wall-clock fallback).
+    if (startSlot === undefined) {
+      // Odin 1:39 N1: once the breaker is open (sustained / partial getSlot outage) Solana is treated as absent: the
+      // paid request gets main's Base-only 402 with rail_unavailable (nothing charged), as on a confirmed absence.
+      if (slotBreakerOpen) {
+        warn("no request-start slot and the getSlot breaker is open; client gets the Base-only 402 (rail_unavailable)", undefined, false);
+        return reject(RAIL_REJECT.unavailable);
+      }
+      warn("no request-start slot (getSlot failed twice or timed out); client gets 503 before PayAI (nothing charged)", undefined, false);
+      return noStartSlotResponse();
+    }
+
+    // Odin 1:39 N2: our payment (message, buyer slot + signature, payer) is parsed BEFORE verify; validation already
+    // refused anything unparseable, so `ours` is always set below (no unchecked serve branch).
+    const ours = ourPayment(txOf(payload)!)!;
 
     // Replay guard: BEFORE verify.
     const k = await solanaPaymentKey(txOf(payload)!);
@@ -1690,11 +1901,7 @@ export async function handleSolanaPayment(
       thrown = err;
     }
     if (att.settle?.outcome === "success" && res && res.status < 400) {
-      const ours = ourPayment(txOf(payload)!);
-      if (!ours) {
-        // Unparseable buyer slot in a payload PayAI accepted: cannot bind → fail open as on an RPC hiccup.
-        warn(`could not read our payment from the payload fp=${fp(key)}; serving the paid response`, undefined, false);
-      } else {
+      {
         // Odin 12:51 (b): slot ordering + S2 binding on the success path too. PayAI's signature is only a hint.
         const found = await findPaymentOnChain(config, att.settle.transaction, ours, requirement, startSlot);
         if (found.kind === "replay") {
@@ -1716,17 +1923,27 @@ export async function handleSolanaPayment(
         }
         if (found.kind === "unknown") {
           // RPC down / not indexed within the deadline: fail open as before (PayAI confirmed the settle; never charge
-          // without delivering on an RPC hiccup).
-          warn(`could not bind the settled tx on-chain fp=${fp(key)}; serving the paid response`, undefined, false);
-        }
-        // "paid": OUR message, exact amount, slot > start slot → the normal paid response. Odin 1:21: if the tx we
-        // found is not the one PayAI named, PAYMENT-RESPONSE carries the CHAIN result (tx id + payer from OUR message).
-        if (found.kind === "paid" && found.signature !== att.settle.transaction) {
+          // without delivering on an RPC hiccup). Odin 1:39 LOW-1: PAYMENT-RESPONSE is REBUILT from what we know
+          // (network + payer from OUR message) and MARKED unverified; the tx id is PayAI's (the only source: the fee
+          // payer's slot-0 signature is not in the buyer's payload) and is labelled as such.
+          warn(`could not bind the settled tx on-chain fp=${fp(key)}; serving the paid response (PAYMENT-RESPONSE marked unverified)`, undefined, false);
+          // Odin 2:13 (2): the marker sits under the spec's `extensions` (a spec-aware client keeps it), not `extra`.
+          // Odin 2:13 (3): PayAI's tx id is echoed ONLY if it is a Solana signature (base58, 64 bytes); else omitted.
+          const facTx = att.settle.transaction;
+          res = withPaymentResponse(res, {
+            success: true,
+            ...(isSolanaSignature(facTx) ? { transaction: facTx } : {}),
+            network: config.network,
+            payer: ours.payer,
+            extensions: { settlementVerified: false, transactionSource: "facilitator" },
+          } as SettleResponse);
+        } else {
+          // "paid": OUR message, exact amount, slot > start slot → the normal paid response. Odin 1:39 LOW-1: the
+          // PAYMENT-RESPONSE is ALWAYS rebuilt from the chain (tx id) + OUR message (payer), never PayAI's header.
           res = withPaymentResponse(res, { success: true, transaction: found.signature, network: config.network, payer: ours.payer } as SettleResponse);
         }
       }
     } else if (att.settle?.outcome === "unconfirmed") {
-      const ours = ourPayment(txOf(payload)!);
       if (att.settle.duplicate) {
         // Odin 12:31 S1 / 12:51 C1: PayAI says this payment was ALREADY settled or is in flight (ANY 409, incl. a
         // non-JSON 409, or a duplicate-shaped reason): a delivery may have happened elsewhere. Never look on-chain,
@@ -1735,11 +1952,11 @@ export async function handleSolanaPayment(
       } else if (att.paidRes && !att.handlerThrew) {
         // Ambiguous settle (timeout / transport / malformed / pending / success:false with a signature): the tx may
         // have landed. Look for OUR message on-chain (bounded, read-only) before answering.
-        const found = ours ? await findPaymentOnChain(config, att.settle.transaction, ours, requirement, startSlot) : ({ kind: "unknown" } as const);
+        const found = await findPaymentOnChain(config, att.settle.transaction, ours, requirement, startSlot);
         if (found.kind === "paid") {
           replaySet(key, "settled");
           warn(`ambiguous settle confirmed on-chain fp=${fp(key)}; serving the paid response`, undefined, false);
-          return deliverConfirmed(att.paidRes, { success: true, transaction: found.signature, network: config.network, payer: ours!.payer } as SettleResponse);
+          return deliverConfirmed(att.paidRes, { success: true, transaction: found.signature, network: config.network, payer: ours.payer } as SettleResponse);
         }
         if (found.kind === "failed") {
           replaySet(key, "settle_failed");

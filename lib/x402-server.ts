@@ -69,12 +69,12 @@ import { MAX_DESCRIPTION_CHARS, routeMetadata } from "./route-metadata";
 import { exampleRecordedAt, OUTPUT_EXAMPLES } from "./route-examples";
 import { GROCERY_INGREDIENT_OUTPUT_EXAMPLE, GROCERY_INGREDIENT_POST_OUTPUT_EXAMPLE } from "./grocery-ingredient-example";
 import { getSolanaRailConfig } from "./solana-config";
-import { handleSolanaPayment, isSolanaPaymentRequest, withSolanaAccept } from "./solana-rail";
+import { handleSolanaPayment, isSolanaPaymentRequest, solanaSlotBreakerOpen, withSolanaAccept } from "./solana-rail";
 import { baseRail, runOnPaidRail } from "./paid-rail";
 import { getXrplRailConfig } from "./xrpl-config";
-import { handleXrplPayment, isXrplPaymentRequest, withXrplAccept } from "./xrpl-rail";
+import { handleXrplPayment, isXrplPaymentRequest, withXrplAccept, withXrplAcceptIfWarm } from "./xrpl-rail";
 import { getPolygonRailConfig } from "./polygon-config";
-import { withRejectReason } from "./rail-reject";
+import { RAIL_REJECT, withRejectReason } from "./rail-reject";
 import { handlePolygonPayment, isPolygonPaymentRequest, withPolygonAccept } from "./polygon-rail";
 
 /**
@@ -1485,11 +1485,35 @@ export function createX402GetHandler(
       const paid = await handleSolanaPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, solana.config, (r) => {
         rejected = r;
       });
-      // Solana unavailable / rejected / threw → the Base-only 402 (built from
-      // a copy of the request WITHOUT the Solana payment header, so the Base
-      // server never even parses a Solana payload).
-      // Rejected (nothing charged, no body): Base-only 402 + PAYMENT-REQUIRED.error = reason, as Base does.
-      return withVary(paid ?? (await withRejectReason(await baseChallenge(withoutPaymentHeaders(req), cdpReady), rejected))) as NextResponse;
+      if (paid) return withVary(paid) as NextResponse;
+      // Solana unavailable / rejected / threw → a 402 built from a copy of the
+      // request WITHOUT the Solana payment header (so the Base server never
+      // even parses a Solana payload). Odin 2:13 (4): it lists every rail that
+      // is healthy right now: Base, plus XRPL and Polygon when enabled and
+      // ready (each appended exactly as on the unpaid 402, so payTo pins are
+      // the same; a rail whose accept is unavailable is simply left out).
+      // Rejected (nothing charged, no body): PAYMENT-REQUIRED.error = reason,
+      // as Base does.
+      const clean = withoutPaymentHeaders(req);
+      let challenge: NextResponse = await baseChallenge(clean, cdpReady);
+      // Odin 2:29 (b) / 2:32 (1) delta6: Solana is re-offered (right after
+      // Base) ONLY when the rejection is client-caused (invalid_payload), via
+      // the unpaid 402's own builder, which leaves it out when the token
+      // account / rail is absent or the breaker is open. The explicit breaker
+      // check only skips the builder's due getSlot probe on this path. Never
+      // on rail_unavailable or verify/settle failures.
+      if (rejected === RAIL_REJECT.invalidPayload && !solanaSlotBreakerOpen() && challenge.status === 402) {
+        challenge = await withSolanaAccept(challenge, solana.config, paymentOpts.maxAmountRequired);
+      }
+      // Odin 2:32 (2) LOW-1: XRPL only if already WARM on this instance (no
+      // rail init / readiness RPC / EVAL probe on this path: time margin).
+      if (xrpl.enabled && challenge.status === 402) {
+        challenge = await withXrplAcceptIfWarm(challenge, xrpl.config, paymentOpts.maxAmountRequired);
+      }
+      if (polygon.enabled && challenge.status === 402) {
+        challenge = await withPolygonAccept(challenge, polygon.config, paymentOpts.maxAmountRequired);
+      }
+      return withVary(await withRejectReason(challenge, rejected)) as NextResponse;
     }
     if (xrpl.enabled && isXrplPaymentRequest(req)) {
       let rejected: string | null = null;

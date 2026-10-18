@@ -47,6 +47,7 @@ import {
   revalidateSolana,
   setAtaMode,
   stubSolanaOn,
+  parseableSolanaTx,
 } from "./helpers/solana-env";
 
 const PAYAI = "https://facilitator.payai.network";
@@ -58,12 +59,8 @@ const SOL_SIG = "5".repeat(87);
 
 /** A wire-shaped (not signed, not valid on-chain) Solana tx: [n sigs][64-byte slots][message]. */
 function wireTx(messageFill: number, feePayerSlotFill = 0, clientSigFill = 0xaa): string {
-  return Buffer.concat([
-    Buffer.from([2]),
-    Buffer.alloc(64, feePayerSlotFill),
-    Buffer.alloc(64, clientSigFill),
-    Buffer.alloc(220, messageFill),
-  ]).toString("base64");
+  // Odin 1:39 N2: the message is parseable (header + 4 keys), the fill makes it unique.
+  return parseableSolanaTx(messageFill, { feeFill: feePayerSlotFill, buyerFill: clientSigFill });
 }
 let txSeq = 1;
 const freshTx = () => wireTx(txSeq++ % 250);
@@ -350,7 +347,11 @@ describe("fix 2: replay guard (before verify)", () => {
     const [, sol] = await accepts();
     const run = handler();
     expect((await run.handler(paid(solPayload(sol, wireTx(9, 0))))).status).toBe(200);
-    expect((await run.handler(paid(solPayload(sol, wireTx(9, 0x55))))).status).toBe(409);
+    // Odin 2:12 F1: a non-zero fee-payer slot is now refused outright (invalid_payload, before PayAI), even for a
+    // message already served; the key equality above still holds for the replay guard.
+    const tampered = await run.handler(paid(solPayload(sol, wireTx(9, 0x55))));
+    expect(tampered.status).toBe(402);
+    expect(decodePaymentRequiredHeader(tampered.headers.get("payment-required")!).error).toBe("invalid_payload");
     expect(payai("verify")).toBe(1);
   });
 

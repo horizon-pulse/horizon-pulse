@@ -23,7 +23,7 @@ import { SOLANA_MAINNET_CAIP2 } from "@/lib/solana-config";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
 import { CDP_URL_PREFIX } from "./helpers/facilitator-mock";
-import { ATA_ACCOUNT_VALUE, PAYAI_SUPPORTED, SOL_PAYER, installBothFacilitators, installRpc, setCdp, stubSolanaOn } from "./helpers/solana-env";
+import { ATA_ACCOUNT_VALUE, PAYAI_SUPPORTED, SOL_PAYER, installBothFacilitators, installRpc, setCdp, stubSolanaOn, parseableSolanaTx} from "./helpers/solana-env";
 
 const PAYAI = "https://facilitator.payai.network";
 const SOL_SIG = "5".repeat(87);
@@ -32,8 +32,8 @@ const MARKER = "PAYAI-FREETEXT-MARKER-Zq9";
 const MARKER_REASON = `Reason ${MARKER}`;
 
 let txSeq = 1;
-const freshTx = () =>
-  Buffer.concat([Buffer.from([2]), Buffer.alloc(128, 0), Buffer.alloc(220, txSeq++ % 250)]).toString("base64");
+// Odin 1:39 N2: parseable message + a non-zero buyer slot (an all-zero tx is refused before PayAI now).
+const freshTx = () => parseableSolanaTx(txSeq++ % 250);
 
 let now = 1_800_000_000_000;
 function useClock() {

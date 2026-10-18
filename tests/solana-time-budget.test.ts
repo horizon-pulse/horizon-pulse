@@ -82,7 +82,7 @@ describe("Solana time budget (Odin 12:31)", () => {
     expect(SOLANA_MAX_WORST_CASE_MS).toBe(40_000);
     expect(SOLANA_START_SLOT_TIMEOUT_MS).toBeLessThanOrEqual(SOLANA_DEFAULT_INIT_TIMEOUT_MS);
     const src = readFileSync(path.join(ROOT, "lib", "solana-rail.ts"), "utf8");
-    expect(src).toContain("Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config)])");
+    expect(src).toContain("Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config, false)])"); // Odin 2:12 F2: counted after validation
   });
 
   it("every derived Solana-capable route (route.ts and dark route.<flag>.ts) has maxDuration ≥ worst case + handler margin", () => {

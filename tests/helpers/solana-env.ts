@@ -9,6 +9,7 @@ import {
   SOLANA_PAYTO_USDC_ATA,
   SPL_TOKEN_PROGRAM,
   USDC_SOLANA_MINT,
+  base58Decode,
   base58Encode,
 } from "@/lib/solana-config";
 import { __setSolanaRpcForTests, type SolanaRpc } from "@/lib/solana-rail";
@@ -37,6 +38,22 @@ export function fillerPubkey(fill: number): string {
   return base58Encode(new Uint8Array(32).fill(fill));
 }
 export const SOL_PAYER = fillerPubkey(9);
+
+/**
+ * Odin 1:39 N2: a wire-shaped Solana tx our preflight can PARSE (not signed for real, not valid on-chain):
+ * [2 sigs][fee-payer slot][buyer slot][legacy message: header 2/0/1, 4 filler keys (keys[1], the buyer, is NOT SOL_PAYER: PayAI-reported data stays distinguishable), filler].
+ * The message is `msgLen` bytes; `tag` makes the message (and so the replay key) unique.
+ */
+/** PayAI's fee payer as the 32 raw key bytes (account key 0 of a parseable payment tx). */
+export const PAYAI_FEE_PAYER_BYTES = Buffer.from(base58Decode(PAYAI_FEE_PAYER)!);
+
+export function parseableSolanaTx(tag: number, opts: { feeFill?: number; buyerFill?: number; msgLen?: number } = {}): string {
+  const { feeFill = 0, buyerFill = 0xaa, msgLen = 220 } = opts;
+  // Odin 2:32 (4): account key 0 (the fee payer) is PayAI's recorded fee payer, as in a real x402 exact tx.
+  const head = Buffer.concat([Buffer.from([2, 0, 1, 4]), PAYAI_FEE_PAYER_BYTES, Buffer.alloc(32, 0x32), Buffer.alloc(32, 0x33), Buffer.alloc(32, 0x34)]);
+  const msg = Buffer.concat([head, Buffer.alloc(Math.max(0, msgLen - head.length), tag)]);
+  return Buffer.concat([Buffer.from([2]), Buffer.alloc(64, feeFill), Buffer.alloc(64, buyerFill), msg]).toString("base64");
+}
 
 /** The jsonParsed getAccountInfo value of an initialized USDC token account owned by payTo. */
 export const ATA_ACCOUNT_VALUE = {
