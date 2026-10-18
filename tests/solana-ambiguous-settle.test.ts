@@ -32,7 +32,7 @@ import { SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, SOLANA_PAYTO_USDC_ATA, USDC_SOLANA_
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
 import { CDP_URL_PREFIX } from "./helpers/facilitator-mock";
-import { SOL_PAYER, installBothFacilitators, installRpc, stubSolanaOn, type RpcCall } from "./helpers/solana-env";
+import { PAYAI_FEE_PAYER, PAYAI_FEE_PAYER_BYTES, SOL_PAYER, installBothFacilitators, installRpc, stubSolanaOn, type RpcCall } from "./helpers/solana-env";
 
 const PAYAI = "https://facilitator.payai.network";
 const BASE_PAYER = `0x${"11".repeat(20)}`;
@@ -48,7 +48,7 @@ const SOL_PAYER_BYTES = Buffer.from(base58Decode(SOL_PAYER)!);
  * the payload shape (fee-payer slot empty); chain copies carry a fee-payer signature.
  */
 function msgBytes(tag: number): Buffer {
-  return Buffer.concat([Buffer.from([2, 0, 1, 4]), Buffer.alloc(32, 0x31), SOL_PAYER_BYTES, Buffer.alloc(32, 0x33), Buffer.alloc(32, 0x34), Buffer.alloc(32, tag), Buffer.alloc(60, tag ^ 0x5a)]);
+  return Buffer.concat([Buffer.from([2, 0, 1, 4]), PAYAI_FEE_PAYER_BYTES, SOL_PAYER_BYTES, Buffer.alloc(32, 0x33), Buffer.alloc(32, 0x34), Buffer.alloc(32, tag), Buffer.alloc(60, tag ^ 0x5a)]);
 }
 function wire(buyerFill: number, msg: Buffer, feeFill = 0): string {
   return Buffer.concat([Buffer.from([2]), Buffer.alloc(64, feeFill), Buffer.alloc(64, buyerFill), msg]).toString("base64");
@@ -989,7 +989,7 @@ describe("delta 5 (Odin 2:12/2:13): F1 fee-payer slot + buyer slot by index; F2 
   const slotCalls = (calls: RpcCall[]) => calls.filter((c) => c.method === "getSlot");
   /** A wire tx with `n` signature slots and header numRequiredSignatures = `required`. */
   function wireN(fills: number[], required: number, tag: number): string {
-    const keys = Array.from({ length: Math.max(4, fills.length + 2) }, (_, i) => Buffer.alloc(32, 0x31 + i));
+    const keys = Array.from({ length: Math.max(4, fills.length + 2) }, (_, i) => (i === 0 ? PAYAI_FEE_PAYER_BYTES : Buffer.alloc(32, 0x31 + i)));
     const msg = Buffer.concat([Buffer.from([required, 0, 1, keys.length]), ...keys, Buffer.alloc(40, tag)]);
     return Buffer.concat([Buffer.from([fills.length]), ...fills.map((f) => Buffer.alloc(64, f)), msg]).toString("base64");
   }
@@ -999,10 +999,17 @@ describe("delta 5 (Odin 2:12/2:13): F1 fee-payer slot + buyer slot by index; F2 
     const calls = setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xe8, msg, FEE), accept.amount) : null), slot: slotOk ? undefined : down });
     return { res: await handler()(paid(solPayload(accept, tx))), calls };
   }
-  /** Locally fine (parses, layout ok) but does not match the requirement (wrong amount): reaches getSlot, never PayAI. */
+  /**
+   * Passes every LOCAL check (constants, layout, tx fee payer = accepted.extra.feePayer) but names a fee payer that is
+   * not the facilitator's (Odin 2:32: the only requirement part checked after init): reaches getSlot, never PayAI.
+   */
+  const OTHER_FEE_PAYER = Buffer.alloc(32, 0x31);
   async function mismatchOnce(accept: PaymentRequirements, slotOk: boolean) {
     const calls = setup({ slot: slotOk ? undefined : down });
-    return { res: await handler()(paid(solPayload({ ...accept, amount: "1" }, payTx(0xe9).tx))), calls };
+    const m = msgBytes(0xe9);
+    OTHER_FEE_PAYER.copy(m, 4);
+    const tx = wire(0xaa, m);
+    return { res: await handler()(paid(solPayload({ ...accept, extra: { ...accept.extra, feePayer: base58Encode(OTHER_FEE_PAYER) } }, tx))), calls };
   }
 
   // ---- F1 ----
@@ -1041,11 +1048,12 @@ describe("delta 5 (Odin 2:12/2:13): F1 fee-payer slot + buyer slot by index; F2 
     expect(ourPayment(wireN([0, 0, 0xaa], 3, 1))).toBeNull(); // 3 signers: old pick = slot 2
     expect(ourPayment(wireN([0, 0xaa], 1, 2))).toBeNull(); // header says 1 signer, 2 slots
     expect(ourPayment(wireN([0, 0xaa], 2, 3))).toMatchObject({ slot: 1 });
-    const p = (tx: string) => ({ x402Version: 2, accepted: { scheme: "exact" }, payload: { transaction: tx } }) as unknown as PaymentPayload;
-    expect(validateSolanaPayloadLocal(p(wire(0xaa, msg, 0x55)))).toEqual({ ok: false, reason: "payload.transaction fee-payer slot must be the unsigned placeholder" });
-    expect(validateSolanaPayloadLocal(p(wireN([0, 0, 0xaa], 3, 4)))).toEqual({ ok: false, reason: "payload.transaction must have exactly 2 signers (has 3, 3 slots)" });
-    expect(validateSolanaPayloadLocal(p(wire(0, msg)))).toEqual({ ok: false, reason: "payload.transaction buyer slot is not signed" });
-    expect(validateSolanaPayloadLocal(p(wire(0xaa, msg)))).toEqual({ ok: true });
+    const accepted = { scheme: "exact", network: SOLANA_MAINNET_CAIP2, payTo: SOLANA_PAYTO, asset: USDC_SOLANA_MINT, amount: "1000", maxTimeoutSeconds: 300, extra: { feePayer: PAYAI_FEE_PAYER } };
+    const p = (tx: string) => ({ x402Version: 2, accepted, payload: { transaction: tx } }) as unknown as PaymentPayload;
+    expect(validateSolanaPayloadLocal(p(wire(0xaa, msg, 0x55)), "1000")).toEqual({ ok: false, reason: "payload.transaction fee-payer slot must be the unsigned placeholder" });
+    expect(validateSolanaPayloadLocal(p(wireN([0, 0, 0xaa], 3, 4)), "1000")).toEqual({ ok: false, reason: "payload.transaction must have exactly 2 signers (has 3, 3 slots)" });
+    expect(validateSolanaPayloadLocal(p(wire(0, msg)), "1000")).toEqual({ ok: false, reason: "payload.transaction buyer slot is not signed" });
+    expect(validateSolanaPayloadLocal(p(wire(0xaa, msg)), "1000")).toEqual({ ok: true });
   });
 
   // ---- F2 / Sentinel LOW-A ----
@@ -1187,5 +1195,101 @@ describe("delta 5 (Odin 2:12/2:13): F1 fee-payer slot + buyer slot by index; F2 
     expect(isSolanaSignature("2".repeat(64))).toBe(false); // passes the regex, decodes to 47 bytes
     expect(isSolanaSignature(undefined)).toBe(false);
     expect(isSolanaSignature(42)).toBe(false);
+  });
+});
+
+// ===========================================================================
+// Odin 2:32 PM ET delta 6 (3) + (4): constant requirement checks before getSlot; tx fee payer checked locally.
+// ===========================================================================
+describe("delta 6 (Odin 2:32): constant payTo/amount/asset/network/timeout checks and the in-tx fee payer, before getSlot and PayAI", () => {
+  let facilitator: string[] = [];
+  beforeEach(() => {
+    facilitator = [];
+    installBothFacilitators({
+      verify: (url: string) => (url.startsWith(CDP_URL_PREFIX) ? { isValid: true, payer: BASE_PAYER } : (facilitator.push("verify"), { isValid: true, payer: SOL_PAYER })),
+      settle: async (url: string, _p: PaymentPayload, r: PaymentRequirements) => {
+        if (url.startsWith(CDP_URL_PREFIX)) return { success: true, transaction: `0x${"ab".repeat(32)}`, network: r.network, payer: BASE_PAYER };
+        facilitator.push("settle");
+        return { success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER };
+      },
+    } as never);
+  });
+  const railError = (res: Response) => decodePaymentRequiredHeader(res.headers.get("payment-required")!).error;
+  const rpcMethods = (calls: RpcCall[]) => calls.map((c) => c.method);
+
+  for (const [name, over] of [
+    ["payTo swapped", { payTo: base58Encode(new Uint8Array(32).fill(8)) }],
+    ["amount lowered", { amount: "1" }],
+    ["asset swapped", { asset: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" }],
+    ["network devnet", { network: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" }],
+    ["maxTimeoutSeconds changed", { maxTimeoutSeconds: 60 }],
+  ] as const) {
+    it(`(3) accepted.${name} → invalid_payload with NO getSlot (no RPC at all) and no PayAI`, async () => {
+      const accept = await solAccept();
+      const calls = setup({});
+      const res = await handler()(paid(solPayload({ ...accept, ...over } as PaymentRequirements, payTx(0xf0).tx)));
+      expect(res.status).toBe(402);
+      expect(railError(res)).toBe("invalid_payload");
+      expect(rpcMethods(calls)).not.toContain("getSlot");
+      expect(facilitator).toEqual([]);
+      expect(ran).toBe(0);
+    });
+  }
+
+  it("(4) tx fee payer (key 0) differs from accepted.extra.feePayer (= PayAI's) → invalid_payload before getSlot and PayAI", async () => {
+    const accept = await solAccept();
+    expect((accept.extra as { feePayer: string }).feePayer).toBe(PAYAI_FEE_PAYER);
+    const m = msgBytes(0xf1);
+    Buffer.alloc(32, 0x31).copy(m, 4); // a different fee payer inside the tx
+    const calls = setup({});
+    const res = await handler()(paid(solPayload(accept, wire(0xaa, m))));
+    expect(res.status).toBe(402);
+    expect(railError(res)).toBe("invalid_payload");
+    expect(rpcMethods(calls)).not.toContain("getSlot");
+    expect(facilitator).toEqual([]);
+  });
+
+  it("(4) tx fee payer = accepted.extra.feePayer but NOT PayAI's key → invalid_payload after init, still before PayAI", async () => {
+    const accept = await solAccept();
+    const other = Buffer.alloc(32, 0x31);
+    const m = msgBytes(0xf2);
+    other.copy(m, 4);
+    setup({});
+    const res = await handler()(paid(solPayload({ ...accept, extra: { ...accept.extra, feePayer: base58Encode(other) } }, wire(0xaa, m))));
+    expect(res.status).toBe(402);
+    expect(railError(res)).toBe("invalid_payload");
+    expect(facilitator).toEqual([]);
+  });
+
+  it("(4) accepted.extra.feePayer missing / not a pubkey → invalid_payload before getSlot", async () => {
+    const accept = await solAccept();
+    for (const extra of [{}, { feePayer: "not-a-key" }]) {
+      const calls = setup({});
+      const res = await handler()(paid(solPayload({ ...accept, extra } as PaymentRequirements, payTx(0xf3).tx)));
+      expect(railError(res)).toBe("invalid_payload");
+      expect(rpcMethods(calls)).not.toContain("getSlot");
+    }
+    expect(facilitator).toEqual([]);
+  });
+
+  it("(4) unit: validateSolanaPayloadLocal checks key 0 against accepted.extra.feePayer; the matching tx passes", async () => {
+    const accept = await solAccept();
+    const ok = payTx(0xf4).tx;
+    expect(validateSolanaPayloadLocal(solPayload(accept, ok), accept.amount)).toEqual({ ok: true });
+    const m = msgBytes(0xf5);
+    Buffer.alloc(32, 0x31).copy(m, 4);
+    expect(validateSolanaPayloadLocal(solPayload(accept, wire(0xaa, m)), accept.amount)).toEqual({ ok: false, reason: "payload.transaction fee payer (key 0) does not match accepted.extra.feePayer" });
+    expect(validateSolanaPayloadLocal(solPayload({ ...accept, payTo: base58Encode(new Uint8Array(32).fill(8)) }, ok), accept.amount)).toEqual({ ok: false, reason: "accepted.payTo does not match requirements" });
+    expect(validateSolanaPayloadLocal(solPayload(accept, ok), "1")).toEqual({ ok: false, reason: "accepted.amount does not match requirements" });
+    for (const extra of [{}, { feePayer: "not-a-key" }, { feePayer: 42 }])
+      expect(validateSolanaPayloadLocal(solPayload({ ...accept, extra } as PaymentRequirements, ok), accept.amount)).toEqual({ ok: false, reason: "accepted.extra.feePayer is not a Solana public key" });
+  });
+
+  it("a fully valid payment still goes through (verify + settle + handler), fee payer = PayAI's key 0", async () => {
+    const accept = await solAccept();
+    const { tx, msg } = payTx(0xf6);
+    setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xf6, msg, FEE), accept.amount) : null) });
+    expect((await handler()(paid(solPayload(accept, tx)))).status).toBe(200);
+    expect(facilitator).toEqual(["verify", "settle"]);
   });
 });

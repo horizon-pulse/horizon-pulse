@@ -129,6 +129,11 @@ code change + owner approval; env can only turn the rail on/off.
 - **Parse before verify (Odin 1:39 N2):** the preflight refuses a transaction we cannot bind later (unparseable wire
   format, or no signed buyer slot) → 402 `invalid_payload` before PayAI. `ours` (message, buyer slot +
   signature, payer) is always known after it; the old "could not read our payment → serve" branch is gone.
+- **Constant checks and fee payer before getSlot (Odin 2:32 (3)/(4), Sentinel residual + INFO-B):** the local preflight
+  also checks the constant requirement fields (network = Solana mainnet, payTo = the pinned payTo, asset = the USDC
+  mint, amount = the route price, maxTimeoutSeconds) and that the transaction's fee payer (account key 0) equals
+  `accepted.extra.feePayer`, all before getSlot / init / PayAI. After init, `accepted.extra.feePayer` must equal the
+  facilitator's (PayAI's) fee payer, so a tx naming any other fee payer is refused with `invalid_payload`.
 - **Signer layout by index (Odin 2:12 F1):** exactly 2 required signers and 2 signature slots; slot 0 = account key 0
   = the fee payer, which the facilitator signs at settle, so it MUST be the all-zero placeholder in the buyer's
   payload (a non-zero slot 0 → `invalid_payload` before PayAI); slot 1 = key 1 = the buyer, which must be signed.
@@ -136,8 +141,13 @@ code change + owner approval; env can only turn the rail on/off.
   our binding never matched (charged, never delivered, 502/504).
 - **Reject / unavailable 402 lists every healthy rail (Odin 2:13 (4), Sentinel INFO-3):** a Solana payment that is
   refused or cannot be served gets a 402 with Base plus XRPL and Polygon when enabled and ready (each appended exactly
-  as on the unpaid 402, same payTo pins; Solana itself is not re-offered), with `PAYMENT-REQUIRED.error` = reason.
-  With XRPL and Polygon off or not ready it is byte-identical to the Base-only golden reject.
+  as on the unpaid 402, same payTo pins), with `PAYMENT-REQUIRED.error` = reason. XRPL is listed there only if it is
+  already WARM on the instance (Odin 2:32 (2), LOW-1: rail built, payTo readiness known and not a confirmed absence,
+  EVAL probe passed); that path never starts XRPL init, the readiness RPC or the EVAL probe, so its time margin holds. Solana itself (Odin 2:29 (b)
+  delta6) is re-offered, via the unpaid 402's own builder, ONLY for a client-caused rejection (`invalid_payload`)
+  while the getSlot breaker is closed and the rail is otherwise present (token account + rail ready); it stays out on
+  `rail_unavailable`, an open breaker or an absent rail. A `rail_unavailable` with XRPL and Polygon off or not ready
+  is byte-identical to the Base-only golden reject.
 - **Duplicates (S1; widened by Odin 12:51 C1):** `duplicate_settlement`, ANY facilitator 409 (any reason, or a non-JSON
   409, which the SDK reports as `Facilitator settle failed (409)`), and any reason matching `/duplicate|already|in_flight/`
   (also on a 200 `success:false` without a signature, which used to be a terminal 402): never searched, never
@@ -304,6 +314,14 @@ Still applies:
 - **No Coinbase Bazaar credit.** PayAI-facilitated Solana sales do not count
   toward the Coinbase Bazaar settlement window.
 - **No Solana MCP.** Hosted `/mcp` (all tools, including `discourse_split`) and the local MCP client are Base only.
+
+## Backlog / follow-ups
+
+- **Per-IP limit on Solana-paid requests: DEFERRED (Odin 2:29 PM ET 10/18, decision (c)).** Sentinel LOW-A follow-up:
+  delta5 (F2) stops junk headers from reaching getSlot and from tripping the breaker, but a caller who copies the
+  public requirement can still send locally valid (not really signed) payloads that cost one getSlot each. A per-IP
+  (hashed) rate limit on Solana-paid requests would cap that RPC spend. Not built; revisit if RPC quota or rate-limit
+  errors show up, or with the next Solana hardening pass.
 
 ## Tests / smoke
 - `npm test` (vitest): flag-off identity, flag-on shape, config/pin validation,

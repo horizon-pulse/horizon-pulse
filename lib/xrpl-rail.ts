@@ -1272,6 +1272,39 @@ export async function getXrplAccept(config: XrplRailConfig, atomicUsdc: string):
 }
 
 /**
+ * Odin 2:32 (2), LOW-1: the XRPL entry built ONLY from warm per-instance state, for the Solana reject/unavailable
+ * 402. Never starts rail init, never runs the payTo readiness RPC or the replay-store EVAL probe (so that path keeps
+ * its time margin). null (left out) unless: the shared-store gate passes, the rail for this exact config is already
+ * built, payTo readiness has been checked for this config and is not a confirmed absence (same rule as
+ * getXrplAccept), and (stores with EVAL) the last EVAL probe passed. Never throws.
+ */
+export async function getXrplAcceptIfWarm(config: XrplRailConfig, atomicUsdc: string): Promise<PaymentRequirements | null> {
+  try {
+    if (!replayStoreOkFor(config)) return null;
+    if (railState?.key !== JSON.stringify(config)) return null;
+    const rkey = `${config.network}|${config.rpcUrl}|${config.issuer}|${config.payTo}`;
+    if (!readyCache || readyCache.key !== rkey) return null;
+    if (payToConfirmedAbsent(config)) return null;
+    if (replay.probeEval && !(evalCache && evalCache.store === replay && evalCache.ok)) return null;
+    return await buildXrplRequirement(railState.rail, atomicUsdc);
+  } catch (err) {
+    warn("could not build warm XRPL requirement", err);
+    return null;
+  }
+}
+
+/** withXrplAccept, but only from warm state (getXrplAcceptIfWarm); unchanged response when XRPL is cold or absent. */
+export async function withXrplAcceptIfWarm<T extends Response>(res: T, config: XrplRailConfig, atomicUsdc: string): Promise<T | NextResponse> {
+  try {
+    const accept = await getXrplAcceptIfWarm(config, atomicUsdc);
+    return accept ? await appendAccept(res, accept) : res;
+  } catch (err) {
+    warn("could not append warm XRPL requirement", err);
+    return res;
+  }
+}
+
+/**
  * Return a copy of a 402/OPTIONS response with `accept` appended after the
  * existing entries (Base, then Solana when that rail is on), in both the
  * PAYMENT-REQUIRED header and, when the body is a v2 PaymentRequired, the JSON

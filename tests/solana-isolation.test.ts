@@ -9,7 +9,7 @@
  *     definitive settle failure returns the exact Base-only 402, an ambiguous
  *     settle a generic 502/504 (never 402); none ever reaches the Base path.
  */
-import { expectRejectedGolden } from "./helpers/reject-header";
+import { expectRejectedGolden, expectRejectedGoldenPlus } from "./helpers/reject-header";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -330,7 +330,7 @@ describe("paid isolation", () => {
     ["accepted.asset swapped (devnet USDC)", (a: PaymentRequirements) => ({ ...a, asset: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU" })],
     ["accepted.extra.feePayer swapped", (a: PaymentRequirements) => ({ ...a, extra: { feePayer: fillerPubkey(2) } })],
   ] as const) {
-    it(`preflight: ${name} → rejected before any facilitator call, Base-only 402`, async () => {
+    it(`preflight: ${name} → rejected before any facilitator call, Base 402 + Solana re-offered (delta6)`, async () => {
       calls = installBothFacilitators(behaviour());
       stubSolanaOn();
       const accepts = await getAccepts();
@@ -339,7 +339,10 @@ describe("paid isolation", () => {
       const res = await run.handler(paid(solanaPayload(mutate(accepts[1]) as PaymentRequirements)));
       expect(res.status).toBe(402);
       expect(run.ran.count).toBe(0);
-      expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader(), "invalid_payload");
+      // Odin 2:29 (b) delta6: client-caused (invalid_payload), breaker closed, rail present → golden Base 402 + the
+      // unpaid 402's own Solana entry (pinned payTo), error = invalid_payload.
+      expectRejectedGoldenPlus(res.headers.get("payment-required"), goldenPulseHeader(), "invalid_payload", [accepts[1]]);
+      expect(accepts[1].payTo).toBe("BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz");
       expect(nonSupported()).toEqual([]);
     });
   }

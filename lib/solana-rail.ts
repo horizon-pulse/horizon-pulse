@@ -1129,7 +1129,7 @@ const fail = (reason: string): WireCheck => ({ ok: false, reason });
  * compute budget, signatures, simulation) is checked by the facilitator.
  */
 export function validateSolanaPaymentPayload(payload: PaymentPayload, requirement: PaymentRequirements): WireCheck {
-  const local = validateSolanaPayloadLocal(payload);
+  const local = validateSolanaPayloadLocal(payload, requirement.amount);
   if (!local.ok) return local;
   const accepted = payload.accepted;
   for (const f of ["scheme", "network", "asset", "payTo", "amount", "maxTimeoutSeconds"] as const) {
@@ -1146,10 +1146,16 @@ export function validateSolanaPaymentPayload(payload: PaymentPayload, requiremen
  * base64 size, and the wire tx itself (Odin 1:39 N2 parse + Odin 2:12 F1 signer layout). Run on every Solana-paid
  * request BEFORE getSlot / rail init, so a junk header never reaches the RPC; validateSolanaPaymentPayload repeats it.
  */
-export function validateSolanaPayloadLocal(payload: PaymentPayload): WireCheck {
+export function validateSolanaPayloadLocal(payload: PaymentPayload, atomicUsdc: string): WireCheck {
   if (!payload || payload.x402Version !== 2) return fail("x402Version must be 2");
   const accepted = payload.accepted;
   if (!accepted || accepted.scheme !== "exact") return fail("accepted.scheme must be exact");
+  // Odin 2:32 (3), Sentinel residual: the CONSTANT parts of the requirement (pinned payTo, USDC mint, mainnet, price,
+  // timeout) are checked here, before getSlot / init; only the facilitator-dependent fee payer waits for the rail.
+  const constant = { network: SOLANA_MAINNET_CAIP2, payTo: SOLANA_PAYTO, asset: USDC_SOLANA_MINT, amount: atomicUsdc, maxTimeoutSeconds: MAX_TIMEOUT_SECONDS } as const;
+  for (const f of ["network", "payTo", "asset", "amount", "maxTimeoutSeconds"] as const) {
+    if (accepted[f] !== constant[f]) return fail(`accepted.${f} does not match requirements`);
+  }
   const tx = (payload.payload as Record<string, unknown> | undefined)?.transaction;
   if (typeof tx !== "string" || !/^[A-Za-z0-9+/]+={0,2}$/.test(tx)) return fail("payload.transaction must be base64");
   const len = Buffer.from(tx, "base64").length;
@@ -1158,6 +1164,12 @@ export function validateSolanaPayloadLocal(payload: PaymentPayload): WireCheck {
   // Odin 2:12 F1: and the signer layout must be the x402 exact one (fee-payer placeholder unsigned, buyer signed).
   const shape = paymentShape(tx);
   if (!shape.ok) return fail(shape.reason);
+  // Odin 2:32 (4), Sentinel INFO-B: the tx's fee payer (account key 0) must be the fee payer the client accepted;
+  // validateSolanaPaymentPayload then requires accepted.extra.feePayer === the facilitator's (PayAI's) key, so a tx
+  // that names any other fee payer is refused (invalid_payload) before PayAI.
+  const feePayer = (accepted.extra as Record<string, unknown> | undefined)?.feePayer;
+  if (!isValidSolanaPubkey(feePayer)) return fail("accepted.extra.feePayer is not a Solana public key");
+  if (shape.feePayer !== feePayer) return fail("payload.transaction fee payer (key 0) does not match accepted.extra.feePayer");
   return { ok: true };
 }
 
@@ -1436,14 +1448,18 @@ export type OurPayment = { message: Uint8Array; slot: number; signature: string;
  */
 export const SOLANA_FEE_PAYER_SLOT = 0;
 export const SOLANA_BUYER_SLOT = 1;
-function paymentShape(txB64: string): { ok: true; ours: OurPayment } | { ok: false; reason: string } {
+function paymentShape(txB64: string): { ok: true; ours: OurPayment; feePayer: string } | { ok: false; reason: string } {
   const w = parseWireTx(Buffer.from(txB64, "base64"));
   if (!w) return { ok: false, reason: "payload.transaction is not a parseable signed transaction" };
   if (w.sigs.length !== 2 || w.required !== 2) return { ok: false, reason: `payload.transaction must have exactly 2 signers (has ${w.required}, ${w.sigs.length} slots)` };
   if (w.sigs[SOLANA_FEE_PAYER_SLOT].some((y) => y !== 0)) return { ok: false, reason: "payload.transaction fee-payer slot must be the unsigned placeholder" };
   const sig = w.sigs[SOLANA_BUYER_SLOT];
   if (!sig.some((y) => y !== 0)) return { ok: false, reason: "payload.transaction buyer slot is not signed" };
-  return { ok: true, ours: { message: w.message, slot: SOLANA_BUYER_SLOT, signature: base58Encode(sig), payer: base58Encode(w.keys[SOLANA_BUYER_SLOT]) } };
+  return {
+    ok: true,
+    ours: { message: w.message, slot: SOLANA_BUYER_SLOT, signature: base58Encode(sig), payer: base58Encode(w.keys[SOLANA_BUYER_SLOT]) },
+    feePayer: base58Encode(w.keys[SOLANA_FEE_PAYER_SLOT]),
+  };
 }
 export function ourPayment(txB64: string): OurPayment | null {
   const r = paymentShape(txB64);
@@ -1794,7 +1810,7 @@ export async function handleSolanaPayment(
     // header is refused (invalid_payload, Base-only 402) without spending a getSlot and without touching the breaker.
     const received = decodePaymentSignatureHeader(req.headers.get("payment-signature")!.trim()) as PaymentPayload;
     const payload = stripBazaar(received);
-    const local = validateSolanaPayloadLocal(payload);
+    const local = validateSolanaPayloadLocal(payload, atomicUsdc);
     if (!local.ok) {
       warn(`rejected Solana payload before getSlot/facilitator (${local.reason})`);
       return reject(RAIL_REJECT.invalidPayload);

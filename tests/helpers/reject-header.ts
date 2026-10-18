@@ -18,3 +18,16 @@ export function expectRejectedGolden(actual: string | null, golden: string, code
   expect(encodePaymentRequiredHeader({ ...a, error: g.error })).toBe(golden);
   return a.error!;
 }
+
+/**
+ * Odin 2:29 (b) delta6: a reject 402 that ALSO re-offers rails after the golden Base entry. Everything except
+ * `error` and the appended accepts must be the golden header byte for byte; the appended accepts are pinned exactly.
+ */
+export function expectRejectedGoldenPlus(actual: string | null, golden: string, code: string, extra: unknown[]): void {
+  expect(actual).not.toBeNull();
+  const a = decodePaymentRequiredHeader(actual!);
+  const g = decodePaymentRequiredHeader(golden);
+  expect(a.error).toBe(code);
+  expect(a.accepts).toEqual([...g.accepts, ...extra]);
+  expect(encodePaymentRequiredHeader({ ...a, accepts: a.accepts.slice(0, g.accepts.length), error: g.error })).toBe(golden);
+}
