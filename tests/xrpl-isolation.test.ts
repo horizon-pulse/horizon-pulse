@@ -648,7 +648,9 @@ describe("replay guard + cross-instance check", () => {
     expect((await run.handler(paid(p))).status).toBe(200);
   });
 
-  it("ambiguous settle keeps the key: retrying the same payment => 409, never 402, facilitator not re-asked", async () => {
+  it("ambiguous settle keeps the key: retrying the same payment (ledger still can't confirm) => 502 again, never 402/409, facilitator not re-asked", async () => {
+    // Odin 11:34 AM ET 10/18: 409 means ONLY "already delivered". An undelivered slot is redeemed from the
+    // ledger on retry (tests/xrpl-post-settle-no-5xx.test.ts); here the stub ledger has no meta → still unknown.
     calls = installXrplFacilitators(behaviour({ settle: () => { throw new Error("reset"); } }));
     stubXrplOn();
     const accepts = await getAccepts();
@@ -656,7 +658,7 @@ describe("replay guard + cross-instance check", () => {
     const p = xrplPayload(accepts[1]);
     expect((await run.handler(paid(p))).status).toBe(502);
     calls.length = 0;
-    expect((await run.handler(paid(p))).status).toBe(409);
+    expect((await run.handler(paid(p))).status).toBe(502);
     expect(calls.filter((x) => x.op !== "supported")).toEqual([]);
   });
 

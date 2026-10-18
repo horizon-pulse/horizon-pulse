@@ -18,29 +18,64 @@
  *     (getXrplRailConfig + replayStoreOkFor in xrpl-rail.ts). Cross-instance replays are then caught only by the
  *     ledger-close-time check (settledBeforeRequest) in xrpl-rail.ts.
  *
+ * Delivered vs not delivered (Odin 11:34 AM ET 10/18): "settled" = the paid
+ * response was DELIVERED (the only state a duplicate gets 409 for).
+ * "settle_unconfirmed@<firstSeenMs>" = charged-or-unknown, NOT delivered: a
+ * retry of the same payment may redeem it once the validated ledger shows it
+ * closed to payTo after firstSeen. "redeeming@<firstSeenMs>@<leaseStartMs>" =
+ * one request holds the redemption (lease). Transitions out of an undelivered
+ * state go through `cas` (atomic compare-and-set: Upstash EVAL GET==expected →
+ * SET PX; memory: synchronous), so only one request can claim delivery. Values
+ * carry timestamps only (no payer data); keys and TTLs are unchanged.
+ *
  * Store errors fail CLOSED on claim (the XRPL payment is not accepted; the
  * caller serves the Base-only 402, nothing is charged) and are logged on
  * set/release.
  */
 
-export type ReplayState = "in_flight" | "settled" | "settle_failed" | "settle_unconfirmed";
-const STATES: readonly ReplayState[] = ["in_flight", "settled", "settle_failed", "settle_unconfirmed"];
+export type ReplayState = "in_flight" | "settled" | "settle_failed" | "settle_unconfirmed" | "redeeming";
+const STATES: readonly ReplayState[] = ["in_flight", "settled", "settle_failed", "settle_unconfirmed", "redeeming"];
+
+/** Parsed store value: state plus, for undelivered states, when we first saw the payment and the redemption lease start. */
+export type ReplayRecord = { state: ReplayState; firstSeen?: number; lease?: number };
+
+/** `state`, `state@firstSeen`, or `state@firstSeen@lease` (ms since epoch, integers). */
+export function encodeReplayValue(r: ReplayRecord): string {
+  if (r.firstSeen === undefined) return r.state;
+  return r.lease === undefined ? `${r.state}@${Math.floor(r.firstSeen)}` : `${r.state}@${Math.floor(r.firstSeen)}@${Math.floor(r.lease)}`;
+}
+
+/** Inverse of encodeReplayValue; null for anything unrecognised. */
+export function parseReplayValue(raw: unknown): ReplayRecord | null {
+  if (typeof raw !== "string") return null;
+  const m = /^([a-z_]+)(?:@(\d{1,16}))?(?:@(\d{1,16}))?$/.exec(raw);
+  if (!m || !(STATES as readonly string[]).includes(m[1])) return null;
+  const r: ReplayRecord = { state: m[1] as ReplayState };
+  if (m[2] !== undefined) r.firstSeen = Number(m[2]);
+  if (m[3] !== undefined) r.lease = Number(m[3]);
+  return r;
+}
 
 export interface ReplayStore {
   readonly kind: "memory" | "upstash";
   /** Atomically claim `key` as in_flight. null = claimed by us; otherwise the state already held. */
   claim(key: string, ttlMs: number): Promise<ReplayState | null>;
-  set(key: string, state: ReplayState, ttlMs: number): Promise<void>;
+  /** Write a state (or an encoded value from encodeReplayValue). */
+  set(key: string, state: ReplayState | string, ttlMs: number): Promise<void>;
   release(key: string): Promise<void>;
+  /** Raw value (see encodeReplayValue) or null. */
+  get?(key: string): Promise<string | null>;
+  /** Atomic compare-and-set: write `next` (TTL ttlMs) only if the current value is exactly `expected`. */
+  cas?(key: string, expected: string, next: string, ttlMs: number): Promise<boolean>;
   clear?(): void;
 }
 
 export class MemoryReplayStore implements ReplayStore {
   readonly kind = "memory" as const;
-  private readonly m = new Map<string, { state: ReplayState; until: number }>();
+  private readonly m = new Map<string, { state: string; until: number }>();
   constructor(private readonly maxEntries = 50_000) {}
 
-  private get(key: string): ReplayState | null {
+  private read(key: string): string | null {
     const e = this.m.get(key);
     if (!e) return null;
     if (Date.now() >= e.until) {
@@ -49,7 +84,7 @@ export class MemoryReplayStore implements ReplayStore {
     }
     return e.state;
   }
-  private put(key: string, state: ReplayState, ttlMs: number): void {
+  private put(key: string, state: string, ttlMs: number): void {
     this.m.delete(key);
     this.m.set(key, { state, until: Date.now() + ttlMs });
     if (this.m.size > this.maxEntries) {
@@ -62,13 +97,22 @@ export class MemoryReplayStore implements ReplayStore {
     }
   }
   async claim(key: string, ttlMs: number): Promise<ReplayState | null> {
-    const cur = this.get(key);
-    if (cur) return cur;
+    const cur = this.read(key);
+    if (cur) return parseReplayValue(cur)?.state ?? "in_flight";
     this.put(key, "in_flight", ttlMs);
     return null;
   }
-  async set(key: string, state: ReplayState, ttlMs: number): Promise<void> {
+  async set(key: string, state: ReplayState | string, ttlMs: number): Promise<void> {
     this.put(key, state, ttlMs);
+  }
+  async get(key: string): Promise<string | null> {
+    return this.read(key);
+  }
+  /** Synchronous body: atomic within one instance (memory store = testnet only). */
+  async cas(key: string, expected: string, next: string, ttlMs: number): Promise<boolean> {
+    if (this.read(key) !== expected) return false;
+    this.put(key, next, ttlMs);
+    return true;
   }
   async release(key: string): Promise<void> {
     this.m.delete(key);
@@ -82,6 +126,10 @@ export class MemoryReplayStore implements ReplayStore {
 }
 
 type FetchFn = typeof fetch;
+
+/** KEYS[1]; ARGV = expected, next, ttlMs. Returns 1 if swapped, else 0. */
+export const CAS_SCRIPT =
+  "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 else return 0 end";
 
 export class UpstashReplayStore implements ReplayStore {
   readonly kind = "upstash" as const;
@@ -120,10 +168,19 @@ export class UpstashReplayStore implements ReplayStore {
     if (r === "OK") return null;
     const cur = await this.cmd(["GET", k]);
     // Held but unreadable/expired between calls: treat as in_flight (never a second settle).
-    return typeof cur === "string" && (STATES as readonly string[]).includes(cur) ? (cur as ReplayState) : "in_flight";
+    return parseReplayValue(cur)?.state ?? "in_flight";
   }
-  async set(key: string, state: ReplayState, ttlMs: number): Promise<void> {
+  async set(key: string, state: ReplayState | string, ttlMs: number): Promise<void> {
     await this.cmd(["SET", this.prefix + key, state, "PX", Math.max(1, Math.floor(ttlMs))]);
+  }
+  async get(key: string): Promise<string | null> {
+    const v = await this.cmd(["GET", this.prefix + key]);
+    return typeof v === "string" ? v : null;
+  }
+  /** Atomic on the server: one Lua script (GET == expected → SET PX). */
+  async cas(key: string, expected: string, next: string, ttlMs: number): Promise<boolean> {
+    const r = await this.cmd(["EVAL", CAS_SCRIPT, 1, this.prefix + key, expected, next, Math.max(1, Math.floor(ttlMs))]);
+    return r === 1 || r === "1";
   }
   async release(key: string): Promise<void> {
     await this.cmd(["DEL", this.prefix + key]);

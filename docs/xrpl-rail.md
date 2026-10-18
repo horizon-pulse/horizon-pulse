@@ -86,6 +86,8 @@ so with the flag ON today every 402 is still byte-identical to main** (tested).
 Logs carry reason codes only (`/^[a-z0-9_]+$/`), never facilitator free text, addresses or blobs.
 
 ### Replay guard
+- **Delivered vs not delivered (2026-10-18):** `settled` = the paid response was delivered; a duplicate of a delivered payment is the only **409**. An ambiguous settle (or an error after settle) leaves `settle_unconfirmed@<firstSeenMs>` = NOT delivered. A retry of the same payment redeems it, ledger-only (never re-submitted): one request wins the atomic compare-and-set to `redeeming@<firstSeen>@<leaseStart>` (Upstash EVAL; lease 90 s, then takeover by CAS), reads the validated ledger for its blob hash, and delivers once if the exact payment closed to payTo at/after firstSeen (−30 s skew), then marks `settled`. Closed before firstSeen → 409 (not paid through our flow), validated not tesSUCCESS → Base-only 402, not visible → 502 again (still redeemable). Busy slot (in flight / live lease) → **503** `{"error":"payment_in_progress"}` + Retry-After 5. A slot whose tx failed → Base-only 402. Values hold timestamps only; TTL stays 25 h.
+- ALERT `xrpl_settled_unverified` is HIGH severity (`[ALERT][HIGH]`) with `field` = destination / issuer / amount / unreadable / transaction.
 - Key: sha256 of (network, payer `Account`, `Sequence` or `TicketSequence`) decoded from the blob —
   the slot only one transaction can ever consume, so a re-signed / re-fee'd variant is the same
   payment. Checked before verify; kept 25 h; released when nothing could have been charged.
