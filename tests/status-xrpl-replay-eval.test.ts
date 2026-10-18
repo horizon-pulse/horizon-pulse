@@ -23,13 +23,13 @@ describe("/status hp-xrpl-replay-eval meta (non-secret)", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     setXrplReplayStoreForTests(shared(async () => {}));
     const ok = await generateMetadata();
-    expect(ok.other).toEqual({ "hp-xrpl-replay-eval": "ok" });
+    expect(ok.other).toEqual({ "hp-xrpl-replay-eval": "ok", "hp-solana-replay-eval": "not_applicable" }); // Solana: no shared store / rail off here
     expect(ok.title).toBe("Status | Horizon Pulse");
     setXrplReplayStoreForTests(shared(async () => { throw new Error("NOPERM https://secret.upstash.io token=abc"); }));
     const bad = await generateMetadata();
-    expect(bad.other).toEqual({ "hp-xrpl-replay-eval": "unavailable" });
+    expect(bad.other).toEqual({ "hp-xrpl-replay-eval": "unavailable", "hp-solana-replay-eval": "not_applicable" });
     expect(JSON.stringify(bad)).not.toMatch(/upstash|token|secret/i);
     setXrplReplayStoreForTests(new MemoryReplayStore());
-    expect((await generateMetadata()).other).toEqual({ "hp-xrpl-replay-eval": "not_applicable" });
+    expect((await generateMetadata()).other).toEqual({ "hp-xrpl-replay-eval": "not_applicable", "hp-solana-replay-eval": "not_applicable" });
   });
 });

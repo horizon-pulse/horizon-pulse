@@ -17,6 +17,7 @@ import {
   SOLANA_START_SLOT_TIMEOUT_MS,
   SOLANA_VERIFY_TIMEOUT_MS,
   SOLANA_WORST_CASE_MS,
+  SOLANA_EVAL_PROBE_DEADLINE_MS,
 } from "@/lib/solana-rail";
 import { buildPaymentRequirements } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
@@ -82,7 +83,10 @@ describe("Solana time budget (Odin 12:31)", () => {
     expect(SOLANA_MAX_WORST_CASE_MS).toBe(40_000);
     expect(SOLANA_START_SLOT_TIMEOUT_MS).toBeLessThanOrEqual(SOLANA_DEFAULT_INIT_TIMEOUT_MS);
     const src = readFileSync(path.join(ROOT, "lib", "solana-rail.ts"), "utf8");
-    expect(src).toContain("Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config)])");
+    // Odin 1:39 (3): the shared claim store probe (≤ SOLANA_EVAL_PROBE_DEADLINE_MS) runs in the same parallel init
+    // phase and finishes inside the cold token-account budget (2 × init), so the worst case is unchanged.
+    expect(src).toContain("Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config), solanaReplayEvalOk()])");
+    expect(SOLANA_EVAL_PROBE_DEADLINE_MS).toBeLessThanOrEqual(ATA_COLD_ATTEMPTS * SOLANA_DEFAULT_INIT_TIMEOUT_MS);
   });
 
   it("every derived Solana-capable route (route.ts and dark route.<flag>.ts) has maxDuration ≥ worst case + handler margin", () => {

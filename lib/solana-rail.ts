@@ -103,6 +103,7 @@ import {
 import { FacilitatorResponseError, FacilitatorTimeoutError, SettleError, VerifyError } from "@x402/core/types";
 import { withX402 } from "@x402/next";
 import { runOnPaidRail, solanaRail } from "./paid-rail";
+import { ReplaySelfTestError, UpstashReplayStore, encodeReplayValue, parseReplayValue, resolveSharedReplayStoreEnv, type ReplayStore } from "./xrpl-replay-store";
 import {
   SOLANA_MAINNET_CAIP2,
   SOLANA_PAYTO,
@@ -112,6 +113,7 @@ import {
   SPL_TOKEN_PROGRAM,
   USDC_SOLANA_MINT,
   base58Encode,
+  getSolanaRailConfig,
   isValidSolanaPubkey,
   type SolanaRailConfig,
 } from "./solana-config";
@@ -271,6 +273,10 @@ export function resetSolanaRailForTests(): void {
   reconcileAlerted.clear();
   slotFailStreak = 0;
   slotAlerted = false;
+  shared = createSolanaSharedStore();
+  sharedPending = [];
+  evalCache = null;
+  evalInflight = null;
   attempts.clear();
   warnTimes = [];
   warnAlertedAt = 0;
@@ -340,6 +346,15 @@ export type SolanaAlert =
       kind: "solana_start_slot_unavailable";
       severity: "high";
       consecutive: number;
+    }
+  | {
+      /**
+       * Shared Solana claim store (Upstash) configured but its EVAL + self-test probe failed: Solana is off the 402
+       * and paid Solana gets the Base-only 402 (fail closed) until a probe passes. Once per failure episode.
+       */
+      kind: "solana_replay_eval_unavailable";
+      severity: "high";
+      reason: string;
     }
   | {
       kind: "payai_allowance";
@@ -973,8 +988,9 @@ async function buildSolanaRequirement(rail: Rail, atomicUsdc: string): Promise<P
 export async function getSolanaAccept(config: SolanaRailConfig, atomicUsdc: string): Promise<PaymentRequirements | null> {
   try {
     // N3: token-account check and rail init run in parallel (cold start ≤ one initTimeoutMs).
-    const [ready, rail] = await Promise.all([solanaTokenAccountReady(config), getRail(config)]);
-    if (!ready || !rail) return null;
+    // Odin 12:51 (d): the shared claim store's EVAL + self-test probe runs in parallel; failing → not advertised.
+    const [ready, rail, evalOk] = await Promise.all([solanaTokenAccountReady(config), getRail(config), solanaReplayEvalOk()]);
+    if (!ready || !rail || !evalOk) return null;
     return await buildSolanaRequirement(rail, atomicUsdc);
   } catch (err) {
     warn("could not build Solana requirement", err);
@@ -1186,6 +1202,136 @@ function replaySet(key: string, state: ReplayState): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Shared claim store (Odin 12:51 (d)): cross-instance atomic claim, modeled on the XRPL replay store
+// ---------------------------------------------------------------------------
+/** Solana keys live under their own prefix (disjoint from hp:xrpl:*); value format = encodeReplayValue. */
+export const SOLANA_REPLAY_PREFIX = "hp:solana:replay:";
+export const SOLANA_SELFTEST_KEY_PREFIX = "hp:solana:selftest:replay-eval:";
+/** A passing probe is trusted this long per instance; a failing one is re-run after SOLANA_EVAL_FAIL_RECHECK_MS. */
+export const SOLANA_EVAL_OK_RECHECK_MS = 10 * 60_000;
+export const SOLANA_EVAL_FAIL_RECHECK_MS = 60_000;
+/** Whole EVAL + self-test probe bound; runs in parallel with the token-account check and rail init. */
+export const SOLANA_EVAL_PROBE_DEADLINE_MS = 3_000;
+
+/**
+ * Upstash (same credentials as the XRPL replay store: UPSTASH_REDIS_REST_* or KV_REST_API_URL/TOKEN; the read-only KV
+ * token is never read) or null = no shared store → the per-instance map only (the previous behaviour, unchanged).
+ */
+function createSolanaSharedStore(env: Record<string, string | undefined> = process.env, fetchFn?: typeof fetch): ReplayStore | null {
+  const c = resolveSharedReplayStoreEnv(env);
+  if (!c) return null;
+  try {
+    return new UpstashReplayStore(c.url, c.token, fetchFn, 1500, SOLANA_REPLAY_PREFIX, SOLANA_SELFTEST_KEY_PREFIX);
+  } catch {
+    return null;
+  }
+}
+let shared: ReplayStore | null = createSolanaSharedStore();
+/** Shared writes scheduled by replaySet / replayRelease, awaited before the request answers. */
+let sharedPending: Promise<void>[] = [];
+/** Tests only: swap the shared store (null = none). */
+export function setSolanaSharedStoreForTests(s: ReplayStore | null): void {
+  shared = s;
+  evalCache = null;
+  evalInflight = null;
+}
+export function solanaSharedStoreKind(): "upstash" | "none" {
+  return shared ? "upstash" : "none";
+}
+
+let evalCache: { store: ReplayStore; ok: boolean; until: number } | null = null;
+let evalInflight: Promise<boolean> | null = null;
+/**
+ * True when there is no shared store, or the shared store passes `EVAL "return 1"` plus the self-test (SET / wrong-
+ * value CAS_DELETE keeps / right-value CAS_DELETE removes, on a random hp:solana:selftest: key). Cached per instance
+ * (ok 10 min / fail 60 s, single-flight). A failure = fail closed (Solana off the 402, paid Solana → Base-only 402)
+ * and one HIGH ALERT solana_replay_eval_unavailable per failure episode.
+ */
+export async function solanaReplayEvalOk(): Promise<boolean> {
+  const store = shared;
+  if (!store?.probeEval) return true;
+  const now = Date.now();
+  if (evalCache && evalCache.store === store && now < evalCache.until) return evalCache.ok;
+  if (evalInflight) return evalInflight;
+  const wasOk = !evalCache || evalCache.store !== store || evalCache.ok;
+  evalInflight = (async () => {
+    let ok = true;
+    let reason = "";
+    try {
+      await withTimeout(store.probeEval!(), SOLANA_EVAL_PROBE_DEADLINE_MS, "Solana claim store probe");
+    } catch (err) {
+      ok = false;
+      reason = err instanceof ReplaySelfTestError ? err.step : err instanceof Error && / timed out after \d+ms$/.test(err.message) ? "timeout" : errorKind(err);
+    }
+    evalCache = { store, ok, until: Date.now() + (ok ? SOLANA_EVAL_OK_RECHECK_MS : SOLANA_EVAL_FAIL_RECHECK_MS) };
+    if (!ok) {
+      warn(`Solana claim store probe failed (${reason}); Solana treated as unavailable (fail closed)`, undefined, false);
+      if (wasOk) emitAlert({ kind: "solana_replay_eval_unavailable", severity: "high", reason });
+    }
+    return ok;
+  })().finally(() => {
+    evalInflight = null;
+  });
+  return evalInflight;
+}
+
+/**
+ * Solana slot values (same encodeReplayValue format as XRPL, under hp:solana:replay:). Odin 1:39 (3): the number in
+ * the `@firstSeen` position is the first request's START SLOT (chain slot read before verify/settle: the freshness
+ * bound a redeemer checks against), NOT a wall-clock time; the `@lease` position is wall-clock ms:
+ *   in_flight@<startSlot>@<claimMs>            claimed, request running (stale after SOLANA_IN_FLIGHT_STALE_MS)
+ *   settle_unconfirmed@<startSlot>             charged-or-unknown, NOT delivered → redeemable by a retry
+ *   redeeming@<startSlot>@<leaseMs>!<owner>    one retry holds the redemption (lease SOLANA_REDEEM_LEASE_MS)
+ *   settled                                    DELIVERED (409 forever after)
+ *   settle_failed                              failed on-chain / definitive failure (409)
+ */
+export const SOLANA_REDEEM_LEASE_MS = 90_000;
+/** An in_flight claim older than this (> route maxDuration 60 s) belongs to a dead request → redeemable. */
+export const SOLANA_IN_FLIGHT_STALE_MS = SOLANA_REDEEM_LEASE_MS;
+
+export type SolanaReplayEvalStatus = "ok" | "unavailable" | "not_applicable";
+/**
+ * Odin 1:39 (3): non-secret /status field <meta name="hp-solana-replay-eval">: not_applicable when the Solana rail is
+ * off or no shared store is configured (per-instance map only); otherwise the cached EVAL + self-test probe result.
+ */
+export async function solanaReplayEvalStatus(env: Record<string, string | undefined> = process.env): Promise<SolanaReplayEvalStatus> {
+  try {
+    if (!getSolanaRailConfig(env).enabled || !shared?.probeEval) return "not_applicable";
+    return (await solanaReplayEvalOk()) ? "ok" : "unavailable";
+  } catch {
+    return "unavailable";
+  }
+}
+
+/** Atomic cross-instance claim BEFORE verify. null = ours; otherwise the raw value already held. Throws on store error. */
+async function sharedClaim(key: string, startSlot: number, now: number): Promise<string | null> {
+  if (!shared) return null;
+  return shared.claim(key, REPLAY_TTL_MS, encodeReplayValue({ state: "in_flight", firstSeen: startSlot, lease: now }));
+}
+function sharedWrite(what: string, p: Promise<void>): void {
+  sharedPending.push(
+    p.catch((err) => {
+      warn(`Solana claim store ${what} failed (slot keeps its previous value; never a second delivery)`, err, false);
+    }),
+  );
+}
+async function flushShared(): Promise<void> {
+  const p = sharedPending;
+  sharedPending = [];
+  await Promise.all(p);
+}
+/** Local + shared state write. settled = DELIVERED; settle_unconfirmed@startSlot = charged-or-unknown, NOT delivered. */
+function replayWrite(key: string, state: ReplayState, firstSeen: number): void {
+  replaySet(key, state);
+  if (shared) sharedWrite(`set ${state}`, shared.set(key, encodeReplayValue({ state, ...(state === "settle_unconfirmed" ? { firstSeen } : {}) }), REPLAY_TTL_MS));
+}
+/** Nothing was charged: release locally and in the shared store. */
+function replayRelease(key: string): void {
+  replay.delete(key);
+  if (shared) sharedWrite("release", shared.release(key));
+}
+
 function txOf(payload: PaymentPayload | undefined): string | null {
   const tx = (payload?.payload as Record<string, unknown> | undefined)?.transaction;
   return typeof tx === "string" && tx !== "" ? tx : null;
@@ -1218,21 +1364,21 @@ function jsonError(status: number, error: string): NextResponse {
 
 type Decision = { kind: "response"; res: NextResponse } | { kind: "base"; reason: string } | { kind: "rethrow"; err: unknown };
 
-function decide(key: string, att: Attempt, res: NextResponse | null, threw: boolean, thrown: unknown): Decision {
+function decide(key: string, att: Attempt, res: NextResponse | null, threw: boolean, thrown: unknown, firstSeen: number): Decision {
   const s = att.settle;
   if (s) {
     if (s.outcome === "success" && res && res.status < 400) {
-      replaySet(key, "settled");
+      replayWrite(key, "settled", firstSeen);
       return { kind: "response", res };
     }
     if (s.outcome === "failed") {
       // Definitive: nothing landed. Key kept (the same tx would fail again).
-      replaySet(key, "settle_failed");
+      replayWrite(key, "settle_failed", firstSeen);
       return { kind: "base", reason: settleFailReason(s.reason) };
     }
     // Ambiguous (or settled but no deliverable response): the tx may have
     // landed. Never a 402 (would invite a second payment); no PayAI text.
-    replaySet(key, "settle_unconfirmed");
+    replayWrite(key, "settle_unconfirmed", firstSeen);
     const timeout = s.outcome === "unconfirmed" && s.timeout;
     warn(
       `settlement unconfirmed fp=${fp(key)} reason=${s.outcome === "success" ? "settled_without_response" : s.reason}; client gets ${timeout ? 504 : 502} settlement_unconfirmed (reconcile on-chain)`,
@@ -1242,7 +1388,7 @@ function decide(key: string, att: Attempt, res: NextResponse | null, threw: bool
     return { kind: "response", res: jsonError(timeout ? 504 : 502, "settlement_unconfirmed") };
   }
   // No settle attempted → nothing charged → release the key.
-  replay.delete(key);
+  replayRelease(key);
   if (att.handlerThrew) return { kind: "rethrow", err: att.handlerError };
   if (att.handlerRan && res && res.status >= 400) return { kind: "response", res }; // route's own error, as on Base
   if (threw) {
@@ -1581,6 +1727,107 @@ function deliverConfirmed(handlerRes: Response, settle: SettleResponse): NextRes
   return new NextResponse(handlerRes.body, { status: handlerRes.status, headers });
 }
 
+/** Another request holds this payment slot right now (in flight / redeeming): not delivered yet, not a duplicate. */
+function solanaInProgress(k: string): NextResponse {
+  warn(`Solana payment slot busy fp=${fp(k)}; client gets 503 payment_in_progress (retry)`, undefined, false);
+  const res = jsonError(503, "payment_in_progress");
+  res.headers.set("Retry-After", String(SOLANA_NO_SLOT_RETRY_AFTER_S));
+  return res;
+}
+
+type SolanaRedeemCtx = {
+  req: NextRequest;
+  routeHandler: AppRouteHandler;
+  rail: Rail;
+  config: SolanaRailConfig;
+  requirement: PaymentRequirements;
+  ours: OurPayment | null;
+  reject: (reason: string) => null;
+};
+
+/**
+ * Odin 1:39 (3): redeem-on-retry, modeled on the XRPL rail. A retry of a payment whose shared slot is NOT delivered
+ * (settle_unconfirmed, a stale in_flight from a dead request, or an expired redemption lease) carries the SAME
+ * message (the slot key is the sha256 of the message). Exactly one request wins the undelivered → redeeming CAS
+ * (owner-tagged lease), then looks for OUR payment on-chain, read-only and bounded (findPaymentOnChain: message bytes
+ * AND the buyer signature from THIS payload must match; slot freshness against the FIRST request's start slot stored
+ * in the slot), with no PayAI verify or settle:
+ *   - paid (slot > first start slot) → run the route, mark delivered (CAS), serve with PAYMENT-RESPONSE from the chain;
+ *   - landed at/before the first start slot → 409 (not paid through this flow) + reconcile;
+ *   - failed on-chain (confirmed + finalized) → settle_failed, Base-only 402 (nothing moved);
+ *   - not visible / RPC down, route error → back to undelivered (CAS against our own lease) → 502, retry later.
+ * Losers of the CAS, a live lease, or a fresh in_flight → 503 payment_in_progress. Store error → fail closed.
+ */
+async function redeemUndelivered(k: string, raw: string, rec: ReturnType<typeof parseReplayValue>, ctx: SolanaRedeemCtx): Promise<NextResponse | null> {
+  const store = shared!;
+  const now = Date.now();
+  if (!rec) return solanaInProgress(k); // unreadable value: never touched; TTL or a human resolves it
+  if (rec.state === "in_flight" && (rec.lease === undefined || now - rec.lease < SOLANA_IN_FLIGHT_STALE_MS)) return solanaInProgress(k);
+  if (rec.state === "redeeming" && rec.lease !== undefined && now - rec.lease < SOLANA_REDEEM_LEASE_MS) return solanaInProgress(k);
+  const firstSlot = rec.firstSeen;
+  if (firstSlot === undefined || !Number.isSafeInteger(firstSlot) || firstSlot <= 0 || !ctx.ours || !store.cas) {
+    warn(`undelivered Solana payment fp=${fp(k)} is not auto-redeemable (no start slot / unparseable payment); client gets 502`, undefined, false);
+    return jsonError(502, "settlement_unconfirmed");
+  }
+  const ours = ctx.ours;
+  const cas = store.cas.bind(store);
+  const owner = Buffer.from(globalThis.crypto.getRandomValues(new Uint8Array(8))).toString("hex");
+  const mine = encodeReplayValue({ state: "redeeming", firstSeen: firstSlot, lease: now, owner });
+  const undelivered = encodeReplayValue({ state: "settle_unconfirmed", firstSeen: firstSlot });
+  let won: boolean;
+  try {
+    won = await cas(k, raw, mine, REPLAY_TTL_MS);
+  } catch (err) {
+    warn("Solana claim store unavailable during redeem; payment not accepted (fail closed)", err);
+    return ctx.reject(RAIL_REJECT.unavailable);
+  }
+  if (!won) return solanaInProgress(k);
+  const finish = async (next: string, what: string): Promise<boolean> => {
+    try {
+      return await cas(k, mine, next, REPLAY_TTL_MS);
+    } catch (err) {
+      warn(`redeem: claim store ${what} failed fp=${fp(k)}`, err, false);
+      return false;
+    }
+  };
+  try {
+    const found = await findPaymentOnChain(ctx.config, undefined, ours, ctx.requirement, firstSlot);
+    if (found.kind === "paid") {
+      const out = await runOnPaidRail(() => solanaRail(ctx.rail.config), ctx.routeHandler)(ctx.req);
+      if (out.status >= 400) {
+        await finish(undelivered, "reset");
+        warn(`redeem: route answered ${out.status} fp=${fp(k)}; back to undelivered, client gets 502`, undefined, false);
+        return jsonError(502, "settlement_unconfirmed");
+      }
+      if (!(await finish("settled", "delivered mark"))) warn(`redeem: delivered mark lost fp=${fp(k)}; delivering anyway (paid)`, undefined, false);
+      replaySet(k, "settled");
+      warn(`redeemed undelivered Solana payment fp=${fp(k)}; serving the paid response`, undefined, false);
+      return deliverConfirmed(out, { success: true, transaction: found.signature, network: ctx.config.network, payer: ours.payer } as SettleResponse);
+    }
+    if (found.kind === "failed") {
+      await finish("settle_failed", "failed mark");
+      replaySet(k, "settle_failed");
+      warn(`redeem: tx failed on-chain (finalized) fp=${fp(k)}; not charged, Base-only 402`, undefined, false);
+      return ctx.reject(settleFailReason("transaction_failed"));
+    }
+    if (found.kind === "replay") {
+      await finish("settled", "replay mark");
+      replaySet(k, "settled");
+      logSolanaReconcile({ status: 409, reason: "redeem_landed_before_first_request", key: k, ours, amount: ctx.requirement.amount, txid: found.signature });
+      warn(`redeem: payment landed at/before the first request's start slot fp=${fp(k)}; client gets 409`, undefined, false);
+      return jsonError(409, "duplicate_payment");
+    }
+    await finish(undelivered, "reset");
+    logSolanaReconcile({ status: 502, reason: "redeem_not_found", key: k, ours, amount: ctx.requirement.amount });
+    warn(`redeem: our payment not visible on-chain yet fp=${fp(k)}; back to undelivered, client gets 502`, undefined, false);
+    return jsonError(502, "settlement_unconfirmed");
+  } catch (err) {
+    await finish(undelivered, "reset");
+    warn(`redeem failed fp=${fp(k)}; back to undelivered, client gets 502`, err, false);
+    return jsonError(502, "settlement_unconfirmed");
+  }
+}
+
 /**
  * Serve a Solana-paid request through the Solana-only server.
  *   - null → caller serves main's exact Base-only 402 (rail unavailable,
@@ -1616,8 +1863,9 @@ export async function handleSolanaPayment(
   try {
     // N3: token-account check and rail init in parallel.
     // Odin 12:31 S1: the chain slot at request start (before verify/settle) orders any later on-chain match.
-    const [ready, rail, startSlot] = await Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config)]);
-    if (!ready || !rail) return reject(RAIL_REJECT.unavailable);
+    // Odin 12:51 (d): the shared claim store's EVAL + self-test probe runs in parallel; failing → fail closed.
+    const [ready, rail, startSlot, evalOk] = await Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config), solanaReplayEvalOk()]);
+    if (!ready || !rail || !evalOk) return reject(RAIL_REJECT.unavailable);
     // Odin 1:19/1:21: no request-start slot (both getSlot tries failed / timed out) → 503 + Retry-After with a FIXED
     // body, right after the rail-ready check: no PayAI verify/settle, no handler, no replay key. Nothing is charged
     // and no later on-chain match would be unorderable (no replay window, no wall-clock fallback).
@@ -1638,9 +1886,43 @@ export async function handleSolanaPayment(
     // Replay guard: BEFORE verify.
     const k = await solanaPaymentKey(txOf(payload)!);
     const seen = replayGet(k);
-    if (seen) {
+    // With a shared store, only a DELIVERED / failed slot is final locally; in_flight / undelivered go to the shared
+    // slot (in progress → 503, undelivered → redeem on retry, Odin 1:39 (3)).
+    if (seen && (!shared || seen === "settled" || seen === "settle_failed")) {
       warn(`duplicate Solana payment rejected before verify fp=${fp(k)} state=${seen}; client gets 409`, undefined, false);
       return jsonError(409, "duplicate_payment");
+    }
+    // Odin 12:51 (d): atomic cross-instance claim (SET NX) BEFORE verify; store error → fail closed (Base-only 402,
+    // nothing charged). A slot held by another request / instance → 409 (local cache remembers it).
+    const ours = ourPayment(txOf(payload)!);
+    let held: string | null;
+    try {
+      held = await sharedClaim(k, startSlot, startedAt);
+    } catch (err) {
+      warn("Solana claim store unavailable; payment not accepted (fail closed)", err);
+      return reject(RAIL_REJECT.unavailable);
+    }
+    if (held !== null) {
+      // claim() answers the held STATE; the redeem CAS needs the exact stored value (start slot, lease, owner).
+      let raw: string | null = null;
+      if (held !== "settled" && held !== "settle_failed") {
+        try {
+          raw = shared?.get ? await shared.get(k) : null;
+        } catch (err) {
+          warn("Solana claim store unavailable; payment not accepted (fail closed)", err);
+          return reject(RAIL_REJECT.unavailable);
+        }
+        if (raw === null) return solanaInProgress(k); // expired / released in between: the buyer retries
+      }
+      const rec = raw !== null ? parseReplayValue(raw) : { state: held as ReplayState };
+      const st = rec?.state ?? "in_flight";
+      if (st === "settled" || st === "settle_failed") {
+        replaySet(k, st);
+        warn(`duplicate Solana payment rejected before verify (shared claim) fp=${fp(k)} state=${st}; client gets 409`, undefined, false);
+        return jsonError(409, "duplicate_payment");
+      }
+      // Odin 1:39 (3): not delivered (or a request in progress) → redeem on retry, ledger-only (no verify, no settle).
+      return await redeemUndelivered(k, raw!, rec, { req, routeHandler, rail, config, requirement, ours, reject });
     }
     key = k;
     replaySet(key, "in_flight");
@@ -1700,7 +1982,8 @@ export async function handleSolanaPayment(
         if (found.kind === "replay") {
           // OUR message landed before this request started: a replay of a payment already served (PayAI's cached
           // success); nothing new was charged → 409, no reconcile.
-          replaySet(key, "settled");
+          replayWrite(key, "settled", startSlot);
+          await flushShared();
           warn(`cross-instance replay: tx confirmed before this request (slot) fp=${fp(key)}; client gets 409`, undefined, false);
           return jsonError(409, "duplicate_payment");
         }
@@ -1708,7 +1991,8 @@ export async function handleSolanaPayment(
           // PayAI said success but the chain says otherwise: its signature is not OUR message (and ours is not in the
           // recent history), or OUR tx failed. No evidence we were paid → never deliver; a charge is possible → 502 +
           // reconcile (never a 402: it would invite a second payment).
-          replaySet(key, "settle_unconfirmed");
+          replayWrite(key, "settle_unconfirmed", startSlot);
+          await flushShared();
           const reason = found.kind === "failed" || found.errSeen ? "settle_success_failed_on_chain" : "settle_success_unbound";
           warn(`settle success not bound on-chain fp=${fp(key)} reason=${reason}; client gets 502 settlement_unconfirmed`, undefined, false);
           logSolanaReconcile({ status: 502, reason, key, ours, amount: requirement.amount });
@@ -1737,17 +2021,20 @@ export async function handleSolanaPayment(
         // have landed. Look for OUR message on-chain (bounded, read-only) before answering.
         const found = ours ? await findPaymentOnChain(config, att.settle.transaction, ours, requirement, startSlot) : ({ kind: "unknown" } as const);
         if (found.kind === "paid") {
-          replaySet(key, "settled");
+          replayWrite(key, "settled", startSlot);
+          await flushShared();
           warn(`ambiguous settle confirmed on-chain fp=${fp(key)}; serving the paid response`, undefined, false);
           return deliverConfirmed(att.paidRes, { success: true, transaction: found.signature, network: config.network, payer: ours!.payer } as SettleResponse);
         }
         if (found.kind === "failed") {
-          replaySet(key, "settle_failed");
+          replayWrite(key, "settle_failed", startSlot);
+          await flushShared();
           warn(`ambiguous settle: tx failed on-chain (finalized) fp=${fp(key)}; not charged, client gets the Base-only 402`, undefined, false);
           return reject(settleFailReason("transaction_failed"));
         }
         if (found.kind === "replay") {
-          replaySet(key, "settled");
+          replayWrite(key, "settled", startSlot);
+          await flushShared();
           warn(`ambiguous settle: tx landed before this request (slot) fp=${fp(key)}; client gets 409`, undefined, false);
           logSolanaReconcile({ status: 409, reason: "ambiguous_settle_landed_before_request", key, ours, amount: requirement.amount, txid: found.signature });
           return jsonError(409, "duplicate_payment");
@@ -1757,13 +2044,15 @@ export async function handleSolanaPayment(
         reconcile = { reason: "ambiguous_settle_handler_failed", ours };
       }
     }
-    decision = decide(key, att, res, threw, thrown);
+    decision = decide(key, att, res, threw, thrown, startSlot);
+    await flushShared();
     if (reconcile && decision.kind === "response" && (decision.res.status === 502 || decision.res.status === 504 || decision.res.status === 409)) {
       logSolanaReconcile({ status: decision.res.status, reason: reconcile.reason, key, ours: reconcile.ours, amount: requirement.amount });
     }
   } catch (err) {
     // Our own code threw before/around the facilitator: nothing was settled.
-    if (key && !attempts.get(key)?.settle) replay.delete(key);
+    if (key && !attempts.get(key)?.settle) replayRelease(key);
+    await flushShared();
     warn("Solana payment path threw", err);
     return reject(RAIL_REJECT.error);
   } finally {
