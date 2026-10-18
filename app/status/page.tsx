@@ -6,14 +6,23 @@ import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
+import { xrplReplayEvalStatus } from "@/lib/xrpl-rail";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Status | Horizon Pulse",
-  description: "Live on-chain USDC balance of the Horizon Pulse payTo on Base, the paid route catalog, and where to pay on Base, Solana, Polygon and the XRP Ledger.",
-};
+/**
+ * Odin 11:44 (e): non-secret post-deploy smoke field. <meta name="hp-xrpl-replay-eval" content="ok|unavailable|not_applicable">
+ * = whether this instance's shared replay store answers a trivial EVAL (the XRPL rail's atomic cas needs it).
+ * No URL, token or key is exposed; scripts/smoke-xrpl-replay-eval.mjs asserts "ok".
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: "Status | Horizon Pulse",
+    description: "Live on-chain USDC balance of the Horizon Pulse payTo on Base, the paid route catalog, and where to pay on Base, Solana, Polygon and the XRP Ledger.",
+    other: { "hp-xrpl-replay-eval": await xrplReplayEvalStatus() },
+  };
+}
 
 const OLD_HOST = "horizon-pulse.vercel.app";
 const OLD_SAFE = "0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E";

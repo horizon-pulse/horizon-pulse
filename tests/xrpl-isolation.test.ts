@@ -30,8 +30,10 @@ import {
   setXrplAlertHook,
   WARN_ALERT_THRESHOLD,
   type XrplModules,
+  SETTLEMENT_UNCONFIRMED_BODY,
 } from "@/lib/xrpl-rail";
 import { resetSolanaRailForTests } from "@/lib/solana-rail";
+import { xrplSignedTxHash } from "@/lib/xrpl-rail";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
 import { captureRoutes, captureDiscovery, type Captured } from "./helpers/capture";
@@ -309,6 +311,9 @@ const MARKER = "FACILITATOR-FREETEXT-MARKER-Zq9";
 
 type Xrpl = { verify?: () => unknown; settle?: () => unknown };
 
+/** Hash of the signed blob in a payment payload (what an honest facilitator reports as `transaction`). */
+const blobHashOf = (p: unknown) => xrplSignedTxHash(String((p as { payload?: { signedTxBlob?: unknown } })?.payload?.signedTxBlob ?? "")) ?? "";
+
 function behaviour(x: Xrpl = {}) {
   return {
     verify: (url: string, _p: unknown, r: PaymentRequirements) => {
@@ -319,7 +324,8 @@ function behaviour(x: Xrpl = {}) {
     settle: (url: string, _p: unknown, r: PaymentRequirements) => {
       if (url.startsWith(CDP_URL_PREFIX)) return { success: true, transaction: BASE_TX, network: r.network, payer: BASE_PAYER };
       if (x.settle) return x.settle();
-      return { success: true, transaction: XRPL_TX_HASH, network: r.network, payer: XRPL_PAYER };
+      // Odin 12:07 F2: a real facilitator names the hash of the blob it submitted (ours); a different one is a 502.
+      return { success: true, transaction: blobHashOf(_p), network: r.network, payer: XRPL_PAYER };
     },
   };
 }
@@ -418,7 +424,7 @@ describe("paid isolation", () => {
     expect(res.status).toBe(200);
     expect(run.ran.count).toBe(1);
     const prh = res.headers.get("payment-response")!;
-    expect(JSON.parse(Buffer.from(prh, "base64").toString())).toMatchObject({ success: true, transaction: XRPL_TX_HASH, network: "xrpl:1" });
+    expect(JSON.parse(Buffer.from(prh, "base64").toString())).toMatchObject({ success: true, transaction: blobHashOf(p), network: "xrpl:1" });
     expect(nonSupported().map((c) => c.op)).toEqual(["verify", "settle"]);
     expect(nonSupported().every((c) => c.url === XRPL_FAC && c.network === "xrpl:1")).toBe(true);
     expect(seenExt).toBeUndefined();
@@ -462,7 +468,10 @@ describe("paid isolation", () => {
         expect(body).not.toContain('"ok":true');
       } else {
         expect(res.headers.get("payment-required")).toBeNull();
-        expect(body).toBe('{"error":"settlement_unconfirmed"}');
+        // Odin 11:44 (b): the 5xx body tells the buyer to retry with the SAME signed payment.
+        // Odin 11:56 L1: this row's facilitator names a hash (XRPL_TX_HASH) that is not our blob's hash → not
+        // auto-redeemable (manual reconcile): the bare body. Every other row: the retry-with-the-same-payment body.
+        expect(body).toBe(name === "settle success:false WITH a tx hash" ? '{"error":"settlement_unconfirmed"}' : JSON.stringify(SETTLEMENT_UNCONFIRMED_BODY));
       }
       expect(body).not.toContain(MARKER);
       expect(calls.filter((c) => c.url.startsWith(CDP_URL_PREFIX) && c.op !== "supported")).toEqual([]);
@@ -648,7 +657,9 @@ describe("replay guard + cross-instance check", () => {
     expect((await run.handler(paid(p))).status).toBe(200);
   });
 
-  it("ambiguous settle keeps the key: retrying the same payment => 409, never 402, facilitator not re-asked", async () => {
+  it("ambiguous settle keeps the key: retrying the same payment (ledger still can't confirm) => 502 again, never 402/409, facilitator not re-asked", async () => {
+    // Odin 11:34 AM ET 10/18: 409 means ONLY "already delivered". An undelivered slot is redeemed from the
+    // ledger on retry (tests/xrpl-post-settle-no-5xx.test.ts); here the stub ledger has no meta → still unknown.
     calls = installXrplFacilitators(behaviour({ settle: () => { throw new Error("reset"); } }));
     stubXrplOn();
     const accepts = await getAccepts();
@@ -656,7 +667,7 @@ describe("replay guard + cross-instance check", () => {
     const p = xrplPayload(accepts[1]);
     expect((await run.handler(paid(p))).status).toBe(502);
     calls.length = 0;
-    expect((await run.handler(paid(p))).status).toBe(409);
+    expect((await run.handler(paid(p))).status).toBe(502);
     expect(calls.filter((x) => x.op !== "supported")).toEqual([]);
   });
 
@@ -685,13 +696,14 @@ describe("replay guard + cross-instance check", () => {
     ];
     for (const [tx, want] of cases) {
       installXrplRpc("ready", tx);
-      const res = await run.handler(paid(xrplPayload(accepts[1])));
+      const px = xrplPayload(accepts[1]);
+      const res = await run.handler(paid(px));
       expect(res.status).toBe(want);
       if (want === 502) {
         expect(await res.json()).toEqual({ error: "settlement_unconfirmed" });
         const rec = vi.mocked(console.warn).mock.calls.map((c) => String(c[0])).filter((l) => l.includes("XRPL_RECONCILE ")).pop()!;
         const r = JSON.parse(rec.slice(rec.indexOf("{")));
-        expect(r).toMatchObject({ status: 502, reason: "settled_tx_time_unreadable", route: "/api/pulse", txHash: XRPL_TX_HASH });
+        expect(r).toMatchObject({ status: 502, reason: "settled_tx_time_unreadable", route: "/api/pulse", txHash: blobHashOf(px) });
       }
     }
   });
@@ -702,7 +714,7 @@ describe("replay guard + cross-instance check", () => {
     const accepts = await getAccepts();
     const run = makeHandler();
     const mem = new MemoryReplayStore();
-    setXrplReplayStoreForTests({ kind: "upstash", claim: (k, t) => mem.claim(k, t), set: (k, st, t) => mem.set(k, st, t), release: (k) => mem.release(k) });
+    setXrplReplayStoreForTests({ kind: "upstash", claim: (k, t, v) => mem.claim(k, t, v), set: (k, st, t) => mem.set(k, st, t), release: (k) => mem.release(k) });
     try {
       for (const tx of [() => { throw new Error("rpc down"); }, () => ({ validated: false, status: "success" })]) {
         installXrplRpc("ready", tx);
