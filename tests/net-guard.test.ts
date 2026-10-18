@@ -38,7 +38,11 @@ import {
   makeGuardedLookup,
   parseIpv6,
   SsrfBlockedError,
+  dispatcherHonored,
+  __setGuardSelfTestForTests,
 } from "@/lib/net-guard";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { assertSafePublicUrl, fetchPublicUrl } from "@/lib/fetch-url";
 import { proxyPublicHttp, isCredentialHeaderForCrossOrigin } from "@/lib/http-proxy";
 import { extractPage } from "@/lib/extract";
@@ -313,5 +317,33 @@ describe("screenshot egress proxy (1i)", () => {
     await expect(guardedNetConnect("rebind.test", port)).rejects.toBeInstanceOf(SsrfBlockedError);
     await expect(guardedNetConnect("127.0.0.1", port)).rejects.toBeInstanceOf(SsrfBlockedError);
     expect(hits).toBe(0);
+  });
+});
+
+describe("fail-closed self-test (Odin LOW 10/17: guard must not depend on global fetch honouring dispatcher)", () => {
+  afterEach(() => __setGuardSelfTestForTests(null));
+  it("this runtime's native fetch honours the dispatcher (no network: the probe connector refuses first)", async () => {
+    expect(await dispatcherHonored()).toBe(true);
+  });
+  it("a fetch that ignores the dispatcher is detected", async () => {
+    expect(await dispatcherHonored((async () => new Response("x")) as typeof fetch)).toBe(false);
+    expect(await dispatcherHonored(null)).toBe(false);
+  });
+  it("when the self-test fails, guardedFetch uses undici's own fetch and still refuses internal targets", async () => {
+    __setGuardSelfTestForTests(false);
+    const stub = vi.fn(async () => new Response("SHOULD NOT BE USED"));
+    vi.stubGlobal("fetch", stub);
+    try {
+      await expect(guardedFetch("http://127.0.0.1:8099/")).rejects.toBeInstanceOf(SsrfBlockedError);
+      await expect(guardedFetch("http://[::1]:8099/")).rejects.toBeInstanceOf(SsrfBlockedError);
+      expect(stub).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+  it("screenshot: the dead --host-resolver-rules pin is gone; the proxy args remain", () => {
+    const src = readFileSync(path.join(__dirname, "..", "lib/screenshot.ts"), "utf8");
+    expect(src).not.toMatch(/pinArg|host-resolver-rules=MAP/);
+    expect(src).toContain("...proxy.chromiumArgs");
   });
 });
