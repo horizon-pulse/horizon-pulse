@@ -26,8 +26,8 @@ import { TOKEN_PROGRAM_ADDRESS, findAssociatedTokenPda } from "@solana-program/t
 export function watchOnlySigner(addr: string) {
   return {
     address: address(addr),
-    // Placeholder signature: 64 zero bytes. No private key exists anywhere.
-    signTransactions: async (txs: readonly unknown[]) => txs.map(() => ({ [addr]: new Uint8Array(64) })),
+    // Placeholder signature: 64 bytes of 0x01 (non-zero so our N2 preflight sees a signed buyer slot; still invalid). No private key exists anywhere.
+    signTransactions: async (txs: readonly unknown[]) => txs.map(() => ({ [addr]: new Uint8Array(64).fill(1) })),
   };
 }
 

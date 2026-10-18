@@ -23,7 +23,7 @@ import { USDC_BASE } from "@/lib/config";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
 import { CDP_URL_PREFIX } from "./helpers/facilitator-mock";
-import { PINNED_PAYTO, SOL_PAYER, installBothFacilitators, setCdp, stubSolanaOn } from "./helpers/solana-env";
+import { PINNED_PAYTO, SOL_PAYER, installBothFacilitators, setCdp, stubSolanaOn, parseableSolanaTx} from "./helpers/solana-env";
 import { PAID_ROUTES } from "./helpers/capture";
 
 vi.mock("@/lib/spot-prices", async (orig) => ({
@@ -55,7 +55,7 @@ const ROOT = path.resolve(__dirname, "..");
 const BASE_PAYER = `0x${"11".repeat(20)}`;
 const BASE_TX = `0x${"ab".repeat(32)}`;
 const SOL_SIG = "5".repeat(87);
-const FAKE_TX_B64 = Buffer.alloc(400, 7).toString("base64");
+const FAKE_TX_B64 = parseableSolanaTx(7, { msgLen: 271 }); // 400 bytes, parseable (Odin 1:39 N2)
 
 function behaviour(sol: { settle?: () => unknown } = {}) {
   return {
@@ -268,7 +268,7 @@ describe("paid calls: `priced` names the rail the call was verified + settled on
     const [sol, base, sol2] = await Promise.all([
       paid(solanaPayload(a[1])),
       paid(basePayload(a[0])),
-      paid(solanaPayload(a[1], Buffer.alloc(400, 8).toString("base64"))),
+      paid(solanaPayload(a[1], parseableSolanaTx(8, { msgLen: 271 }))),
     ]);
     expect((await sol.json()).priced).toEqual(solPriced("$0.005", "5000"));
     expect((await base.json()).priced).toEqual(basePriced("$0.005", "5000"));

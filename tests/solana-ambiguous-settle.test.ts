@@ -13,6 +13,11 @@ import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePayment
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import {
   __flushSolanaBackgroundForTests,
+  __solanaReconcileForTests,
+  ourPayment,
+  validateSolanaPaymentPayload,
+  SOLANA_SLOT_PROBE_INTERVAL_MS,
+  SOLANA_SLOT_RATE_WINDOW_MS,
   __setSolanaLedgerCheckDelaysForTests,
   __setSolanaRpcForTests,
   payloadSignatures,
@@ -614,7 +619,7 @@ describe("delta 3 (Odin 1:19): no start slot → 503 before PayAI; slot present 
     expect(slotAlerts()).toEqual([]);
     setup({ slot: down });
     await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
-    expect(slotAlerts()).toEqual([{ kind: "solana_start_slot_unavailable", severity: "high", consecutive: 5 }]);
+    expect(slotAlerts()).toEqual([{ kind: "solana_start_slot_unavailable", severity: "high", trigger: "consecutive", consecutive: 5, failed: 5, sample: 5, windowMs: 60_000 }]);
     setup({ slot: down });
     await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
     expect(slotAlerts()).toHaveLength(1); // same episode
@@ -630,7 +635,7 @@ describe("delta 3 (Odin 1:19): no start slot → 503 before PayAI; slot present 
     setup({ slot: down });
     await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
     expect(slotAlerts()).toHaveLength(2); // new episode
-    expect(slotAlerts()[1]).toEqual({ kind: "solana_start_slot_unavailable", severity: "high", consecutive: 5 });
+    expect(slotAlerts()[1]).toMatchObject({ kind: "solana_start_slot_unavailable", severity: "high", trigger: "consecutive", consecutive: 5 });
     setSolanaAlertHook(null);
   });
 });
@@ -652,7 +657,7 @@ describe("delta 3 (Odin 1:21): PAYMENT-RESPONSE from the chain; reconcile alert 
     expect(await res.json()).toMatchObject({ ok: true, paid: "sol" });
   });
 
-  it("success, PayAI's signature IS ours → PAYMENT-RESPONSE left as PayAI's (unchanged path)", async () => {
+  it("success, PayAI's signature IS ours → PAYMENT-RESPONSE carries our tx id (rebuilt from the chain since Odin 1:39 LOW-1)", async () => {
     const accept = await solAccept();
     const { tx, msg } = payTx(0xd9);
     settle = () => ({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER });
@@ -661,7 +666,7 @@ describe("delta 3 (Odin 1:21): PAYMENT-RESPONSE from the chain; reconcile alert 
     expect(decodePaymentResponseHeader(res.headers.get("payment-response")!)).toMatchObject({ transaction: txidOf() });
   });
 
-  it("solana_reconcile ALERT deduped per buyer signature: same buyer signature twice → 2 log lines, 1 alert; another signature → its own alert", async () => {
+  it("Odin 1:39 LOW-2: solana_reconcile ALERT deduped per payment MESSAGE: distinct messages with the same buyer signature → one alert each", async () => {
     const alerts: SolanaAlert[] = [];
     setSolanaAlertHook((a) => alerts.push(a));
     const accept = await solAccept();
@@ -673,7 +678,275 @@ describe("delta 3 (Odin 1:21): PAYMENT-RESPONSE from the chain; reconcile alert 
       expect((await handler()(paid(solPayload(accept, payTx(fill).tx)))).status).toBe(504); // distinct messages, so no replay 409
     }
     expect(reconcileLines().map((l) => l.buyerSignature)).toEqual([buyerSigOf(0xda), buyerSigOf(0xda), buyerSigOf(0xdb)]);
-    expect(alerts.filter((a) => a.kind === "solana_reconcile").map((a) => (a as { buyerSignature: string }).buyerSignature)).toEqual([buyerSigOf(0xda), buyerSigOf(0xdb)]);
+    // Before LOW-2 the two 0xda lines (same buyer signature, different messages) shared one alert.
+    expect(alerts.filter((a) => a.kind === "solana_reconcile").map((a) => (a as { buyerSignature: string }).buyerSignature)).toEqual([buyerSigOf(0xda), buyerSigOf(0xda), buyerSigOf(0xdb)]);
     setSolanaAlertHook(null);
+  });
+
+  it("Odin 1:39 LOW-2 (unit): same message hash with different buyer signatures → 2 log lines, 1 alert; another message → its own alert", () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const m = payTx(0xdc);
+    const oursA = ourPayment(wire(0xdc, m.msg))!;
+    const oursB = ourPayment(wire(0xdd, m.msg))!; // same message, re-signed / tampered buyer slot
+    const key1 = "a".repeat(64);
+    const key2 = "a".repeat(63) + "b"; // same 16-hex fp as key1: the dedupe is on the FULL message hash
+    __solanaReconcileForTests({ status: 504, reason: "ambiguous_settle_not_found", key: key1, ours: oursA, amount: "2000" });
+    __solanaReconcileForTests({ status: 504, reason: "ambiguous_settle_not_found", key: key1, ours: oursB, amount: "2000" });
+    __solanaReconcileForTests({ status: 504, reason: "ambiguous_settle_not_found", key: key2, ours: oursA, amount: "2000" });
+    expect(reconcileLines()).toHaveLength(3);
+    const rec = alerts.filter((a) => a.kind === "solana_reconcile") as Array<{ fp: string; buyerSignature: string }>;
+    expect(rec.map((a) => [a.fp, a.buyerSignature])).toEqual([["a".repeat(16), buyerSigOf(0xdc)], ["a".repeat(16), buyerSigOf(0xdc)]]);
+    setSolanaAlertHook(null);
+  });
+});
+
+// ===========================================================================
+// Odin 1:39 PM ET delta 4: getSlot breaker (N1), parse-before-verify (N2), PAYMENT-RESPONSE rebuild (LOW-1).
+// ===========================================================================
+describe("delta 4 (Odin 1:39) N1: getSlot breaker → Solana treated as absent until a good getSlot", () => {
+  let facilitator: string[] = [];
+  let clock = 0;
+  const down = () => {
+    throw new Error("down");
+  };
+  const okSettle = () => ({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER });
+  beforeEach(() => {
+    facilitator = [];
+    installBothFacilitators({
+      verify: (url: string) => (url.startsWith(CDP_URL_PREFIX) ? { isValid: true, payer: BASE_PAYER } : (facilitator.push("verify"), { isValid: true, payer: SOL_PAYER })),
+      settle: async (url: string, _p: PaymentPayload, r: PaymentRequirements) => {
+        if (url.startsWith(CDP_URL_PREFIX)) return { success: true, transaction: `0x${"ab".repeat(32)}`, network: r.network, payer: BASE_PAYER };
+        facilitator.push("settle");
+        return settle();
+      },
+    } as never);
+    settle = okSettle;
+    clock = 1_900_000_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => clock);
+  });
+  /** One paid request; slotOk=false → both getSlot tries fail. */
+  async function paidOnce(accept: PaymentRequirements, slotOk: boolean) {
+    const { tx, msg } = payTx(0xe0);
+    const calls = setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xe0, msg, FEE), accept.amount) : null), slot: slotOk ? undefined : down });
+    const res = await handler()(paid(solPayload(accept, tx)));
+    return { res, calls };
+  }
+  async function unpaidNetworks() {
+    const res = await handler()(new NextRequest("https://horizonpulse.dev/api/pulse", { headers: { accept: "application/json" } }));
+    expect(res.status).toBe(402);
+    return decodePaymentRequiredHeader(res.headers.get("payment-required")!).accepts.map((a) => a.network);
+  }
+  const railError = (res: Response) => decodePaymentRequiredHeader(res.headers.get("payment-required")!).error;
+
+  it("consecutive trigger: 5th no-slot request trips it → Base-only 402 rail_unavailable (no PayAI), Solana dropped from the unpaid 402; the next good paid getSlot recovers", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    for (let i = 0; i < 4; i++) expect((await paidOnce(accept, false)).res.status).toBe(503);
+    const fifth = (await paidOnce(accept, false)).res;
+    expect(fifth.status).toBe(402);
+    expect(railError(fifth)).toBe("rail_unavailable");
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toHaveLength(1);
+    const sixth = (await paidOnce(accept, false)).res;
+    expect(sixth.status).toBe(402);
+    expect(railError(sixth)).toBe("rail_unavailable");
+    expect(facilitator).toEqual([]);
+    expect(ran).toBe(0);
+    setup({ slot: down });
+    expect(await unpaidNetworks()).not.toContain(SOLANA_MAINNET_CAIP2);
+    // Recovery: a paid request whose getSlot answers (read in parallel with init, as always) closes the breaker.
+    const good = (await paidOnce(accept, true)).res;
+    expect(good.status).toBe(200);
+    expect(facilitator).toEqual(["verify", "settle"]);
+    setup({});
+    expect(await unpaidNetworks()).toContain(SOLANA_MAINNET_CAIP2);
+    setSolanaAlertHook(null);
+  });
+
+  it("recovery via the unpaid-402 probe: at most one getSlot probe per 15 s while open; a good probe brings Solana back in that 402", async () => {
+    const accept = await solAccept();
+    for (let i = 0; i < 5; i++) await paidOnce(accept, false);
+    // Healthy again, but the probe is not due yet → no getSlot on the unpaid path, Solana still absent.
+    let calls = setup({});
+    expect(await unpaidNetworks()).not.toContain(SOLANA_MAINNET_CAIP2);
+    expect(calls.filter((c) => c.method === "getSlot")).toEqual([]);
+    clock += SOLANA_SLOT_PROBE_INTERVAL_MS - 1;
+    calls = setup({});
+    expect(await unpaidNetworks()).not.toContain(SOLANA_MAINNET_CAIP2);
+    expect(calls.filter((c) => c.method === "getSlot")).toEqual([]);
+    // Due, but the RPC is still down: the probe fails, Solana stays absent, no new alert, not counted as a paid sample.
+    clock += 1;
+    calls = setup({ slot: down });
+    expect(await unpaidNetworks()).not.toContain(SOLANA_MAINNET_CAIP2);
+    expect(calls.filter((c) => c.method === "getSlot").length).toBeGreaterThan(0);
+    // Next due probe answers → Solana back in that same 402.
+    clock += SOLANA_SLOT_PROBE_INTERVAL_MS;
+    calls = setup({});
+    expect(await unpaidNetworks()).toContain(SOLANA_MAINNET_CAIP2);
+    expect(calls.filter((c) => c.method === "getSlot").length).toBeGreaterThan(0);
+    expect((await paidOnce(accept, true)).res.status).toBe(200);
+  });
+
+  /** fails at these request indexes (0-based), oks elsewhere, `n` paid requests total. */
+  async function pattern(accept: PaymentRequirements, n: number, fails: number[]) {
+    const out: number[] = [];
+    for (let i = 0; i < n; i++) out.push((await paidOnce(accept, !fails.includes(i))).res.status);
+    return out;
+  }
+
+  it("rate trigger: ≥25% of ≥20 paid requests in 60 s without a slot trips it (no 5 in a row needed); under 20 samples never", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    // 19 requests, 5 failures (26%, never 2 in a row): too few samples → no trip.
+    const st = await pattern(accept, 19, [0, 4, 8, 12, 16]);
+    expect(st.filter((x) => x === 503)).toHaveLength(5);
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([]);
+    expect((await paidOnce(accept, true)).res.status).toBe(200); // 20 samples, 5/20, but only a failure can trip
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([]);
+    const trip = (await paidOnce(accept, false)).res; // 6/21 = 28.6%
+    expect(trip.status).toBe(402);
+    expect(railError(trip)).toBe("rail_unavailable");
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([
+      { kind: "solana_start_slot_unavailable", severity: "high", trigger: "rate", consecutive: 1, failed: 6, sample: 21, windowMs: 60_000 },
+    ]);
+    setup({ slot: down });
+    expect(await unpaidNetworks()).not.toContain(SOLANA_MAINNET_CAIP2);
+    setSolanaAlertHook(null);
+  });
+
+  it("rate trigger at exactly 25%: 5 failures in 20 samples, the 5th failure being the 20th sample → trips", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    const st = await pattern(accept, 20, [3, 7, 11, 15, 19]);
+    expect(st[19]).toBe(402);
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toMatchObject([{ trigger: "rate", failed: 5, sample: 20 }]);
+    setSolanaAlertHook(null);
+  });
+
+  it("aged-out failures are pruned on the failure path too: 4/20 at t0, then 61 s later 2 failures → no trip (window = 2 samples)", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    await pattern(accept, 20, [0, 5, 10, 15]);
+    clock += SOLANA_SLOT_RATE_WINDOW_MS + 1_000;
+    const st = await pattern(accept, 2, [0, 1]);
+    expect(st).toEqual([503, 503]);
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([]);
+    setSolanaAlertHook(null);
+  });
+
+  it("probes are not paid samples: after a probe recovery, 19 paid requests with 5 failures (fewer than 20 samples) do not trip", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    for (let i = 0; i < 5; i++) await paidOnce(accept, false);
+    clock += SOLANA_SLOT_PROBE_INTERVAL_MS;
+    setup({});
+    expect(await unpaidNetworks()).toContain(SOLANA_MAINNET_CAIP2); // recovered by the probe
+    const st = await pattern(accept, 19, [2, 6, 10, 14, 18]);
+    expect(st[18]).toBe(503);
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toHaveLength(1); // only the first trip
+    setSolanaAlertHook(null);
+  });
+
+  it("rate trigger stays quiet below 25% (5 of 21 = 23.8%) and when failures age out of the 60 s window", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    const st = await pattern(accept, 21, [0, 5, 10, 15, 20]);
+    expect(st.filter((x) => x === 503)).toHaveLength(5);
+    expect(st[20]).toBe(503);
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([]);
+    // Window: 22 samples, 5 failed. 61 s later they are gone; 19 oks + 1 fail = 1/20 → no trip.
+    clock += SOLANA_SLOT_RATE_WINDOW_MS + 1_000;
+    const st2 = await pattern(accept, 20, [19]);
+    expect(st2[19]).toBe(503);
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([]);
+    setSolanaAlertHook(null);
+  });
+
+  it("window really is 60 s: the same 6/21 pattern spread so the early failures are older than 60 s → no trip", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    await pattern(accept, 9, [0, 4, 8]); // 3 failures at t0
+    clock += SOLANA_SLOT_RATE_WINDOW_MS; // exactly 60 s later: those samples have aged out
+    await pattern(accept, 12, [3, 7, 11]); // 3 failures in a 12-sample window
+    expect(alerts.filter((a) => a.kind === "solana_start_slot_unavailable")).toEqual([]);
+    setSolanaAlertHook(null);
+  });
+});
+
+describe("delta 4 (Odin 1:39) N2 + LOW-1: our payment parsed before verify; PAYMENT-RESPONSE rebuilt", () => {
+  let facilitator: string[] = [];
+  beforeEach(() => {
+    facilitator = [];
+    installBothFacilitators({
+      verify: (url: string) => (url.startsWith(CDP_URL_PREFIX) ? { isValid: true, payer: BASE_PAYER } : (facilitator.push("verify"), { isValid: true, payer: SOL_PAYER })),
+      settle: async (url: string, _p: PaymentPayload, r: PaymentRequirements) => {
+        if (url.startsWith(CDP_URL_PREFIX)) return { success: true, transaction: `0x${"ab".repeat(32)}`, network: r.network, payer: BASE_PAYER };
+        facilitator.push("settle");
+        return settle();
+      },
+    } as never);
+  });
+
+  const unsigned = () => wire(0, payTx(0xe1).msg); // parseable message, every signature slot empty
+  const garbled = () => Buffer.concat([Buffer.from([2]), Buffer.alloc(64, 0), Buffer.alloc(64, 0xaa), Buffer.alloc(20, 0xff)]).toString("base64");
+
+  it("N2 (unit): validation refuses a payment we cannot parse (unsigned / garbled message)", async () => {
+    const accept = await solAccept();
+    for (const tx of [unsigned(), garbled()]) {
+      expect(validateSolanaPaymentPayload(solPayload(accept, tx), accept)).toEqual({ ok: false, reason: "payload.transaction is not a parseable signed transaction" });
+    }
+    expect(validateSolanaPaymentPayload(solPayload(accept, payTx(0xe2).tx), accept)).toEqual({ ok: true });
+  });
+
+  for (const [name, mk] of [["unsigned", unsigned], ["garbled message", garbled]] as const) {
+    it(`N2: ${name} payment → Base-only 402 invalid_payload BEFORE PayAI (no verify, no settle, no handler, no on-chain search)`, async () => {
+      const accept = await solAccept();
+      settle = () => ({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER });
+      const calls = setup({ tx: () => null });
+      const res = await handler()(paid(solPayload(accept, mk())));
+      expect(res.status).toBe(402);
+      expect(decodePaymentRequiredHeader(res.headers.get("payment-required")!).error).toBe("invalid_payload");
+      expect(facilitator).toEqual([]);
+      expect(ran).toBe(0);
+      expect(calls.filter((c) => c.method === "getTransaction")).toEqual([]); // (getSignaturesForAddress: background allowance count only)
+    });
+  }
+
+  it("LOW-1: confirmed on-chain, PayAI's tx id is ours but its payer is not → PAYMENT-RESPONSE rebuilt exactly from chain + OUR message", async () => {
+    const accept = await solAccept();
+    const { tx, msg } = payTx(0xe3);
+    settle = () => ({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: "11111111111111111111111111111111", extensions: { foo: 1 } });
+    setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xe3, msg, FEE), accept.amount) : null) });
+    const res = await handler()(paid(solPayload(accept, tx)));
+    expect(res.status).toBe(200);
+    expect(decodePaymentResponseHeader(res.headers.get("payment-response")!)).toEqual({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER });
+  });
+
+  it("LOW-1: fail-open (RPC down after a PayAI success) → 200, PAYMENT-RESPONSE rebuilt (payer from OUR message) and MARKED unverified (tx id from the facilitator)", async () => {
+    const accept = await solAccept();
+    const { tx } = payTx(0xe4);
+    const payaiTx = buyerSigOf(0x44);
+    settle = () => ({ success: true, transaction: payaiTx, network: SOLANA_MAINNET_CAIP2, payer: "11111111111111111111111111111111" });
+    const down = () => {
+      throw new Error("rpc down");
+    };
+    setup({ list: down, tx: down });
+    const res = await handler()(paid(solPayload(accept, tx)));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, paid: "sol" });
+    expect(decodePaymentResponseHeader(res.headers.get("payment-response")!)).toEqual({
+      success: true,
+      transaction: payaiTx,
+      network: SOLANA_MAINNET_CAIP2,
+      payer: SOL_PAYER,
+      extra: { settlementVerified: false, transactionSource: "facilitator" },
+    });
   });
 });

@@ -41,6 +41,7 @@ import {
   setAtaMode,
   setCdp,
   stubSolanaOn,
+  parseableSolanaTx,
 } from "./helpers/solana-env";
 
 const PAYAI = "https://facilitator.payai.network";
@@ -166,7 +167,7 @@ describe("(b) token-account guard", () => {
 });
 
 // ---------------------------------------------------------------------------
-const FAKE_TX = Buffer.alloc(400, 7).toString("base64");
+const FAKE_TX = parseableSolanaTx(7, { msgLen: 271 }); // 400 bytes, parseable (Odin 1:39 N2)
 const BASE_PAYER = `0x${"11".repeat(20)}`;
 
 function handler(routes = pulseRouteConfig(), opts: { maxAmountRequired: string; resource: string; description: string } = pulseOpts) {

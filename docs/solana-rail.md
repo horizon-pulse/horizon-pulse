@@ -107,8 +107,21 @@ code change + owner approval; env can only turn the rail on/off.
 - **No start slot (Odin 1:19 / 1:21):** getSlot is tried up to twice, all inside the init window (each try ≤ 1.5 s and
   ≤ what is left of initTimeoutMs). If both fail, the answer is **503** `{"error":"solana_rpc_unavailable"}` (fixed
   body, `Retry-After: 5`, `Cache-Control: no-store`) right after the rail-ready check: no PayAI verify or settle, no
-  handler, no replay key, nothing charged. The same payload works on retry. 5 consecutive no-slot requests on one
-  instance raise one HIGH ALERT `solana_start_slot_unavailable` per episode (reset by the next good read).
+  handler, no replay key, nothing charged. The same payload works on retry.
+- **getSlot breaker (Odin 1:39 N1):** per instance, over PAID requests (each sample = both getSlot tries failed):
+  - trips on **5 consecutive** no-slot requests, or on a **rate**: ≥ 25% of ≥ 20 paid requests in the last 60 s (a
+    partial outage, e.g. every 3rd read failing, never makes 5 in a row). 60 s collects a sample on a busy instance and
+    ages old failures out fast; below 20 samples one or two unlucky 503s would already be ≥ 25% (20 × 25% = 5, the
+    same count as the consecutive trigger). A quiet instance never reaches 20, so the consecutive trigger covers it.
+  - on trip: one HIGH ALERT `solana_start_slot_unavailable {trigger: consecutive|rate, consecutive, failed, sample,
+    windowMs}`; Solana is treated as a confirmed absence: dropped from the unpaid 402, and a paid Solana request gets
+    main's Base-only 402 with `rail_unavailable` (instead of the 503) — nothing verified or charged.
+  - recovery = the next good getSlot: paid requests still read it (in parallel with init, no added latency), and the
+    unpaid 402 path probes it at most once per 15 s per instance (single-flight, bounded by the init window). A good
+    answer closes the breaker (the 402 that ran the probe already lists Solana), re-arms the alert, clears the window.
+- **Parse before verify (Odin 1:39 N2):** the preflight refuses a transaction we cannot bind later (unparseable wire
+  format, or no signed buyer slot) → Base-only 402 `invalid_payload` before PayAI. `ours` (message, buyer slot +
+  signature, payer) is always known after it; the old "could not read our payment → serve" branch is gone.
 - **Duplicates (S1; widened by Odin 12:51 C1):** `duplicate_settlement`, ANY facilitator 409 (any reason, or a non-JSON
   409, which the SDK reports as `Facilitator settle failed (409)`), and any reason matching `/duplicate|already|in_flight/`
   (also on a 200 `success:false` without a signature, which used to be a terminal 402): never searched, never
@@ -121,13 +134,16 @@ code change + owner approval; env can only turn the rail on/off.
   - PayAI's signature resolves to a tx that is NOT ours and ours is not in the recent history, or OUR tx failed →
     502 `settlement_unconfirmed` + reconcile (`settle_success_unbound` / `settle_success_failed_on_chain`), never a 402;
   - RPC down / not indexed within the deadline → paid response (fail open, as before: PayAI confirmed the settle);
-  - our tx found, but PayAI's signature was not ours → paid response with PAYMENT-RESPONSE rewritten from the chain
-    result (tx id = our bound tx, payer = buyer key of OUR message) (Odin 1:21);
+    PAYMENT-RESPONSE is **rebuilt and marked unverified** (Odin 1:39 LOW-1): `{success, transaction: <PayAI's id>,
+    network, payer: <buyer key of OUR message>, extra: {settlementVerified: false, transactionSource: "facilitator"}}`
+    (the tx id can only come from PayAI: the fee payer's slot-0 signature is not in the buyer's payload);
+  - our tx confirmed → PAYMENT-RESPONSE is **always rebuilt** from the chain + OUR message (tx id = our bound tx,
+    payer = buyer key of OUR message), whatever PayAI's header said (Odin 1:21, always since 1:39 LOW-1);
   - no start slot cannot reach this path (503 before PayAI). The old wall-clock fallback (`settledBeforeRequest`,
     `REPLAY_CONFIRM_SKEW_MS`) was removed.
 - **Reconcile:** every 502/504/409 from this path (and every 502 from the success-path binding) raises a
   `solana_reconcile` ALERT through `setSolanaAlertHook` (default `[solana-rail][ALERT] {...}` console.error line;
-  deduped per buyer signature for 25 h, Odin 1:21) and logs (every occurrence) `[solana-rail] SOLANA_RECONCILE {status, reason, fp, payer, amount,
+  deduped per payment message, i.e. the full sha256 replay key, for 25 h: Odin 1:21 / 1:39 LOW-2) and logs (every occurrence) `[solana-rail] SOLANA_RECONCILE {status, reason, fp, payer, amount,
   asset, payTo, buyerSignature[, txid]}` (public chain data only) for manual refunds.
 - **Time budget (corrected Odin 12:51 C2):** a cold token-account check makes up to 2 tries × init, so the worst case is
   2 × init + 10 + 12 + 4: 31 s by default (SOLANA_WORST_CASE_MS) and 40 s at the largest accepted init timeout

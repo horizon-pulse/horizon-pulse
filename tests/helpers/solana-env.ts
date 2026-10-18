@@ -38,6 +38,18 @@ export function fillerPubkey(fill: number): string {
 }
 export const SOL_PAYER = fillerPubkey(9);
 
+/**
+ * Odin 1:39 N2: a wire-shaped Solana tx our preflight can PARSE (not signed for real, not valid on-chain):
+ * [2 sigs][fee-payer slot][buyer slot][legacy message: header 2/0/1, 4 filler keys (keys[1], the buyer, is NOT SOL_PAYER: PayAI-reported data stays distinguishable), filler].
+ * The message is `msgLen` bytes; `tag` makes the message (and so the replay key) unique.
+ */
+export function parseableSolanaTx(tag: number, opts: { feeFill?: number; buyerFill?: number; msgLen?: number } = {}): string {
+  const { feeFill = 0, buyerFill = 0xaa, msgLen = 220 } = opts;
+  const head = Buffer.concat([Buffer.from([2, 0, 1, 4]), Buffer.alloc(32, 0x31), Buffer.alloc(32, 0x32), Buffer.alloc(32, 0x33), Buffer.alloc(32, 0x34)]);
+  const msg = Buffer.concat([head, Buffer.alloc(Math.max(0, msgLen - head.length), tag)]);
+  return Buffer.concat([Buffer.from([2]), Buffer.alloc(64, feeFill), Buffer.alloc(64, buyerFill), msg]).toString("base64");
+}
+
 /** The jsonParsed getAccountInfo value of an initialized USDC token account owned by payTo. */
 export const ATA_ACCOUNT_VALUE = {
   owner: SPL_TOKEN_PROGRAM,
