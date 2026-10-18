@@ -1397,10 +1397,15 @@ export function createX402GetHandler(
           logRouteRequest({ route: routePath, method: original.method, res, paidHeader: false, amountAtomic: paymentOpts.maxAmountRequired });
           return res;
         }
-        // known payer, or no trusted caller IP (could be a payer we cannot recognize): today's 402, untouched
+        // Known payer, or no caller IP (could be a payer we cannot recognize): today's 402,
+        // untouched. Capped from the EVAL (payer marker checked first in the same EVAL): the
+        // caller already knows the tier, so tell it why it got a 402. Anything unverified
+        // (per-instance memo, store down/slow): advertise stays null, so shouldAdvertise
+        // (payer-marker EXISTS; any doubt -> no) decides, and with "no" the 402 is untouched
+        // (Odin C-M1: never the advert for a known payer or a no-IP caller).
         const untouched = d.kind === "known_payer" || (d.kind === "unavailable" && d.reason === "no_caller_ip");
         if (untouched) advertise = false;
-        else advertise = true; // the caller already knows the tier; tell it why it got a 402
+        else if (d.kind === "capped" && d.verified) advertise = true;
         freeExtra =
           untouched
             ? {}

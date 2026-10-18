@@ -13,7 +13,7 @@ import { installFacilitatorMock } from "./helpers/facilitator-mock";
 import { CDP_ENV } from "./helpers/capture";
 
 const ROOT = path.resolve(__dirname, "..");
-const UP = { UPSTASH_REDIS_REST_URL: "https://example-upstash.test", UPSTASH_REDIS_REST_TOKEN: "t" };
+const UP = { UPSTASH_REDIS_REST_URL: "https://example-upstash.test", UPSTASH_REDIS_REST_TOKEN: "t", HP_FREE_IP_HMAC_KEY: "test-only-fixture-not-a-secret-0123456789abcdef" };
 const SPOOF = { "x-forwarded-for": "9.9.9.9, 10.0.0.1", "x-vercel-forwarded-for": "8.8.8.8" };
 
 beforeEach(() => resetFreeTierState());
@@ -162,7 +162,7 @@ describe("paid /mcp call marks the known payer (helper IP)", () => {
     const r = await paidToolCall({ "x-real-ip": "1.2.3.4", ...SPOOF });
     expect(r.isError).toBeFalsy();
     expect(r._meta?.["x402/payment-response"]).toBeTruthy();
-    expect(u.calls).toEqual([["SET", payerMarkerKey("1.2.3.4"), "1", "EX", String(30 * 86400)]]);
+    expect(u.calls).toEqual([["SET", payerMarkerKey("1.2.3.4"), "1", "EX", String(14 * 86400)]]);
   });
   it("no x-real-ip (only spoofable headers): settles as today, marks nothing", async () => {
     for (const [k, v] of Object.entries({ ...UP, ...CDP_ENV, HP_FREE_TIER: "optin", HP_SOLANA_ENABLED: "" })) vi.stubEnv(k, v);

@@ -17,17 +17,24 @@
  *
  * Counting: ONE EVAL per opted-in request in the existing replay-store Upstash DB
  * (resolveSharedReplayStoreEnv: same credentials, no new token). Keys hold no IP:
- * hp:free:c:<ET day>:<sha256(ip|day) first 16 bytes hex>, hp:free:all:<day>,
- * both EXPIRE 26 h.
+ * hp:free:c:<ET day>:<HMAC-SHA256(dayKey, ip) first 16 bytes hex>, hp:free:all:<day>,
+ * both EXPIRE 26 h. dayKey = HMAC-SHA256(master, "hp-free-counter-day|"+ET day), master =
+ * HKDF-SHA256(raw HP_FREE_IP_HMAC_KEY string),
+ * so one day's keys cannot be linked to another day's (Counsel ruling B, 10/18).
+ * HP_FREE_IP_HMAC_KEY unset (or < 43 chars) -> the tier is OFF (free-tier-mode.ts), never an
+ * unkeyed hash.
  *
  * Fail mode (decided): Upstash unconfigured, erroring, or slower than 300 ms, or no
  * caller IP -> the normal 402. Never unlimited free.
  *
  * Known-payer guard (Michael 11:51-11:53 PM ET: anyone who has paid us gets NO free calls
  * and must not see the free option). Always on with the tier; not switchable off.
- *   - On every settled paid call (any route) a marker hp:fp:paid:<sha256("hp-free-payer|"+ip)
- *     first 16 bytes hex> is SET for 30 days (while the tier is optin, or with
- *     HP_FREE_PAYER_MARK=on to pre-seed markers before launch). No IP and no wallet is stored.
+ *   - On every settled paid call (any route) a marker hp:fp:paid:<HMAC-SHA256(markerKey, ip)
+ *     first 16 bytes hex> is SET for HP_FREE_PAYER_MARK_TTL_DAYS (default 14; markerKey =
+ *     HMAC-SHA256(master, "hp-free-payer-marker"): master key, not per-day, because markers must persist
+ *     across days) while the tier is optin, or with HP_FREE_PAYER_MARK=on to pre-seed markers
+ *     before launch. Never without the secret. No IP, wallet, tx hash or receipt id is stored
+ *     in or next to the marker, and it is never joined to the route log.
  *   - A caller whose IP carries the marker gets today's 402 with NO free-tier advert
  *     (byte-identical to mode off), and an opt-in from that IP is refused inside the
  *     same EVAL (normal 402, no free headers).
@@ -37,7 +44,7 @@
  *   - Unsure (lookup failed, slow, over HP_FREE_ADVERT_LOOKUP_CAP per instance per day,
  *     no IP) -> no advert. Public docs/OPTIONS are not per-caller and stay advertised.
  */
-import { createHash } from "node:crypto";
+import { createHmac, hkdfSync } from "node:crypto";
 import { CALLER_IP_HEADER, callerIp } from "./caller-ip";
 import { PUBLIC_BASE_URL } from "./config";
 import { resolveSharedReplayStoreEnv } from "./xrpl-replay-store";
@@ -77,11 +84,10 @@ export const FREE_TIER_TIMEOUT_MS = 300;
 export const FREE_KEY_TTL_S = 26 * 3600;
 export const FREE_QUERY_PARAM = "free";
 export const FREE_HEADER = "X-HP-Free";
-export const PAYER_MARK_TTL_S = 30 * 24 * 3600;
 export const DEFAULT_ADVERT_LOOKUP_CAP = 2000;
 
-export { freeTierMode, type FreeTierMode } from "./free-tier-mode";
-import { freeTierMode as freeTierModeOf } from "./free-tier-mode";
+export { freeTierMode, type FreeTierMode, freeIpHmacKey, payerMarkWriting, payerMarkTtlDays, FREE_IP_HMAC_KEY_ENV } from "./free-tier-mode";
+import { freeIpHmacKey, payerMarkTtlDays, payerMarkWriting } from "./free-tier-mode";
 import { after } from "next/server";
 
 function intEnv(raw: string | undefined, dflt: number): number {
@@ -104,17 +110,42 @@ export function payerGuardOn(_env: Env = process.env): boolean {
   return true;
 }
 
-/** Write payer markers while the tier is optin, or when pre-seeding before launch (HP_FREE_PAYER_MARK=on). */
-export function payerMarkWriting(env: Env = process.env): boolean {
-  return freeTierModeOf(env) === "optin" || (env.HP_FREE_PAYER_MARK ?? "").trim().toLowerCase() === "on";
+/** Payer-marker TTL in seconds (HP_FREE_PAYER_MARK_TTL_DAYS, default 14 d). */
+export function payerMarkTtlS(env: Env = process.env): number {
+  return payerMarkTtlDays(env) * 24 * 3600;
+}
+
+function hmacHex(key: string | Buffer, msg: string): string {
+  return createHmac("sha256", key).update(msg).digest("hex");
+}
+
+/** HKDF parameters for the master key (fixed; changing them re-keys every counter and marker). */
+export const FREE_IP_HKDF_SALT = "horizon-pulse/free-tier/ip-hmac/v1";
+export const FREE_IP_HKDF_INFO = "master";
+const masterCache = { raw: "", key: Buffer.alloc(0) };
+
+/**
+ * Master key = HKDF-SHA256(ikm = the raw HP_FREE_IP_HMAC_KEY string, salt, info, 32 bytes).
+ * Throws without a valid secret (callers catch: no secret = no store key = normal 402 / no mark).
+ */
+export function freeIpMasterKey(env: Env = process.env): Buffer {
+  const raw = freeIpHmacKey(env);
+  if (!raw) throw new Error("hmac_key_unset");
+  if (masterCache.raw !== raw) {
+    masterCache.key = Buffer.from(hkdfSync("sha256", Buffer.from(raw, "utf8"), FREE_IP_HKDF_SALT, FREE_IP_HKDF_INFO, 32));
+    masterCache.raw = raw;
+  }
+  return masterCache.key;
 }
 
 export function advertLookupCap(env: Env = process.env): number {
   return intEnv(env.HP_FREE_ADVERT_LOOKUP_CAP, DEFAULT_ADVERT_LOOKUP_CAP);
 }
 
-export function payerMarkerKey(ip: string): string {
-  return `hp:fp:paid:${createHash("sha256").update(`hp-free-payer|${ip}`).digest("hex").slice(0, 32)}`;
+/** Payer marker key: HMAC-SHA256(markerKey, ip), markerKey derived from the HKDF master key. Throws without the secret. */
+export function payerMarkerKey(ip: string, env: Env = process.env): string {
+  const markerKey = createHmac("sha256", freeIpMasterKey(env)).update("hp-free-payer-marker").digest();
+  return `hp:fp:paid:${hmacHex(markerKey, ip).slice(0, 32)}`;
 }
 
 export function isFreeTierRoute(path: string): path is FreeTierRoute {
@@ -212,9 +243,14 @@ export function nextEtMidnight(now: Date): string {
   return new Date(Date.UTC(y, m - 1, d + 1, 5)).toISOString();
 }
 
-/** No raw IP in Redis: sha256(ip|day), first 16 bytes, hex (one total across the 7 routes). */
-export function callerKey(ip: string, day: string): string {
-  return createHash("sha256").update(`${ip}|${day}`).digest("hex").slice(0, 32);
+/**
+ * No raw IP in Redis: HMAC-SHA256(dayKey, ip), first 16 bytes hex (one total across the 7
+ * routes). dayKey = HMAC-SHA256(master, "hp-free-counter-day|"+day): per-day derived key, so
+ * counters cannot be linked across days. Throws without the secret.
+ */
+export function callerKey(ip: string, day: string, env: Env = process.env): string {
+  const dayKey = createHmac("sha256", freeIpMasterKey(env)).update(`hp-free-counter-day|${day}`).digest();
+  return hmacHex(dayKey, ip).slice(0, 32);
 }
 
 /**
@@ -242,9 +278,9 @@ export function freeEvalCommand(ip: string, day: string, env: Env = process.env)
     "EVAL",
     FREE_TIER_LUA,
     payerGuardOn(env) ? "3" : "2",
-    `hp:free:c:${day}:${callerKey(ip, day)}`,
+    `hp:free:c:${day}:${callerKey(ip, day, env)}`,
     `hp:free:all:${day}`,
-    ...(payerGuardOn(env) ? [payerMarkerKey(ip)] : []),
+    ...(payerGuardOn(env) ? [payerMarkerKey(ip, env)] : []),
     String(freeDailyCap(env)),
     String(freeGlobalDailyCap(env)),
     String(FREE_KEY_TTL_S),
@@ -253,18 +289,47 @@ export function freeEvalCommand(ip: string, day: string, env: Env = process.env)
 
 export type FreeDecision =
   | { kind: "free"; remaining: number; limit: number; reset: string }
-  | { kind: "capped"; limit: number; reset: string; global: boolean }
+  /**
+   * verified = this answer came from the EVAL, which checked the payer marker first (so the
+   * caller is not a known payer). false = per-instance memo (global flag / capped-today set):
+   * the payer check did not run, so the caller decides advert via shouldAdvertise.
+   */
+  | { kind: "capped"; limit: number; reset: string; global: boolean; verified: boolean }
   | { kind: "known_payer" }
   | { kind: "unavailable"; reason: string };
 
 /** Per-instance "global budget spent today" flag: skips the EVAL for the rest of the ET day. */
 const globalFlag = { day: "" };
+/**
+ * Per-instance "capped today" memo (Odin C-L1): callerKeys the EVAL reported over the cap
+ * this ET day. A memo hit skips the EVAL (saves store commands). Cleared at the ET day
+ * rollover (the counter's own day, so a caller is never held past their reset) and when it
+ * reaches CAPPED_MEMO_MAX entries. In memory only; holds keyed hashes, never an IP.
+ */
+export const CAPPED_MEMO_MAX = 50_000;
+const cappedMemo = { day: "", keys: new Set<string>() };
+function memoHas(day: string, key: string): boolean {
+  return cappedMemo.day === day && cappedMemo.keys.has(key);
+}
+function memoAdd(day: string, key: string): void {
+  if (cappedMemo.day !== day || cappedMemo.keys.size >= CAPPED_MEMO_MAX) {
+    cappedMemo.day = day;
+    cappedMemo.keys = new Set();
+  }
+  cappedMemo.keys.add(key);
+}
+/** Test hook. */
+export function cappedMemoSize(): number {
+  return cappedMemo.keys.size;
+}
 /** Per-instance advert lookups today (quota guard). */
 const lookups = { day: "", n: 0 };
 
 /** Test hook. */
 export function resetFreeTierState(): void {
   globalFlag.day = "";
+  cappedMemo.day = "";
+  cappedMemo.keys = new Set();
   lookups.day = "";
   lookups.n = 0;
 }
@@ -308,20 +373,20 @@ export async function shouldAdvertise(opts: { headers: Headers; env?: Env; fetch
     }
     if (lookups.n >= advertLookupCap(env)) return false;
     lookups.n++;
-    return Number(await upstash(["EXISTS", payerMarkerKey(ip)], env, opts.fetchFn, FREE_TIER_TIMEOUT_MS)) === 0;
+    return Number(await upstash(["EXISTS", payerMarkerKey(ip, env)], env, opts.fetchFn, FREE_TIER_TIMEOUT_MS)) === 0;
   } catch {
     return false;
   }
 }
 
-/** Mark the caller's IP as a known payer for 30 days. Never throws. */
+/** Mark the caller's IP as a known payer for HP_FREE_PAYER_MARK_TTL_DAYS (default 14). Never throws. */
 export async function markPayer(opts: { headers: Headers; env?: Env; fetchFn?: FetchFn }): Promise<boolean> {
   const env = opts.env ?? process.env;
   try {
     if (!payerMarkWriting(env)) return false;
     const ip = normalizeCallerIp(opts.headers);
     if (!ip) return false;
-    await upstash(["SET", payerMarkerKey(ip), "1", "EX", String(PAYER_MARK_TTL_S)], env, opts.fetchFn, 1500);
+    await upstash(["SET", payerMarkerKey(ip, env), "1", "EX", String(payerMarkTtlS(env))], env, opts.fetchFn, 1500);
     return true;
   } catch {
     return false;
@@ -358,9 +423,14 @@ export async function consumeFreeCall(opts: {
   const limit = freeDailyCap(env);
   const reset = nextEtMidnight(now);
   try {
-    if (globalFlag.day === day) return { kind: "capped", limit, reset, global: true };
+    // Order (Odin C-M1): caller IP first (no IP -> untouched 402), then the per-instance
+    // memos (unverified: the payer check has not run), then the EVAL (payer marker first).
     const ip = normalizeCallerIp(opts.headers);
     if (!ip) return { kind: "unavailable", reason: "no_caller_ip" };
+    if (!freeIpHmacKey(env)) return { kind: "unavailable", reason: "hmac_key_unset" };
+    if (globalFlag.day === day) return { kind: "capped", limit, reset, global: true, verified: false };
+    const ck = callerKey(ip, day, env);
+    if (memoHas(day, ck)) return { kind: "capped", limit, reset, global: false, verified: false };
     const c = resolveSharedReplayStoreEnv(env);
     if (!c) return { kind: "unavailable", reason: "store_unconfigured" };
     const ctl = new AbortController();
@@ -380,9 +450,12 @@ export async function consumeFreeCall(opts: {
       if (allowed === 1 && Number.isFinite(remaining)) return { kind: "free", remaining: Math.max(0, remaining), limit, reset };
       if (globalOut === 1) {
         globalFlag.day = day;
-        return { kind: "capped", limit, reset, global: true };
+        return { kind: "capped", limit, reset, global: true, verified: true };
       }
-      if (allowed === 0) return { kind: "capped", limit, reset, global: false };
+      if (allowed === 0) {
+        memoAdd(day, ck);
+        return { kind: "capped", limit, reset, global: false, verified: true };
+      }
       return { kind: "unavailable", reason: "store_bad_result" };
     } finally {
       clearTimeout(t);

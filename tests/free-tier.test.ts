@@ -2,7 +2,9 @@
  * Free daily cap (lib/free-tier.ts, item 0): opt-in mode on the 7 pass-through routes.
  * Upstash is always a stub here (never the network).
  */
+import { createHash, createHmac, hkdfSync } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import {
@@ -28,7 +30,14 @@ import {
   shouldAdvertise,
   toFreeAnswer,
   TRUSTED_IP_HEADER,
+  cappedMemoSize,
+  freeIpMasterKey,
+  FREE_IP_HKDF_INFO,
+  FREE_IP_HKDF_SALT,
+  payerMarkTtlS,
 } from "@/lib/free-tier";
+import { freeIpHmacKey, payerMarkTtlDays } from "@/lib/free-tier-mode";
+import { freeTierPrivacySentences, NO_IP_SENTENCE, privacyLine, ROUTE_LOG_PRIVACY_LINE } from "@/lib/privacy-copy";
 import { freeTierRewrites } from "@/lib/free-tier-mode";
 import { createX402GetHandler, discoveryOptionsResponse, pulseRouteConfig, signalsRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
@@ -41,7 +50,9 @@ import { GET as freeOpenapi } from "@/app/free-tier/openapi.json/route";
 import { installFacilitatorMock } from "./helpers/facilitator-mock";
 import { CDP_ENV } from "./helpers/capture";
 
-const UP = { UPSTASH_REDIS_REST_URL: "https://example-upstash.test", UPSTASH_REDIS_REST_TOKEN: "t" };
+/** Test-only HMAC key fixture (43+ chars). Not a real secret; production has none until Michael sets one. */
+const TEST_KEY = "test-only-fixture-not-a-secret-0123456789abcdef";
+const UP = { UPSTASH_REDIS_REST_URL: "https://example-upstash.test", UPSTASH_REDIS_REST_TOKEN: "t", HP_FREE_IP_HMAC_KEY: TEST_KEY };
 const NOW = new Date("2026-10-18T03:30:00.000Z"); // 11:30 PM ET Sat 10/17
 const ip = (v: string, h = "x-real-ip") => new Headers({ [h]: v });
 
@@ -85,7 +96,10 @@ function stubEnv(env: Record<string, string>) {
   for (const [k, v] of Object.entries(env)) vi.stubEnv(k, v);
 }
 
-beforeEach(() => resetFreeTierState());
+beforeEach(() => {
+  resetFreeTierState();
+  vi.stubEnv("HP_FREE_IP_HMAC_KEY", TEST_KEY); // the tier is off without a key; tests below that need "no key" clear it
+});
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
@@ -96,7 +110,7 @@ describe("free tier: config", () => {
   it("mode is off unless HP_FREE_TIER=optin (the default-free mode does not exist)", () => {
     expect(freeTierMode({})).toBe("off");
     for (const v of ["", "off", "default", "on", "true", "1", "free"]) expect(freeTierMode({ HP_FREE_TIER: v })).toBe("off");
-    expect(freeTierMode({ HP_FREE_TIER: " OptIn " })).toBe("optin");
+    expect(freeTierMode({ HP_FREE_TIER: " OptIn ", HP_FREE_IP_HMAC_KEY: TEST_KEY })).toBe("optin");
   });
   it("caps: placeholders 3 per caller (total, 7 routes) / 300 global pending Michael; config overrides; bad values fall back", () => {
     expect([DEFAULT_FREE_DAILY_CAP, DEFAULT_FREE_GLOBAL_DAILY_CAP]).toEqual([3, 300]);
@@ -118,7 +132,8 @@ describe("free tier: config", () => {
   it("doc rewrites only when optin", () => {
     expect(freeTierRewrites({})).toEqual([]);
     expect(freeTierRewrites({ HP_FREE_TIER: "off" })).toEqual([]);
-    expect(freeTierRewrites({ HP_FREE_TIER: "optin" }).map((r) => r.source)).toEqual(["/llms.txt", "/openapi.json"]);
+    expect(freeTierRewrites({ HP_FREE_TIER: "optin", HP_FREE_IP_HMAC_KEY: TEST_KEY }).map((r) => r.source)).toEqual(["/llms.txt", "/openapi.json"]);
+    expect(freeTierRewrites({ HP_FREE_TIER: "optin" })).toEqual([]); // no key -> off
   });
 });
 
@@ -152,12 +167,12 @@ describe("free tier: caller key normalization", () => {
     for (const v of ["", "unknown", "1.2.3", "999.1.1.1", "not-an-ip", "1.2.3.4.5"]) expect(normalizeCallerIp(ip(v))).toBeNull();
     expect(normalizeCallerIp(new Headers())).toBeNull();
   });
-  it("Redis keys never hold the IP: one sha256 key per ip|day (total across routes) + the payer marker", () => {
+  it("Redis keys never hold the IP: one keyed HMAC per ip|day (total across routes) + the payer marker", () => {
     const k = callerKey("1.2.3.4", "2026-10-17");
     expect(k).toMatch(/^[0-9a-f]{32}$/);
     expect(callerKey("1.2.3.4", "2026-10-18")).not.toBe(k);
     expect(callerKey("1.2.3.5", "2026-10-17")).not.toBe(k);
-    const cmd = freeEvalCommand("1.2.3.4", "2026-10-17", {});
+    const cmd = freeEvalCommand("1.2.3.4", "2026-10-17", { HP_FREE_IP_HMAC_KEY: TEST_KEY });
     expect(cmd.slice(0, 3)).toEqual(["EVAL", FREE_TIER_LUA, "3"]);
     expect(cmd.slice(3)).toEqual([`hp:free:c:2026-10-17:${k}`, "hp:free:all:2026-10-17", payerMarkerKey("1.2.3.4"), "3", "300", String(26 * 3600)]);
     expect(payerMarkerKey("1.2.3.4")).toMatch(/^hp:fp:paid:[0-9a-f]{32}$/);
@@ -239,20 +254,22 @@ describe("free tier: counter (consumeFreeCall)", () => {
     expect(await call(fakeUpstash({ fail: "slow" }))).toEqual({ kind: "unavailable", reason: "store_timeout" });
     expect(Date.now() - t0).toBeLessThan(1500);
     const none = fakeUpstash();
-    expect(await call(none, {})).toEqual({ kind: "unavailable", reason: "store_unconfigured" });
-    expect(await call(none, { UPSTASH_REDIS_REST_URL: UP.UPSTASH_REDIS_REST_URL })).toEqual({ kind: "unavailable", reason: "store_unconfigured" });
+    const K = { HP_FREE_IP_HMAC_KEY: TEST_KEY };
+    expect(await call(none, K)).toEqual({ kind: "unavailable", reason: "store_unconfigured" });
+    expect(await call(none, { ...K, UPSTASH_REDIS_REST_URL: UP.UPSTASH_REDIS_REST_URL })).toEqual({ kind: "unavailable", reason: "store_unconfigured" });
+    expect(await call(none, { ...UP, HP_FREE_IP_HMAC_KEY: "" })).toEqual({ kind: "unavailable", reason: "hmac_key_unset" });
     expect(await call(none, UP, new Headers())).toEqual({ kind: "unavailable", reason: "no_caller_ip" });
     expect(none.fn).not.toHaveBeenCalled();
   });
   it("uses the existing replay-store credentials (Vercel KV names too); no other token", async () => {
     const f = fakeUpstash();
-    await call(f, { KV_REST_API_URL: "https://kv.example.test", KV_REST_API_TOKEN: "kv" });
+    await call(f, { KV_REST_API_URL: "https://kv.example.test", KV_REST_API_TOKEN: "kv", HP_FREE_IP_HMAC_KEY: TEST_KEY });
     const [url, init] = f.fn.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://kv.example.test");
     expect((init.headers as Record<string, string>).Authorization).toBe("Bearer kv");
     // the read-only token name is never consulted
     const g = fakeUpstash();
-    expect(await call(g, { KV_REST_API_URL: "https://kv.example.test", KV_REST_API_READ_ONLY_TOKEN: "ro" })).toMatchObject({ kind: "unavailable" });
+    expect(await call(g, { KV_REST_API_URL: "https://kv.example.test", KV_REST_API_READ_ONLY_TOKEN: "ro", HP_FREE_IP_HMAC_KEY: TEST_KEY })).toMatchObject({ kind: "unavailable" });
     expect(g.fn).not.toHaveBeenCalled();
   });
 });
@@ -382,7 +399,7 @@ describe("free tier: wired (createX402GetHandler)", () => {
     expect(paid.headers.get("x-hp-free-remaining")).toBeNull();
     await new Promise((r) => setTimeout(r, 10));
     const set = f.calls.find((c) => c[0] === "SET")!;
-    expect(set).toEqual(["SET", payerMarkerKey("1.2.3.4"), "1", "EX", String(30 * 86400)]);
+    expect(set).toEqual(["SET", payerMarkerKey("1.2.3.4"), "1", "EX", String(14 * 86400)]);
     expect(f.calls.some((c) => c[0] === "EVAL")).toBe(false); // the paid call never touched the counter
     const after = await h(get(PULSE));
     expect(after.headers.get("x-hp-free-tier")).toBeNull();
@@ -394,8 +411,10 @@ describe("free tier: wired (createX402GetHandler)", () => {
 
   it("marker writing only while the tier is optin or pre-seeding is on", async () => {
     expect(payerMarkWriting({})).toBe(false);
-    expect(payerMarkWriting({ HP_FREE_TIER: "optin" })).toBe(true);
-    expect(payerMarkWriting({ HP_FREE_PAYER_MARK: "on" })).toBe(true);
+    expect(payerMarkWriting({ HP_FREE_TIER: "optin", HP_FREE_IP_HMAC_KEY: TEST_KEY })).toBe(true);
+    expect(payerMarkWriting({ HP_FREE_PAYER_MARK: "on", HP_FREE_IP_HMAC_KEY: TEST_KEY })).toBe(true);
+    expect(payerMarkWriting({ HP_FREE_TIER: "optin" })).toBe(false); // no key -> never
+    expect(payerMarkWriting({ HP_FREE_PAYER_MARK: "on" })).toBe(false);
     const f = fakeUpstash();
     expect(await markPayer({ headers: ip("1.2.3.4"), env: UP, fetchFn: f.fn as unknown as typeof fetch })).toBe(false);
     expect(f.fn).not.toHaveBeenCalled();
@@ -548,14 +567,16 @@ describe("free tier: wired (createX402GetHandler)", () => {
     for (const env of [{ ...UP, fail: "throw" }, { ...UP, fail: "slow" }, { ...UP, fail: "500" }, { fail: "none" }] as const) {
       vi.unstubAllEnvs();
       resetFreeTierState();
-      stubEnv({ HP_FREE_TIER: "optin" });
+      stubEnv({ HP_FREE_TIER: "optin", HP_FREE_IP_HMAC_KEY: TEST_KEY });
       if ("UPSTASH_REDIS_REST_URL" in env) stubEnv(UP);
       vi.stubGlobal("fetch", fakeUpstash({ fail: env.fail === "none" ? undefined : env.fail }).fn);
       const { h, seen } = pulseHandler();
       const res = await h(get(`${PULSE}?free=1`));
       expect(res.status, env.fail).toBe(402);
       expect(res.headers.get("payment-required")).toBeTruthy();
-      expect(res.headers.get("x-hp-free-status")).toBe("unavailable");
+      // Odin C-M1: store in doubt -> shouldAdvertise (also in doubt) says no -> no advert, no status header
+      expect(res.headers.get("x-hp-free-status")).toBeNull();
+      expect(res.headers.get("x-hp-free-tier")).toBeNull();
       expect(seen).toEqual([]);
     }
   });
@@ -660,5 +681,219 @@ describe("free tier: discovery copy follows the mode exactly", () => {
     expect(await freeLlms().text()).toContain(s);
     expect((await freeOpenapi().json())["x-free-tier"].dailyLimitPerCaller).toBe(50);
     expect((await discoveryOptionsResponse(pulseOpts)).headers.get("x-hp-free-tier")).toContain(s);
+  });
+});
+
+
+// ---------- 10/18 batch: Counsel B (keyed hashes), Odin C-M1 (budget order), C-L1 (memo), C-L2 (GET-only) ----------
+
+const full = async (r: Response) => ({ status: r.status, body: await r.text(), h: [...r.headers.entries()].filter(([k]) => k !== "date").sort() });
+
+describe("free tier: HMAC secret rule (HP_FREE_IP_HMAC_KEY, any string of 43+ chars)", () => {
+  const k43 = "x".repeat(43);
+  it("missing, empty or 42 chars -> off; any 43+ char string (not only base64) -> optin", () => {
+    for (const key of [undefined, "", "a".repeat(42), " ".repeat(42)]) {
+      expect(freeIpHmacKey({ HP_FREE_IP_HMAC_KEY: key }), String(key?.length)).toBeNull();
+      expect(freeTierMode({ HP_FREE_TIER: "optin", HP_FREE_IP_HMAC_KEY: key })).toBe("off");
+      expect(payerMarkWriting({ HP_FREE_TIER: "optin", HP_FREE_PAYER_MARK: "on", HP_FREE_IP_HMAC_KEY: key })).toBe(false);
+    }
+    for (const key of [k43, "correct horse battery staple!? correct horse #1", "pässwörd-€-🔑-".padEnd(43, "~"), "AAAA/+==".repeat(6)]) {
+      expect(key.length).toBeGreaterThanOrEqual(43);
+      expect(freeTierMode({ HP_FREE_TIER: "optin", HP_FREE_IP_HMAC_KEY: key })).toBe("optin");
+    }
+  });
+  it("missing or short key with HP_FREE_TIER=optin: every surface byte-identical to mode off, zero store calls", async () => {
+    stubEnv(UP);
+    vi.stubEnv("HP_FREE_IP_HMAC_KEY", "");
+    const f = fakeUpstash();
+    vi.stubGlobal("fetch", f.fn);
+    const off = {
+      plain: await full(await pulseHandler().h(get(PULSE))),
+      options: await full(await discoveryOptionsResponse(pulseOpts)),
+      wk: await (await wellKnown()).text(),
+      skill: await (await skillMd()).text(),
+      privacy: privacyLine(),
+    };
+    for (const key of ["", "short", "y".repeat(42)]) {
+      vi.stubEnv("HP_FREE_TIER", "optin");
+      vi.stubEnv("HP_FREE_IP_HMAC_KEY", key);
+      const { h, seen } = pulseHandler();
+      expect(await full(await h(get(PULSE))), key).toEqual(off.plain);
+      expect(await full(await h(get(`${PULSE}?free=1`)))).toEqual(off.plain);
+      expect(await full(await h(get(PULSE, { "X-HP-Free": "1" })))).toEqual(off.plain);
+      expect(await full(await discoveryOptionsResponse(pulseOpts))).toEqual(off.options);
+      expect(await (await wellKnown()).text()).toBe(off.wk);
+      expect(await (await skillMd()).text()).toBe(off.skill);
+      expect(freeTierRewrites()).toEqual([]);
+      expect(privacyLine()).toBe(ROUTE_LOG_PRIVACY_LINE);
+      expect(seen).toEqual([]);
+    }
+    expect(f.fn).not.toHaveBeenCalled();
+    expect(await markPayer({ headers: ip("1.2.3.4"), env: { ...UP, HP_FREE_IP_HMAC_KEY: "", HP_FREE_PAYER_MARK: "on" }, fetchFn: f.fn as unknown as typeof fetch })).toBe(false);
+    expect(() => callerKey("1.2.3.4", "2026-10-18", { HP_FREE_IP_HMAC_KEY: "z".repeat(42) })).toThrow("hmac_key_unset");
+    expect(() => payerMarkerKey("1.2.3.4", {})).toThrow("hmac_key_unset");
+  });
+  it("43-char key: free tier works (free answer)", async () => {
+    stubEnv({ ...UP, HP_FREE_TIER: "optin", HP_FREE_IP_HMAC_KEY: k43 });
+    vi.stubGlobal("fetch", fakeUpstash().fn);
+    expect((await pulseHandler().h(get(`${PULSE}?free=1`))).status).toBe(200);
+  });
+  it("master = HKDF-SHA256(raw string); day key = HMAC(master, day); counter = HMAC(dayKey, ip); marker = HMAC(HMAC(master, label), ip)", () => {
+    const env = { HP_FREE_IP_HMAC_KEY: TEST_KEY };
+    const master = Buffer.from(hkdfSync("sha256", Buffer.from(TEST_KEY, "utf8"), FREE_IP_HKDF_SALT, FREE_IP_HKDF_INFO, 32));
+    expect(freeIpMasterKey(env).equals(master)).toBe(true);
+    const dayKey = createHmac("sha256", master).update("hp-free-counter-day|2026-10-18").digest();
+    expect(callerKey("1.2.3.4", "2026-10-18", env)).toBe(createHmac("sha256", dayKey).update("1.2.3.4").digest("hex").slice(0, 32));
+    const mk = createHmac("sha256", master).update("hp-free-payer-marker").digest();
+    expect(payerMarkerKey("1.2.3.4", env)).toBe(`hp:fp:paid:${createHmac("sha256", mk).update("1.2.3.4").digest("hex").slice(0, 32)}`);
+    // never the old unkeyed hashes
+    expect(callerKey("1.2.3.4", "2026-10-18", env)).not.toBe(createHash("sha256").update("1.2.3.4|2026-10-18").digest("hex").slice(0, 32));
+    expect(payerMarkerKey("1.2.3.4", env)).not.toBe(`hp:fp:paid:${createHash("sha256").update("hp-free-payer|1.2.3.4").digest("hex").slice(0, 32)}`);
+    // a different secret gives different keys; the raw string is used as set (no trimming)
+    const other = { HP_FREE_IP_HMAC_KEY: `${TEST_KEY} ` };
+    expect(callerKey("1.2.3.4", "2026-10-18", other)).not.toBe(callerKey("1.2.3.4", "2026-10-18", env));
+    // per-day counter keys differ across days; the marker key does not (it must persist)
+    expect(callerKey("1.2.3.4", "2026-10-19", env)).not.toBe(callerKey("1.2.3.4", "2026-10-18", env));
+  });
+  it("marker TTL: default 14 d, HP_FREE_PAYER_MARK_TTL_DAYS 1-30, junk -> 14; privacy sentence follows", () => {
+    expect(payerMarkTtlDays({})).toBe(14);
+    expect(payerMarkTtlS({})).toBe(14 * 86400);
+    expect(payerMarkTtlDays({ HP_FREE_PAYER_MARK_TTL_DAYS: "30" })).toBe(30);
+    for (const v of ["0", "31", "-1", "abc", "1.5", "100"]) expect(payerMarkTtlDays({ HP_FREE_PAYER_MARK_TTL_DAYS: v }), v).toBe(14);
+    expect(freeTierPrivacySentences(14)).toContain("for 14 days after a paid call");
+    expect(freeTierPrivacySentences(1)).toContain("for 1 day after a paid call");
+  });
+});
+
+describe("free tier: privacy line ships only with the flag (Counsel ruling B wording)", () => {
+  const B =
+    "For free-tier calls we log the timestamp, route and outcome. We do not store IP addresses in readable form, and we do not store user agents, headers or request content. To run the opt-in free tier we keep a keyed one-way hash of the caller's IP address (for IPv6, its /64 network): one to count free calls per day, deleted after about 26 hours, and, for 14 days after a paid call, one marking that IP as a previous payer so it is not offered free calls. These hashes are not linked to wallet addresses, transaction hashes or receipt IDs.";
+  it("off (default), or optin without a key: today's Counsel line, byte-identical", () => {
+    expect(privacyLine({})).toBe(ROUTE_LOG_PRIVACY_LINE);
+    expect(privacyLine({ HP_FREE_TIER: "optin" })).toBe(ROUTE_LOG_PRIVACY_LINE);
+    expect(privacyLine({ HP_FREE_PAYER_MARK: "on" })).toBe(ROUTE_LOG_PRIVACY_LINE);
+  });
+  it("optin + key, or marker pre-seeding + key: Counsel's B sentences replace the no-IP sentence (word for word)", () => {
+    for (const env of [{ HP_FREE_TIER: "optin", HP_FREE_IP_HMAC_KEY: TEST_KEY }, { HP_FREE_PAYER_MARK: "on", HP_FREE_IP_HMAC_KEY: TEST_KEY }]) {
+      const line = privacyLine(env);
+      expect(line).toBe(ROUTE_LOG_PRIVACY_LINE.replace(NO_IP_SENTENCE, B));
+      expect(line).not.toContain("We do not store IP addresses,");
+    }
+    expect(ROUTE_LOG_PRIVACY_LINE).toContain(NO_IP_SENTENCE);
+  });
+});
+
+describe("free tier: budget-order fix (Odin C-M1): known payers and no-IP callers never see the advert", () => {
+  async function offBaseline(headers: Record<string, string> = {}) {
+    stubEnv(UP);
+    vi.stubEnv("HP_FREE_TIER", "");
+    vi.stubGlobal("fetch", fakeUpstash().fn);
+    return full(await pulseHandler().h(get(PULSE, headers)));
+  }
+  /** optin with the per-instance global flag set (one EVAL said global budget spent). */
+  async function withGlobalFlag(f: ReturnType<typeof fakeUpstash>) {
+    stubEnv({ ...UP, HP_FREE_TIER: "optin", HP_FREE_GLOBAL_DAILY_CAP: "1" });
+    vi.stubGlobal("fetch", f.fn);
+    const { h } = pulseHandler();
+    expect((await h(get(`${PULSE}?free=1`, { "x-real-ip": "9.9.9.1" }))).status).toBe(200);
+    const spent = await h(get(`${PULSE}?free=1`, { "x-real-ip": "9.9.9.2" }));
+    expect(spent.headers.get("x-hp-free-status")).toBe("global_budget_spent"); // EVAL-verified: advert OK
+  }
+  it("known payer + global budget spent: opted-in and plain 402 byte-identical to off, no EVAL", async () => {
+    const off = await offBaseline();
+    const f = fakeUpstash();
+    await withGlobalFlag(f);
+    f.kv.set(payerMarkerKey("1.2.3.4"), 1);
+    const evals = () => f.calls.filter((c) => c[0] === "EVAL").length;
+    const before = evals();
+    const { h, seen } = pulseHandler();
+    expect(await full(await h(get(`${PULSE}?free=1`)))).toEqual(off);
+    expect(await full(await h(get(PULSE)))).toEqual(off);
+    expect(await full(await h(get(PULSE, { "X-HP-Free": "1" })))).toEqual(off);
+    expect(evals()).toBe(before);
+    expect(seen).toEqual([]);
+  });
+  it("no IP + global budget spent: byte-identical to off, zero store calls", async () => {
+    const bare = (url: string, headers: Record<string, string> = {}) => new NextRequest(url, { headers: { accept: "application/json", ...headers } });
+    stubEnv(UP);
+    vi.stubEnv("HP_FREE_TIER", "");
+    vi.stubGlobal("fetch", fakeUpstash().fn);
+    const off = await full(await pulseHandler().h(bare(PULSE)));
+    const f = fakeUpstash();
+    await withGlobalFlag(f);
+    const n = f.fn.mock.calls.length;
+    const { h } = pulseHandler();
+    for (const req of [bare(`${PULSE}?free=1`), bare(PULSE, { "X-HP-Free": "1" }), bare(`${PULSE}?free=1`, { "x-forwarded-for": "7.7.7.7" }), bare(PULSE)])
+      expect(await full(await h(req))).toEqual(off);
+    expect(f.fn.mock.calls.length).toBe(n);
+  });
+  it("unknown caller + global budget spent (memo, unverified): advert only after the payer EXISTS says no marker", async () => {
+    const f = fakeUpstash();
+    await withGlobalFlag(f);
+    const n = f.calls.length;
+    const r = await pulseHandler().h(get(`${PULSE}?free=1`, { "x-real-ip": "5.5.5.5" }));
+    expect(r.status).toBe(402);
+    expect(r.headers.get("x-hp-free-status")).toBe("global_budget_spent");
+    expect(f.calls.slice(n).map((c) => c[0])).toEqual(["EXISTS"]);
+  });
+  it("known payer + store down: byte-identical to off (no 'unavailable' advert)", async () => {
+    const off = await offBaseline();
+    for (const fail of ["throw", "500", "slow"] as const) {
+      resetFreeTierState();
+      stubEnv({ ...UP, HP_FREE_TIER: "optin" });
+      vi.stubGlobal("fetch", fakeUpstash({ fail }).fn);
+      const { h } = pulseHandler();
+      expect(await full(await h(get(`${PULSE}?free=1`))), fail).toEqual(off);
+      expect(await full(await h(get(PULSE))), fail).toEqual(off);
+    }
+  });
+});
+
+describe("free tier: capped-today memo (Odin C-L1)", () => {
+  it("a capped caller costs one EVAL, then none for the rest of the ET day on this instance; resets next ET day", async () => {
+    const f = fakeUpstash();
+    const env = { ...UP, HP_FREE_DAILY_CAP: "1" };
+    const now = new Date("2026-10-18T15:00:00Z");
+    const c = (n: Date = now) => consumeFreeCall({ route: "/api/gas", headers: ip("6.6.6.6"), env, fetchFn: f.fn as unknown as typeof fetch, now: n });
+    expect(await c()).toMatchObject({ kind: "free" });
+    expect(await c()).toMatchObject({ kind: "capped", global: false, verified: true });
+    expect(cappedMemoSize()).toBe(1);
+    for (let i = 0; i < 5; i++) expect(await c()).toMatchObject({ kind: "capped", global: false, verified: false });
+    expect(f.fn).toHaveBeenCalledTimes(2);
+    // other callers are unaffected
+    expect(await consumeFreeCall({ route: "/api/gas", headers: ip("6.6.6.7"), env, fetchFn: f.fn as unknown as typeof fetch, now })).toMatchObject({ kind: "free" });
+    // next ET day (04:30 UTC 10/19 = 00:30 EDT): memo no longer applies
+    expect(await c(new Date("2026-10-19T04:30:00Z"))).toMatchObject({ kind: "free" });
+  });
+  it("no-IP callers never touch the memo or the store", async () => {
+    const f = fakeUpstash();
+    expect(await consumeFreeCall({ route: "/api/gas", headers: new Headers(), env: UP, fetchFn: f.fn as unknown as typeof fetch })).toEqual({ kind: "unavailable", reason: "no_caller_ip" });
+    expect(cappedMemoSize()).toBe(0);
+    expect(f.fn).not.toHaveBeenCalled();
+  });
+  it("memo hit for a caller who has since paid: no advert (payer EXISTS decides)", async () => {
+    stubEnv({ ...UP, HP_FREE_TIER: "optin", HP_FREE_DAILY_CAP: "1" });
+    const f = fakeUpstash();
+    vi.stubGlobal("fetch", f.fn);
+    const { h } = pulseHandler();
+    expect((await h(get(`${PULSE}?free=1`))).status).toBe(200);
+    expect((await h(get(`${PULSE}?free=1`))).headers.get("x-hp-free-status")).toBe("daily_limit_reached");
+    f.kv.set(payerMarkerKey("1.2.3.4"), 1); // paid on another instance
+    stubEnv(UP);
+    vi.stubEnv("HP_FREE_TIER", "");
+    const off = await full(await pulseHandler().h(get(PULSE)));
+    vi.stubEnv("HP_FREE_TIER", "optin");
+    expect(await full(await h(get(`${PULSE}?free=1`)))).toEqual(off);
+  });
+});
+
+describe("free tier: the 7 routes are GET-only (Odin C-L2: stripFreeMarker rebuilds GET requests without a body)", () => {
+  it("no route module of a free-tier route exports POST/PUT/PATCH/DELETE; each exports GET", () => {
+    for (const r of FREE_TIER_ROUTES) {
+      const src = readFileSync(path.join(process.cwd(), "app", ...r.split("/").filter(Boolean), "route.ts"), "utf8");
+      expect(src, r).toMatch(/^export (const|async function|function) GET\b/m);
+      expect(src, r).not.toMatch(/^export\s+(const|let|var|async\s+function|function)\s+(POST|PUT|PATCH|DELETE)\b/m);
+      expect(src, r).not.toMatch(/^export\s*\{[^}]*\b(POST|PUT|PATCH|DELETE)\b/m);
+    }
   });
 });
