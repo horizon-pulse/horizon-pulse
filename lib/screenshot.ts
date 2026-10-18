@@ -7,8 +7,8 @@
  * aborted. WebSocket / WebTransport / WebRTC constructors are removed in
  * every frame before page scripts run, WebRTC non-proxied UDP is disabled,
  * and any WebSocket that still opens (e.g. from a worker) is detected via CDP
- * and fails the render. The top-level host is pinned to the IP we checked
- * (--host-resolver-rules) to close DNS rebinding for the main document.
+ * and fails the render. (The old --host-resolver-rules pin was removed: behind
+ * the proxy Chromium never resolves names, so it was dead code; Odin LOW 10/17.)
  * Every connection Chromium makes (document, assets, iframes, fetch/XHR,
  * ws/wss) goes through an in-process egress proxy (lib/egress-proxy.ts) that
  * resolves and checks the address at connect time, so sub-requests have no
@@ -88,13 +88,12 @@ export async function takeScreenshot(input: {
   const checked = await assertSafePublicUrl(raw);
   if ("ok" in checked && checked.ok === false) return checked;
   const topHost = (checked as { url: URL }).url.hostname;
-  // Pin the top-level host to one checked address so Chromium can't re-resolve it privately.
-  let pinArg: string | null = null;
+  // Early, cheap refusal for a top-level host that resolves privately (clean 400, not charged).
+  // The binding check is the egress proxy's connect-time guard; Chromium itself never resolves.
   if (!isIP(topHost)) {
     try {
       const a = await lookup(topHost);
       if (isBlockedIp(a.address)) return { ok: false, error: `Host ${topHost} resolves to a blocked address`, code: "host_blocked", status: 400 };
-      pinArg = `--host-resolver-rules=MAP ${topHost} ${a.family === 6 ? `[${a.address}]` : a.address}`;
     } catch {
       return { ok: false, error: `DNS lookup failed for ${topHost}`, code: "host_blocked", status: 400 };
     }
@@ -114,7 +113,6 @@ export async function takeScreenshot(input: {
         "--webrtc-ip-handling-policy=disable_non_proxied_udp",
         "--force-webrtc-ip-handling-policy",
         ...proxy.chromiumArgs,
-        ...(pinArg ? [pinArg] : []),
       ],
       executablePath: await chromium.executablePath(),
       headless: true,
