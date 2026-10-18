@@ -104,12 +104,29 @@ code change + owner approval; env can only turn the rail on/off.
 - **Freshness by chain slot (S1):** `getSlot` (confirmed) is read at request start, in parallel with init and capped at
   min(init, 1.5 s), before verify and settle. Bound tx at slot > start slot → deliver (confirmed). Slot ≤ start slot →
   409. No start slot → 502/504. Wall-clock block time is not used on this path.
-- **`duplicate_settlement` (S1):** never searched, never delivered: main's 502.
+- **Duplicates (S1; widened by Odin 12:51 C1):** `duplicate_settlement`, ANY facilitator 409 (any reason, or a non-JSON
+  409, which the SDK reports as `Facilitator settle failed (409)`), and any reason matching `/duplicate|already|in_flight/`
+  (also on a 200 `success:false` without a signature, which used to be a terminal 402): never searched, never
+  delivered: 502 + reconcile (`facilitator_duplicate`, or `duplicate_settlement` for that exact reason).
 - **Failed on-chain:** the terminal Base-only 402 needs `meta.err` at confirmed AND at **finalized**. Otherwise 502/504.
-- **Reconcile:** every 502/504/409 from this path logs `[solana-rail] SOLANA_RECONCILE {status, reason, fp, payer, amount,
+- **Settle SUCCESS path (Odin 12:51 (b)):** the old N1 wall-clock check (30 s skew) on PayAI's signature is replaced
+  by the same start-slot + binding search (same 4 s deadline; PayAI's signature is a hint):
+  - bound OUR message, exact amount, slot > start slot → the paid response;
+  - bound, slot ≤ start slot → 409 `duplicate_payment` (replay of a payment already served; nothing new charged);
+  - PayAI's signature resolves to a tx that is NOT ours and ours is not in the recent history, or OUR tx failed →
+    502 `settlement_unconfirmed` + reconcile (`settle_success_unbound` / `settle_success_failed_on_chain`), never a 402;
+  - RPC down / not indexed within the deadline → paid response (fail open, as before: PayAI confirmed the settle);
+  - **no start slot** (getSlot failed) → falls back to the old wall-clock check on PayAI's signature. Tradeoff: we
+    never withhold a reported-settled payment on missing data (no charge-without-delivery), at the cost of the
+    pre-existing ~30 s replay window while getSlot is failing.
+- **Reconcile:** every 502/504/409 from this path (and every 502 from the success-path binding) raises a
+  `solana_reconcile` ALERT through `setSolanaAlertHook` (default `[solana-rail][ALERT] {...}` console.error line; every
+  occurrence) and logs `[solana-rail] SOLANA_RECONCILE {status, reason, fp, payer, amount,
   asset, payTo, buyerSignature[, txid]}` (public chain data only) for manual refunds.
-- **Time budget:** worst case 2.5 + 10 + 12 + 4 = 28.5 s (SOLANA_WORST_CASE_MS). Every route whose import graph reaches
-  lib/solana-rail.ts (route.ts and dark route.<flag>.ts) needs maxDuration ≥ that + 20 s. route.inj.ts was raised
+- **Time budget (corrected Odin 12:51 C2):** a cold token-account check makes up to 2 tries × init, so the worst case is
+  2 × init + 10 + 12 + 4: 31 s by default (SOLANA_WORST_CASE_MS) and 40 s at the largest accepted init timeout
+  (`HP_SOLANA_INIT_TIMEOUT_MS` is now clamped to SOLANA_MAX_INIT_TIMEOUT_MS = 7 s; SOLANA_MAX_WORST_CASE_MS). Every
+  route whose import graph reaches lib/solana-rail.ts (route.ts and dark route.<flag>.ts) needs maxDuration ≥ 40 s + 20 s. route.inj.ts was raised
   30 → 60 s. /mcp (30 s) is exempt: its payment path is the Base-only @x402/mcp wrapper (tests/solana-time-budget.test.ts).
 
 No PayAI text ever reaches the client (the SDK's own 502 `{"error":"<facilitator
