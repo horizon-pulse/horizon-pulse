@@ -61,7 +61,7 @@ export default function WebChecksPage() {
               </label>{" "}
               <button type="submit">Check</button>
             </form>
-            <p>The lookup answers only yes or no for the one domain entered (no wildcards or partial matches) and is rate limited.</p>
+            <p>The lookup answers only yes or no for the one domain entered (no wildcards or partial matches) and is rate limited (a listed domain also covers its subdomains).</p>
           </div>
         </section>
       </main>

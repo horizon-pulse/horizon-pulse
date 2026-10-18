@@ -116,10 +116,10 @@ export function auditHighTiersEnabled(env: Record<string, string | undefined> = 
 /** DARK_DESCRIPTIONS["/api/audit/security"] is the flag-ON copy; use darkDescription() for what is served. */
 /** Package check copy with tier=deep on (HP_PACKAGE_DEEP_ENABLED=true). */
 export const PACKAGE_DESCRIPTION_DEEP =
-  "npm or PyPI package check before install: a verdict (install, caution or block) plus signals: exists, publish age, weekly downloads, maintainer count, license, typosquat distance, OSV.dev vulnerabilities (attributed), deps.dev provenance, CISA KEV cross-check. GET ecosystem (npm|pypi), name, optional version, tier=base|deep (deep adds vulnerability details, install scripts, deprecation, release cadence). Informational only, no warranty. Bad input or registry down: not charged.";
+  "npm or PyPI package check before install: a verdict (no_known_issues, caution or block) plus signals: exists, publish age, weekly downloads, maintainer count, license, typosquat distance, OSV.dev vulnerabilities (attributed), deps.dev provenance, CISA KEV cross-check. GET ecosystem (npm|pypi), name, optional version, tier=base|deep (deep adds vulnerability details, install scripts, deprecation, release cadence). Informational only, no warranty. Bad input, registry or OSV.dev down: not charged.";
 /** Package check copy while deep is off (default): base tier only. */
 export const PACKAGE_DESCRIPTION_BASE =
-  "npm or PyPI package check before install: a verdict (install, caution or block) plus signals: exists, publish age, weekly downloads, maintainer count, license, typosquat distance, OSV.dev vulnerabilities (attributed), deps.dev provenance, CISA KEV cross-check. GET ecosystem (npm|pypi), name, optional version. Informational only, no warranty. Bad input or registry down: not charged.";
+  "npm or PyPI package check before install: a verdict (no_known_issues, caution or block) plus signals: exists, publish age, weekly downloads, maintainer count, license, typosquat distance, OSV.dev vulnerabilities (attributed), deps.dev provenance, CISA KEV cross-check. GET ecosystem (npm|pypi), name, optional version. Informational only, no warranty. Bad input, registry or OSV.dev down: not charged.";
 
 export const DARK_DESCRIPTIONS = {
   "/api/audit/security":

@@ -59,7 +59,7 @@ export function assertAllowedSource(url: string): void {
 }
 
 export const PACKAGE_METHOD =
-  "Registry metadata from registry.npmjs.org or pypi.org, weekly downloads from api.npmjs.org or pypistats.org (cached 24 h), known vulnerabilities from OSV.dev (api.osv.dev/v1/query), build provenance as verified by deps.dev (and, on deep, the OpenSSF Scorecard of an attested source repository, via deps.dev) (cached 24 h), a cross-check of advisory CVEs against the CISA KEV catalog (cached 24 h), and a typosquat distance to a static list of popular names. Sources run in parallel under one 20 s deadline; a source that misses it is listed in missing and the answer is marked partial. The answer leads with verdict (install, caution or block) by fixed rules. No npm security or advisory data is used. Maintainers are reported as a count only.";
+  "Registry metadata from registry.npmjs.org or pypi.org, weekly downloads from api.npmjs.org or pypistats.org (cached 24 h), known vulnerabilities from OSV.dev (api.osv.dev/v1/query), build provenance as verified by deps.dev (and, on deep, the OpenSSF Scorecard of an attested source repository, via deps.dev) (cached 24 h), a cross-check of advisory CVEs against the CISA KEV catalog (cached 24 h), and a typosquat distance to a static list of popular names. Sources run in parallel under one 20 s deadline; a secondary source that misses it is listed in missing and the answer is marked partial; if OSV.dev cannot answer (error or deadline), no verdict is given and the call is not charged. The answer leads with verdict (no_known_issues, caution or block) by fixed rules; block is a recommendation based on the listed records, not a determination. No npm security or advisory data is used. Maintainers are reported as a count only.";
 const DOC_CAP = 6_000_000;
 const TIMEOUT = 8_000;
 
@@ -211,7 +211,7 @@ async function osv(deps: Deps, eco: Ecosystem, name: string, version: string | n
       const fixed = new Set<string>();
       for (const a of (v.affected as { ranges?: { events?: { fixed?: string }[] }[] }[] | undefined) ?? [])
         for (const r of a.ranges ?? []) for (const e of r.events ?? []) if (e.fixed) fixed.add(e.fixed);
-      return { id: String(v.id ?? ""), aliases: ((v.aliases as string[] | undefined) ?? []).slice(0, 5), summary: String(v.summary ?? "").slice(0, 300), severity: sev ? String(sev) : null, fixedIn: [...fixed].slice(0, 10), published: (v.published as string | undefined) ?? null, ...osvAttribution(String(v.id ?? "")) };
+      return { id: String(v.id ?? ""), aliases: [...((v.aliases as string[] | undefined) ?? [])].map(String).sort((a, b) => Number(b.toUpperCase().startsWith("MAL-")) - Number(a.toUpperCase().startsWith("MAL-"))).slice(0, 5), summary: String(v.summary ?? "").slice(0, 300), severity: sev ? String(sev) : null, fixedIn: [...fixed].slice(0, 10), published: (v.published as string | undefined) ?? null, ...osvAttribution(String(v.id ?? "")) };
     });
     return { status: "ok", vulns };
   } catch (e) {
@@ -319,10 +319,12 @@ export async function kevCves(deps: Deps): Promise<Set<string> | null> {
   if (kevMemo && now - kevMemo.at < (kevMemo.cves ? KEV_TTL_MS : KEV_NEGATIVE_TTL_MS)) return kevMemo.cves;
   if (kevInflight) return kevInflight;
   kevInflight = (async () => {
-    const j = (await sideJson(deps, KEV_URL, KEV_CAP)) as { vulnerabilities?: { cveID?: unknown }[] } | null;
+    // The shared fetch carries only its own timeout, never the first caller's deadline signal: each
+    // caller races this promise against its own deadline in runCheck, so one caller timing out cannot
+    // hand an unflagged null to a second caller with time left (Odin Class A delta 10/18, LOW).
+    const j = (await sideJson({ ...deps, signal: undefined }, KEV_URL, KEV_CAP)) as { vulnerabilities?: { cveID?: unknown }[] } | null;
     if (!j || !Array.isArray(j.vulnerabilities)) {
-      // Our own deadline aborting the request is not a feed failure: do not negative-cache it.
-      if (!deps.signal?.aborted) kevMemo = { at: now, cves: null };
+      kevMemo = { at: now, cves: null };
       return null;
     }
     const cves = new Set(j.vulnerabilities.map((x) => (typeof x?.cveID === "string" ? x.cveID.toUpperCase() : "")).filter((c) => /^CVE-\d{4}-\d{4,}$/.test(c)));
@@ -341,9 +343,16 @@ export type PkgReport = Record<string, unknown> & { exists: boolean };
 // ---------------------------------------------------------------------------
 // Verdict (Odin re-review 10/18): one field the answer leads with
 // ---------------------------------------------------------------------------
-export type Verdict = "install" | "caution" | "block";
-export const VERDICT_NOTE =
-  "verdict summarises the signals below by fixed rules (block: the package or version does not exist, an OSV malicious-package record, or an advisory CVE in the CISA KEV catalog; caution: any other warning or caution signal, vulnerability data unavailable, or a partial answer; install: none of these). It is not a clearance of the package.";
+export type Verdict = "no_known_issues" | "caution" | "block";
+/** Counsel ruling 10/18, word for word. */
+export const VERDICT_NOTE_NO_KNOWN_ISSUES =
+  "No known issues found in the sources checked (OSV, CISA KEV, deps.dev) at the time of the check. This is not a security review or a guarantee the package is safe; review it before installing.";
+/** Counsel 10/18: block is a recommendation based on the listed records, not a determination. */
+export const VERDICT_NOTE_BLOCK =
+  "Recommendation not to install, based on the records listed in verdictReasons. This is not a determination that the package is malicious or unsafe; review the listed records.";
+export const VERDICT_NOTE_CAUTION =
+  "Signals that need review before installing are listed in verdictReasons. This is not a security review or a determination about the package.";
+export const VERDICT_NOTES: Record<Verdict, string> = { no_known_issues: VERDICT_NOTE_NO_KNOWN_ISSUES, caution: VERDICT_NOTE_CAUTION, block: VERDICT_NOTE_BLOCK };
 /**
  * Fixed rules, most severe first:
  *   block   - package does not exist (hallucinated / typo name), or the requested version is not
@@ -351,9 +360,11 @@ export const VERDICT_NOTE =
  *             advisory CVE for the checked version is in the CISA KEV catalog.
  *   caution - otherwise, any warn/caution signal (typosquat distance, known vulnerabilities,
  *             first published < 30 days ago, < 100 weekly downloads, no license, install scripts,
- *             deprecated/yanked, unverified provenance attestation, low Scorecard), or OSV data
- *             unavailable, or the answer is partial (a source missed the deadline).
- *   install - none of the above.
+ *             deprecated/yanked, unverified provenance attestation, low Scorecard), or the answer
+ *             is partial (downloads, deps.dev or KEV missed the deadline).
+ *   no_known_issues - none of the above.
+ * OSV unavailable (error or past the deadline) never reaches the verdict: checkPackage returns a
+ * 503 uncharged answer instead (Odin 10:05 AM ET 10/18). MAL- counts as the record id or an alias.
  */
 export function packageVerdict(x: {
   exists: boolean;
@@ -362,7 +373,6 @@ export function packageVerdict(x: {
   malicious: string[];
   kevHits: string[];
   signals: { signal: string; level: "info" | "caution" | "warn" }[];
-  vulnStatus: "ok" | "unavailable";
   partial: boolean;
 }): { verdict: Verdict; reasons: string[] } {
   const block: string[] = [];
@@ -372,10 +382,9 @@ export function packageVerdict(x: {
   if (x.kevHits.length) block.push(`Advisory CVE in the CISA KEV catalog: ${x.kevHits.join(", ")}`);
   if (block.length) return { verdict: "block", reasons: block };
   const caution = x.signals.filter((s) => s.level !== "info").map((s) => s.signal);
-  if (x.vulnStatus === "unavailable") caution.push("Vulnerability data (OSV.dev) unavailable for this check");
   if (x.partial) caution.push("Partial answer: some sources did not answer in time");
   if (caution.length) return { verdict: "caution", reasons: caution };
-  return { verdict: "install", reasons: [] };
+  return { verdict: "no_known_issues", reasons: [] };
 }
 
 const TIMED_OUT = Symbol("timed_out");
@@ -399,6 +408,14 @@ async function registryMeta(deps: Deps, eco: Ecosystem, name: string, version: s
     const time = f.time ?? {};
     const scripts = (l.scripts ?? {}) as Record<string, string>;
     const repo = l.repository as { url?: string } | string | undefined;
+    let versionExists: boolean | null = version ? (f.versions ? Object.hasOwn(f.versions, version) : null) : null;
+    // Packument over DOC_CAP (big packages: typescript, @types/*, aws-sdk...): ask for the one version
+    // document instead, a few KB; 404 = not published (Odin Class A delta 10/18, repro lodash@99.0.0).
+    // A 5xx here is SourceDown -> 502 not charged, never a guess.
+    if (version && versionExists === null) {
+      const one = await getJson(deps, `https://registry.npmjs.org/${enc}/${encodeURIComponent(version)}`);
+      versionExists = one.status === 404 ? false : one.json !== null || one.truncated;
+    }
     return {
       exists: true,
       latest: (l.version as string) ?? null,
@@ -410,7 +427,7 @@ async function registryMeta(deps: Deps, eco: Ecosystem, name: string, version: s
       deprecated: typeof l.deprecated === "string" ? l.deprecated.slice(0, 300) : null,
       installScripts: ["preinstall", "install", "postinstall", "prepare"].filter((k) => typeof scripts[k] === "string"),
       versions: Object.entries(time).filter(([k]) => k !== "created" && k !== "modified").map(([v, t]) => ({ v, t })),
-      versionExists: version ? (f.versions ? Object.hasOwn(f.versions, version) : null) : null,
+      versionExists,
       docTruncated: full.truncated,
     };
   }
@@ -465,7 +482,8 @@ async function weeklyDownloads(deps: Deps, eco: Ecosystem, name: string): Promis
  * Registry first (required: if it cannot answer, 502 not charged), then downloads, OSV,
  * deps.dev and the KEV cross-check IN PARALLEL, all under ONE overall deadline
  * (PACKAGE_DEADLINE_MS, 20 s; every source request is also aborted at the deadline).
- * A source that misses it is listed in `missing` and the answer says `partial: true`.
+ * A secondary source that misses it is listed in `missing` and the answer says `partial: true`;
+ * OSV unavailable (error or late) is a 503, not charged, with no verdict.
  * Never throws: unexpected failures are a 502 refusal (not charged), never a 500.
  */
 export async function checkPackage(input: PkgInput, tier: "base" | "deep", deps: Deps = defaultDeps()): Promise<{ ok: true; report: PkgReport } | { ok: false; status: number; code: string; error: string }> {
@@ -520,11 +538,14 @@ async function runCheck(input: PkgInput, tier: "base" | "deep", deps: Deps, dead
   if (downloads.source === "unavailable" && meta.exists && late && !missing.includes("downloads")) missing.push("downloads");
   const partial = missing.length > 0;
 
-  if (tier === "deep" && vuln.status === "unavailable") return { ok: false, status: 503, code: "advisory_source_unavailable", error: `${vuln.error}; deep tier needs vulnerability data, not charged. Retry later.` };
+  // OSV is the vulnerability source: without it there is no answer to bill (Odin 10:05 AM ET 10/18).
+  // Any tier, error or past the deadline -> 503 uncharged (a non-2xx never settles); never a verdict.
+  if (vuln.status === "unavailable") return { ok: false, status: 503, code: "advisory_source_unavailable", error: `Vulnerability data from OSV.dev is unavailable (${vuln.error}), so no verdict was produced; not charged. Retry later.` };
 
   const now = deps.now();
   const kevHits = kev ? advisoryCves.filter((c) => kev.has(c)).slice(0, 20) : [];
-  const malicious = vuln.status === "ok" ? vuln.vulns.map((v) => v.id).filter((id) => id.startsWith("MAL-")).slice(0, 10) : [];
+  // MAL- as the record id or only as an alias of another record (Odin Class A delta 10/18, LOW).
+  const malicious = [...new Set(vuln.vulns.flatMap((v) => [v.id, ...v.aliases]).filter((id) => id.toUpperCase().startsWith("MAL-")))].slice(0, 10);
   const ageDays = meta.created ? daysBetween(Date.parse(meta.created), now) : null;
   const signals: { signal: string; level: "info" | "caution" | "warn" }[] = [];
   if (!meta.exists) signals.push({ signal: "Package does not exist in the registry (possible hallucinated or typo name)", level: "warn" });
@@ -541,11 +562,11 @@ async function runCheck(input: PkgInput, tier: "base" | "deep", deps: Deps, dead
   if (depsDev?.status === "ok" && depsDev.scorecardOverall != null && depsDev.scorecardOverall < 4) signals.push({ signal: `Low OpenSSF Scorecard for the attested source repository (${depsDev.scorecardOverall}/10, via deps.dev).${SCORECARD_ATTRIBUTION}`, level: "caution" });
   if (version && meta.versionExists === false) signals.push({ signal: `Version ${version} is not published`, level: "warn" });
 
-  const v = packageVerdict({ exists: meta.exists, versionExists: meta.versionExists, requestedVersion: version, malicious, kevHits, signals, vulnStatus: vuln.status, partial });
+  const v = packageVerdict({ exists: meta.exists, versionExists: meta.versionExists, requestedVersion: version, malicious, kevHits, signals, partial });
   const report: PkgReport = {
     verdict: v.verdict,
     verdictReasons: v.reasons,
-    verdictNote: VERDICT_NOTE,
+    verdictNote: VERDICT_NOTES[v.verdict],
     partial,
     ...(partial ? { missing, partialNote: `Some sources did not answer within ${deadlineMs / 1000} s (${missing.join(", ")}); their fields are marked unavailable or timeout.` } : {}),
     ecosystem: eco,
@@ -562,7 +583,7 @@ async function runCheck(input: PkgInput, tier: "base" | "deep", deps: Deps, dead
     maintainerCount: meta.maintainers,
     license: meta.license,
     typosquat: { isPopularName: squat.isPopular, nearestPopular: squat.nearest },
-    vulnerabilities: vuln.status === "ok" ? { status: "ok", count: vuln.vulns.length, source: "api.osv.dev", checkedVersion, attribution: OSV_ATTRIBUTION } : { status: "unavailable", error: vuln.error },
+    vulnerabilities: { status: "ok", count: vuln.vulns.length, source: "api.osv.dev", checkedVersion, attribution: OSV_ATTRIBUTION },
     signals,
   };
   if (depsDev) {

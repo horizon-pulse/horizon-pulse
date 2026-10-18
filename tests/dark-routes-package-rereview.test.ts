@@ -16,7 +16,7 @@ import * as pkgRoute from "@/app/api/package/check/route";
 import { packageCheckHandler } from "@/app/api/package/check/handler";
 import { darkDescription, darkPaymentOpts, PACKAGE_DEEP_FLAG, PACKAGE_DESCRIPTION_BASE, PACKAGE_DESCRIPTION_DEEP, PACKAGE_TIERS, packageTierEnabled, resetRateLimitsForTests } from "@/lib/dark-routes";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
-import { BUILD_PROVENANCE_MEANING, checkPackage, kevCves, KEV_NEGATIVE_TTL_MS, KEV_URL, PACKAGE_DEADLINE_MS, PACKAGE_METHOD, packageVerdict, resetKevCacheForTests, SCORECARD_ATTRIBUTION, VERDICT_NOTE, type Deps } from "@/lib/package-safety";
+import { BUILD_PROVENANCE_MEANING, checkPackage, kevCves, KEV_NEGATIVE_TTL_MS, KEV_URL, PACKAGE_DEADLINE_MS, PACKAGE_METHOD, packageVerdict, resetKevCacheForTests, SCORECARD_ATTRIBUTION, VERDICT_NOTE_BLOCK, VERDICT_NOTE_NO_KNOWN_ISSUES, VERDICT_NOTES, type Deps } from "@/lib/package-safety";
 import { memoryCache, OPT_OUT_CHECK_GLOBAL_PER_MIN } from "@/lib/dark-checks-shared";
 
 const ROOT = path.resolve(__dirname, "..");
@@ -135,17 +135,25 @@ describe("one overall deadline, sources in parallel, partial answers marked", ()
     expect(r).toMatchObject({ ok: true, report: { partial: false } });
     expect(ms).toBeLessThan(450); // osv -> kev is the only chain (2 x 150)
   });
-  it("the old 50 s worst case (every source slow) returns at the deadline, partial, with the late sources named", async () => {
+  it("the old 50 s worst case (every source slow) returns at the deadline: OSV late -> 503 not charged, no verdict", async () => {
     const d = deps({ deadlineMs: 300, delay: { downloads: 8_000, osv: 8_000, depsdev: 5_000 } });
     const t0 = Date.now();
     const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", d);
-    const ms = Date.now() - t0;
-    expect(ms).toBeLessThan(800);
+    expect(Date.now() - t0).toBeLessThan(800);
+    expect(r).toMatchObject({ ok: false, status: 503, code: "advisory_source_unavailable" });
+    expect((r as { error: string }).error).toMatch(/OSV\.dev is unavailable .*no verdict was produced; not charged/);
+  });
+  it("OSV on time, downloads / deps.dev / KEV late: answers partial + caution (billed), late sources named", async () => {
+    const d = deps({ deadlineMs: 300, delay: { downloads: 8_000, depsdev: 5_000, kev: 5_000 }, vulns: [{ id: "GHSA-a", aliases: ["CVE-2024-1111"] }] });
+    const t0 = Date.now();
+    const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", d);
+    expect(Date.now() - t0).toBeLessThan(800);
     if (!r.ok) throw new Error("expected ok");
     expect(r.report.partial).toBe(true);
-    expect(r.report.missing).toEqual(expect.arrayContaining(["downloads", "osv", "deps.dev"]));
+    expect(r.report.missing).toEqual(expect.arrayContaining(["downloads", "deps.dev", "cisa-kev"]));
+    expect(r.report.missing).not.toContain("osv");
     expect(r.report.partialNote).toMatch(/did not answer within 0.3 s/);
-    expect(r.report.vulnerabilities).toMatchObject({ status: "unavailable" });
+    expect(r.report.vulnerabilities).toMatchObject({ status: "ok", count: 1 });
     expect(r.report.verdict).toBe("caution");
     expect(r.report.verdictReasons).toEqual(expect.arrayContaining(["Partial answer: some sources did not answer in time"]));
   });
@@ -158,11 +166,18 @@ describe("one overall deadline, sources in parallel, partial answers marked", ()
   it("a source that ignores the abort signal still cannot hold the answer past the deadline", async () => {
     const d = deps({ deadlineMs: 200 });
     const inner = d.fetch;
-    d.fetch = (async (u: string | URL | Request, init?: RequestInit) => (String(u).includes("api.osv.dev") ? new Promise<Response>(() => {}) : inner(u, init))) as typeof fetch;
+    d.fetch = (async (u: string | URL | Request, init?: RequestInit) => (String(u).includes("api.deps.dev") ? new Promise<Response>(() => {}) : inner(u, init))) as typeof fetch;
     const t0 = Date.now();
     const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", d);
     expect(Date.now() - t0).toBeLessThan(700);
-    expect(r).toMatchObject({ ok: true, report: { partial: true, missing: expect.arrayContaining(["osv"]) } });
+    expect(r).toMatchObject({ ok: true, report: { partial: true, missing: expect.arrayContaining(["deps.dev"]) } });
+    // and an OSV request that ignores the abort is a 503, also within the deadline
+    const d2 = deps({ deadlineMs: 200 });
+    const inner2 = d2.fetch;
+    d2.fetch = (async (u: string | URL | Request, init?: RequestInit) => (String(u).includes("api.osv.dev") ? new Promise<Response>(() => {}) : inner2(u, init))) as typeof fetch;
+    const t1 = Date.now();
+    expect(await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", d2)).toMatchObject({ ok: false, status: 503 });
+    expect(Date.now() - t1).toBeLessThan(700);
   });
   it("deep tier with OSV past the deadline: 503 not charged (deep needs vulnerability data)", async () => {
     const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "deep", deps({ deadlineMs: 200, delay: { osv: 5_000 } }));
@@ -191,40 +206,51 @@ describe("KEV: failures negative-cached for 5 minutes", () => {
     expect(b).toBe(a);
     expect(d.calls.filter((u) => u === KEV_URL)).toHaveLength(1);
   });
-  it("a KEV request aborted by our own deadline is not negative-cached", async () => {
-    await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", deps({ deadlineMs: 150, delay: { kev: 5_000 }, vulns: [{ id: "GHSA-a", aliases: ["CVE-2024-1111"] }] }));
-    const d2 = deps({ kev: { vulnerabilities: [{ cveID: "CVE-2024-1111" }] } });
+  it("a check's own deadline does not abort the shared KEV fetch: it finishes and is cached (not negative-cached) for the next check", async () => {
+    const kev = { vulnerabilities: [{ cveID: "CVE-2024-1111" }] };
+    const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", deps({ deadlineMs: 150, delay: { kev: 400 }, kev, vulns: [{ id: "GHSA-a", aliases: ["CVE-2024-1111"] }] }));
+    expect(r).toMatchObject({ ok: true, report: { partial: true, missing: expect.arrayContaining(["cisa-kev"]) } });
+    await new Promise((res) => setTimeout(res, 400));
+    const d2 = deps({ kev: { vulnerabilities: [] } });
     expect((await kevCves(d2))?.has("CVE-2024-1111")).toBe(true);
+    expect(d2.calls).toHaveLength(0);
   });
 });
 
-describe("verdict: install / caution / block, leading the answer", () => {
-  const base = { exists: true, versionExists: null, requestedVersion: null, malicious: [], kevHits: [], signals: [], vulnStatus: "ok" as const, partial: false };
+describe("verdict: no_known_issues / caution / block, leading the answer (Counsel wording 10/18)", () => {
+  const base = { exists: true, versionExists: null, requestedVersion: null, malicious: [], kevHits: [], signals: [], partial: false };
   it("rules", () => {
-    expect(packageVerdict(base)).toEqual({ verdict: "install", reasons: [] });
+    expect(packageVerdict(base)).toEqual({ verdict: "no_known_issues", reasons: [] });
     expect(packageVerdict({ ...base, signals: [{ signal: "Package does not exist in the registry (possible hallucinated or typo name)", level: "warn" }], exists: false }).verdict).toBe("block");
     expect(packageVerdict({ ...base, requestedVersion: "9.9.9", versionExists: false }).verdict).toBe("block");
     expect(packageVerdict({ ...base, malicious: ["MAL-2025-1"] }).verdict).toBe("block");
     expect(packageVerdict({ ...base, kevHits: ["CVE-2024-1111"] }).verdict).toBe("block");
     expect(packageVerdict({ ...base, signals: [{ signal: "x", level: "caution" }] })).toEqual({ verdict: "caution", reasons: ["x"] });
     expect(packageVerdict({ ...base, signals: [{ signal: "typo", level: "warn" }] }).verdict).toBe("caution");
-    expect(packageVerdict({ ...base, signals: [{ signal: "fyi", level: "info" }] }).verdict).toBe("install");
-    expect(packageVerdict({ ...base, vulnStatus: "unavailable" }).verdict).toBe("caution");
+    expect(packageVerdict({ ...base, signals: [{ signal: "fyi", level: "info" }] }).verdict).toBe("no_known_issues");
     expect(packageVerdict({ ...base, partial: true }).verdict).toBe("caution");
   });
-  it("end to end: clean, popular, old package -> install; hallucinated name -> block; MAL record -> block; KEV hit -> block; audit-ci clean", async () => {
+  it("Counsel's exact notes; the value 'install' is gone", () => {
+    expect(VERDICT_NOTE_NO_KNOWN_ISSUES).toBe("No known issues found in the sources checked (OSV, CISA KEV, deps.dev) at the time of the check. This is not a security review or a guarantee the package is safe; review it before installing.");
+    expect(VERDICT_NOTE_BLOCK).toMatch(/^Recommendation not to install, based on the records listed in verdictReasons\. This is not a determination/);
+    expect(Object.keys(VERDICT_NOTES).sort()).toEqual(["block", "caution", "no_known_issues"]);
+    const src = readFileSync(path.join(ROOT, "lib/package-safety.ts"), "utf8");
+    expect(src).not.toMatch(/verdict: "install"|"install" \| "caution"/);
+    for (const d of [PACKAGE_DESCRIPTION_BASE, PACKAGE_DESCRIPTION_DEEP, PACKAGE_METHOD]) expect(d).toContain("no_known_issues, caution or block");
+  });
+  it("end to end: clean, popular, old package -> no_known_issues; hallucinated name -> block; MAL record -> block; KEV hit -> block; audit-ci clean", async () => {
     const ok = await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", deps());
-    expect(ok).toMatchObject({ ok: true, report: { verdict: "install", verdictReasons: [], verdictNote: VERDICT_NOTE, partial: false } });
-    expect(await checkPackage({ ecosystem: "npm", name: "surely-not-a-real-pkg-xyz", version: null }, "base", deps({ latest: 404 }))).toMatchObject({ ok: true, report: { verdict: "block" } });
+    expect(ok).toMatchObject({ ok: true, report: { verdict: "no_known_issues", verdictReasons: [], verdictNote: VERDICT_NOTE_NO_KNOWN_ISSUES, partial: false } });
+    expect(await checkPackage({ ecosystem: "npm", name: "surely-not-a-real-pkg-xyz", version: null }, "base", deps({ latest: 404 }))).toMatchObject({ ok: true, report: { verdict: "block", verdictNote: VERDICT_NOTE_BLOCK } });
     expect(await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", deps({ vulns: [{ id: "MAL-2025-9" }] }))).toMatchObject({ ok: true, report: { verdict: "block" } });
     resetKevCacheForTests();
     expect(await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", deps({ vulns: [{ id: "GHSA-a", aliases: ["CVE-2024-7777"] }], kev: { vulnerabilities: [{ cveID: "CVE-2024-7777" }] } }))).toMatchObject({ ok: true, report: { verdict: "block" } });
-    expect(await checkPackage({ ecosystem: "npm", name: "audit-ci", version: null }, "base", deps())).toMatchObject({ ok: true, report: { verdict: "install" } });
+    expect(await checkPackage({ ecosystem: "npm", name: "audit-ci", version: null }, "base", deps())).toMatchObject({ ok: true, report: { verdict: "no_known_issues" } });
   });
   it("the HTTP answer's first key is verdict", async () => {
     const res = await packageCheckHandler(new NextRequest(PKG), PACKAGE_TIERS[0]!, "hpr_t", deps());
     const text = await res.text();
-    expect(text.startsWith('{"verdict":"install"')).toBe(true);
+    expect(text.startsWith('{"verdict":"no_known_issues"')).toBe(true);
     expect(JSON.parse(text)).toMatchObject({ source: "package-check", partial: false });
   });
 });
@@ -242,5 +268,148 @@ describe("Counsel re-read batch 2 deltas", () => {
   });
   it("Scorecard CDLA line verbatim, appended wherever a score is shown", () => {
     expect(SCORECARD_ATTRIBUTION).toBe(" OpenSSF Scorecard score from the OpenSSF Scorecard project (via deps.dev), data licensed under CDLA-Permissive-2.0: https://cdla.dev/permissive-2-0/");
+  });
+});
+
+describe("OSV unavailable is never billed (Odin 10:05 AM ET 10/18)", () => {
+  const PAYER = `0x${"22".repeat(20)}`;
+  /** Live-route test: real handler + defaultDeps with a stubbed global fetch; facilitator mocked at the prototype. */
+  function stubSources(o: { osv: "down" | "up"; others: "down" | "up" }) {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", (async (u: string | URL | Request) => {
+      const url = String(u instanceof Request ? u.url : u);
+      seen.push(url);
+      if (url.startsWith("https://api.osv.dev/")) return o.osv === "down" ? new Response("x", { status: 500 }) : Response.json({ vulns: [] });
+      if (url.endsWith("/latest")) return Response.json({ version: "1.0.0", license: "MIT", maintainers: [{ name: "a" }] });
+      if (url.startsWith("https://registry.npmjs.org/")) return Response.json({ time: { created: "2020-01-01T00:00:00Z", modified: "2026-10-01T00:00:00Z" }, versions: { "1.0.0": {} } });
+      if (o.others === "down") return new Response("x", { status: 503 });
+      if (url.startsWith("https://api.npmjs.org/downloads/")) return Response.json({ downloads: 50_000 });
+      if (url.startsWith("https://api.deps.dev/")) return Response.json({});
+      return new Response("x", { status: 404 });
+    }) as typeof fetch);
+    return seen;
+  }
+  async function paidCall() {
+    const { installFacilitatorMock } = await import("./helpers/facilitator-mock");
+    const { setCdp } = await import("./helpers/xrpl-env");
+    const { encodePaymentSignatureHeader } = await import("@x402/core/http");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const calls = installFacilitatorMock({
+      verify: () => ({ isValid: true, payer: PAYER }),
+      settle: (_u, _p, r) => ({ success: true, transaction: `0x${"ab".repeat(32)}`, network: r.network, payer: PAYER }),
+    });
+    setCdp(true);
+    vi.stubEnv("HP_PACKAGE_CHECK_ENABLED", "true");
+    const unpaid = await pkgRoute.GET(new NextRequest(PKG));
+    expect(unpaid.status).toBe(402);
+    const accept = decodePaymentRequiredHeader(unpaid.headers.get("payment-required")!).accepts[0]! as unknown as Record<string, unknown>;
+    const payload = { x402Version: 2, accepted: accept, payload: { signature: `0x${"cd".repeat(65)}`, authorization: { from: PAYER, to: accept.payTo, value: accept.amount, validAfter: "0", validBefore: "9999999999", nonce: `0x${"00".repeat(32)}` } } };
+    const res = await pkgRoute.GET(new NextRequest(PKG, { headers: { "payment-signature": encodePaymentSignatureHeader(payload as never), "x-real-ip": "198.51.100.20" } }));
+    return { res, calls };
+  }
+  it("checkPackage: OSV error -> 503 advisory_source_unavailable on base and deep, no verdict", async () => {
+    for (const tier of ["base", "deep"] as const) {
+      const d = deps();
+      const inner = d.fetch;
+      d.fetch = (async (u: string | URL | Request, init?: RequestInit) => (String(u).includes("api.osv.dev") ? new Response("x", { status: 500 }) : inner(u, init))) as typeof fetch;
+      const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, tier, d);
+      expect(r).toMatchObject({ ok: false, status: 503, code: "advisory_source_unavailable" });
+      expect(JSON.stringify(r)).not.toMatch(/"verdict"|no_known_issues/);
+    }
+  });
+  it("paid route: OSV down -> 503, charged:false, unavailable message, receipt id, disclaimer, NO settle", async () => {
+    const seen = stubSources({ osv: "down", others: "up" });
+    const { res, calls } = await paidCall();
+    expect(res.status).toBe(503);
+    const b = await res.json();
+    expect(b).toMatchObject({ ok: false, code: "advisory_source_unavailable", charged: false });
+    expect(b.error).toMatch(/OSV\.dev is unavailable .*not charged/);
+    expect(b.verdict).toBeUndefined();
+    expect(b.receiptId).toMatch(/^hpr_/);
+    expect(typeof b.disclaimer).toBe("string");
+    expect(calls.filter((c) => c.op === "verify")).toHaveLength(1);
+    expect(calls.filter((c) => c.op === "settle")).toHaveLength(0);
+    expect(seen.some((u) => u.startsWith("https://api.osv.dev/"))).toBe(true);
+  });
+  it("paid route: OSV up, downloads / deps.dev / KEV down -> 200 with a verdict, billed (one settle)", async () => {
+    stubSources({ osv: "up", others: "down" });
+    const { res, calls } = await paidCall();
+    expect(res.status).toBe(200);
+    const b = await res.json();
+    expect(b).toMatchObject({ source: "package-check", vulnerabilities: { status: "ok" }, provenance: { status: "unavailable" }, downloadsSource: "unavailable" });
+    expect(["no_known_issues", "caution", "block"]).toContain(b.verdict);
+    expect(calls.filter((c) => c.op === "settle")).toHaveLength(1);
+  });
+});
+
+describe("Odin Class A delta on dd634d8 (10/18)", () => {
+  /** npm packument over DOC_CAP: streamed past 6 MB so getJson reports truncated. */
+  function oversized(per: "404" | "200" | "500") {
+    const d = deps();
+    const inner = d.fetch;
+    d.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
+      const url = String(u);
+      if (url === "https://registry.npmjs.org/lodash") {
+        d.calls.push(url);
+        const chunk = new TextEncoder().encode(`{"x":"${"a".repeat(1_000_000)}`);
+        let n = 0;
+        return new Response(new ReadableStream({ pull(c) { if (n++ < 8) c.enqueue(chunk); else c.close(); } }), { headers: { "content-type": "application/json" } });
+      }
+      if (url.startsWith("https://registry.npmjs.org/lodash/") && !url.endsWith("/latest")) {
+        d.calls.push(url);
+        return per === "404" ? new Response("{}", { status: 404 }) : per === "500" ? new Response("x", { status: 500 }) : Response.json({ name: "lodash", version: "4.17.21" });
+      }
+      return inner(u, init);
+    }) as typeof fetch;
+    return d;
+  }
+  it("MEDIUM: oversized packument + never-published version (lodash@99.0.0) -> per-version lookup 404 -> block", async () => {
+    const d = oversized("404");
+    const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: "99.0.0" }, "base", d);
+    if (!r.ok) throw new Error(JSON.stringify(r));
+    expect(d.calls).toContain("https://registry.npmjs.org/lodash/99.0.0");
+    expect(r.report).toMatchObject({ verdict: "block", versionExists: false });
+    expect(r.report.verdictReasons).toEqual(expect.arrayContaining(["Version 99.0.0 is not published"]));
+  });
+  it("oversized packument + published version -> versionExists true (not block); a 5xx on the lookup is 502 not charged", async () => {
+    const ok = await checkPackage({ ecosystem: "npm", name: "lodash", version: "4.17.21" }, "base", oversized("200"));
+    expect(ok).toMatchObject({ ok: true, report: { versionExists: true } });
+    expect((ok as unknown as { report: { verdict: string } }).report.verdict).not.toBe("block");
+    expect(await checkPackage({ ecosystem: "npm", name: "lodash", version: "4.17.21" }, "base", oversized("500"))).toMatchObject({ ok: false, status: 502, code: "registry_unavailable" });
+  });
+  it("normal-size packument: no extra per-version request", async () => {
+    const d = deps();
+    await checkPackage({ ecosystem: "npm", name: "lodash", version: "9.9.9" }, "base", d);
+    expect(d.calls.filter((u) => /registry\.npmjs\.org\/lodash\/9\.9\.9/.test(u))).toHaveLength(0);
+  });
+  it("LOW: two checks share one KEV fetch; the first times out -> it is partial, the second still gets KEV data (not an unflagged null)", async () => {
+    const vulns = [{ id: "GHSA-k", aliases: ["CVE-2024-7777"] }];
+    const kev = { vulnerabilities: [{ cveID: "CVE-2024-7777" }] };
+    const a = deps({ deadlineMs: 100, delay: { kev: 300 }, vulns, kev });
+    const b = deps({ deadlineMs: 5_000, delay: { kev: 300 }, vulns, kev });
+    b.fetch = a.fetch; // same upstream: the second check joins the first one's in-flight KEV promise
+    const [ra, rb] = await Promise.all([
+      checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", a),
+      new Promise((r) => setTimeout(r, 10)).then(() => checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", b)),
+    ]);
+    if (!ra.ok || !rb.ok) throw new Error("expected ok");
+    expect(ra.report).toMatchObject({ partial: true, missing: expect.arrayContaining(["cisa-kev"]) });
+    expect(rb.report).toMatchObject({ partial: false, verdict: "block" });
+    expect(rb.report.missing).toBeUndefined();
+    expect(a.calls.filter((u) => u === KEV_URL)).toHaveLength(1);
+  });
+  it("LOW: a MAL- id that appears only as an alias -> block", async () => {
+    const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: null }, "base", deps({ vulns: [{ id: "GHSA-mmmm", aliases: ["CVE-2024-1", "CVE-2024-2", "CVE-2024-3", "CVE-2024-4", "CVE-2024-5", "MAL-2026-1234"] }] }));
+    if (!r.ok) throw new Error("expected ok");
+    expect(r.report.verdict).toBe("block");
+    expect(JSON.stringify(r.report.verdictReasons)).toContain("MAL-2026-1234");
+  });
+  it("copy: descriptions say registry or OSV.dev down is not charged (<= 500 chars)", () => {
+    for (const d of [PACKAGE_DESCRIPTION_BASE, PACKAGE_DESCRIPTION_DEEP]) {
+      expect(d).toContain("Bad input, registry or OSV.dev down: not charged.");
+      expect(d.length).toBeLessThanOrEqual(500);
+    }
+    expect(PACKAGE_METHOD).toMatch(/if OSV\.dev cannot answer .*not charged/);
   });
 });

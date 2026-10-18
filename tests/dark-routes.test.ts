@@ -285,10 +285,9 @@ describe("package check", () => {
     expect(deep.installScripts).toEqual(["postinstall"]);
     expect(d.calls.every((u) => /^https:\/\/(registry\.npmjs\.org|api\.npmjs\.org|api\.osv\.dev|api\.deps\.dev)\//.test(u))).toBe(true);
   });
-  it("registry down: 502 not charged; OSV down: base still answers (marked unavailable), deep is 503 not charged", async () => {
+  it("registry down: 502 not charged; OSV down: 503 not charged on base and deep (no verdict, Odin 10:05 AM ET 10/18)", async () => {
     expect(await checkPackage({ ecosystem: "npm", name: "x-pkg", version: null }, "base", deps({ registryDown: true }))).toMatchObject({ ok: false, status: 502 });
-    const base = await checkPackage({ ecosystem: "npm", name: "x-pkg", version: null }, "base", deps({ osvDown: true }));
-    expect(base).toMatchObject({ ok: true, report: { vulnerabilities: { status: "unavailable" } } });
+    expect(await checkPackage({ ecosystem: "npm", name: "x-pkg", version: null }, "base", deps({ osvDown: true }))).toMatchObject({ ok: false, status: 503, code: "advisory_source_unavailable" });
     expect(await checkPackage({ ecosystem: "npm", name: "x-pkg", version: null }, "deep", deps({ osvDown: true }))).toMatchObject({ ok: false, status: 503 });
   });
   it("handler: priced + receipt; bad input 400 not charged", async () => {

@@ -168,6 +168,14 @@ describe("B-4: Counsel's redirect wording, verbatim", () => {
     expect(html).toContain(COUNSEL);
     expect(html).not.toContain("no other hosts or subdomains, no port scans");
   });
+  it("/web-checks says the lookup covers subdomains, because isOptedOut really matches them (h === d || h.endsWith(`.${d}`))", async () => {
+    vi.stubEnv("HP_AUDIT_SECURITY_ENABLED", "true");
+    expect(src("lib/dark-checks-shared.ts")).toMatch(/h === d \|\| h\.endsWith\(`\.\$\{d\}`\)/);
+    const page = (await import("@/app/web-checks/page")).default;
+    const { renderToStaticMarkup } = await import("react-dom/server");
+    const html = renderToStaticMarkup(page()).replace(/&#x27;/g, "'");
+    expect(html).toContain("The lookup answers only yes or no for the one domain entered (no wildcards or partial matches) and is rate limited (a listed domain also covers its subdomains).");
+  });
 });
 
 describe("Counsel FAIL fix: opt-out count + rate-limited exact-domain yes/no", () => {
