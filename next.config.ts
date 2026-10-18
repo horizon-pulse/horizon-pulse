@@ -1,5 +1,5 @@
 import type { NextConfig } from "next";
-import { API_SECURITY_HEADERS, API_SOURCE, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS } from "./lib/security-headers";
+import { API_SECURITY_HEADERS, API_SOURCE, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS, WELL_KNOWN_SECURITY_HEADERS, WELL_KNOWN_SOURCE } from "./lib/security-headers";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
     return [
       { source: SITE_PAGES_SOURCE, headers: SITE_SECURITY_HEADERS.map((h) => ({ ...h })) },
       { source: API_SOURCE, headers: API_SECURITY_HEADERS.map((h) => ({ ...h })) },
+      { source: WELL_KNOWN_SOURCE, headers: WELL_KNOWN_SECURITY_HEADERS.map((h) => ({ ...h })) },
     ];
   },
   // Headless Chromium for /api/screenshot: keep out of the bundle, ship the

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import nextConfig from "../next.config";
-import { API_SECURITY_HEADERS, API_SOURCE, SITE_CSP_REPORT_ONLY, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS } from "@/lib/security-headers";
+import { API_SECURITY_HEADERS, API_SOURCE, SITE_CSP_REPORT_ONLY, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS, WELL_KNOWN_SECURITY_HEADERS, WELL_KNOWN_SOURCE } from "@/lib/security-headers";
 
 // Next compiles `source` with path-to-regexp; a source that is one custom
 // group behaves like this anchored RegExp.
@@ -18,6 +18,7 @@ describe("site security headers", () => {
     expect(rules).toEqual([
       { source: SITE_PAGES_SOURCE, headers: SITE_SECURITY_HEADERS.map((h) => ({ ...h })) },
       { source: API_SOURCE, headers: [{ key: "X-Content-Type-Options", value: "nosniff" }] },
+      { source: WELL_KNOWN_SOURCE, headers: [{ key: "X-Content-Type-Options", value: "nosniff" }] },
     ]);
     expect(Object.fromEntries(SITE_SECURITY_HEADERS.map((h) => [h.key, h.value]))).toEqual({
       "Content-Security-Policy-Report-Only": SITE_CSP_REPORT_ONLY,
