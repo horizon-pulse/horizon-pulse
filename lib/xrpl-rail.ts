@@ -32,9 +32,21 @@
  *       - cold (never confirmed): a failed check is retried inside the same
  *         request (COLD_ATTEMPTS, COLD_RETRY_DELAY_MS, whole cold check capped
  *         at initTimeoutMs + COLD_EXTRA_BUDGET_MS, i.e. 4.0 s by default),
- *         then hidden only for COLD_BACKOFF_BASE_MS doubling to
- *         COLD_BACKOFF_MAX_MS (5 s, 10 s, 20 s, 40 s, 60 s...), never for one
- *         failed check.
+ *         then re-checked after COLD_BACKOFF_BASE_MS doubling to
+ *         COLD_BACKOFF_MAX_MS (5 s, 10 s, 20 s, 40 s, 60 s...).
+ *       - cold-start fix (2026-10-18, Odin 11:08; prod 10:28 24/81 and 11:04
+ *         29/81 402s without XRPL right after a deploy): a cold check that
+ *         FAILED (timeout / transport / 5xx / malformed / slow SDK load) is not
+ *         an absence, so the entry STAYS in the 402 meanwhile. Until the rail
+ *         has initialised, the entry is built from config by
+ *         coldXrplRequirement(): byte-identical to the SDK-built one (same
+ *         fields, same key order, same assertXrplRequirement check; payTo is
+ *         the pinned config.payTo). Only a CONFIRMED absence hides it, cold
+ *         or warm, with one "[xrpl-rail][ALERT] xrpl_entry_dropped" per
+ *         transition (payto_not_ready / facilitator_kind_absent /
+ *         sdk_unavailable = the @x402/xrpl import itself rejected). The paid
+ *         path is unchanged: it still needs a confirmed rail + payTo ready
+ *         (else the untouched Base-only 402, nothing charged).
  *       - checks that keep failing raise "[xrpl-rail][ALERT] xrpl_check_failing"
  *         after ALERT_CONSECUTIVE_FAILURES in a row and again after
  *         ALERT_STALE_MS without success, each at most once per check+reason
@@ -262,6 +274,7 @@ export function resetXrplRailForTests(): void {
   railInit = null;
   failedKey = null;
   failedUntil = 0;
+  railAbsentKey = null;
   readyCache = null;
   readyRefresh = null;
   failures.ready = freshFailure();
@@ -308,8 +321,8 @@ export type XrplAlert =
   | { kind: "warn_rate"; count: number; windowMs: number; threshold: number }
   /** A check keeps failing (3 in a row, or no success for 30 min). entry: whether this instance still shows XRPL. */
   | { kind: "xrpl_check_failing"; check: XrplCheck; reason: "consecutive_failures" | "stale"; failures: number; sinceMs: number; entry: "kept" | "hidden" }
-  /** A confirmed absence retired an entry this instance had confirmed. */
-  | { kind: "xrpl_entry_dropped"; reason: "payto_not_ready" | "facilitator_kind_absent" };
+  /** A confirmed absence hid the entry (an entry this instance had confirmed, or a cold instance's first definitive answer). Once per transition. */
+  | { kind: "xrpl_entry_dropped"; reason: "payto_not_ready" | "facilitator_kind_absent" | "sdk_unavailable" };
 
 function defaultAlertHook(alert: XrplAlert): void {
   console.error(`${LOG}[ALERT] ${JSON.stringify(alert)}`);
@@ -600,6 +613,17 @@ export class XrplRailAbsentError extends Error {
   override name = "XrplRailAbsentError";
 }
 
+/** The @x402/xrpl import itself rejected (a slow import that times out is NOT this). Confirmed absence: nothing can run. */
+export class XrplSdkUnavailableError extends XrplRailAbsentError {
+  override name = "XrplSdkUnavailableError";
+}
+
+function sdkUnavailable(err: unknown): never {
+  const e = new XrplSdkUnavailableError("XRPL SDK could not be loaded");
+  (e as { cause?: unknown }).cause = err;
+  throw e;
+}
+
 /** True if `err` (or anything on its `cause` chain, e.g. the SDK's "Failed to initialize" wrapper) is a confirmed absence. */
 export function isConfirmedAbsence(err: unknown): boolean {
   for (let e: unknown = err, i = 0; e && i < 5; e = (e as { cause?: unknown }).cause, i++) {
@@ -803,6 +827,8 @@ let railState: { key: string; rail: Rail; builtAt: number; retryAt?: number } | 
 let railInit: { key: string; promise: Promise<Rail | null> } | null = null;
 let failedKey: string | null = null;
 let failedUntil = 0;
+/** Key whose last DEFINITIVE rail answer was a confirmed absence (cleared by a good init; a later transient failure keeps it). */
+let railAbsentKey: string | null = null;
 
 function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -813,7 +839,7 @@ function withTimeout<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
 }
 
 async function initRail(config: XrplRailConfig): Promise<Rail> {
-  const mods = await loader();
+  const mods = await loader().catch(sdkUnavailable);
   // Cross-check our pinned constants against the package.
   if (mods.XRPL_MAINNET !== XRPL_MAINNET_CAIP2 || mods.XRPL_TESTNET !== XRPL_TESTNET_CAIP2) {
     throw new XrplRailAbsentError("XRPL CAIP-2 mismatch between repo constants and @x402/xrpl");
@@ -827,9 +853,15 @@ async function initRail(config: XrplRailConfig): Promise<Rail> {
   const keyOf = makeKeyFn(config.network, mods);
   const local =
     config.facilitatorUrl === XRPL_SELF_FACILITATOR
-      ? new LocalXrplFacilitatorClient(config.network, await facilitatorSchemeLoader(config.network))
+      ? new LocalXrplFacilitatorClient(config.network, await facilitatorSchemeLoader(config.network).catch(sdkUnavailable))
       : undefined;
-  const server = new x402ResourceServer(createXrplFacilitator(config, keyOf, local)).register(config.network, new mods.ExactXrplScheme());
+  let scheme: SchemeNetworkServer;
+  try {
+    scheme = new mods.ExactXrplScheme();
+  } catch (err) {
+    sdkUnavailable(err); // a throwing SDK constructor is deterministic, not a cold-start blip
+  }
+  const server = new x402ResourceServer(createXrplFacilitator(config, keyOf, local)).register(config.network, scheme);
   await server.initialize();
   return { config, server, mods, keyOf };
 }
@@ -844,6 +876,7 @@ function startRailInit(config: XrplRailConfig, key: string): Promise<Rail | null
       (rail): Rail | null => {
         railState = { key, rail, builtAt: Date.now() };
         failedKey = null;
+        railAbsentKey = null;
         noteCheckSuccess("rail", failures.rail);
         return rail;
       },
@@ -862,15 +895,24 @@ function startRailInit(config: XrplRailConfig, key: string): Promise<Rail | null
         failedKey = key;
         if (absent) {
           warn(cur ? "facilitator confirmed the XRPL kind is gone; rail retired" : "rail init failed (confirmed absence)", err);
-          if (cur) emitAlert({ kind: "xrpl_entry_dropped", reason: "facilitator_kind_absent" });
+          // One ALERT per transition into "absent" (warm retire or a cold instance's first definitive answer).
+          if (railAbsentKey !== key) {
+            const sdk = (() => {
+              for (let e: unknown = err, i = 0; e && i < 5; e = (e as { cause?: unknown }).cause, i++) if (e instanceof XrplSdkUnavailableError) return true;
+              return false;
+            })();
+            emitAlert({ kind: "xrpl_entry_dropped", reason: sdk ? "sdk_unavailable" : "facilitator_kind_absent" });
+          }
+          railAbsentKey = key;
           railState = null;
           noteCheckSuccess("rail", failures.rail); // a definitive answer, not a failing check
           failedUntil = now + RETRY_AFTER_MS;
           return null;
         }
-        // Cold and still failing after the in-request retry: hidden only for the backoff.
-        warn("rail init failed", err);
-        noteCheckFailure("rail", failures.rail, undefined, "hidden");
+        // Cold and still failing after the in-request retry: NOT an absence. The 402 keeps XRPL
+        // (coldXrplRequirement) unless the last definitive answer was absent; re-check after the backoff.
+        warn("rail init failed (cold); XRPL entry kept from config until a check confirms", err, false);
+        noteCheckFailure("rail", failures.rail, undefined, railAbsentKey === key ? "hidden" : "kept");
         failedUntil = now + coldBackoffMs(failures.rail.streak);
         return null;
       },
@@ -973,7 +1015,8 @@ function refreshReady(config: XrplRailConfig, key: string): Promise<boolean> {
       const ready = confirmedAt !== undefined ? await checkPayToReady(config) : await coldAttempts(config.initTimeoutMs, (ms) => checkPayToReady(config, ms));
       const now = Date.now();
       // A definitive RPC answer either way (ready, or confirmed absence: actNotFound, no/frozen/zero trust line, flags).
-      if (!ready && confirmedAt !== undefined) emitAlert({ kind: "xrpl_entry_dropped", reason: "payto_not_ready" });
+      // One ALERT per transition into "absent": from confirmed, or a cold instance's first definitive answer.
+      if (!ready && !(prev?.definitive && !prev.ready)) emitAlert({ kind: "xrpl_entry_dropped", reason: "payto_not_ready" });
       readyCache = { key, ready, until: now + READY_TTL_MS, definitive: true, ...(ready ? { confirmedAt: now } : {}) };
       noteCheckSuccess("payto_ready", failures.ready);
       return ready;
@@ -993,8 +1036,9 @@ function refreshReady(config: XrplRailConfig, key: string): Promise<boolean> {
         noteCheckFailure("payto_ready", failures.ready, undefined, "hidden");
         return false;
       }
-      warn("payTo readiness RPC check failed (cold)", err);
-      noteCheckFailure("payto_ready", failures.ready, undefined, "hidden");
+      // Cold, never answered: NOT an absence, the 402 keeps XRPL (getXrplAccept); re-check after the backoff.
+      warn("payTo readiness RPC check failed (cold); XRPL entry kept until a check confirms", err, false);
+      noteCheckFailure("payto_ready", failures.ready, undefined, "kept");
       readyCache = { key, ready: false, until: now + coldBackoffMs(failures.ready.streak), definitive: false };
       return false;
     }
@@ -1069,6 +1113,34 @@ async function buildXrplRequirement(rail: Rail, atomicUsdc: string): Promise<Pay
   return req;
 }
 
+/** True only if the last readiness answer for this config was a DEFINITIVE not-ready (RPC said so). */
+function payToConfirmedAbsent(config: XrplRailConfig): boolean {
+  const key = `${config.network}|${config.rpcUrl}|${config.issuer}|${config.payTo}`;
+  return !!readyCache && readyCache.key === key && !readyCache.ready && readyCache.definitive;
+}
+
+/**
+ * The entry a cold instance serves before its rail has initialised: built from
+ * config alone, field for field and in the same key order as the SDK-built one
+ * (tests assert byte-identity), and held to the same assertXrplRequirement.
+ * payTo is the pinned config.payTo, never anything else.
+ */
+export function coldXrplRequirement(config: XrplRailConfig, atomicUsdc: string): PaymentRequirements {
+  const price = xrplPrice(config, atomicUsdc);
+  const req = {
+    scheme: "exact",
+    network: config.network,
+    amount: price.amount,
+    asset: price.asset,
+    payTo: config.payTo,
+    maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
+    // Same key order as the SDK-built entry: route extra (issuer, assetTransferMethod) first, then the facilitator's areFeesSponsored.
+    extra: { issuer: config.issuer, ...(config.assetTransferMethod ? { assetTransferMethod: config.assetTransferMethod } : {}), areFeesSponsored: false },
+  } as PaymentRequirements;
+  assertXrplRequirement(req, config, atomicUsdc);
+  return req;
+}
+
 /**
  * The RLUSD `accepts` entry for a route priced at `atomicUsdc` (USDC 6-dec
  * units), or null if the rail is unavailable. Never throws.
@@ -1081,8 +1153,10 @@ export async function getXrplAccept(config: XrplRailConfig, atomicUsdc: string):
       return null;
     }
     const [ready, rail] = await Promise.all([xrplPayToReady(config), getRail(config)]);
-    if (!ready || !rail) return null;
-    return await buildXrplRequirement(rail, atomicUsdc);
+    // Hidden ONLY on a confirmed absence; a failed/unanswered cold check keeps the entry (Odin 11:08).
+    if (!ready && payToConfirmedAbsent(config)) return null;
+    if (!rail && railAbsentKey === JSON.stringify(config)) return null;
+    return rail ? await buildXrplRequirement(rail, atomicUsdc) : coldXrplRequirement(config, atomicUsdc);
   } catch (err) {
     warn("could not build XRPL requirement", err);
     return null;

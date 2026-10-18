@@ -18,7 +18,7 @@ import path from "node:path";
 import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
-import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
+import { decodePaymentRequiredHeader, encodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import { FacilitatorResponseError, FacilitatorTimeoutError, SettleError } from "@x402/core/types";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import {
@@ -52,6 +52,7 @@ import {
 } from "./helpers/xrpl-env";
 import { installRpc as installSolanaRpc } from "./helpers/solana-env";
 import { SOLANA_PAYTO } from "@/lib/solana-config";
+import { RLUSD_CURRENCY_HEX, rlusdIssuerFor, usdcAtomicToRlusdValue, type XrplRailNetwork } from "@/lib/xrpl-config";
 
 const golden = JSON.parse(readFileSync(path.join(__dirname, "fixtures", "x402-flag-off.golden.json"), "utf8"));
 
@@ -61,6 +62,54 @@ async function captureAll() {
   setCdp(false);
   const local = await captureRoutes();
   return { cdp, local, discovery: await captureDiscovery() };
+}
+
+/**
+ * Cold-start fix (Odin 11:08 AM ET 10/18): a FAILED cold check (facilitator down/hanging,
+ * readiness RPC error/malformed) is not an absence, so every 402 keeps the XRPL entry,
+ * built from config. Base and every other entry must still be byte-identical to main:
+ * strip exactly one trailing xrpl:* accept (pinned payTo) from each 402 and compare to the golden.
+ */
+function stripColdXrpl(cap: Awaited<ReturnType<typeof captureAll>>): { stripped: unknown; with: number; without: number } {
+  let withX = 0;
+  let without = 0;
+  const fix = (c: Captured): Captured => {
+    const i = c.headers.findIndex(([k]) => k === "payment-required");
+    if (i < 0) return c;
+    const pr = decodePaymentRequiredHeader(c.headers[i][1]);
+    const last = pr.accepts[pr.accepts.length - 1];
+    if (!last?.network.startsWith("xrpl:")) {
+      without++;
+      return c;
+    }
+    withX++;
+    expect(last.payTo).toBe(process.env.HP_XRPL_PAYTO);
+    expect(pr.accepts.filter((a) => a.network.startsWith("xrpl:"))).toHaveLength(1);
+    // Odin Class A d37e7aa (5): money fields too, not just payTo. Amount = the route's USDC price in RLUSD.
+    const base = pr.accepts.find((a) => a.network.startsWith("eip155:"));
+    expect(base).toBeDefined();
+    expect(last.amount).toBe(usdcAtomicToRlusdValue(base!.amount));
+    expect(last.asset).toBe(RLUSD_CURRENCY_HEX);
+    expect((last.extra as Record<string, unknown>).issuer).toBe(rlusdIssuerFor(last.network as XrplRailNetwork));
+    pr.accepts = pr.accepts.slice(0, -1);
+    const headers = c.headers.map(([k, v], j): [string, string] => (j === i ? [k, encodePaymentRequiredHeader(pr)] : [k, v]));
+    let body = c.body;
+    try {
+      const parsed = JSON.parse(body) as { x402Version?: unknown; accepts?: PaymentRequirements[] };
+      if (parsed?.x402Version === 2 && Array.isArray(parsed.accepts)) {
+        const xs = parsed.accepts.filter((a) => a.network.startsWith("xrpl:"));
+        expect(xs).toHaveLength(1); // exactly one, and the same entry as the header
+        expect(JSON.stringify(xs[0])).toBe(JSON.stringify(last));
+        parsed.accepts = parsed.accepts.filter((a) => !a.network.startsWith("xrpl:"));
+        body = JSON.stringify(parsed);
+      }
+    } catch {
+      /* non-JSON body */
+    }
+    return { ...c, headers, body };
+  };
+  const map = (o: Record<string, Captured>) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, fix(v)]));
+  return { stripped: { cdp: map(cap.cdp), local: map(cap.local), discovery: cap.discovery }, with: withX, without };
 }
 
 const xrplWarned = () => vi.mocked(console.warn).mock.calls.some((c) => String(c[0]).startsWith("[xrpl-rail]"));
@@ -129,19 +178,24 @@ describe("unpaid isolation: XRPL failures serve the exact main 402", () => {
     expect(warnLines().some((l) => l.includes("unexpected XRPL requirement (payTo, network/issuer/payTo mix, extra.sourceTag)"))).toBe(true);
   });
 
-  it("XRPL facilitator unreachable (failure cached: one cold check = 2 attempts, then backoff, for every captured request)", async () => {
+  it("XRPL facilitator unreachable (cold, not confirmed absent): every 402 keeps the XRPL entry, the rest is byte-identical to main; one cold check = 2 attempts, then backoff", async () => {
     const calls = installXrplFacilitators({ supported: () => { throw new Error("fetch failed: ECONNREFUSED"); } });
     stubXrplOn();
-    expect(JSON.stringify(await captureAll())).toBe(JSON.stringify(golden));
+    const r = stripColdXrpl(await captureAll());
+    expect(JSON.stringify(r.stripped)).toBe(JSON.stringify(golden));
+    expect(r.with).toBeGreaterThan(0);
+    expect(r.without).toBe(0);
     // 2026-10-17 keep-present: the cold check retries once in-request (COLD_ATTEMPTS = 2), then backs off ≥ 5 s.
     expect(calls.filter((c) => c.url === XRPL_FAC && c.op === "supported").length).toBe(2);
   });
 
-  it("XRPL facilitator hangs: bounded by HP_XRPL_INIT_TIMEOUT_MS", async () => {
+  it("XRPL facilitator hangs: bounded by HP_XRPL_INIT_TIMEOUT_MS; entry kept (cold, not confirmed absent), rest byte-identical", async () => {
     installXrplFacilitators({ supported: () => new Promise(() => {}) });
     stubXrplOn({ HP_XRPL_INIT_TIMEOUT_MS: "150" });
     const t0 = Date.now();
-    expect(JSON.stringify(await captureAll())).toBe(JSON.stringify(golden));
+    const r = stripColdXrpl(await captureAll());
+    expect(JSON.stringify(r.stripped)).toBe(JSON.stringify(golden));
+    expect(r.without).toBe(0);
     expect(Date.now() - t0).toBeLessThan(10_000);
   });
 
@@ -157,11 +211,20 @@ describe("unpaid isolation: XRPL failures serve the exact main 402", () => {
     expect(JSON.stringify(await captureAll())).toBe(JSON.stringify(golden));
   });
 
-  for (const mode of ["unactivated", "no_trustline", "frozen", "zero_limit", "dest_tag", "deposit_auth", "error", "malformed"] as ReadyMode[]) {
-    it(`payTo not ready (${mode}): entry hidden, exact main 402`, async () => {
+  for (const mode of ["unactivated", "no_trustline", "frozen", "zero_limit", "dest_tag", "deposit_auth"] as ReadyMode[]) {
+    it(`payTo not ready (${mode}, confirmed by the RPC): entry hidden, exact main 402`, async () => {
       installXrplFacilitators();
       stubXrplOn({}, true, mode);
       expect(JSON.stringify(await captureAll())).toBe(JSON.stringify(golden));
+    });
+  }
+  for (const mode of ["error", "malformed"] as ReadyMode[]) {
+    it(`payTo readiness RPC ${mode} on a cold instance (not an answer): entry kept, rest byte-identical to main`, async () => {
+      installXrplFacilitators();
+      stubXrplOn({}, true, mode);
+      const r = stripColdXrpl(await captureAll());
+      expect(JSON.stringify(r.stripped)).toBe(JSON.stringify(golden));
+      expect(r.without).toBe(0);
     });
   }
 
@@ -462,6 +525,21 @@ describe("paid isolation", () => {
     const run = makeHandler();
     const res = await run.handler(paid(xrplPayload(accepts[1])));
     expect(res.status).toBe(402);
+    expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader(), "rail_unavailable");
+    expect(nonSupported()).toEqual([]);
+  });
+
+  it("cold-start fix keeps the paid path strict: readiness RPC error on a cold instance → Base-only 402 rail_unavailable, nothing forwarded, nothing run", async () => {
+    calls = installXrplFacilitators(behaviour());
+    stubXrplOn();
+    const accepts = await getAccepts();
+    resetXrplRailForTests();
+    installXrplRpc("error");
+    calls.length = 0;
+    const run = makeHandler();
+    const res = await run.handler(paid(xrplPayload(accepts[1])));
+    expect(res.status).toBe(402);
+    expect(run.ran.count).toBe(0);
     expectRejectedGolden(res.headers.get("payment-required"), goldenPulseHeader(), "rail_unavailable");
     expect(nonSupported()).toEqual([]);
   });

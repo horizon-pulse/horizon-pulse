@@ -112,17 +112,17 @@ describe("XRPL rail keep-present (Odin Class A follow-up 2026-10-17)", () => {
     expect(calls.filter((c) => c.url === XRPL_FAC && c.op === "supported").length).toBe(2);
   });
 
-  it("cold start: both attempts time out → hidden only until the first backoff (5 s), then recovers without a 60 s gap", async () => {
+  it("cold start: both attempts time out → XRPL stays (not confirmed absent, Odin 11:08 10/18); re-checked after the 5 s backoff", async () => {
     installXrplFacilitators();
     on();
     let fail = true;
     const stats = installStepRpc(() => (fail ? "timeout" : "ready"));
     const h = handler();
-    expect(await hasXrpl(h)).toBe(false);
+    expect(await hasXrpl(h)).toBe(true); // was false before the cold-start fix
     expect(stats.checks).toBe(2);
     fail = false;
     advance(4_000);
-    expect(await hasXrpl(h)).toBe(false); // inside the 5 s backoff: no new RPC
+    expect(await hasXrpl(h)).toBe(true); // inside the 5 s backoff: no new RPC, entry kept
     expect(stats.checks).toBe(2);
     advance(1_100);
     expect(await hasXrpl(h)).toBe(true); // backoff over: this request re-checks and recovers
