@@ -16,7 +16,7 @@ export const NO_IP_SENTENCE = "We do not store IP addresses, user agents, header
 export function freeTierPrivacySentences(markDays: number): string {
   const days = markDays === 1 ? "1 day" : `${markDays} days`;
   return (
-    "For free-tier calls we log the timestamp, route and outcome. We do not store IP addresses in readable form, and we do not store user agents, headers or request content. " +
+    "For free-tier calls we log the timestamp, route, method and outcome. We do not store IP addresses in readable form, and we do not store user agents, headers or request content. " +
     "To run the opt-in free tier we keep a keyed one-way hash of the caller's IP address (for IPv6, its /64 network): one to count free calls per day, deleted after about 26 hours, and, " +
     `for ${days} after a paid call, one marking that IP as a previous payer so it is not offered free calls. ` +
     "These hashes are not linked to wallet addresses, transaction hashes or receipt IDs."
@@ -32,7 +32,7 @@ export function combinedPrivacyLine(markDays: number): string {
   const days = markDays === 1 ? "1 day" : `${markDays} days`;
   return (
     "For paid API calls we log the timestamp, route, method, price tier, outcome and a random receipt ID we generate for the call (returned to you in the X-HP-Receipt-Id header), and for settled payments the network, amount, transaction hash and payer wallet address (already public on-chain). " +
-    "For free-tier calls we log the timestamp, route and outcome. We do not store IP addresses in readable form, and we do not store user agents, headers or request content. " +
+    "For free-tier calls we log the timestamp, route, method and outcome. We do not store IP addresses in readable form, and we do not store user agents, headers or request content. " +
     "To run the opt-in free tier we keep a keyed one-way hash of the caller's IP address (for IPv6, its /64 network): one to count free calls per day, deleted after about 26 hours, and, " +
     `for ${days} after a paid call, one marking that IP as a previous payer so it is not offered free calls. ` +
     "These hashes are not linked to wallet addresses, transaction hashes or receipt IDs. " +
@@ -40,6 +40,11 @@ export function combinedPrivacyLine(markDays: number): string {
     "All of this is used only to run the service and for our own usage analytics, and is never sold or shared."
   );
 }
+
+/** The last sentence of ROUTE_LOG_PRIVACY_LINE, and Counsel's replacement when the free-tier text is spliced in (re-read batch 2, condition 2, word for word). */
+export const ROUTE_LOG_LAST_SENTENCE = "Records are kept for 30 days (aggregate per-route counts without payer data for 90 days), used only for our own usage analytics, and never sold or shared.";
+export const FREE_TIER_LAST_SENTENCE =
+  "Records are kept for 30 days (aggregate per-route counts without payer data for 90 days); all of this is used only to run the service and for our own usage analytics, and is never sold or shared.";
 
 /**
  * The line /privacy renders. Free tier off and no marker pre-seeding (the code default, and always
@@ -49,5 +54,5 @@ export function combinedPrivacyLine(markDays: number): string {
  */
 export function privacyLine(env: Record<string, string | undefined> = process.env): string {
   if (freeTierMode(env) !== "optin" && !payerMarkWriting(env)) return ROUTE_LOG_PRIVACY_LINE;
-  return ROUTE_LOG_PRIVACY_LINE.replace(NO_IP_SENTENCE, freeTierPrivacySentences(payerMarkTtlDays(env)));
+  return ROUTE_LOG_PRIVACY_LINE.replace(NO_IP_SENTENCE, freeTierPrivacySentences(payerMarkTtlDays(env))).replace(ROUTE_LOG_LAST_SENTENCE, FREE_TIER_LAST_SENTENCE);
 }

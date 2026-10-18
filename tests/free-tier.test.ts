@@ -37,7 +37,7 @@ import {
   payerMarkTtlS,
 } from "@/lib/free-tier";
 import { freeIpHmacKey, payerMarkTtlDays } from "@/lib/free-tier-mode";
-import { freeTierPrivacySentences, NO_IP_SENTENCE, privacyLine, ROUTE_LOG_PRIVACY_LINE } from "@/lib/privacy-copy";
+import { combinedPrivacyLine, freeTierPrivacySentences, NO_IP_SENTENCE, privacyLine, ROUTE_LOG_PRIVACY_LINE } from "@/lib/privacy-copy";
 import { freeTierRewrites } from "@/lib/free-tier-mode";
 import { createX402GetHandler, discoveryOptionsResponse, pulseRouteConfig, signalsRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
@@ -767,7 +767,14 @@ describe("free tier: HMAC secret rule (HP_FREE_IP_HMAC_KEY, any string of 43+ ch
 
 describe("free tier: privacy line ships only with the flag (Counsel ruling B wording)", () => {
   const B =
-    "For free-tier calls we log the timestamp, route and outcome. We do not store IP addresses in readable form, and we do not store user agents, headers or request content. To run the opt-in free tier we keep a keyed one-way hash of the caller's IP address (for IPv6, its /64 network): one to count free calls per day, deleted after about 26 hours, and, for 14 days after a paid call, one marking that IP as a previous payer so it is not offered free calls. These hashes are not linked to wallet addresses, transaction hashes or receipt IDs.";
+    "For free-tier calls we log the timestamp, route, method and outcome. We do not store IP addresses in readable form, and we do not store user agents, headers or request content. To run the opt-in free tier we keep a keyed one-way hash of the caller's IP address (for IPv6, its /64 network): one to count free calls per day, deleted after about 26 hours, and, for 14 days after a paid call, one marking that IP as a previous payer so it is not offered free calls. These hashes are not linked to wallet addresses, transaction hashes or receipt IDs.";
+  /** Counsel re-read batch 2 (10/18): the exact full line with the free tier on (14-day marker, before ruling A ships). */
+  const FULL_FREE_LINE =
+    "For paid API calls we log the timestamp, route, method and outcome, and for settled payments the network, amount, transaction hash and payer wallet address (already public on-chain). For free-tier calls we log the timestamp, route, method and outcome. We do not store IP addresses in readable form, and we do not store user agents, headers or request content. To run the opt-in free tier we keep a keyed one-way hash of the caller's IP address (for IPv6, its /64 network): one to count free calls per day, deleted after about 26 hours, and, for 14 days after a paid call, one marking that IP as a previous payer so it is not offered free calls. These hashes are not linked to wallet addresses, transaction hashes or receipt IDs. Records are kept for 30 days (aggregate per-route counts without payer data for 90 days); all of this is used only to run the service and for our own usage analytics, and is never sold or shared.";
+  it("combined A+B line (staged) carries the method wording too", () => {
+    expect(combinedPrivacyLine(14)).toContain("For free-tier calls we log the timestamp, route, method and outcome.");
+    expect(combinedPrivacyLine(14)).not.toContain("route and outcome");
+  });
   it("off (default), or optin without a key: today's Counsel line, byte-identical", () => {
     expect(privacyLine({})).toBe(ROUTE_LOG_PRIVACY_LINE);
     expect(privacyLine({ HP_FREE_TIER: "optin" })).toBe(ROUTE_LOG_PRIVACY_LINE);
@@ -776,9 +783,11 @@ describe("free tier: privacy line ships only with the flag (Counsel ruling B wor
   it("optin + key, or marker pre-seeding + key: Counsel's B sentences replace the no-IP sentence (word for word)", () => {
     for (const env of [{ HP_FREE_TIER: "optin", HP_FREE_IP_HMAC_KEY: TEST_KEY }, { HP_FREE_PAYER_MARK: "on", HP_FREE_IP_HMAC_KEY: TEST_KEY }]) {
       const line = privacyLine(env);
-      expect(line).toBe(ROUTE_LOG_PRIVACY_LINE.replace(NO_IP_SENTENCE, B));
+      expect(line).toBe(FULL_FREE_LINE);
       expect(line).not.toContain("We do not store IP addresses,");
+      expect(line).not.toContain("), used only for our own usage analytics, and never sold or shared.");
     }
+    expect(FULL_FREE_LINE).toContain(B);
     expect(ROUTE_LOG_PRIVACY_LINE).toContain(NO_IP_SENTENCE);
   });
 });
