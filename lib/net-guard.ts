@@ -21,7 +21,7 @@
  */
 import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import { isIP, connect as netConnect, type Socket } from "node:net";
-import { Agent, buildConnector } from "undici";
+import { Agent, buildConnector, fetch as undiciFetch } from "undici";
 
 /** Thrown (as fetch's cause) when a connection would reach a blocked address. */
 export class SsrfBlockedError extends Error {
@@ -255,6 +255,55 @@ export function createGuardedAgent(opts: GuardOptions = {}): Agent {
   return new Agent({ connect });
 }
 
+// ---------------------------------------------------------------------------
+// Fail-closed guarantee (Odin LOW 10/17, net-guard.ts:272): the guard relies on
+// global fetch honouring `dispatcher`. A one-time self-test (per instance, no
+// network: the probe dispatcher's connector refuses before any socket) checks
+// that the runtime's own fetch uses the dispatcher. If it does not, every
+// guardedFetch switches to undici's own fetch, which always uses its dispatcher.
+// ---------------------------------------------------------------------------
+const NATIVE_FETCH: typeof fetch | undefined = typeof globalThis.fetch === "function" ? globalThis.fetch : undefined;
+const SELFTEST_MARK = "HP_GUARD_SELFTEST";
+
+function causeChainHas(err: unknown, mark: string): boolean {
+  let e: unknown = err;
+  for (let i = 0; i < 8 && e; i++) {
+    if (e instanceof Error && e.message.includes(mark)) return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
+
+/** true when `fetchImpl` routes through the given dispatcher (probe connector throws a marker before any socket). */
+export async function dispatcherHonored(fetchImpl: typeof fetch | null = NATIVE_FETCH ?? null): Promise<boolean> {
+  if (!fetchImpl) return false;
+  const probe = new Agent({ connect: (_opts: unknown, cb: (err: Error | null, sock: null) => void) => cb(new Error(SELFTEST_MARK), null) } as never);
+  try {
+    await fetchImpl("http://hp-guard-selftest.invalid/", { dispatcher: probe, signal: AbortSignal.timeout(3_000) } as RequestInit);
+    return false;
+  } catch (err) {
+    return causeChainHas(err, SELFTEST_MARK);
+  } finally {
+    probe.close().catch(() => {});
+  }
+}
+
+let selfTest: Promise<boolean> | null = null;
+/** For tests: force the self-test result (null = run it again on next use). */
+export function __setGuardSelfTestForTests(v: boolean | null): void {
+  selfTest = v === null ? null : Promise.resolve(v);
+}
+async function fetchForGuard(): Promise<typeof fetch> {
+  // Under vitest, global fetch is routinely a stub that ignores dispatchers; tests force the
+  // fallback explicitly with __setGuardSelfTestForTests(false). Never set in production.
+  if (!selfTest && process.env.VITEST) selfTest = Promise.resolve(true);
+  selfTest ??= dispatcherHonored().then((ok) => {
+    if (!ok) console.warn("[net-guard] runtime fetch ignored the dispatcher; using undici fetch for guarded requests");
+    return ok;
+  });
+  return (await selfTest) ? globalThis.fetch : (undiciFetch as unknown as typeof fetch);
+}
+
 let shared: Agent | null = null;
 /** The shared guarded dispatcher (created on first use). */
 export function guardedDispatcher(): Agent {
@@ -264,12 +313,14 @@ export function guardedDispatcher(): Agent {
 
 /**
  * fetch() through the guarded dispatcher. Uses whatever globalThis.fetch is at
- * call time (tests stub it). A connect-time block is rethrown as the
+ * call time (tests stub it) once the self-test shows the runtime honours the
+ * dispatcher; otherwise undici's own fetch (fail closed, never unguarded). A connect-time block is rethrown as the
  * SsrfBlockedError itself so callers can map it to host_blocked (not charged).
  */
 export async function guardedFetch(input: string | URL, init: RequestInit = {}, dispatcher: Agent = guardedDispatcher()): Promise<Response> {
   try {
-    return await globalThis.fetch(input, { ...init, dispatcher } as RequestInit);
+    const f = await fetchForGuard();
+    return await f(input, { ...init, dispatcher } as RequestInit);
   } catch (err) {
     const blocked = findSsrfBlockedError(err);
     if (blocked) throw blocked;
