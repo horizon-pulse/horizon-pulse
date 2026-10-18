@@ -36,3 +36,13 @@ export const SITE_SECURITY_HEADERS = [
  */
 export const API_SOURCE = "/api/:path*";
 export const API_SECURITY_HEADERS = [{ key: "X-Content-Type-Options", value: "nosniff" }] as const;
+
+/**
+ * /.well-known/* (route handlers x402 + related-routes, and static public/.well-known
+ * files such as glama.json and x402list.txt): X-Content-Type-Options nosniff ONLY
+ * (Sentinel note via Odin 11:18 PM ET 10/17). No CSP, X-Frame-Options or
+ * Referrer-Policy; bodies, CORS and every other header untouched (headers() only adds).
+ * The site-pages rule still excludes /.well-known, so nothing else reaches it.
+ */
+export const WELL_KNOWN_SOURCE = "/.well-known/:path*";
+export const WELL_KNOWN_SECURITY_HEADERS = [{ key: "X-Content-Type-Options", value: "nosniff" }] as const;
