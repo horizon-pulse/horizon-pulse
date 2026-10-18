@@ -177,11 +177,11 @@ const DEFAULT_INIT_TIMEOUT_MS = 2500;
 export const SOLANA_DEFAULT_INIT_TIMEOUT_MS = DEFAULT_INIT_TIMEOUT_MS;
 /**
  * Odin 12:51 C2: largest init timeout the paid-path budget allows. Cold worst case = 2 token-account tries × init +
- * verify 10 + settle 12 + on-chain check 4 s must leave a 20 s handler margin on 60 s routes: 2·init + 26 ≤ 40 →
- * init ≤ 7 s (stricter than the single-try 14 s, because a cold token-account check retries once). Larger values
- * are clamped to this.
+ * verify 10 + settle 12 + on-chain check 4 s + (v4 C1) 2 claim-store calls × 1 s must leave a 20 s handler margin on
+ * 60 s routes: 2·init + 28 ≤ 40 → init ≤ 6 s (was 7 s before the shared claim's store calls were counted; the
+ * default stays 2.5 s). Larger values are clamped to this.
  */
-export const SOLANA_MAX_INIT_TIMEOUT_MS = 7_000;
+export const SOLANA_MAX_INIT_TIMEOUT_MS = 6_000;
 
 function off(reason: string, misconfigured: boolean): SolanaConfigResult {
   return { enabled: false, reason, misconfigured };

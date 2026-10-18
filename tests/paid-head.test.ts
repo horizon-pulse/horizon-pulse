@@ -20,6 +20,8 @@ import { installRpc as installSolanaRpc, SOL_PAYER } from "./helpers/solana-env"
 import { installXrplFacilitators, stubXrplOn, xrplPayload, XRPL_PAYER, XRPL_TX_HASH, type XrplRpcCall } from "./helpers/xrpl-env";
 import { CDP_URL_PREFIX, type FacilitatorCall } from "./helpers/facilitator-mock";
 import { PAID_ROUTES } from "./helpers/capture";
+import { setSolanaSharedStoreForTests as __v4SetSolanaStore } from "@/lib/solana-rail";
+import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
 
 // Count entries into each non-Base rail's paid handler (real implementation still runs).
 const railEntries = vi.hoisted(() => ({ solana: 0, xrpl: 0, polygon: 0 }));
@@ -100,6 +102,7 @@ const paidPathTouched = () =>
 describe("paid HEAD never verifies or settles (F2)", () => {
   beforeEach(() => {
     resetSolanaRailForTests();
+    __v4SetSolanaStore(new MemoryReplayStore()); // v4 F2: Solana needs the shared claim store (fail closed without)
     resetXrplRailForTests();
     resetPolygonRailForTests();
     vi.spyOn(console, "warn").mockImplementation(() => {});

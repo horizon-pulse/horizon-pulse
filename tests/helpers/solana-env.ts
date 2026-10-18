@@ -12,7 +12,8 @@ import {
   base58Decode,
   base58Encode,
 } from "@/lib/solana-config";
-import { __setSolanaRpcForTests, type SolanaRpc } from "@/lib/solana-rail";
+import { __setSolanaRpcForTests, setSolanaSharedStoreForTests, solanaSharedStoreFromEnvForTests, type SolanaRpc } from "@/lib/solana-rail";
+import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
 
 export const PINNED_PAYTO = "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz";
 
@@ -140,6 +141,9 @@ export function stubSolanaOn(extra: Record<string, string> = {}, cdp = true, ata
   vi.stubEnv("HP_SOLANA_PAYTO", SOLANA_PAYTO);
   for (const [k, v] of Object.entries(extra)) vi.stubEnv(k, v);
   setCdp(cdp);
+  // v4 F2: Solana now fails closed without a shared claim store (mainnet-only rail). Tests that did not choose a
+  // store (not even null) get a fresh in-memory one, standing in for a configured Upstash; reset clears it.
+  if (solanaSharedStoreFromEnvForTests()) setSolanaSharedStoreForTests(new MemoryReplayStore());
   return calls;
 }
 

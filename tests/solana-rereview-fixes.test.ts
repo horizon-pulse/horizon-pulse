@@ -24,6 +24,8 @@ import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
 import { CDP_URL_PREFIX } from "./helpers/facilitator-mock";
 import { ATA_ACCOUNT_VALUE, PAYAI_SUPPORTED, SOL_PAYER, installBothFacilitators, installRpc, setCdp, stubSolanaOn, parseableSolanaTx} from "./helpers/solana-env";
+import { setSolanaSharedStoreForTests as __v4SetSolanaStore } from "@/lib/solana-rail";
+import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
 
 const PAYAI = "https://facilitator.payai.network";
 const SOL_SIG = "5".repeat(87);
@@ -219,6 +221,7 @@ describe("N3: cold start runs the token-account check and rail init in parallel"
       // Learn the Solana accept on a warm rail, then go cold again.
       const a = await accepts();
       resetSolanaRailForTests();
+      __v4SetSolanaStore(new MemoryReplayStore()); // v4 F2: Solana needs the shared claim store (fail closed without)
       return a;
     })();
     overlap.supportedWhileAtaPending = false;
