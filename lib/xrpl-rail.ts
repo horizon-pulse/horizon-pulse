@@ -131,7 +131,7 @@ import {
   usdcAtomicToRlusdValue,
   type XrplRailConfig,
 } from "./xrpl-config";
-import { createReplayStore, encodeReplayValue, parseReplayValue, type ReplayState, type ReplayStore } from "./xrpl-replay-store";
+import { ReplaySelfTestError, createReplayStore, encodeReplayValue, parseReplayValue, type ReplayState, type ReplayStore } from "./xrpl-replay-store";
 import { runOnPaidRail, xrplRail } from "./paid-rail";
 
 const LOG = "[xrpl-rail]";
@@ -1523,14 +1523,22 @@ export function setXrplReplayStoreForTests(s: ReplayStore | null): void {
 export const XRPL_EVAL_OK_RECHECK_MS = 10 * 60_000;
 /** A failing probe is re-run after this long (the rail stays absent until then). */
 export const XRPL_EVAL_FAIL_RECHECK_MS = 60_000;
+/**
+ * Odin 12:28: the probe is now EVAL + a 5-command self-test (6 sequential Upstash REST calls, each also capped at the
+ * store's 1.5 s). Whole probe bounded at 3 s: runs in parallel with rail init (≤ XRPL_MAX_INIT_TIMEOUT_MS 5 s), so it
+ * adds nothing to the worst case; a timeout = unavailable (reason "timeout").
+ */
+export const XRPL_EVAL_PROBE_DEADLINE_MS = 3_000;
 export type XrplReplayEvalStatus = "ok" | "unavailable" | "not_applicable";
 let evalCache: { store: ReplayStore; ok: boolean; until: number } | null = null;
 let evalInflight: Promise<boolean> | null = null;
 
 /**
  * True when the replay store can run the atomic scripts the rail depends on (cas = Upstash EVAL). Runs a trivial
- * `EVAL "return 1" 0` once per instance (cached: ok 10 min, failure 60 s; concurrent callers share one probe).
- * Any error, timeout (store timeout 1.5 s) or wrong answer = unavailable → the caller treats the XRPL rail as
+ * `EVAL "return 1" 0` plus the replay-store self-test (SET / wrong-value CAS_DELETE keeps it / right-value
+ * CAS_DELETE removes it, Odin 12:28) once per instance (cached: ok 10 min, failure 60 s; concurrent callers share
+ * one probe). Any error, timeout (whole probe XRPL_EVAL_PROBE_DEADLINE_MS 3 s; each store call 1.5 s), wrong answer
+ * or failed self-test step = unavailable → the caller treats the XRPL rail as
  * confirmed absent and an ALERT xrpl_replay_eval_unavailable fires (once per failure episode).
  * Stores without probeEval (per-instance memory: testnet only, atomic in-process) are not probed.
  */
@@ -1545,10 +1553,12 @@ export async function xrplReplayEvalOk(): Promise<boolean> {
     let ok = true;
     let reason = "";
     try {
-      await store.probeEval!();
+      await withTimeout(store.probeEval!(), XRPL_EVAL_PROBE_DEADLINE_MS, "replay store probe");
     } catch (err) {
       ok = false;
-      reason = errorKind(err);
+      // Same alert kind (xrpl_replay_eval_unavailable); reason = the failing self-test step, "timeout", or the error kind.
+      reason =
+        err instanceof ReplaySelfTestError ? err.step : err instanceof Error && / timed out after \d+ms$/.test(err.message) ? "timeout" : errorKind(err);
     }
     evalCache = { store, ok, until: Date.now() + (ok ? XRPL_EVAL_OK_RECHECK_MS : XRPL_EVAL_FAIL_RECHECK_MS) };
     if (!ok) {
@@ -1936,8 +1946,10 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
   if (retryHash !== rec.hash) {
     const sig = ctx.retryBlob ? await xrplMasterKeySigned(ctx.retryBlob) : ({ ok: false, reason: "undecodable" } as const);
     if (!sig.ok) {
-      warn(`XRPL retry not bound to the stored tx fp=${fp(k)} (${sig.reason}); slot untouched, client gets 502`, undefined, false);
-      return unconfirmed(502);
+      // Odin 12:28 (1): BARE 502 body (not the redeemable "retry with the same payment" body): this blob is not
+      // bound to the stored tx, so retrying it can never redeem.
+      warn(`XRPL retry not bound to the stored tx fp=${fp(k)} (${sig.reason}); slot untouched, client gets bare 502`, undefined, false);
+      return jsonError(502, "settlement_unconfirmed");
     }
     // Delta 5 (Odin 12:17): F1(b) only. The master key must still be enabled (validated account_info, bounded);
     // lsfDisableMaster set, or the read fails / times out → 502, slot untouched (fail closed). F1(a) never reads.
