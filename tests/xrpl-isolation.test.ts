@@ -30,6 +30,7 @@ import {
   setXrplAlertHook,
   WARN_ALERT_THRESHOLD,
   type XrplModules,
+  SETTLEMENT_UNCONFIRMED_BODY,
 } from "@/lib/xrpl-rail";
 import { resetSolanaRailForTests } from "@/lib/solana-rail";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
@@ -462,7 +463,8 @@ describe("paid isolation", () => {
         expect(body).not.toContain('"ok":true');
       } else {
         expect(res.headers.get("payment-required")).toBeNull();
-        expect(body).toBe('{"error":"settlement_unconfirmed"}');
+        // Odin 11:44 (b): the 5xx body tells the buyer to retry with the SAME signed payment.
+        expect(body).toBe(JSON.stringify(SETTLEMENT_UNCONFIRMED_BODY));
       }
       expect(body).not.toContain(MARKER);
       expect(calls.filter((c) => c.url.startsWith(CDP_URL_PREFIX) && c.op !== "supported")).toEqual([]);

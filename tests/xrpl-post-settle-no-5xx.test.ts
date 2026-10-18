@@ -15,21 +15,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import {
+  SETTLEMENT_UNCONFIRMED_BODY,
   XRPL_REDEEM_LEASE_MS,
   __setXrplAfterDeliveryMarkHookForTests,
   __setXrplFacilitatorSchemeLoaderForTests,
+  __setXrplRpcForTests,
   __setXrplTxLookupDelaysForTests,
+  XRPL_EVAL_FAIL_RECHECK_MS,
+  provablyNeverLanded,
   resetXrplRailForTests,
+  xrplReplayEvalOk,
+  xrplReplayEvalStatus,
   setXrplAlertHook,
   setXrplReplayStoreForTests,
   type XrplAlert,
 } from "@/lib/xrpl-rail";
 import { resetSolanaRailForTests } from "@/lib/solana-rail";
-import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
+import { EVAL_PROBE_SCRIPT, MemoryReplayStore, UpstashReplayStore } from "@/lib/xrpl-replay-store";
 import { RLUSD_CURRENCY_HEX, RLUSD_MAINNET_ISSUER, XRPL_PAYTO, XRPL_SELF_FACILITATOR } from "@/lib/xrpl-config";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
-import { installXrplFacilitators, installXrplRpc, XRPL_PAYER, XRPL_TX_HASH, xrplPayload } from "./helpers/xrpl-env";
+import { installXrplFacilitators, installXrplRpc, makeXrplRpc, XRPL_PAYER, XRPL_TX_HASH, xrplPayload } from "./helpers/xrpl-env";
 
 const MAIN_ENV = {
   HP_XRPL_ENABLED: "true",
@@ -228,7 +234,7 @@ describe("ambiguous settle (throw / timeout): confirm on the ledger before answe
     installXrplRpc("ready", () => ({ status: "error", error: "txnNotFound" }));
     const res = await handler()(paid(xrplPayload(accept)));
     expect(res.status).toBe(504);
-    expect(await res.json()).toEqual({ error: "settlement_unconfirmed" });
+    expect(await res.json()).toEqual(SETTLEMENT_UNCONFIRMED_BODY);
     expect(reconcile()).toEqual([expect.objectContaining({ status: 504 })]);
   });
 
@@ -317,7 +323,7 @@ describe("delivered vs not delivered (Odin 11:34): an undelivered payment is red
     await ambiguousFirst(accept, p);
     const r2 = await handler()(paid(p));
     expect(r2.status).toBe(502);
-    expect(await r2.json()).toEqual({ error: "settlement_unconfirmed" });
+    expect(await r2.json()).toEqual(SETTLEMENT_UNCONFIRMED_BODY);
     installXrplRpc("ready", () => ledgerTx(accept));
     await expectDelivered(await handler()(paid(p)));
   });
@@ -345,7 +351,7 @@ describe("delivered vs not delivered (Odin 11:34): an undelivered payment is red
     });
     const r1 = await handler()(paid(p));
     expect(r1.status).toBe(502);
-    expect(await r1.json()).toEqual({ error: "settlement_unconfirmed" });
+    expect(await r1.json()).toEqual(SETTLEMENT_UNCONFIRMED_BODY);
     expect(reconcile().map((r) => r.reason)).toContain("post_settle_error");
     await expectDelivered(await handler()(paid(p)));
     expect(settleCalls).toBe(1);
@@ -414,4 +420,278 @@ it("default alert sink tags xrpl_settled_unverified as [ALERT][HIGH] (Sentinel t
   const lines = vi.mocked(console.error).mock.calls.map((c) => String(c[0])).filter((l) => l.includes("[ALERT][HIGH]"));
   expect(lines).toHaveLength(1);
   expect(JSON.parse(lines[0].slice(lines[0].indexOf("{")))).toEqual({ kind: "xrpl_settled_unverified", severity: "high", field: "unreadable", reason: "self_check_missing" });
+});
+
+// ---------------------------------------------------------------------------
+// Odin 11:44 AM ET (b)(d)(e)
+// ---------------------------------------------------------------------------
+
+describe("(b) the 502/504 body tells the buyer to retry with the SAME signed payment", () => {
+  it("body: error + retry:same_payment + a message naming PAYMENT-SIGNATURE; no facilitator text, no-store", async () => {
+    settleImpl = async () => {
+      throw new Error("ws closed");
+    };
+    const accept = await xrplAccept();
+    installXrplRpc("ready", () => ({ status: "error", error: "txnNotFound" }));
+    const res = await handler()(paid(xrplPayload(accept)));
+    expect(res.status).toBe(504);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("payment-required")).toBeNull();
+    const body = await res.json();
+    expect(body).toEqual(SETTLEMENT_UNCONFIRMED_BODY);
+    expect(body).toMatchObject({ error: "settlement_unconfirmed", retry: "same_payment" });
+    expect(body.message).toContain("SAME PAYMENT-SIGNATURE");
+    expect(body.message).not.toContain("ws closed");
+  });
+});
+
+/** RPC with the never-landed endpoints: `ledger` (validated index) and `tx` restricted by min/max_ledger. */
+function llsRpc(o: { validated?: unknown; ledgerValidated?: boolean; ledgerThrows?: boolean; search?: unknown; lookup?: () => unknown } = {}) {
+  const base = makeXrplRpc("ready", o.lookup ?? (() => ({ status: "error", error: "txnNotFound" })));
+  const calls: { method: string; params: Record<string, unknown> }[] = [];
+  __setXrplRpcForTests(async (url, method, params, t) => {
+    if (method === "ledger") {
+      calls.push({ method, params });
+      if (o.ledgerThrows) throw new Error("rpc down");
+      return { status: "success", validated: o.ledgerValidated ?? true, ledger_index: o.validated ?? 1_000_001, ledger_hash: "AB".repeat(32) };
+    }
+    if (method === "tx" && params.max_ledger !== undefined) {
+      calls.push({ method: "tx_range", params });
+      return o.search ?? { status: "error", error: "txnNotFound", searched_all: true };
+    }
+    return base.fn(url, method, params, t);
+  });
+  return calls;
+}
+const LLS = 1_000_000; // specTx LastLedgerSequence
+const slotStates = () => [...((store as unknown as { m: Map<string, { state: string }> }).m.values())].map((e) => e.state);
+
+describe("(d) LastLedgerSequence: past it and not found ⇒ provably never landed ⇒ Base-only 402 transaction_failed", () => {
+  beforeEach(() => {
+    settleImpl = async () => {
+      throw new Error("ws closed");
+    };
+  });
+
+  it("ambiguous settle, validated ledger past LLS, tx search over [LLS-999, LLS] says txnNotFound searched_all → 402, slot settle_failed, retries 402", async () => {
+    const accept = await xrplAccept();
+    const calls = llsRpc();
+    const p = xrplPayload(accept);
+    const res = await handler()(paid(p));
+    expect(res.status).toBe(402);
+    expect(res.headers.get("payment-required")).toBeTruthy();
+    expect(res.headers.get("payment-response")).toBeNull();
+    expect(await res.text()).not.toContain('"paid"');
+    const pr = decodePaymentRequiredHeader(res.headers.get("payment-required")!);
+    expect(pr.error).toBe("transaction_failed");
+    expect(pr.accepts.some((a) => a.network === "xrpl:0")).toBe(false); // Base-only
+    // Order: validated index FIRST, then the bounded search.
+    expect(calls.map((c) => c.method)).toEqual(["ledger", "tx_range"]);
+    expect(calls[0].params).toEqual({ ledger_index: "validated" });
+    expect(calls[1].params).toMatchObject({ min_ledger: LLS - 999, max_ledger: LLS, binary: false });
+    expect(slotStates()).toEqual(["settle_failed"]);
+    expect(reconcile()).toEqual([expect.objectContaining({ status: 402, reason: "never_landed_past_last_ledger" })]);
+    expect((await handler()(paid(p))).status).toBe(402);
+    expect(settleCalls).toBe(1);
+  });
+
+  it("validated index as a string (rippled ledger.ledger_index) is parsed → 402", async () => {
+    const accept = await xrplAccept();
+    llsRpc({ validated: String(LLS + 5) });
+    expect((await handler()(paid(xrplPayload(accept)))).status).toBe(402);
+  });
+
+  for (const [name, o, searched] of [
+    ["validated ledger == LLS (not past yet)", { validated: LLS }, false],
+    ["validated ledger below LLS", { validated: LLS - 10 }, false],
+    ["ledger answer not validated", { ledgerValidated: false }, false],
+    ["ledger RPC down", { ledgerThrows: true }, false],
+    ["unparseable ledger index", { validated: "abc" }, false],
+    ["search: searched_all false (node lacks the range)", { search: { status: "error", error: "txnNotFound", searched_all: false } }, true],
+    ["search: searched_all missing", { search: { status: "error", error: "txnNotFound" } }, true],
+    ["search: other error", { search: { status: "error", error: "tooBusy", searched_all: true } }, true],
+    ["search: found (not yet visible to the lookup)", { search: { status: "success", validated: true, hash: XRPL_TX_HASH } }, true],
+  ] as const) {
+    it(`${name} → unchanged 504 settlement_unconfirmed (unknown, never a 402)`, async () => {
+      const accept = await xrplAccept();
+      const calls = llsRpc(o as never);
+      const res = await handler()(paid(xrplPayload(accept)));
+      expect(res.status).toBe(504);
+      expect(await res.json()).toEqual(SETTLEMENT_UNCONFIRMED_BODY);
+      expect(calls.some((c) => c.method === "tx_range")).toBe(searched);
+      expect(slotStates()[0]).toMatch(/^settle_unconfirmed@\d+$/);
+    });
+  }
+
+  it("redeem path: first 504 (ledger not past LLS); later retry once past LLS and still not found → 402, slot settle_failed, never delivered", async () => {
+    const accept = await xrplAccept();
+    const p = xrplPayload(accept);
+    llsRpc({ validated: LLS - 3 });
+    expect((await handler()(paid(p))).status).toBe(504);
+    llsRpc({ validated: LLS + 1 });
+    const r2 = await handler()(paid(p));
+    expect(r2.status).toBe(402);
+    expect(r2.headers.get("payment-response")).toBeNull();
+    expect(decodePaymentRequiredHeader(r2.headers.get("payment-required")!).error).toBe("transaction_failed");
+    expect(slotStates()).toEqual(["settle_failed"]);
+    expect(reconcile().map((r) => r.reason)).toContain("redeem_never_landed_past_last_ledger");
+    expect((await handler()(paid(p))).status).toBe(402);
+    expect(ran).toBe(1);
+    expect(settleCalls).toBe(1);
+  });
+
+  it("the ledger shows the payment → it is delivered, the never-landed check is not consulted", async () => {
+    const accept = await xrplAccept();
+    const calls = llsRpc({ lookup: () => ledgerTx(accept) });
+    await expectDelivered(await handler()(paid(xrplPayload(accept))));
+    expect(calls).toEqual([]);
+  });
+
+  it("provablyNeverLanded: bad hash / missing or non-integer LLS → false without any RPC", async () => {
+    const calls = llsRpc();
+    const cfg = { rpcUrl: "https://xrplcluster.com", initTimeoutMs: 2500 } as never;
+    expect(await provablyNeverLanded(cfg, "zz", LLS)).toBe(false);
+    expect(await provablyNeverLanded(cfg, null, LLS)).toBe(false);
+    expect(await provablyNeverLanded(cfg, XRPL_TX_HASH, undefined)).toBe(false);
+    expect(await provablyNeverLanded(cfg, XRPL_TX_HASH, 1.5)).toBe(false);
+    expect(await provablyNeverLanded(cfg, XRPL_TX_HASH, 0)).toBe(false);
+    expect(calls).toEqual([]);
+    expect(await provablyNeverLanded(cfg, XRPL_TX_HASH, LLS)).toBe(true);
+  });
+});
+
+describe("(e) BLOCKER: replay-store EVAL probe, fail closed", () => {
+  let probes: number;
+  let probeImpl: () => Promise<void>;
+  /** The test store plus probeEval (the real UpstashReplayStore always has it). */
+  function withProbe() {
+    probes = 0;
+    setXrplReplayStoreForTests({
+      kind: "upstash",
+      claim: (k, t) => store.claim(k, t),
+      set: (k, st, t) => store.set(k, st, t),
+      release: (k) => store.release(k),
+      get: (k) => store.get(k),
+      cas: (k, e, n, t) => store.cas(k, e, n, t),
+      probeEval: () => (probes++, probeImpl()),
+    });
+  }
+  const evalAlerts = () => alerts.filter((a) => a.kind === "xrpl_replay_eval_unavailable");
+  const xrplIn402 = async () => {
+    const res = await handler()(unpaid());
+    expect(res.status).toBe(402);
+    const pr = decodePaymentRequiredHeader(res.headers.get("payment-required")!);
+    expect(pr.accepts.some((a) => a.network.startsWith("eip155:"))).toBe(true); // Base always stays
+    return pr.accepts.some((a) => a.network === "xrpl:0");
+  };
+
+  beforeEach(() => {
+    installXrplRpc("ready", () => ({ status: "error", error: "txnNotFound" }));
+  });
+
+  it("probe passes → XRPL in the 402; probed once per instance (cached), no ALERT", async () => {
+    probeImpl = async () => {};
+    withProbe();
+    expect(await xrplIn402()).toBe(true);
+    expect(await xrplIn402()).toBe(true);
+    expect(probes).toBe(1);
+    expect(evalAlerts()).toEqual([]);
+    expect(await xrplReplayEvalStatus()).toBe("ok");
+  });
+
+  it("probe errors → XRPL falls off the 402 (confirmed absent), HIGH ALERT once; an XRPL payment gets the Base-only 402 with nothing claimed/verified/settled", async () => {
+    const accept = await xrplAccept(); // the entry a buyer saw before the probe started failing
+    probeImpl = async () => {
+      throw new Error("ERR unknown command 'EVAL'");
+    };
+    withProbe();
+    expect(await xrplIn402()).toBe(false);
+    expect(await xrplIn402()).toBe(false);
+    expect(probes).toBe(1); // failure cached (recheck after XRPL_EVAL_FAIL_RECHECK_MS)
+    expect(evalAlerts()).toEqual([{ kind: "xrpl_replay_eval_unavailable", severity: "high", reason: "Error" }]);
+    const res = await handler()(paid(xrplPayload(accept)));
+    expect(res.status).toBe(402);
+    const pr = decodePaymentRequiredHeader(res.headers.get("payment-required")!);
+    expect(pr.error).toBe("rail_unavailable");
+    expect(pr.accepts.some((a) => a.network === "xrpl:0")).toBe(false);
+    expect(settleCalls).toBe(0);
+    expect(slotStates()).toEqual([]); // never claimed
+    expect(ran).toBe(0);
+    expect(await xrplReplayEvalStatus()).toBe("unavailable");
+  });
+
+  it("failure is rechecked after XRPL_EVAL_FAIL_RECHECK_MS; recovery brings XRPL back; a new failure episode alerts again", async () => {
+    let fail = true;
+    probeImpl = async () => {
+      if (fail) throw new Error("timeout");
+    };
+    withProbe();
+    expect(await xrplIn402()).toBe(false);
+    const t0 = Date.now();
+    const now = vi.spyOn(Date, "now");
+    now.mockReturnValue(t0 + XRPL_EVAL_FAIL_RECHECK_MS - 1000);
+    expect(await xrplReplayEvalOk()).toBe(false);
+    expect(probes).toBe(1);
+    now.mockReturnValue(t0 + XRPL_EVAL_FAIL_RECHECK_MS + 1);
+    expect(await xrplReplayEvalOk()).toBe(false); // rechecked, still failing: same episode, no second ALERT
+    expect(probes).toBe(2);
+    expect(evalAlerts()).toHaveLength(1);
+    fail = false;
+    now.mockReturnValue(t0 + 2 * XRPL_EVAL_FAIL_RECHECK_MS + 2);
+    expect(await xrplReplayEvalOk()).toBe(true);
+    expect(probes).toBe(3);
+    fail = true;
+    now.mockReturnValue(t0 + 2 * XRPL_EVAL_FAIL_RECHECK_MS + 11 * 60_000);
+    expect(await xrplReplayEvalOk()).toBe(false);
+    expect(probes).toBe(4);
+    expect(evalAlerts()).toHaveLength(2);
+  });
+
+  it("concurrent first use shares ONE probe", async () => {
+    let release!: () => void;
+    probeImpl = () => new Promise<void>((r) => (release = r));
+    withProbe();
+    const all = Promise.all([xrplReplayEvalOk(), xrplReplayEvalOk(), xrplReplayEvalOk()]);
+    await new Promise((r) => setTimeout(r, 0));
+    release();
+    expect(await all).toEqual([true, true, true]);
+    expect(probes).toBe(1);
+  });
+
+  it("memory store (no shared store; testnet only) is not probed: status not_applicable", async () => {
+    setXrplReplayStoreForTests(new MemoryReplayStore());
+    expect(await xrplReplayEvalOk()).toBe(true);
+    expect(await xrplReplayEvalStatus()).toBe("not_applicable");
+  });
+
+  it("UpstashReplayStore.probeEval sends EVAL \"return 1\" 0 (no keys, no data) and throws on an error / wrong answer / HTTP failure", async () => {
+    const sent: unknown[] = [];
+    let answer: { status: number; body: unknown } = { status: 200, body: { result: 1 } };
+    const fetchFn = (async (_u: string, init: RequestInit) => {
+      sent.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify(answer.body), { status: answer.status });
+    }) as unknown as typeof fetch;
+    const s = new UpstashReplayStore("https://x.upstash.io", "t", fetchFn);
+    await expect(s.probeEval()).resolves.toBeUndefined();
+    expect(sent).toEqual([["EVAL", EVAL_PROBE_SCRIPT, "0"]]);
+    expect(EVAL_PROBE_SCRIPT).toBe("return 1");
+    answer = { status: 200, body: { error: "ERR unknown command 'EVAL'" } };
+    await expect(s.probeEval()).rejects.toThrow();
+    answer = { status: 200, body: { result: 0 } };
+    await expect(s.probeEval()).rejects.toThrow();
+    answer = { status: 403, body: { error: "NOPERM" } };
+    await expect(s.probeEval()).rejects.toThrow();
+  });
+
+  it("default alert sink tags xrpl_replay_eval_unavailable as [ALERT][HIGH]", async () => {
+    setXrplAlertHook(null);
+    probeImpl = async () => {
+      throw new Error("x");
+    };
+    withProbe();
+    expect(await xrplReplayEvalOk()).toBe(false);
+    const lines = vi.mocked(console.error).mock.calls.map((c) => String(c[0])).filter((l) => l.includes("[ALERT][HIGH]"));
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0].slice(lines[0].indexOf("{")))).toMatchObject({ kind: "xrpl_replay_eval_unavailable", severity: "high" });
+  });
 });

@@ -67,6 +67,11 @@ export interface ReplayStore {
   get?(key: string): Promise<string | null>;
   /** Atomic compare-and-set: write `next` (TTL ttlMs) only if the current value is exactly `expected`. */
   cas?(key: string, expected: string, next: string, ttlMs: number): Promise<boolean>;
+  /**
+   * Shared stores only: run a trivial server-side script (`EVAL "return 1" 0`) and throw unless it answers 1.
+   * cas depends on EVAL; the rail treats a failing probe as the XRPL rail confirmed absent (Odin 11:44 (e)).
+   */
+  probeEval?(): Promise<void>;
   clear?(): void;
 }
 
@@ -131,6 +136,9 @@ type FetchFn = typeof fetch;
 export const CAS_SCRIPT =
   "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 else return 0 end";
 
+/** The trivial script probeEval runs: no keys, no data, answers 1. */
+export const EVAL_PROBE_SCRIPT = "return 1";
+
 export class UpstashReplayStore implements ReplayStore {
   readonly kind = "upstash" as const;
   constructor(
@@ -181,6 +189,10 @@ export class UpstashReplayStore implements ReplayStore {
   async cas(key: string, expected: string, next: string, ttlMs: number): Promise<boolean> {
     const r = await this.cmd(["EVAL", CAS_SCRIPT, 1, this.prefix + key, expected, next, Math.max(1, Math.floor(ttlMs))]);
     return r === 1 || r === "1";
+  }
+  async probeEval(): Promise<void> {
+    const r = await this.cmd(["EVAL", EVAL_PROBE_SCRIPT, 0]);
+    if (r !== 1 && r !== "1") throw new Error("upstash EVAL probe: unexpected result");
   }
   async release(key: string): Promise<void> {
     await this.cmd(["DEL", this.prefix + key]);
