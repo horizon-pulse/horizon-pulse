@@ -280,6 +280,7 @@ export function __setXrplFacilitatorTimeoutsForTests(t: { verifyMs: number; sett
 }
 
 export function resetXrplRailForTests(): void {
+  fpAlertAt.clear();
   railState = null;
   railInit = null;
   failedKey = null;
@@ -608,6 +609,26 @@ function makeKeyFn(network: string, mods: Pick<XrplModules, "decodeSignedTransac
   };
 }
 
+/**
+ * delta1 C1 (Odin 5:59 PM ET): the xrpl_redeem_fingerprint_mismatch HIGH alert fires once per slot (payment key =
+ * the slot / tx identity), then not again for that slot for XRPL_FP_ALERT_COOLDOWN_MS. The XRPL_RECONCILE line is
+ * still written on every mismatching request. IN-PROCESS only (per serverless instance, not shared across
+ * instances): N instances can each alert once per slot per cooldown, which bounds the noise without a store write.
+ */
+export const XRPL_FP_ALERT_COOLDOWN_MS = 15 * 60_000;
+const XRPL_FP_ALERT_MAX_TRACKED = 1_000;
+const fpAlertAt = new Map<string, number>();
+function fingerprintAlertDue(key: string, now: number): boolean {
+  const last = fpAlertAt.get(key);
+  if (last !== undefined && now - last < XRPL_FP_ALERT_COOLDOWN_MS) return false;
+  if (fpAlertAt.size >= XRPL_FP_ALERT_MAX_TRACKED) {
+    for (const [k, t] of fpAlertAt) if (now - t >= XRPL_FP_ALERT_COOLDOWN_MS) fpAlertAt.delete(k);
+    if (fpAlertAt.size >= XRPL_FP_ALERT_MAX_TRACKED) fpAlertAt.delete(fpAlertAt.keys().next().value!); // oldest
+  }
+  fpAlertAt.delete(key);
+  fpAlertAt.set(key, now);
+  return true;
+}
 /** Short, non-reversible fingerprint for logs / reconciliation (16 hex of the key). */
 const fp = (key: string) => key.slice(0, 16);
 
@@ -1987,7 +2008,9 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
   // payer re-signed the same Sequence). Anything else (unsigned, regular-key, multisig, bad signature) → 502 with
   // the slot untouched: no lease, no takeover, no transition, no lookup.
   const retryHash = ctx.retryBlob ? xrplSignedTxHash(ctx.retryBlob) : null;
+  let masterAccount: string | null = null;
   if (retryHash !== rec.hash) {
+    // Local signature check only (no RPC).
     const sig = ctx.retryBlob ? await xrplMasterKeySigned(ctx.retryBlob) : ({ ok: false, reason: "undecodable" } as const);
     if (!sig.ok) {
       // Odin 12:28 (1): BARE 502 body (not the redeemable "retry with the same payment" body): this blob is not
@@ -1995,13 +2018,7 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
       warn(`XRPL retry not bound to the stored tx fp=${fp(k)} (${sig.reason}); slot untouched, client gets bare 502`, undefined, false);
       return jsonError(502, "settlement_unconfirmed");
     }
-    // Delta 5 (Odin 12:17): F1(b) only. The master key must still be enabled (validated account_info, bounded);
-    // lsfDisableMaster set, or the read fails / times out → 502, slot untouched (fail closed). F1(a) never reads.
-    const master = await xrplMasterKeyEnabled(config, sig.account);
-    if (master !== "enabled") {
-      warn(`XRPL master-key re-sign rejected fp=${fp(k)} (master key ${master}); slot untouched, client gets bare 502`, undefined, false);
-      return jsonError(502, "settlement_unconfirmed");
-    }
+    masterAccount = sig.account;
   }
   // Odin 5:40 PM ET hotfix (Sentinel v3 F1 applied to XRPL): the blob / hash is public once the tx validates, so it
   // cannot say WHICH request was paid for. Redeem only for the request whose fingerprint the first use stored.
@@ -2022,10 +2039,20 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
   }
   if (ctx.rq !== rec.rq) {
     // A bound payment on a DIFFERENT request: never delivered; slot untouched so the original request can still redeem.
-    logXrplReconcile(rcEarly, 409, "redeem_fingerprint_mismatch");
-    emitAlert({ kind: "xrpl_redeem_fingerprint_mismatch", severity: "high" });
+    logXrplReconcile(rcEarly, 409, "redeem_fingerprint_mismatch"); // on EVERY mismatching request
+    if (fingerprintAlertDue(k, Date.now())) emitAlert({ kind: "xrpl_redeem_fingerprint_mismatch", severity: "high" });
     warn(`XRPL redeem refused: request fingerprint differs from the paying request fp=${fp(k)}; slot untouched, client gets 409`, undefined, false);
     return jsonError(409, "duplicate_payment");
+  }
+  if (masterAccount !== null) {
+    // Delta 5 (Odin 12:17): F1(b) only. The master key must still be enabled (validated account_info, bounded);
+    // lsfDisableMaster set, or the read fails / times out → 502, slot untouched (fail closed). F1(a) never reads.
+    // delta1 L1 (Odin 5:59 PM ET): read only AFTER the fingerprint checks, so a mismatching request spends no RPC.
+    const master = await xrplMasterKeyEnabled(config, masterAccount);
+    if (master !== "enabled") {
+      warn(`XRPL master-key re-sign rejected fp=${fp(k)} (master key ${master}); slot untouched, client gets bare 502`, undefined, false);
+      return jsonError(502, "settlement_unconfirmed");
+    }
   }
   if (rec.state === "redeeming" && rec.lease !== undefined && now - rec.lease < XRPL_REDEEM_LEASE_MS) return inProgress(k);
   const firstSeen = rec.firstSeen;

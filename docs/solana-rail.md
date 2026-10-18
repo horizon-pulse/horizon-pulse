@@ -322,6 +322,11 @@ Still applies:
   public requirement can still send locally valid (not really signed) payloads that cost one getSlot each. A per-IP
   (hashed) rate limit on Solana-paid requests would cap that RPC spend. Not built; revisit if RPC quota or rate-limit
   errors show up, or with the next Solana hardening pass.
+- **Payer proof on redeem for routes priced $1 or more: REQUIRED BEFORE THE PREMIUM LADDER SHIPS (Odin 5:57 / 6:00 PM
+  ET 10/18).** On both rails (XRPL and Solana), a redeem-on-retry for a route priced $1 or more must prove the payer:
+  master-key re-sign only (XRPL F1(b) style), no same-blob / same-payload auto-redeem. The request-fingerprint binding
+  (XRPL hotfix; Solana in shared claim v4) stays, but cannot stop a watcher who guesses a query-less / body-less
+  request. Docs only; not implemented. Also noted in `docs/xrpl-rail.md`.
 
 ## Tests / smoke
 - `npm test` (vitest): flag-off identity, flag-on shape, config/pin validation,

@@ -23,6 +23,7 @@ import {
   __setXrplTxLookupDelaysForTests,
   XRPL_EVAL_FAIL_RECHECK_MS,
   XRPL_EVAL_PROBE_DEADLINE_MS,
+  XRPL_FP_ALERT_COOLDOWN_MS,
   XRPL_IN_FLIGHT_STALE_MS,
   LSF_DISABLE_MASTER,
   __setXrplMasterCheckDeadlineForTests,
@@ -52,7 +53,7 @@ import {
 import { RLUSD_CURRENCY_HEX, RLUSD_MAINNET_ISSUER, XRPL_PAYTO, XRPL_SELF_FACILITATOR } from "@/lib/xrpl-config";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
-import { requestFingerprint } from "@/lib/request-fingerprint";
+import { normalizeQuery, requestFingerprint } from "@/lib/request-fingerprint";
 import { installXrplFacilitators, installXrplRpc, makeXrplRpc, specTx, XRPL_PAYER, XRPL_TX_HASH, xrplPayload } from "./helpers/xrpl-env";
 
 const MAIN_ENV = {
@@ -1652,7 +1653,63 @@ describe("hotfix: XRPL redeem-on-retry requires the paying request's fingerprint
     const { b1 } = await victimStuck(79_002, "https://horizonpulse.dev/api/pulse?q=v2");
     expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse", b1))).status).toBe(409); // query dropped
     expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=v2&x=1", b1))).status).toBe(409); // param added
-    expect(alerts.filter((a) => a.kind === "xrpl_redeem_fingerprint_mismatch")).toHaveLength(2);
+    // delta1 C1: same slot → ONE HIGH alert, but a reconcile line per mismatching request.
+    expect(alerts.filter((a) => a.kind === "xrpl_redeem_fingerprint_mismatch")).toHaveLength(1);
+    expect(reconcile().filter((l) => l.reason === "redeem_fingerprint_mismatch")).toHaveLength(2);
+  });
+
+  it("delta1 C1: N mismatches on one slot → 1 HIGH alert + N reconcile lines; no re-alert inside 15 min; alerts again after the cooldown; another slot alerts on its own", async () => {
+    const { accept, b1, st } = await victimStuck(79_010, "https://horizonpulse.dev/api/pulse?q=c1");
+    const fpAlerts = () => alerts.filter((a) => a.kind === "xrpl_redeem_fingerprint_mismatch").length;
+    const lines = () => reconcile().filter((l) => l.reason === "redeem_fingerprint_mismatch" && l.txHash === hashOf(b1)).length;
+    const N = 5;
+    for (let i = 0; i < N; i++) expect((await handler()(paidAt(`https://horizonpulse.dev/api/pulse?q=atk${i}`, b1))).status).toBe(409);
+    expect(fpAlerts()).toBe(1);
+    expect(lines()).toBe(N);
+    const t0 = Date.now();
+    const now = vi.spyOn(Date, "now");
+    try {
+      now.mockReturnValue(t0 + XRPL_FP_ALERT_COOLDOWN_MS - 1_000); // still inside the cooldown
+      expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=late", b1))).status).toBe(409);
+      expect(fpAlerts()).toBe(1);
+      expect(lines()).toBe(N + 1);
+      now.mockReturnValue(t0 + XRPL_FP_ALERT_COOLDOWN_MS + 1_000); // cooldown over → alerts again (once)
+      expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=after", b1))).status).toBe(409);
+      expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=after2", b1))).status).toBe(409);
+      expect(fpAlerts()).toBe(2);
+      expect(lines()).toBe(N + 3);
+    } finally {
+      now.mockRestore();
+    }
+    // A different slot (another payment) has its own once-per-slot alert.
+    const b2 = signedPayload(accept, { Sequence: 79_011 });
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=c1b", b2))).status).toBe(504);
+    st.landed.add(hashOf(b2));
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=x", b2))).status).toBe(409);
+    expect(fpAlerts()).toBe(3);
+    // The victim's own retry is unaffected by the dedupe.
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=c1", b1)));
+  });
+
+  it("delta1 L1: a master-key re-sign on ANOTHER request is refused 409 with ZERO account_info calls (fingerprint checked first)", async () => {
+    const { accept, rpc } = await victimStuck(79_012, "https://horizonpulse.dev/api/pulse?q=l1");
+    const resigned = signedPayload(accept, { Sequence: 79_012, LastLedgerSequence: 1_000_050, Fee: "15" }, "master");
+    rpc.accountInfo.length = 0;
+    rpc.lookups.length = 0;
+    const before = slotRaw();
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=other", resigned))).status).toBe(409);
+    expect(rpc.accountInfo).toEqual([]);
+    expect(rpc.lookups).toEqual([]);
+    expect(slotRaw()).toBe(before);
+    // On the paying request the master key is still checked (exactly one account_info), then delivered.
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=l1", resigned)));
+    expect(rpc.accountInfo).toEqual([walletA.classicAddress]);
+  });
+
+  it("delta1 sort: reordered DUPLICATE keys are the same request (sorted by key, then value) → delivered", async () => {
+    const { b1 } = await victimStuck(79_013, "https://horizonpulse.dev/api/pulse?t=b&q=1&t=a");
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?t=a&t=b&q=1", b1)));
+    expect(alerts.some((a) => a.kind === "xrpl_redeem_fingerprint_mismatch")).toBe(false);
   });
 
   it("legitimate same-request retry: query order / percent-encoding differences normalize away → delivered once", async () => {
@@ -1705,6 +1762,13 @@ describe("hotfix: XRPL redeem-on-retry requires the paying request's fingerprint
     const base = await f("https://h.dev/api/x?a=1&b=2");
     expect(base).toMatch(/^[0-9a-f]{64}$/);
     expect(await f("https://h.dev/api/x?b=2&a=1")).toBe(base);
+    // delta1: duplicate keys sort by key, then value (reordered duplicates normalize; different values do not).
+    const dup = await f("https://h.dev/api/x?a=2&b=1&a=1");
+    expect(await f("https://h.dev/api/x?a=1&a=2&b=1")).toBe(dup);
+    expect(await f("https://h.dev/api/x?b=1&a=1&a=2")).toBe(dup);
+    expect(await f("https://h.dev/api/x?a=1&a=3&b=1")).not.toBe(dup);
+    expect(await f("https://h.dev/api/x?a=1&b=1")).not.toBe(dup);
+    expect(normalizeQuery("?t=b&q=1&t=a")).toBe("q=1&t=a&t=b");
     expect(await f("https://h.dev/api/x?b=2&a=1", { headers: { "x-anything": "1", "payment-signature": "zz" } })).toBe(base);
     expect(await f("https://other.host/api/x?a=1&b=2")).toBe(base); // host is not bound (same deployment, any alias)
     expect(await f("https://h.dev/api/X?a=1&b=2")).not.toBe(base);
