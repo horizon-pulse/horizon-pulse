@@ -617,7 +617,7 @@ export function xrplSignedTxHash(blobHex: string): string | null {
  * the signature cryptographically verified? Single-signed only: multisig (Signers), regular-key (SigningPubKey of
  * another account) and unsigned blobs are rejected. Never throws (any error → not ok).
  */
-export type XrplMasterSigResult = { ok: true } | { ok: false; reason: "unsigned" | "multisig" | "not_master_key" | "bad_signature" | "undecodable" };
+export type XrplMasterSigResult = { ok: true; account: string } | { ok: false; reason: "unsigned" | "multisig" | "not_master_key" | "bad_signature" | "undecodable" };
 async function defaultMasterSigCheck(blobHex: string): Promise<XrplMasterSigResult> {
   try {
     const x = await import("xrpl");
@@ -627,7 +627,7 @@ async function defaultMasterSigCheck(blobHex: string): Promise<XrplMasterSigResu
     const sig = tx.TxnSignature;
     if (typeof pub !== "string" || !/^[0-9A-Fa-f]{66}$/.test(pub) || typeof sig !== "string" || sig.length === 0) return { ok: false, reason: "unsigned" };
     if (typeof tx.Account !== "string" || x.deriveAddress(pub) !== tx.Account) return { ok: false, reason: "not_master_key" };
-    return x.verifySignature(blobHex) ? { ok: true } : { ok: false, reason: "bad_signature" };
+    return x.verifySignature(blobHex) ? { ok: true, account: tx.Account } : { ok: false, reason: "bad_signature" };
   } catch {
     return { ok: false, reason: "undecodable" };
   }
@@ -637,6 +637,35 @@ export const xrplMasterKeySigned = (blobHex: string): Promise<XrplMasterSigResul
 /** Tests only: replace the signature check (null = the real xrpl.js check). */
 export function __setXrplMasterSigCheckForTests(fn: ((blobHex: string) => Promise<XrplMasterSigResult>) | null): void {
   masterSigCheck = fn ?? defaultMasterSigCheck;
+}
+
+/**
+ * Odin 12:17 (delta 5, decision 2): a master-key signature only binds if the master key is still ENABLED on the
+ * validated ledger. One read-only `account_info` (ledger_index validated) for the Account, bounded by
+ * XRPL_MASTER_CHECK_DEADLINE_MS. "enabled" only when the answer is validated and Flags lacks lsfDisableMaster;
+ * lsfDisableMaster → "disabled"; any error / non-validated / malformed / timeout → "unknown" (callers fail closed).
+ */
+export const LSF_DISABLE_MASTER = 0x00100000;
+export const XRPL_MASTER_CHECK_DEADLINE_MS = 2_000;
+let masterCheckDeadlineMs = XRPL_MASTER_CHECK_DEADLINE_MS;
+/** Tests only: shorten the master-key check deadline (null = default). */
+export function __setXrplMasterCheckDeadlineForTests(ms: number | null): void {
+  masterCheckDeadlineMs = ms ?? XRPL_MASTER_CHECK_DEADLINE_MS;
+}
+export async function xrplMasterKeyEnabled(config: XrplRailConfig, account: string): Promise<"enabled" | "disabled" | "unknown"> {
+  try {
+    const ms = Math.max(1, Math.min(config.initTimeoutMs, masterCheckDeadlineMs));
+    const r = asResult(
+      await withTimeout(rpc(config.rpcUrl, "account_info", { account, ledger_index: "validated" }, ms), ms, "XRPL master-key check"),
+      "account_info",
+    );
+    if (r.status === "error" || r.validated !== true) return "unknown";
+    const flags = (r.account_data as { Flags?: unknown; Account?: unknown } | undefined)?.Flags;
+    if (typeof flags !== "number" || !Number.isInteger(flags)) return "unknown";
+    return (flags & LSF_DISABLE_MASTER) !== 0 ? "disabled" : "enabled";
+  } catch {
+    return "unknown";
+  }
 }
 
 /** Everything a human needs to reconcile one ambiguous XRPL settlement. */
@@ -1694,6 +1723,12 @@ export const XRPL_LLS_CHECK_DEADLINE_MS = 2_500;
 export const XRPL_LLS_SEARCH_SPAN = 999;
 export const XRPL_WORST_CASE_MS =
   XRPL_MAX_INIT_TIMEOUT_MS + XRPL_VERIFY_TIMEOUT_MS + XRPL_SETTLE_TIMEOUT_MS + XRPL_TX_LOOKUP_DEADLINE_MS + XRPL_LLS_CHECK_DEADLINE_MS;
+/**
+ * Delta 5: the redeem path (no verify, no settle) = init + master-key check (F1(b) only) + validated-tx lookup +
+ * never-landed proof. Asserted ≤ XRPL_WORST_CASE_MS (so it fits every XRPL route's existing budget).
+ */
+export const XRPL_REDEEM_WORST_CASE_MS =
+  XRPL_MAX_INIT_TIMEOUT_MS + XRPL_MASTER_CHECK_DEADLINE_MS + XRPL_TX_LOOKUP_DEADLINE_MS + XRPL_LLS_CHECK_DEADLINE_MS;
 let txLookupDelays: readonly number[] = XRPL_TX_LOOKUP_DELAYS_MS;
 /** Tests only: shrink the backoff (null = defaults). */
 export function __setXrplTxLookupDelaysForTests(d: readonly number[] | null): void {
@@ -1903,6 +1938,13 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
     if (!sig.ok) {
       warn(`XRPL retry not bound to the stored tx fp=${fp(k)} (${sig.reason}); slot untouched, client gets 502`, undefined, false);
       return unconfirmed(502);
+    }
+    // Delta 5 (Odin 12:17): F1(b) only. The master key must still be enabled (validated account_info, bounded);
+    // lsfDisableMaster set, or the read fails / times out → 502, slot untouched (fail closed). F1(a) never reads.
+    const master = await xrplMasterKeyEnabled(config, sig.account);
+    if (master !== "enabled") {
+      warn(`XRPL master-key re-sign rejected fp=${fp(k)} (master key ${master}); slot untouched, client gets bare 502`, undefined, false);
+      return jsonError(502, "settlement_unconfirmed");
     }
   }
   if (rec.state === "redeeming" && rec.lease !== undefined && now - rec.lease < XRPL_REDEEM_LEASE_MS) return inProgress(k);

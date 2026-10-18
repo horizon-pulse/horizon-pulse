@@ -13,6 +13,8 @@ import {
   XRPL_WORST_CASE_MS,
   XRPL_IN_FLIGHT_STALE_MS,
   XRPL_REDEEM_LEASE_MS,
+  XRPL_MASTER_CHECK_DEADLINE_MS,
+  XRPL_REDEEM_WORST_CASE_MS,
 } from "@/lib/xrpl-rail";
 
 /** Time left for the route handler itself after the XRPL worst case. */
@@ -66,6 +68,8 @@ describe("XRPL time budget", () => {
  * Delta 4 C1 (Odin 12:07): the route list is DERIVED from the code, not hand-listed: every route.ts under app/
  * whose static import graph (from / import(), "@/", relative, .ts/.tsx/index.ts) reaches lib/xrpl-rail.ts.
  */
+/** route.ts plus the dark-route flag extensions route.<flag>.ts (next.config.ts pageExtensions). */
+const ROUTE_FILE = /^route(\.[a-z]+)?\.ts$/;
 function xrplCapableRouteFiles(): string[] {
   const root = path.join(__dirname, "..");
   const target = path.join(root, "lib", "xrpl-rail.ts");
@@ -100,7 +104,8 @@ function xrplCapableRouteFiles(): string[] {
     for (const e of readdirSync(d, { withFileTypes: true })) {
       const p = path.join(d, e.name);
       if (e.isDirectory()) walk(p);
-      else if (e.name === "route.ts" && reaches(p, new Set())) out.push(p);
+      // Delta 5 (Odin 12:19): dark-route extensions (route.audit.ts / route.pkg.ts / route.inj.ts ...) count too.
+      else if (ROUTE_FILE.test(e.name) && reaches(p, new Set())) out.push(p);
     }
   };
   walk(path.join(root, "app"));
@@ -108,9 +113,13 @@ function xrplCapableRouteFiles(): string[] {
 }
 
 describe("C1: every XRPL-capable route finishes before an in_flight slot can be taken over", () => {
-  it("each route whose import graph reaches lib/xrpl-rail.ts exports maxDuration < XRPL_IN_FLIGHT_STALE_MS (90 s) and < XRPL_REDEEM_LEASE_MS", () => {
+  it("each route (route.ts and dark route.<flag>.ts) whose import graph reaches lib/xrpl-rail.ts exports maxDuration < XRPL_IN_FLIGHT_STALE_MS (90 s) and < XRPL_REDEEM_LEASE_MS", () => {
     const files = xrplCapableRouteFiles();
     expect(files.length).toBeGreaterThanOrEqual(15);
+    // Dark routes are derived too (not hand-listed): at least audit / pkg / inj reach the XRPL rail today.
+    const dark = files.filter((f) => /route\.[a-z]+\.ts$/.test(f)).map((f) => path.basename(f));
+    expect(dark.length).toBeGreaterThanOrEqual(3);
+    for (const ext of ["route.audit.ts", "route.pkg.ts", "route.inj.ts"]) expect(dark).toContain(ext);
     for (const f of paidRouteFiles()) expect(files).toContain(f); // superset of the regex-based paid list
     expect(XRPL_IN_FLIGHT_STALE_MS).toBe(90_000);
     for (const f of files) {
@@ -120,5 +129,14 @@ describe("C1: every XRPL-capable route finishes before an in_flight slot can be 
       expect(ms, f).toBeLessThan(XRPL_IN_FLIGHT_STALE_MS);
       expect(ms, f).toBeLessThan(XRPL_REDEEM_LEASE_MS);
     }
+  });
+});
+
+describe("Delta 5: the F1(b) master-key account_info read fits the existing budget", () => {
+  it("master check 2 s; redeem worst case (init + master check + lookup + never-landed) ≤ XRPL_WORST_CASE_MS, + margin < maxDuration", () => {
+    expect(XRPL_MASTER_CHECK_DEADLINE_MS).toBe(2_000);
+    expect(XRPL_REDEEM_WORST_CASE_MS).toBe(XRPL_MAX_INIT_TIMEOUT_MS + XRPL_MASTER_CHECK_DEADLINE_MS + XRPL_TX_LOOKUP_DEADLINE_MS + XRPL_LLS_CHECK_DEADLINE_MS);
+    expect(XRPL_REDEEM_WORST_CASE_MS).toBeLessThanOrEqual(XRPL_WORST_CASE_MS);
+    expect(XRPL_REDEEM_WORST_CASE_MS + HANDLER_MARGIN_MS).toBeLessThan(XRPL_ROUTE_MAX_DURATION_S * 1000);
   });
 });

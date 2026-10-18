@@ -23,6 +23,8 @@ import {
   __setXrplTxLookupDelaysForTests,
   XRPL_EVAL_FAIL_RECHECK_MS,
   XRPL_IN_FLIGHT_STALE_MS,
+  LSF_DISABLE_MASTER,
+  __setXrplMasterCheckDeadlineForTests,
   provablyNeverLanded,
   resetXrplRailForTests,
   xrplSignedTxHash,
@@ -770,22 +772,35 @@ function signedPayload(accept: PaymentRequirements, over: Record<string, unknown
 const slotRaw = () => [...((store as unknown as { m: Map<string, { state: string }> }).m.values())].map((e) => e.state)[0];
 
 /** Ledger keyed by hash: `landed` = the hashes validated on-ledger; `validated` = validated ledger index. */
-function slotRpc(accept: PaymentRequirements, st: { landed: Set<string>; validated: number; account?: string }) {
+type MasterMode = "enabled" | "disabled" | "rpc_error" | "throws" | "timeout" | "not_validated";
+function slotRpc(accept: PaymentRequirements, st: { landed: Set<string>; validated: number; account?: string; master?: MasterMode }) {
   const lookups: string[] = [];
   const ranges: Record<string, unknown>[] = [];
+  /** Delta 5: account_info reads for any account other than payTo (= the F1(b) master-key check). */
+  const accountInfo: string[] = [];
   const base = makeXrplRpc("ready", (h) => {
     lookups.push(h);
     return st.landed.has(h) ? { ...ledgerTx(accept, { account: st.account }), hash: h } : { status: "error", error: "txnNotFound" };
   });
   __setXrplRpcForTests(async (url, method, params, t) => {
     if (method === "ledger") return { status: "success", validated: true, ledger_index: st.validated };
+    if (method === "account_info" && params.account !== accept.payTo) {
+      accountInfo.push(String(params.account));
+      expect(params.ledger_index).toBe("validated");
+      const mode = st.master ?? "enabled";
+      if (mode === "throws") throw new Error("rpc down");
+      if (mode === "timeout") return new Promise(() => {});
+      if (mode === "rpc_error") return { status: "error", error: "tooBusy" };
+      const flags = mode === "disabled" ? LSF_DISABLE_MASTER | 0x00010000 : 0x00010000; // + an unrelated flag
+      return { status: "success", validated: mode !== "not_validated", account_data: { Account: params.account, Flags: flags } };
+    }
     if (method === "tx" && params.max_ledger !== undefined) {
       ranges.push(params);
       return st.landed.has(String(params.transaction)) ? { status: "success", validated: true } : { status: "error", error: "txnNotFound", searched_all: true };
     }
     return base.fn(url, method, params, t);
   });
-  return { lookups, ranges };
+  return { lookups, ranges, accountInfo };
 }
 
 describe("H1 (BLOCKER): the retry blob only LOCATES the slot; lookups and the never-landed proof use the STORED submitted tx", () => {
@@ -1262,5 +1277,81 @@ describe("N6: proven never-landed ⇒ atomic owner/value-checked DELETE (never s
     const r = await handler()(paid(xrplPayload(accept)));
     expect(r.status).toBe(402);
     expect(slotRaw()).toBe(swapped);
+  });
+});
+
+describe("Delta 5 (Odin 12:17): F1(b) master-key re-sign also needs the master key ENABLED (validated account_info, fail closed)", () => {
+  beforeEach(() => {
+    settleImpl = async () => {
+      throw new Error("ws closed");
+    };
+  });
+  afterEach(() => __setXrplMasterCheckDeadlineForTests(null));
+  async function stuckLanded(S: number, master: MasterMode) {
+    const accept = await xrplAccept();
+    const b1 = signedPayload(accept, { Sequence: S });
+    const st = { landed: new Set<string>(), validated: 999_000, account: walletA.classicAddress, master };
+    const rpc = slotRpc(accept, st);
+    expect((await handler()(paid(b1))).status).toBe(504);
+    st.landed.add(hashOf(b1));
+    const b2 = signedPayload(accept, { Sequence: S, LastLedgerSequence: 1_000_050, Fee: "15" });
+    rpc.lookups.length = 0;
+    rpc.ranges.length = 0;
+    rpc.accountInfo.length = 0;
+    return { accept, b1, b2, st, rpc };
+  }
+
+  it("master key enabled → the re-signer gets the ORIGINAL's delivery after exactly ONE account_info (validated) for the Account", async () => {
+    const { b1, b2, rpc } = await stuckLanded(79_001, "enabled");
+    const r = await handler()(paid(b2));
+    expect(r.status).toBe(200);
+    expect(JSON.parse(Buffer.from(r.headers.get("payment-response")!, "base64").toString())).toMatchObject({ transaction: hashOf(b1) });
+    expect(rpc.accountInfo).toEqual([walletA.classicAddress]);
+  });
+
+  for (const [mode, label] of [
+    ["disabled", "lsfDisableMaster set"],
+    ["rpc_error", "account_info answers an rpc error"],
+    ["throws", "account_info read fails (network)"],
+    ["timeout", "account_info read times out"],
+    ["not_validated", "account_info answer not validated"],
+  ] as const) {
+    it(`${label} → bare 502, slot UNTOUCHED, no lease, no tx lookup, handler not run (fail closed); the exact blob still redeems`, async () => {
+      if (mode === "timeout") __setXrplMasterCheckDeadlineForTests(25);
+      const { b1, b2, st, rpc } = await stuckLanded(79_100 + mode.length, mode);
+      const before = slotRaw();
+      const ranBefore = ran;
+      const t0 = Date.now();
+      const r = await handler()(paid(b2));
+      expect(r.status).toBe(502);
+      expect(await r.json()).toEqual({ error: "settlement_unconfirmed" }); // bare
+      expect(r.headers.get("payment-response")).toBeNull();
+      expect(r.headers.get("payment-required")).toBeNull();
+      expect(slotRaw()).toBe(before);
+      expect(rpc.accountInfo).toEqual([walletA.classicAddress]);
+      expect(rpc.lookups).toEqual([]);
+      expect(rpc.ranges).toEqual([]);
+      expect(ran).toBe(ranBefore);
+      expect(settleCalls).toBe(1);
+      if (mode === "timeout") expect(Date.now() - t0).toBeLessThan(2_000);
+      // F1(a): the exact blob makes NO account_info call and redeems.
+      st.master = "throws";
+      rpc.accountInfo.length = 0;
+      expect((await handler()(paid(b1))).status).toBe(200);
+      expect(rpc.accountInfo).toEqual([]);
+    });
+  }
+
+  it("F1(a) exact-hash retry makes NO account_info call (even with account_info broken)", async () => {
+    const { b1, rpc } = await stuckLanded(79_200, "throws");
+    expect((await handler()(paid(b1))).status).toBe(200);
+    expect(rpc.accountInfo).toEqual([]);
+  });
+
+  it("the read happens only after the signature check: an unsigned retry gets 502 without any account_info", async () => {
+    const { accept, rpc } = await stuckLanded(79_300, "enabled");
+    const bad = signedPayload(accept, { Sequence: 79_300, LastLedgerSequence: 1_000_050 }, "unsigned");
+    expect((await handler()(paid(bad))).status).toBe(502);
+    expect(rpc.accountInfo).toEqual([]);
   });
 });
