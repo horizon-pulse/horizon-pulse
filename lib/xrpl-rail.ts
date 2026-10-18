@@ -1134,7 +1134,8 @@ export function coldXrplRequirement(config: XrplRailConfig, atomicUsdc: string):
     asset: price.asset,
     payTo: config.payTo,
     maxTimeoutSeconds: MAX_TIMEOUT_SECONDS,
-    extra: { issuer: config.issuer, areFeesSponsored: false, ...(config.assetTransferMethod ? { assetTransferMethod: config.assetTransferMethod } : {}) },
+    // Same key order as the SDK-built entry: route extra (issuer, assetTransferMethod) first, then the facilitator's areFeesSponsored.
+    extra: { issuer: config.issuer, ...(config.assetTransferMethod ? { assetTransferMethod: config.assetTransferMethod } : {}), areFeesSponsored: false },
   } as PaymentRequirements;
   assertXrplRequirement(req, config, atomicUsdc);
   return req;

@@ -52,6 +52,7 @@ import {
 } from "./helpers/xrpl-env";
 import { installRpc as installSolanaRpc } from "./helpers/solana-env";
 import { SOLANA_PAYTO } from "@/lib/solana-config";
+import { RLUSD_CURRENCY_HEX, rlusdIssuerFor, usdcAtomicToRlusdValue, type XrplRailNetwork } from "@/lib/xrpl-config";
 
 const golden = JSON.parse(readFileSync(path.join(__dirname, "fixtures", "x402-flag-off.golden.json"), "utf8"));
 
@@ -84,12 +85,21 @@ function stripColdXrpl(cap: Awaited<ReturnType<typeof captureAll>>): { stripped:
     withX++;
     expect(last.payTo).toBe(process.env.HP_XRPL_PAYTO);
     expect(pr.accepts.filter((a) => a.network.startsWith("xrpl:"))).toHaveLength(1);
+    // Odin Class A d37e7aa (5): money fields too, not just payTo. Amount = the route's USDC price in RLUSD.
+    const base = pr.accepts.find((a) => a.network.startsWith("eip155:"));
+    expect(base).toBeDefined();
+    expect(last.amount).toBe(usdcAtomicToRlusdValue(base!.amount));
+    expect(last.asset).toBe(RLUSD_CURRENCY_HEX);
+    expect((last.extra as Record<string, unknown>).issuer).toBe(rlusdIssuerFor(last.network as XrplRailNetwork));
     pr.accepts = pr.accepts.slice(0, -1);
     const headers = c.headers.map(([k, v], j): [string, string] => (j === i ? [k, encodePaymentRequiredHeader(pr)] : [k, v]));
     let body = c.body;
     try {
       const parsed = JSON.parse(body) as { x402Version?: unknown; accepts?: PaymentRequirements[] };
       if (parsed?.x402Version === 2 && Array.isArray(parsed.accepts)) {
+        const xs = parsed.accepts.filter((a) => a.network.startsWith("xrpl:"));
+        expect(xs).toHaveLength(1); // exactly one, and the same entry as the header
+        expect(JSON.stringify(xs[0])).toBe(JSON.stringify(last));
         parsed.accepts = parsed.accepts.filter((a) => !a.network.startsWith("xrpl:"));
         body = JSON.stringify(parsed);
       }

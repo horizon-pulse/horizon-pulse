@@ -168,6 +168,23 @@ describe("XRPL in the 402 on a cold start unless confirmed absent (Odin 11:08)",
     expect(JSON.stringify(await xrplEntry(handler()))).toBe(ref);
   });
 
+  for (const atm of ["sequence", "ticketSequence"]) {
+    it(`assetTransferMethod=${atm} AND rail down (cold entry actually used) → byte-identical to the SDK entry, extra key order included (Odin C1)`, async () => {
+      const ref = await healthyEntry({ HP_XRPL_ASSET_TRANSFER_METHOD: atm });
+      const sup = vi.fn((url: string) => {
+        if (url !== XRPL_FAC) throw new Error(`unexpected ${url}`);
+        throw new Error("fetch failed: ECONNRESET");
+      });
+      installXrplFacilitators({ supported: sup });
+      installStepRpc(() => "timeout");
+      const e = await xrplEntry(handler());
+      expect(sup).toHaveBeenCalled(); // rail init really failed → coldXrplRequirement built this entry
+      expect(JSON.stringify(e)).toBe(ref);
+      expect(Object.keys(e!.extra as object)).toEqual(Object.keys(JSON.parse(ref).extra));
+      expect((e!.extra as Record<string, unknown>).assetTransferMethod).toBe(atm);
+    });
+  }
+
   for (const mode of ["unactivated", "no_trustline", "frozen", "zero_limit", "dest_tag", "deposit_auth"] as ReadyMode[]) {
     it(`confirmed absence on a cold start (${mode}) → hidden + one ALERT xrpl_entry_dropped payto_not_ready`, async () => {
       installXrplFacilitators();
