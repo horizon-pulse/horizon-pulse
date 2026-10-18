@@ -189,7 +189,7 @@ describe("XRPL rail keep-present (Odin Class A follow-up 2026-10-17)", () => {
     }
   });
 
-  it("confirmed absence hides XRPL at once: trust line removed / account gone (+ one ALERT)", async () => {
+  it("confirmed absence hides XRPL at next check: trust line removed / account gone (+ one ALERT)", async () => {
     installXrplFacilitators();
     on();
     let mode: Behaviour = "ready";
