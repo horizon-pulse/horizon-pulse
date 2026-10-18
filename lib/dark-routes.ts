@@ -38,7 +38,7 @@ export function darkEnabled(route: DarkRoute, env: Record<string, string | undef
 export const AUDIT_HIGH_TIERS_FLAG = "HP_AUDIT_HIGH_TIERS_ENABLED";
 export const AUDIT_HIGH_TIER_IDS: readonly string[] = ["full", "history", "deep"];
 export function auditTierEnabled(t: Pick<Tier, "id">, env: Record<string, string | undefined> = process.env): boolean {
-  return !AUDIT_HIGH_TIER_IDS.includes(t.id) || env[AUDIT_HIGH_TIERS_FLAG] === "true";
+  return !AUDIT_HIGH_TIER_IDS.includes(t.id) || auditHighTiersEnabled(env);
 }
 
 // ---------------------------------------------------------------------------
@@ -85,9 +85,24 @@ export function findTier(tiers: readonly Tier[], id: string | null | undefined, 
 // ---------------------------------------------------------------------------
 // Descriptions (402 resource.description; <= 500 chars; facts only)
 // ---------------------------------------------------------------------------
+/**
+ * Audit route copy follows HP_AUDIT_HIGH_TIERS_ENABLED (Odin 11:15 PM ET 10/17).
+ * Flag ON: the full copy below (unchanged). Flag OFF: no full/history/deep tiers and
+ * no certificate history. Counsel's sentence ("Automated checks, not a professional
+ * audit or penetration test; informational only, no warranty.") is identical in both.
+ */
+export const AUDIT_DESCRIPTION_HIGH_TIERS =
+  "Web readiness checks for one public host: HTTPS redirect, TLS certificate and expiry, HTTP response headers (HSTS, CSP, frame-embedding, nosniff, referrer), security.txt, DNS, SPF, DMARC and DKIM hints. tier=quick|standard|extended|report|full|history|deep; deeper tiers add checks, CT history and suggested fixes. Automated checks, not a professional audit or penetration test; informational only, no warranty. Callers need the right to check the target. Bad input or unreachable: not charged.";
+export const AUDIT_DESCRIPTION_BASE =
+  "Web readiness checks for one public host: HTTPS redirect, TLS certificate and expiry, HTTP response headers (HSTS, CSP, frame-embedding, nosniff, referrer), security.txt, DNS, SPF, DMARC and DKIM hints. tier=quick|standard|extended|report; deeper tiers add checks, a fix line per finding and a markdown report. Automated checks, not a professional audit or penetration test; informational only, no warranty. Callers need the right to check the target. Bad input or unreachable: not charged.";
+export function auditHighTiersEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env[AUDIT_HIGH_TIERS_FLAG] === "true";
+}
+
+/** DARK_DESCRIPTIONS["/api/audit/security"] is the flag-ON copy; use darkDescription() for what is served. */
 export const DARK_DESCRIPTIONS = {
   "/api/audit/security":
-    "Web readiness checks for one public host: HTTPS redirect, TLS certificate and expiry, HTTP response headers (HSTS, CSP, frame-embedding, nosniff, referrer), security.txt, DNS, SPF, DMARC and DKIM hints. tier=quick|standard|extended|report|full|history|deep; deeper tiers add checks, CT history and suggested fixes. Automated checks, not a professional audit or penetration test; informational only, no warranty. Callers need the right to check the target. Bad input or unreachable: not charged.",
+    AUDIT_DESCRIPTION_HIGH_TIERS,
   "/api/package/check":
     "npm or PyPI package signals before install: exists, first publish age, weekly downloads, maintainer count, license, typosquat distance to popular names, known vulnerabilities from OSV.dev (attributed per record). GET ecosystem (npm|pypi), name, optional version, tier=base|deep (deep adds vulnerability details, install scripts, deprecation, release cadence). Informational only, no warranty. Bad input or registry down: not charged.",
   "/api/injection/scan":
@@ -101,18 +116,24 @@ export const DARK_DESCRIPTIONS = {
  * Bare-path key: every verb is paid with this one accepts entry. No `extensions`
  * (no Bazaar discovery) and no serviceMetadata while dark.
  */
+/** The description actually served for a dark route (audit copy follows HP_AUDIT_HIGH_TIERS_ENABLED). */
+export function darkDescription(path: keyof typeof DARK_DESCRIPTIONS, env: Record<string, string | undefined> = process.env): string {
+  if (path === "/api/audit/security") return auditHighTiersEnabled(env) ? AUDIT_DESCRIPTION_HIGH_TIERS : AUDIT_DESCRIPTION_BASE;
+  return DARK_DESCRIPTIONS[path];
+}
+
 export function darkRouteConfig(path: keyof typeof DARK_DESCRIPTIONS, t: Tier): RoutesConfig {
   return {
     [path]: {
       accepts: [{ scheme: "exact", price: t.usd, network: getNetworkCaip2(), payTo: getPayTo() }],
-      description: DARK_DESCRIPTIONS[path],
+      description: darkDescription(path),
       mimeType: "application/json",
     },
   };
 }
 
 export function darkPaymentOpts(path: keyof typeof DARK_DESCRIPTIONS, t: Tier) {
-  return { maxAmountRequired: t.atomicStr, resource: path, description: DARK_DESCRIPTIONS[path] } as const;
+  return { maxAmountRequired: t.atomicStr, resource: path, description: darkDescription(path) } as const;
 }
 
 // ---------------------------------------------------------------------------

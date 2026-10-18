@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pricedBlock } from "@/lib/paid-rail";
 import { AUDIT_TARGET_PER_MINUTE, auditTierEnabled, type Tier } from "@/lib/dark-routes";
-import { defaultAuditDeps, METHOD, parseTarget, runAudit, type AuditDeps, type AuditTier } from "@/lib/audit-security";
+import { auditMethod, defaultAuditDeps, parseTarget, runAudit, type AuditDeps, type AuditTier } from "@/lib/audit-security";
 import { DISCLAIMER, isOptedOut, upstashLimiter, type SharedLimiter } from "@/lib/dark-checks-shared";
 
 /** Rate-limit key: parseTarget already lowercased, dropped scheme/port/path/trailing dot; www. and apex count as one site (Odin LOW). */
@@ -40,7 +40,7 @@ export async function auditHandler(req: NextRequest, tier: Tier, receiptId: stri
     receipt: { id: receiptId, route: "/api/audit/security", tier: tier.id, amountAtomic: tier.atomicStr, issuedAt: new Date().toISOString() },
     asOf: new Date().toISOString(),
     ...r.report,
-    method: METHOD,
+    method: auditMethod(),
     disclaimer: DISCLAIMER,
   });
 }

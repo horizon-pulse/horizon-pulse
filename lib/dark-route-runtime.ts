@@ -19,7 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createX402GetHandler, discoveryOptionsResponse } from "./x402-server";
 import { DISCLAIMER } from "./dark-checks-shared";
-import { clientKey, darkEnabled, darkPaymentOpts, darkRouteConfig, DARK_DESCRIPTIONS, DARK_RATE_LIMITS, findTier, newReceiptId, rateLimitHit, RECEIPT_HEADER, type DarkRoute, type Tier } from "./dark-routes";
+import { clientKey, darkDescription, darkEnabled, darkPaymentOpts, darkRouteConfig, DARK_DESCRIPTIONS, DARK_RATE_LIMITS, findTier, newReceiptId, rateLimitHit, RECEIPT_HEADER, type DarkRoute, type Tier } from "./dark-routes";
 
 type Path = keyof typeof DARK_DESCRIPTIONS;
 export type TierHandler = (req: NextRequest, tier: Tier, receiptId: string) => Promise<NextResponse>;
@@ -38,7 +38,9 @@ export function makeDarkRoute(opts: {
   const enabled = (t: Tier) => (opts.tierEnabled ? opts.tierEnabled(t) : true);
   const paid = new Map<string, (req: NextRequest) => Promise<NextResponse>>();
   const tierHandler = (t: Tier) => {
-    let h = paid.get(t.id);
+    // Keyed by tier AND served description, so a copy flag change (HP_AUDIT_HIGH_TIERS_ENABLED) is never served stale.
+    const key = `${t.id}|${darkDescription(opts.path)}`;
+    let h = paid.get(key);
     if (!h) {
       h = createX402GetHandler(
         async (req) => {
@@ -56,7 +58,7 @@ export function makeDarkRoute(opts: {
         darkRouteConfig(opts.path, t),
         darkPaymentOpts(opts.path, t),
       ) as (req: NextRequest) => Promise<NextResponse>;
-      paid.set(t.id, h);
+      paid.set(key, h);
     }
     return h;
   };

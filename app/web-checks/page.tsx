@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CONTACT_EMAIL } from "@/lib/config";
-import { darkEnabled } from "@/lib/dark-routes";
+import { auditHighTiersEnabled, darkEnabled } from "@/lib/dark-routes";
 import { CHECK_USER_AGENT, DATA_USER_AGENT, optOutList } from "@/lib/dark-checks-shared";
 
 // Read the flag per request: dark (404) exactly when the web readiness checks route is dark (Counsel C3).
@@ -19,6 +19,9 @@ export const metadata: Metadata = {
 export default function WebChecksPage() {
   if (!darkEnabled("audit")) notFound();
   const optOut = optOutList();
+  // Certificate history (crt.sh) is only part of the checks when the high tiers are on (HP_AUDIT_HIGH_TIERS_ENABLED).
+  const ctHistory = auditHighTiersEnabled();
+  const dataSources = ctHistory ? "npm, PyPI, pypistats, OSV.dev, crt.sh" : "npm, PyPI, pypistats, OSV.dev";
   const mail = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Web checks opt-out")}`;
   return (
     <>
@@ -33,8 +36,8 @@ export default function WebChecksPage() {
             </p>
             <h2>How to recognise the requests</h2>
             <p>
-              Requests to the site carry the User-Agent <code>{CHECK_USER_AGENT}</code>. Requests to public data sources (npm, PyPI, pypistats,
-              OSV.dev, crt.sh) carry <code>{DATA_USER_AGENT}</code>.
+              Requests to the site carry the User-Agent <code>{CHECK_USER_AGENT}</code>. Requests to public data sources ({dataSources}) carry{" "}
+              <code>{DATA_USER_AGENT}</code>.
             </p>
             <h2>What is requested from the submitted host</h2>
             <ul id="checks">
@@ -42,7 +45,7 @@ export default function WebChecksPage() {
               <li>One GET of <code>/.well-known/security.txt</code>.</li>
               <li>One TLS handshake to port 443 to read the certificate.</li>
               <li>Public DNS lookups (A, AAAA, NS, MX, CAA, TXT, <code>_dmarc</code> and 9 common DKIM selector names).</li>
-              <li>Certificate-transparency history for the name from crt.sh (a public log service, not the site itself).</li>
+              {ctHistory ? <li>Certificate-transparency history for the name from crt.sh (a public log service, not the site itself).</li> : null}
             </ul>
             <p>
               Nothing else is requested: no other paths, no other hosts or subdomains, no port scans, no login attempts, no exploit payloads.

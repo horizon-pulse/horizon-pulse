@@ -317,8 +317,15 @@ export function htmlHints(body: string, host: string): Finding[] {
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
+/** Flag-ON method text (unchanged). Use auditMethod() for what is served. */
 export const METHOD =
   "Web readiness checks of the one submitted host, outside-in: a GET of https://host/ and http://host/ (no redirect follow on http), a GET of /.well-known/security.txt (standard and up), one TLS handshake to port 443, public DNS lookups (A, AAAA, NS, MX, CAA, TXT, _dmarc, 9 common DKIM selectors; extended and up), and certificate-transparency history from crt.sh (history and deep). No other paths, hosts or ports are requested; no credentials, no exploit attempts. Status not_detected = this specific check found no issue; it does not mean the site is secure.";
+/** Flag-OFF method text: same, without the certificate-history clause (HP_AUDIT_HIGH_TIERS_ENABLED off). */
+export const METHOD_BASE =
+  "Web readiness checks of the one submitted host, outside-in: a GET of https://host/ and http://host/ (no redirect follow on http), a GET of /.well-known/security.txt (standard and up), one TLS handshake to port 443, and public DNS lookups (A, AAAA, NS, MX, CAA, TXT, _dmarc, 9 common DKIM selectors; extended and up). No other paths, hosts or ports are requested; no credentials, no exploit attempts. Status not_detected = this specific check found no issue; it does not mean the site is secure.";
+export function auditMethod(env: Record<string, string | undefined> = process.env): string {
+  return env.HP_AUDIT_HIGH_TIERS_ENABLED === "true" ? METHOD : METHOD_BASE;
+}
 const DISCLAIMER_MD = "Automated, point-in-time web readiness checks; informational only, not a security audit, penetration test or certification. See the disclaimer field.";
 
 export type AuditResult = { ok: true; report: Record<string, unknown> } | { ok: false; status: number; code: string; error: string };
@@ -412,7 +419,7 @@ export async function runAudit(host: string, tier: AuditTier, deps: AuditDeps = 
     findings: shaped.map(({ fix, ...rest }) => (fix ? { ...rest, fix } : rest)),
     ...(dnsRecords ? { dns: dnsRecords } : {}),
     ...(ctSummary ? { certificateHistory: ctSummary } : {}),
-    method: METHOD,
+    method: auditMethod(),
     note: "Informational results at the time of the check, not a certification or a guarantee of anything. Outside-in checks cannot see server-side issues.",
     elapsedMs: deps.now() - started,
   };

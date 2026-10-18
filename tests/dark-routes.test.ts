@@ -14,7 +14,7 @@ import { getPayTo } from "@/lib/config";
 import { LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 import { ROUTE_INFO } from "@/lib/route-hints";
-import { AUDIT_TIERS, DARK_DESCRIPTIONS, INJECTION_TIERS, PACKAGE_TIERS, RECEIPT_HEADER, rateLimitHit, resetRateLimitsForTests, usdFromAtomic, type Tier } from "@/lib/dark-routes";
+import { AUDIT_TIERS, DARK_DESCRIPTIONS, darkDescription, INJECTION_TIERS, PACKAGE_TIERS, RECEIPT_HEADER, rateLimitHit, resetRateLimitsForTests, usdFromAtomic, type Tier } from "@/lib/dark-routes";
 import * as auditRoute from "@/app/api/audit/security/route";
 import * as pkgRoute from "@/app/api/package/check/route";
 import * as injRoute from "@/app/api/injection/scan/route";
@@ -70,7 +70,7 @@ describe("never listed (dark)", () => {
   it.each(ROUTES)("$path is absent from the live catalog, related-routes, /.well-known/x402, openapi.json and llms.txt", async (r) => {
     expect(LIVE_PAID_ROUTES.some((x) => x.path.startsWith(r.path))).toBe(false);
     // ROUTE_METADATA holds a lookup-only entry (same as /api/batch); its description is the single source.
-    expect((ROUTE_METADATA as Record<string, { description: string }>)[r.path]!.description).toBe(DARK_DESCRIPTIONS[r.path]);
+    expect((ROUTE_METADATA as Record<string, { description: string }>)[r.path]!.description).toBe(darkDescription(r.path));
     expect(Object.keys(ROUTE_INFO).some((k) => k.startsWith(r.path))).toBe(false);
     const wk = await wellKnownX402().text();
     const rel = await (await wellKnownRelated()).text();

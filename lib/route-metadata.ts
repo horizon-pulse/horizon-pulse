@@ -9,7 +9,7 @@
  * the first tag is the route's category.
  */
 
-import { DARK_DESCRIPTIONS } from "./dark-routes";
+import { DARK_DESCRIPTIONS, darkDescription } from "./dark-routes";
 
 export type RouteMetadata = {
   description: string;
@@ -164,7 +164,10 @@ export const ROUTE_METADATA = {
   // /.well-known/x402, openapi, llms or related-routes; no Bazaar extension. Entries exist only so
   // the no-CDP fallback 402 (buildPaymentRequirements) can name them. Description single-sourced.
   "/api/audit/security": {
-    description: DARK_DESCRIPTIONS["/api/audit/security"],
+    // Read per access: follows HP_AUDIT_HIGH_TIERS_ENABLED (no full/history/deep or CT history when off).
+    get description(): string {
+      return darkDescription("/api/audit/security");
+    },
     tags: ["web-headers", "tls-dns-checks", "readiness-checks", "dns-email-auth", "outside-in-checks"],
   },
   "/api/package/check": {
