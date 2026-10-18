@@ -106,7 +106,7 @@ export interface ReplayStore {
   casDelete?(key: string, expected: string): Promise<boolean>;
   /**
    * Shared stores only: run a trivial server-side script (`EVAL "return 1" 0`) and throw unless it answers 1, then
-   * the replay-store self-test (Odin 12:28): SET a random value on a throwaway hp:selftest: key (60 s TTL),
+   * the replay-store self-test (Odin 12:28): SET a random value on a throwaway hp:xrpl:selftest: key (60 s TTL),
    * CAS_DELETE_SCRIPT with a WRONG value must not delete (value still there), CAS_DELETE_SCRIPT with the RIGHT value
    * must delete (key gone). Throws ReplaySelfTestError(step) on the first failing step. Uses no request input.
    * cas depends on EVAL; the rail treats a failing probe as the XRPL rail confirmed absent (Odin 11:44 (e)).
@@ -198,14 +198,15 @@ export const CAS_DELETE_SCRIPT = "if redis.call('GET', KEYS[1]) == ARGV[1] then 
 export const EVAL_PROBE_SCRIPT = "return 1";
 
 /**
- * Self-test key (Odin 12:28): fixed `hp:selftest:` prefix, OUTSIDE the replay prefix, plus this probe's own random
+ * Self-test key (Odin 12:28; prefix renamed Odin 12:51): fixed `hp:xrpl:selftest:` prefix, so a restricted Upstash
+ * token whose key pattern is `hp:xrpl:*` covers it, yet disjoint from the replay prefix `hp:xrpl:replay:`, plus this probe's own random
  * id. A fully fixed key would race between instances (B's SET overwrites A's value → A's "still there" check and
  * A's right-value delete fail spuriously; A's right-value delete could never remove B's value, but A would report
  * unavailable). With the random id each probe owns its key, so concurrent instances never touch each other's key;
  * the random VALUE + CAS still guarantees a delete only ever removes the exact value this probe wrote. 60 s TTL
  * bounds any leftover from a probe that died mid-way.
  */
-export const SELFTEST_KEY_PREFIX = "hp:selftest:xrpl-replay-eval:";
+export const SELFTEST_KEY_PREFIX = "hp:xrpl:selftest:replay-eval:";
 export const SELFTEST_TTL_MS = 60_000;
 export type ReplaySelfTestStep =
   | "eval_result"

@@ -1454,7 +1454,7 @@ describe("(2) replay-store self-test inside the first-use EVAL probe (fail close
     expect(pr.accepts.some((a) => a.network.startsWith("eip155:"))).toBe(true);
     return pr.accepts.some((a) => a.network === "xrpl:0");
   };
-  const selftestCmds = (sent: UpCmd[]) => sent.filter((a) => a.some((x) => x.startsWith("hp:selftest:")));
+  const selftestCmds = (sent: UpCmd[]) => sent.filter((a) => a.some((x) => x.startsWith("hp:xrpl:selftest:")));
   beforeEach(() => {
     installXrplRpc("ready", () => ({ status: "error", error: "txnNotFound" }));
   });
@@ -1468,9 +1468,11 @@ describe("(2) replay-store self-test inside the first-use EVAL probe (fail close
     expect(e).toEqual(["EVAL", EVAL_PROBE_SCRIPT, "0"]);
     const key = set[1];
     const value = set[2];
-    expect(key).toMatch(/^hp:selftest:xrpl-replay-eval:[0-9a-f]{32}$/);
+    expect(key).toMatch(/^hp:xrpl:selftest:replay-eval:[0-9a-f]{32}$/);
     expect(key.startsWith(SELFTEST_KEY_PREFIX)).toBe(true);
     expect(key.startsWith("hp:xrpl:replay:")).toBe(false); // never inside the replay keyspace
+    expect(key.startsWith("hp:xrpl:")).toBe(true); // Odin 12:51: covered by a restricted token's hp:xrpl:* key pattern
+    expect(SELFTEST_KEY_PREFIX).toBe("hp:xrpl:selftest:replay-eval:");
     expect(value).toMatch(/^[0-9a-f]{32}$/);
     expect(set).toEqual(["SET", key, value, "PX", "60000"]);
     expect(wrongDel).toEqual(["EVAL", CAS_DELETE_SCRIPT, "1", key, `${value}:wrong`]);
@@ -1496,15 +1498,15 @@ describe("(2) replay-store self-test inside the first-use EVAL probe (fail close
     for (const a of selftestCmds(up.sent)) {
       for (const x of a) {
         expect(x.includes(XRPL_PAYER) || x.includes(accept.payTo) || x.includes(blob.slice(0, 40)) || x.includes(hashOf(p))).toBe(false);
-        expect(x === "SET" || x === "GET" || x === "EVAL" || x === "PX" || x === "60000" || x === "1" || x === CAS_DELETE_SCRIPT || /^[0-9a-f]{32}(:wrong)?$/.test(x) || /^hp:selftest:xrpl-replay-eval:[0-9a-f]{32}$/.test(x)).toBe(true);
+        expect(x === "SET" || x === "GET" || x === "EVAL" || x === "PX" || x === "60000" || x === "1" || x === CAS_DELETE_SCRIPT || /^[0-9a-f]{32}(:wrong)?$/.test(x) || /^hp:xrpl:selftest:replay-eval:[0-9a-f]{32}$/.test(x)).toBe(true);
       }
     }
   });
 
   const isEval = (a: UpCmd) => a[0] === "EVAL" && a[1] === EVAL_PROBE_SCRIPT;
-  const isSet = (a: UpCmd) => a[0] === "SET" && a[1].startsWith("hp:selftest:");
-  const isWrongDel = (a: UpCmd) => a[0] === "EVAL" && a[1] === CAS_DELETE_SCRIPT && a[3].startsWith("hp:selftest:") && a[4].endsWith(":wrong");
-  const isRightDel = (a: UpCmd) => a[0] === "EVAL" && a[1] === CAS_DELETE_SCRIPT && a[3].startsWith("hp:selftest:") && !a[4].endsWith(":wrong");
+  const isSet = (a: UpCmd) => a[0] === "SET" && a[1].startsWith("hp:xrpl:selftest:");
+  const isWrongDel = (a: UpCmd) => a[0] === "EVAL" && a[1] === CAS_DELETE_SCRIPT && a[3].startsWith("hp:xrpl:selftest:") && a[4].endsWith(":wrong");
+  const isRightDel = (a: UpCmd) => a[0] === "EVAL" && a[1] === CAS_DELETE_SCRIPT && a[3].startsWith("hp:xrpl:selftest:") && !a[4].endsWith(":wrong");
   const ok = (result: unknown) => ({ status: 200, body: { result } });
   let gets = 0;
   const cases: [string, string, (a: UpCmd, data: Map<string, string>) => { status: number; body: unknown } | undefined][] = [
@@ -1514,10 +1516,10 @@ describe("(2) replay-store self-test inside the first-use EVAL probe (fail close
     ["SET HTTP failure", "Error", (a) => (isSet(a) ? { status: 500, body: {} } : undefined)],
     ["wrong-value CAS_DELETE deletes (answers 1)", "selftest_wrong_value_deleted", (a, d) => (isWrongDel(a) ? (d.delete(a[3]), ok(1)) : undefined)],
     ["wrong-value CAS_DELETE answers junk", "selftest_wrong_value_deleted", (a) => (isWrongDel(a) ? ok("x") : undefined)],
-    ["value changed after the wrong-value delete", "selftest_value_changed", (a) => (a[0] === "GET" && a[1].startsWith("hp:selftest:") && ++gets === 1 ? ok("other") : undefined)],
+    ["value changed after the wrong-value delete", "selftest_value_changed", (a) => (a[0] === "GET" && a[1].startsWith("hp:xrpl:selftest:") && ++gets === 1 ? ok("other") : undefined)],
     ["right-value CAS_DELETE does not delete", "selftest_delete_failed", (a) => (isRightDel(a) ? ok(0) : undefined)],
     ["key still there after the right-value delete", "selftest_not_deleted", (a, d) => (isRightDel(a) ? ok(1) : undefined)],
-    ["GET errors", "Error", (a) => (a[0] === "GET" && a[1].startsWith("hp:selftest:") ? { status: 200, body: { error: "ERR" } } : undefined)],
+    ["GET errors", "Error", (a) => (a[0] === "GET" && a[1].startsWith("hp:xrpl:selftest:") ? { status: 200, body: { error: "ERR" } } : undefined)],
   ];
   for (const [label, reason, fault] of cases) {
     it(`${label} → unavailable, fail closed (XRPL off the 402, XRPL payment → Base-only 402 rail_unavailable, nothing claimed), HIGH ALERT once, reason ${reason}`, async () => {
