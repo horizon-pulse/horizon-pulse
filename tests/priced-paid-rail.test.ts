@@ -158,9 +158,7 @@ describe("all 27 paid handlers build `priced` with the rail-aware helper", () =>
       .sort();
     // repeat-caller pack 10/17: app/api/batch is INERT (404 unless HP_BATCH_ENABLED=true) and
     // not in the live catalog / golden PAID_ROUTES, but its handler is held to the same priced rule.
-    // dark routes 10/17 (Michael via Odin 10:28 PM ET): 404 unless their own HP_*_ENABLED flag is "true";
-    // not in the live catalog / goldens; held to the same priced rule.
-    const INERT_ROUTES = ["audit/security", "batch", "injection/scan", "package/check"];
+    const INERT_ROUTES = ["batch"];
     expect(dirs).toEqual([...PAID_ROUTES, ...INERT_ROUTES].sort());
     expect(dirs).toHaveLength(27 + INERT_ROUTES.length);
     for (const d of dirs) {
