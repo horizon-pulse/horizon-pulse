@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { darkRewrites } from "./lib/dark-paths";
 import { API_SECURITY_HEADERS, API_SOURCE, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS, WELL_KNOWN_SECURITY_HEADERS, WELL_KNOWN_SOURCE } from "./lib/security-headers";
 
 const nextConfig: NextConfig = {
@@ -9,6 +10,11 @@ const nextConfig: NextConfig = {
       { source: API_SOURCE, headers: API_SECURITY_HEADERS.map((h) => ({ ...h })) },
       { source: WELL_KNOWN_SOURCE, headers: WELL_KNOWN_SECURITY_HEADERS.map((h) => ({ ...h })) },
     ];
+  },
+  // Dark routes (lib/dark-paths.ts): while a flag is off, its URLs are rewritten to a path that does
+  // not exist, so every method gets the platform's unknown-path 404 (no Allow, no route name).
+  async rewrites() {
+    return { beforeFiles: darkRewrites(), afterFiles: [], fallback: [] };
   },
   // Headless Chromium for /api/screenshot: keep out of the bundle, ship the
   // brotli'd binary with every function that can invoke the handler.

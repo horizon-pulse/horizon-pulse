@@ -214,9 +214,11 @@ describe("Counsel FAIL fix: opt-out count + rate-limited exact-domain yes/no", (
     expect((await optOutHandler(req("domain=example.com", "203.0.113.9"), async () => ({ ok: true, retryAfter: 12 }))).status).toBe(429);
     expect((await optOutHandler(req("domain=example.com", "203.0.113.10"), async () => ({ ok: false, error: "down" }))).status).toBe(503);
   });
-  it("route is GET-only and logs nothing", () => {
+  it("route serves GET only (every other method is a bare 404, Odin 10:31) and logs nothing", () => {
     const r = src("app/web-checks/opt-out/route.ts");
-    expect(r.match(/export (async )?function (\w+)/g)).toEqual(["export async function GET"]);
+    expect(r.match(/export (async )?function (\w+)/g)).toEqual(["export async function GET", "export async function HEAD"]);
+    expect(r).toMatch(/export async function HEAD[\s\S]*darkEnabled\("audit"\) \? await optOutHandler\(req\) : notFound\(\)/);
+    for (const m of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) expect(r).toContain(`export const ${m} = async () => notFound();`);
     expect(r + src("app/web-checks/opt-out/handler.ts")).not.toMatch(/console\.|logRouteRequest/);
   });
 });

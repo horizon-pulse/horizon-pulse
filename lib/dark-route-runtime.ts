@@ -1,6 +1,9 @@
 /**
  * Route runtime shared by the three dark routes.
- *   flag unset            -> 404 on every verb (no 402, no discovery)
+ *   flag unset            -> 404 on every verb (no 402, no discovery, no Allow). In prod the
+ *                            request never reaches here: next.config.ts rewrites dark paths to
+ *                            an unknown path (lib/dark-paths.ts). This is the second line.
+ *   PUT/PATCH/DELETE      -> 404 always (never 405, never an Allow header)
  *   unknown tier          -> 400 before any payment (not charged)
  *   disabled tier         -> 404 before any payment (opts.tierEnabled; audit
  *                            full/history/deep unless HP_AUDIT_HIGH_TIERS_ENABLED)
@@ -90,5 +93,13 @@ export function makeDarkRoute(opts: {
     return res;
   }
 
-  return { GET: handle, POST: handle, OPTIONS };
+  /** HEAD: dark -> 404; live -> the GET answer without a body. */
+  async function HEAD(req: NextRequest) {
+    const res = darkEnabled(opts.route) ? await handle(req) : notFound();
+    return new NextResponse(null, { status: res.status, headers: res.headers });
+  }
+  /** Methods the route never serves: always the same bare 404 (no Allow, no 405), dark or live. */
+  const unsupported = async () => notFound();
+
+  return { GET: handle, HEAD, POST: handle, PUT: unsupported, PATCH: unsupported, DELETE: unsupported, OPTIONS };
 }

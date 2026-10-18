@@ -15,6 +15,11 @@ const r = makeDarkRoute({
   tierEnabled: (t) => auditTierEnabled(t),
   handler: (req, tier, receiptId) => auditHandler(req, tier, receiptId),
 });
+// Every method exported, so Next never answers one itself (405 / auto-OPTIONS with an Allow header).
 export const GET = r.GET;
+export const HEAD = r.HEAD;
 export const POST = r.POST;
+export const PUT = r.PUT;
+export const PATCH = r.PATCH;
+export const DELETE = r.DELETE;
 export const OPTIONS = r.OPTIONS;
