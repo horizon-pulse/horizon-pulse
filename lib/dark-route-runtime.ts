@@ -51,7 +51,13 @@ export function makeDarkRoute(opts: {
             r429.headers.set(RECEIPT_HEADER, receiptId);
             return r429;
           }
-          const res = await opts.handler(req, t, receiptId);
+          let res: NextResponse;
+          try {
+            res = await opts.handler(req, t, receiptId);
+          } catch {
+            // Never a 500 (Odin B-1): an unexpected failure is a refused answer; a non-2xx never settles, so nothing is charged.
+            res = NextResponse.json({ ok: false, code: "check_failed", error: "The check could not be completed; not charged. Retry later.", charged: false, receiptId, disclaimer: DISCLAIMER }, { status: 502 });
+          }
           res.headers.set(RECEIPT_HEADER, receiptId);
           return res;
         },

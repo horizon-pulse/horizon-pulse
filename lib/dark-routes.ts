@@ -14,6 +14,7 @@
 import { randomUUID } from "node:crypto";
 import type { RoutesConfig } from "@x402/core/server";
 import { getNetworkCaip2, getPayTo } from "./config";
+import { callerIp } from "./caller-ip";
 
 // ---------------------------------------------------------------------------
 // Flags
@@ -104,7 +105,7 @@ export const DARK_DESCRIPTIONS = {
   "/api/audit/security":
     AUDIT_DESCRIPTION_HIGH_TIERS,
   "/api/package/check":
-    "npm or PyPI package signals before install: exists, first publish age, weekly downloads, maintainer count, license, typosquat distance to popular names, known vulnerabilities from OSV.dev (attributed per record). GET ecosystem (npm|pypi), name, optional version, tier=base|deep (deep adds vulnerability details, install scripts, deprecation, release cadence). Informational only, no warranty. Bad input or registry down: not charged.",
+    "npm or PyPI package signals before install: exists, first publish age, weekly downloads, maintainer count, license, typosquat distance to popular names, known vulnerabilities from OSV.dev (attributed per record), deps.dev provenance, CISA KEV cross-check. GET ecosystem (npm|pypi), name, optional version, tier=base|deep (deep adds vulnerability details, install scripts, deprecation, release cadence). Informational only, no warranty. Bad input or registry down: not charged.",
   "/api/injection/scan":
     "Prompt-injection heuristics scan of supplied text (POST JSON {text} or GET text, max 50 KB) or a public URL (url; same SSRF guards as /api/fetch, raw HTML scanned incl. comments and hidden text). Returns a 0-100 risk score, level, and findings with rule, category, severity and a short excerpt. Heuristic patterns only; a low score is not a clearance. Informational only, no warranty. Bad input or fetch errors: not charged.",
 } as const;
@@ -177,7 +178,7 @@ export function resetRateLimitsForTests(): void {
   buckets.clear();
 }
 
+/** Per-IP rate-limit key from the shared caller-IP helper (lib/caller-ip.ts, Vercel ipAddress() source; Odin B-3). No usable IP -> one shared "unknown" bucket. */
 export function clientKey(headers: Headers): string {
-  const xff = headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  return xff || headers.get("x-real-ip")?.trim() || "unknown";
+  return callerIp(headers) ?? "unknown";
 }

@@ -158,11 +158,11 @@ describe("/web-checks page follows the flag", () => {
     flag(false);
     const off = await render();
     expect(off).not.toMatch(/certificate-transparency|crt\.sh|\bhistory\b|\bfull\b|\bdeep\b/i);
-    expect(off).toContain("npm, PyPI, pypistats, OSV.dev)");
+    expect(off).toContain("npm, PyPI, pypistats, OSV.dev, deps.dev, the CISA KEV feed)");
     flag(true);
     const on = await render();
     expect(on).toContain("Certificate-transparency history for the name from crt.sh (a public log service, not the site itself).");
-    expect(on).toContain("npm, PyPI, pypistats, OSV.dev, crt.sh)");
+    expect(on).toContain("npm, PyPI, pypistats, OSV.dev, deps.dev, the CISA KEV feed, crt.sh)");
     for (const html of [off, on]) {
       expect(html).toContain("They are not a security audit or a penetration test.");
       expect(html).toContain('id="opt-out"');

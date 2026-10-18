@@ -125,7 +125,7 @@ describe("rate limits", () => {
   it("unverified payment headers never count toward the per-IP limit (counted only after verify)", async () => {
     vi.stubEnv("HP_INJECTION_SCAN_ENABLED", "true");
     for (let i = 0; i < 70; i++) {
-      const res = await injRoute.GET(new NextRequest("https://horizonpulse.dev/api/injection/scan?text=hi", { headers: { "x-forwarded-for": "203.0.113.50", "PAYMENT-SIGNATURE": "garbage" } }));
+      const res = await injRoute.GET(new NextRequest("https://horizonpulse.dev/api/injection/scan?text=hi", { headers: { "x-real-ip": "203.0.113.50", "PAYMENT-SIGNATURE": "garbage" } }));
       expect(res.status).not.toBe(429);
     }
   });
@@ -282,7 +282,7 @@ describe("package check", () => {
     const deep = r.report.deep as { vulnerabilities: { id: string; fixedIn: string[]; severity: string }[]; installScripts: string[] };
     expect(deep.vulnerabilities[0]).toMatchObject({ id: "GHSA-1", fixedIn: ["1.0.1"], severity: "HIGH" });
     expect(deep.installScripts).toEqual(["postinstall"]);
-    expect(d.calls.every((u) => /^https:\/\/(registry\.npmjs\.org|api\.npmjs\.org|api\.osv\.dev)\//.test(u))).toBe(true);
+    expect(d.calls.every((u) => /^https:\/\/(registry\.npmjs\.org|api\.npmjs\.org|api\.osv\.dev|api\.deps\.dev)\//.test(u))).toBe(true);
   });
   it("registry down: 502 not charged; OSV down: base still answers (marked unavailable), deep is 503 not charged", async () => {
     expect(await checkPackage({ ecosystem: "npm", name: "x-pkg", version: null }, "base", deps({ registryDown: true }))).toMatchObject({ ok: false, status: 502 });
@@ -575,7 +575,7 @@ describe("Counsel C3: contact User-Agent, opt-out list, public checks page", () 
     expect(isOptedOut("a.b.example.org.", list)).toBe(true);
     expect(isOptedOut("notexample.org", list)).toBe(false);
   });
-  it("/web-checks: 404 while the route is dark; when enabled it lists the checks, the UA, the contact and the opt-out", async () => {
+  it("/web-checks: 404 while the route is dark; when enabled it lists the checks, the UA, the contact and the opt-out (count only, never the list)", async () => {
     const page = (await import("@/app/web-checks/page")).default;
     expect(() => page()).toThrow();
     vi.stubEnv("HP_AUDIT_SECURITY_ENABLED", "true");
@@ -585,7 +585,9 @@ describe("Counsel C3: contact User-Agent, opt-out list, public checks page", () 
     expect(html).toContain(CHECK_USER_AGENT.replace(/&/g, "&amp;"));
     expect(html).toContain("horizonpulse.co@proton.me");
     expect(html).toContain('id="opt-out"');
-    expect(html).toContain("optedout.example");
+    expect(html).not.toContain("optedout.example");
+    expect(html).toContain("Domains currently opted out: 1. The list itself is not published.");
+    expect(html).toContain('action="/web-checks/opt-out"');
     expect(html).not.toMatch(/\/\.env|\/\.git/);
   });
   it("/web-checks is not in the sitemap", async () => {
@@ -782,7 +784,7 @@ describe("paid-path smoke (facilitator mocked offline): verify -> handler -> set
     expect(unpaid.status).toBe(402);
     const accept = decodePaymentRequiredHeader(unpaid.headers.get("payment-required")!).accepts[0]! as unknown as Record<string, unknown>;
     expect(accept.amount).toBe("10000");
-    const res = await injRoute.GET(new NextRequest(url, { headers: { "payment-signature": encodePaymentSignatureHeader(payload(accept)), "x-forwarded-for": "198.51.100.7" } }));
+    const res = await injRoute.GET(new NextRequest(url, { headers: { "payment-signature": encodePaymentSignatureHeader(payload(accept)), "x-real-ip": "198.51.100.7" } }));
     expect(res.status).toBe(200);
     expect(res.headers.get(RECEIPT_HEADER)).toMatch(/^hpr_/);
     const b = await res.json();

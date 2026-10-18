@@ -13,7 +13,7 @@ import { Resolver } from "node:dns/promises";
 import { guardedGet, type GuardedGetOk } from "./guarded-get";
 import { guardedNetConnect } from "./net-guard";
 import { assertSafePublicUrl } from "./fetch-url";
-import { BodyTooLargeError, CRTSH_ATTRIBUTION, DATA_USER_AGENT, isOptedOut, readTextCapped, upstashCache, upstashLimiter, type SharedCache, type SharedLimiter } from "./dark-checks-shared";
+import { BodyTooLargeError, CRTSH_ATTRIBUTION, DATA_USER_AGENT, isOptedOut, readTextCapped, REDIRECT_COPY, upstashCache, upstashLimiter, type SharedCache, type SharedLimiter } from "./dark-checks-shared";
 
 export const AUDIT_TIER_ORDER = ["quick", "standard", "extended", "report", "full", "history", "deep"] as const;
 export type AuditTier = (typeof AUDIT_TIER_ORDER)[number];
@@ -319,10 +319,10 @@ export function htmlHints(body: string, host: string): Finding[] {
 // ---------------------------------------------------------------------------
 /** Flag-ON method text (unchanged). Use auditMethod() for what is served. */
 export const METHOD =
-  "Web readiness checks of the one submitted host, outside-in: a GET of https://host/ and http://host/ (no redirect follow on http), a GET of /.well-known/security.txt (standard and up), one TLS handshake to port 443, public DNS lookups (A, AAAA, NS, MX, CAA, TXT, _dmarc, 9 common DKIM selectors; extended and up), and certificate-transparency history from crt.sh (history and deep). No other paths, hosts or ports are requested; no credentials, no exploit attempts. Status not_detected = this specific check found no issue; it does not mean the site is secure.";
+  "Web readiness checks of the one submitted host, outside-in: a GET of https://host/ and http://host/ (no redirect follow on http), a GET of /.well-known/security.txt (standard and up), one TLS handshake to port 443, public DNS lookups (A, AAAA, NS, MX, CAA, TXT, _dmarc, 9 common DKIM selectors; extended and up), and certificate-transparency history from crt.sh (history and deep). " + REDIRECT_COPY + " Status not_detected = this specific check found no issue; it does not mean the site is secure.";
 /** Flag-OFF method text: same, without the certificate-history clause (HP_AUDIT_HIGH_TIERS_ENABLED off). */
 export const METHOD_BASE =
-  "Web readiness checks of the one submitted host, outside-in: a GET of https://host/ and http://host/ (no redirect follow on http), a GET of /.well-known/security.txt (standard and up), one TLS handshake to port 443, and public DNS lookups (A, AAAA, NS, MX, CAA, TXT, _dmarc, 9 common DKIM selectors; extended and up). No other paths, hosts or ports are requested; no credentials, no exploit attempts. Status not_detected = this specific check found no issue; it does not mean the site is secure.";
+  "Web readiness checks of the one submitted host, outside-in: a GET of https://host/ and http://host/ (no redirect follow on http), a GET of /.well-known/security.txt (standard and up), one TLS handshake to port 443, and public DNS lookups (A, AAAA, NS, MX, CAA, TXT, _dmarc, 9 common DKIM selectors; extended and up). " + REDIRECT_COPY + " Status not_detected = this specific check found no issue; it does not mean the site is secure.";
 export function auditMethod(env: Record<string, string | undefined> = process.env): string {
   return env.HP_AUDIT_HIGH_TIERS_ENABLED === "true" ? METHOD : METHOD_BASE;
 }

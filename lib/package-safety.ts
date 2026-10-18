@@ -1,7 +1,9 @@
 /**
  * Package signals check (dark route /api/package/check), npm and PyPI.
  * Public sources only, fixed hosts: registry.npmjs.org, api.npmjs.org,
- * pypi.org, pypistats.org, api.osv.dev. Informational; not a clearance.
+ * pypi.org, pypistats.org, api.osv.dev, api.deps.dev (secondary, best effort)
+ * and the CISA KEV JSON feed (cross-check only; NVD is never queried).
+ * Informational; not a clearance.
  * Counsel C6 (10/18): NO npm security/advisory/audit data (npm Open Source
  * Terms bar redistributing it; vulnerability data comes from OSV.dev only, with
  * per-record attribution); no maintainer personal data (a count only);
@@ -16,15 +18,35 @@ export const defaultDeps = (): Deps => ({ fetch: (...a) => fetch(...a), now: () 
 const UA = { "user-agent": DATA_USER_AGENT };
 export const PYPISTATS_CACHE_TTL_S = 24 * 3600;
 
-/** Only these source URLs are ever requested; npm security/advisory/audit endpoints are refused outright. */
-const ALLOWED_SOURCE = /^https:\/\/(registry\.npmjs\.org|api\.npmjs\.org\/downloads\/|pypi\.org\/pypi\/|pypistats\.org\/api\/packages\/|api\.osv\.dev\/v1\/query$)/;
-const NPM_SECURITY = /npmjs\.(org|com)\/-\/npm\/v1\/security|\/-\/npm\/v1\/security|advisor|\/audits?\b/i;
+/**
+ * Only these source URLs are ever requested. npm security/advisory/audit data is
+ * refused by an EXACT endpoint match on the parsed URL (host + path prefix), not a
+ * substring test, so package names such as audit-ci, advisory-db or @x/advisor are
+ * ordinary lookups (Odin B-1). Package names are percent-encoded into a single
+ * path segment, so a name can never form the /-/npm/v1/security/ prefix.
+ */
+const ALLOWED_SOURCE = /^https:\/\/(registry\.npmjs\.org\/|api\.npmjs\.org\/downloads\/|pypi\.org\/pypi\/|pypistats\.org\/api\/packages\/|api\.osv\.dev\/v1\/query$|api\.deps\.dev\/v3\/(systems|projects)\/|www\.cisa\.gov\/sites\/default\/files\/feeds\/known_exploited_vulnerabilities\.json$)/;
+const NPM_HOSTS = new Set(["registry.npmjs.org", "registry.npmjs.com", "api.npmjs.org", "api.npmjs.com", "www.npmjs.com", "npmjs.com"]);
+/** npm's security/audit endpoints (npm audit, quick audit, bulk advisories, advisory search). */
+const NPM_SECURITY_PATH = /^\/-\/(npm\/)?v1\/security(\/|$)/i;
+export function isNpmSecurityEndpoint(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  return NPM_HOSTS.has(u.hostname.toLowerCase()) && NPM_SECURITY_PATH.test(u.pathname);
+}
+/** A source the check may not request. Treated like an unreachable source (502, not charged), never a 500. */
+export class SourceDown extends Error {}
+export class SourceNotAllowed extends SourceDown {}
 export function assertAllowedSource(url: string): void {
-  if (NPM_SECURITY.test(url) || !ALLOWED_SOURCE.test(url)) throw new Error(`source not allowed: ${url.slice(0, 80)}`);
+  if (isNpmSecurityEndpoint(url) || !ALLOWED_SOURCE.test(url)) throw new SourceNotAllowed(`source not allowed: ${url.slice(0, 80)}`);
 }
 
 export const PACKAGE_METHOD =
-  "Registry metadata from registry.npmjs.org or pypi.org, weekly downloads from api.npmjs.org or pypistats.org (cached 24 h), known vulnerabilities from OSV.dev (api.osv.dev/v1/query), and a typosquat distance to a static list of popular names. No npm security or advisory data is used. Maintainers are reported as a count only.";
+  "Registry metadata from registry.npmjs.org or pypi.org, weekly downloads from api.npmjs.org or pypistats.org (cached 24 h), known vulnerabilities from OSV.dev (api.osv.dev/v1/query), build provenance (and, on deep, the OpenSSF Scorecard of an attested source repository) derived from deps.dev (cached 24 h), a cross-check of advisory CVEs against the CISA KEV catalog (cached 24 h), and a typosquat distance to a static list of popular names. No npm security or advisory data is used. Maintainers are reported as a count only.";
 const DOC_CAP = 6_000_000;
 const TIMEOUT = 8_000;
 
@@ -116,8 +138,6 @@ export function parsePkgInput(q: { ecosystem: string | null; name: string | null
   return { ok: true, input: { ecosystem: eco, name: eco === "pypi" ? name.toLowerCase().replace(/[-_.]+/g, "-") : name, version } };
 }
 
-class SourceDown extends Error {}
-
 async function getJson(deps: Deps, url: string, init: RequestInit = {}): Promise<{ status: number; json: unknown; truncated: boolean }> {
   assertAllowedSource(url);
   let res: Response;
@@ -184,6 +204,103 @@ async function osv(deps: Deps, eco: Ecosystem, name: string, version: string | n
   } catch (e) {
     return { status: "unavailable", error: `api.osv.dev: ${e instanceof Error ? e.message : "unreachable"}` };
   }
+}
+
+// ---------------------------------------------------------------------------
+// deps.dev (Open Source Insights) and CISA KEV: secondary, best-effort inputs (Odin B-5)
+// ---------------------------------------------------------------------------
+/** Counsel wording, verbatim. Shown whenever a deps.dev-derived field is present. */
+export const DEPSDEV_ATTRIBUTION = "Includes data from deps.dev (Open Source Insights, Google), generated data under CC-BY 4.0; advisories via OSV.dev, see each record's source.";
+/** Counsel wording, verbatim. No CISA logo, no "CISA-verified" claim anywhere. */
+export const KEV_ATTRIBUTION = "Known-exploited status from the CISA KEV catalog (CC0)";
+export const DEPSDEV_CACHE_TTL_S = 24 * 3600;
+export const KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json";
+const KEV_TTL_MS = 24 * 3600 * 1000;
+const KEV_CAP = 8_000_000;
+const SIDE_TIMEOUT = 5_000;
+/** relationProvenance values that come from a signed attestation, not from unverified package metadata. */
+const ATTESTED_RELATION = new Set(["SLSA_ATTESTATION", "PYPI_PUBLISH_ATTESTATION", "RUBYGEMS_PUBLISH_ATTESTATION"]);
+
+/** Only derived signals leave this module; no deps.dev response field is passed through. */
+export type DepsDevSignals =
+  | { status: "ok"; buildProvenance: "verified" | "unverified" | "none"; sourceRepoAttested: boolean; scorecardOverall: number | null }
+  | { status: "unavailable" };
+
+/** GET a JSON document; never throws (null on refusal, error, 404, oversize or bad JSON). */
+async function sideJson(deps: Deps, url: string, cap: number): Promise<unknown | null> {
+  try {
+    assertAllowedSource(url);
+    const res = await deps.fetch(url, { headers: { ...UA, accept: "application/json" }, signal: AbortSignal.timeout(SIDE_TIMEOUT) });
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => {});
+      return null;
+    }
+    return JSON.parse(await readTextCapped(res, cap));
+  } catch {
+    return null;
+  }
+}
+
+type DdAttestation = { verified?: unknown };
+type DdVersion = { slsaProvenances?: DdAttestation[]; attestations?: DdAttestation[]; relatedProjects?: { projectKey?: { id?: unknown }; relationProvenance?: unknown; relationType?: unknown }[] };
+
+/** Pure derivation from a GetVersion body (exported for tests). */
+export function deriveDepsDev(v: DdVersion): { buildProvenance: "verified" | "unverified" | "none"; attestedRepo: string | null } {
+  const atts = [...(Array.isArray(v.slsaProvenances) ? v.slsaProvenances : []), ...(Array.isArray(v.attestations) ? v.attestations : [])];
+  const buildProvenance = atts.some((a) => a?.verified === true) ? "verified" : atts.length ? "unverified" : "none";
+  const rel = (Array.isArray(v.relatedProjects) ? v.relatedProjects : []).find(
+    (r) => r?.relationType === "SOURCE_REPO" && typeof r.relationProvenance === "string" && ATTESTED_RELATION.has(r.relationProvenance) && typeof r.projectKey?.id === "string",
+  );
+  const id = rel ? String(rel.projectKey!.id) : null;
+  return { buildProvenance, attestedRepo: id && /^(github\.com|gitlab\.com|bitbucket\.org)\/[\w.-]+\/[\w.-]+$/.test(id) ? id : null };
+}
+
+/**
+ * deps.dev GetVersion (+ GetProject for the Scorecard, deep tier only, and only when
+ * the source repo link comes from a verified attestation). Derived signals cached 24 h
+ * (deps.dev: "Clients are expressly permitted to cache data served by the API").
+ * No API key. Best effort: any failure is { status: "unavailable" } and never blocks.
+ */
+export async function depsDevSignals(deps: Deps, eco: Ecosystem, name: string, version: string, withScorecard: boolean): Promise<DepsDevSignals> {
+  const key = `depsdev:v1:${eco}:${name}:${version}:${withScorecard ? 1 : 0}`;
+  try {
+    const hit = await deps.cache?.get(key);
+    if (hit) return JSON.parse(hit) as DepsDevSignals;
+  } catch {
+    /* cache is best effort */
+  }
+  const v = await sideJson(deps, `https://api.deps.dev/v3/systems/${eco}/packages/${encodeURIComponent(name)}/versions/${encodeURIComponent(version)}`, 2_000_000);
+  if (!v || typeof v !== "object") return { status: "unavailable" };
+  const d = deriveDepsDev(v as DdVersion);
+  const sourceRepoAttested = d.attestedRepo !== null && d.buildProvenance === "verified";
+  let scorecardOverall: number | null = null;
+  if (withScorecard && sourceRepoAttested) {
+    const p = (await sideJson(deps, `https://api.deps.dev/v3/projects/${encodeURIComponent(d.attestedRepo!)}`, 2_000_000)) as { scorecard?: { overallScore?: unknown } } | null;
+    const sc = p?.scorecard?.overallScore;
+    if (typeof sc === "number" && Number.isFinite(sc) && sc >= 0 && sc <= 10) scorecardOverall = Math.round(sc * 10) / 10;
+  }
+  const out: DepsDevSignals = { status: "ok", buildProvenance: d.buildProvenance, sourceRepoAttested, scorecardOverall };
+  try {
+    await deps.cache?.set(key, JSON.stringify(out), DEPSDEV_CACHE_TTL_S);
+  } catch {
+    /* cache is best effort */
+  }
+  return out;
+}
+
+let kevMemo: { at: number; cves: Set<string> } | null = null;
+export function resetKevCacheForTests(): void {
+  kevMemo = null;
+}
+/** CISA KEV CVE ids, held in memory for 24 h per instance. A cross-check only; null when unavailable. NVD is never queried. */
+export async function kevCves(deps: Deps): Promise<Set<string> | null> {
+  const now = deps.now();
+  if (kevMemo && now - kevMemo.at < KEV_TTL_MS) return kevMemo.cves;
+  const j = (await sideJson(deps, KEV_URL, KEV_CAP)) as { vulnerabilities?: { cveID?: unknown }[] } | null;
+  if (!j || !Array.isArray(j.vulnerabilities)) return null;
+  const cves = new Set(j.vulnerabilities.map((x) => (typeof x?.cveID === "string" ? x.cveID.toUpperCase() : "")).filter((c) => /^CVE-\d{4}-\d{4,}$/.test(c)));
+  kevMemo = { at: now, cves };
+  return cves;
 }
 
 const daysBetween = (a: number, b: number) => Math.floor((b - a) / 86_400_000);
@@ -280,6 +397,13 @@ export async function checkPackage(input: PkgInput, tier: "base" | "deep", deps:
     const vuln = meta.exists ? await osv(deps, eco, name, version ?? meta.latest) : ({ status: "ok", vulns: [] } as const);
     if (tier === "deep" && vuln.status === "unavailable") return { ok: false, status: 503, code: "advisory_source_unavailable", error: `${vuln.error}; deep tier needs vulnerability data, not charged. Retry later.` };
 
+    // Secondary inputs, best effort; never change the status code or block the answer.
+    const checkedVersion = version ?? meta.latest;
+    const depsDev: DepsDevSignals | null = meta.exists && checkedVersion && (version === null || meta.versionExists !== false) ? await depsDevSignals(deps, eco, name, checkedVersion, tier === "deep") : null;
+    const advisoryCves = vuln.status === "ok" ? [...new Set(vuln.vulns.flatMap((v) => [v.id, ...v.aliases]).map((x) => x.toUpperCase()).filter((x) => /^CVE-\d{4}-\d{4,}$/.test(x)))] : [];
+    const kev = advisoryCves.length ? await kevCves(deps) : null;
+    const kevHits = kev ? advisoryCves.filter((c) => kev.has(c)).slice(0, 20) : [];
+
     const ageDays = meta.created ? daysBetween(Date.parse(meta.created), now) : null;
     const signals: { signal: string; level: "info" | "caution" | "warn" }[] = [];
     if (!meta.exists) signals.push({ signal: "Package does not exist in the registry (possible hallucinated or typo name)", level: "warn" });
@@ -290,6 +414,9 @@ export async function checkPackage(input: PkgInput, tier: "base" | "deep", deps:
     if (meta.installScripts.length) signals.push({ signal: `Runs install scripts: ${meta.installScripts.join(", ")}`, level: "caution" });
     if (meta.deprecated) signals.push({ signal: `Deprecated or yanked: ${meta.deprecated}`, level: "caution" });
     if (vuln.status === "ok" && vuln.vulns.length) signals.push({ signal: `${vuln.vulns.length} known vulnerabilit${vuln.vulns.length === 1 ? "y" : "ies"} for ${version ?? meta.latest ?? "this package"} (OSV.dev)`, level: "warn" });
+    if (kevHits.length) signals.push({ signal: `${kevHits.length} advisory CVE${kevHits.length === 1 ? " is" : "s are"} in the CISA KEV catalog of known exploited vulnerabilities: ${kevHits.join(", ")}`, level: "warn" });
+    if (depsDev?.status === "ok" && depsDev.buildProvenance === "unverified") signals.push({ signal: "A build provenance attestation is published but could not be verified (deps.dev)", level: "caution" });
+    if (depsDev?.status === "ok" && depsDev.scorecardOverall != null && depsDev.scorecardOverall < 4) signals.push({ signal: `Low OpenSSF Scorecard for the attested source repository (${depsDev.scorecardOverall}/10, via deps.dev)`, level: "caution" });
     if (version && meta.versionExists === false) signals.push({ signal: `Version ${version} is not published`, level: "warn" });
 
     const report: PkgReport = {
@@ -310,6 +437,13 @@ export async function checkPackage(input: PkgInput, tier: "base" | "deep", deps:
       vulnerabilities: vuln.status === "ok" ? { status: "ok", count: vuln.vulns.length, source: "api.osv.dev", checkedVersion: version ?? meta.latest, attribution: OSV_ATTRIBUTION } : { status: "unavailable", error: vuln.error },
       signals,
     };
+    if (depsDev) {
+      report.provenance =
+        depsDev.status === "ok"
+          ? { status: "ok", checkedVersion, buildProvenance: depsDev.buildProvenance, sourceRepoAttested: depsDev.sourceRepoAttested, ...(tier === "deep" ? { scorecardOverall: depsDev.scorecardOverall } : {}), source: "deps.dev", attribution: DEPSDEV_ATTRIBUTION }
+          : { status: "unavailable", source: "deps.dev" };
+    }
+    if (advisoryCves.length) report.knownExploited = kev ? { status: "ok", cves: kevHits, attribution: KEV_ATTRIBUTION } : { status: "unavailable" };
     if (tier === "deep") {
       const sorted = meta.versions.filter((x) => x.t).sort((a, b) => a.t.localeCompare(b.t));
       const last90 = sorted.filter((x) => now - Date.parse(x.t) <= 90 * 86_400_000).length;
@@ -324,6 +458,7 @@ export async function checkPackage(input: PkgInput, tier: "base" | "deep", deps:
     return { ok: true, report };
   } catch (e) {
     if (e instanceof SourceDown) return { ok: false, status: 502, code: "registry_unavailable", error: `${e.message}; not charged. Retry later.` };
-    throw e;
+    // Never a 500 (Odin B-1): any unexpected failure is a refused, uncharged answer.
+    return { ok: false, status: 502, code: "check_failed", error: "The package check could not be completed; not charged. Retry later." };
   }
 }

@@ -4,7 +4,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CONTACT_EMAIL } from "@/lib/config";
 import { auditHighTiersEnabled, darkEnabled } from "@/lib/dark-routes";
-import { CHECK_USER_AGENT, DATA_USER_AGENT, optOutList } from "@/lib/dark-checks-shared";
+import { CHECK_USER_AGENT, DATA_USER_AGENT, optOutCount, REDIRECT_COPY } from "@/lib/dark-checks-shared";
 
 // Read the flag per request: dark (404) exactly when the web readiness checks route is dark (Counsel C3).
 export const dynamic = "force-dynamic";
@@ -18,10 +18,10 @@ export const metadata: Metadata = {
 
 export default function WebChecksPage() {
   if (!darkEnabled("audit")) notFound();
-  const optOut = optOutList();
+  const optOutTotal = optOutCount();
   // Certificate history (crt.sh) is only part of the checks when the high tiers are on (HP_AUDIT_HIGH_TIERS_ENABLED).
   const ctHistory = auditHighTiersEnabled();
-  const dataSources = ctHistory ? "npm, PyPI, pypistats, OSV.dev, crt.sh" : "npm, PyPI, pypistats, OSV.dev";
+  const dataSources = ctHistory ? "npm, PyPI, pypistats, OSV.dev, deps.dev, the CISA KEV feed, crt.sh" : "npm, PyPI, pypistats, OSV.dev, deps.dev, the CISA KEV feed";
   const mail = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Web checks opt-out")}`;
   return (
     <>
@@ -47,16 +47,21 @@ export default function WebChecksPage() {
               <li>Public DNS lookups (A, AAAA, NS, MX, CAA, TXT, <code>_dmarc</code> and 9 common DKIM selector names).</li>
               {ctHistory ? <li>Certificate-transparency history for the name from crt.sh (a public log service, not the site itself).</li> : null}
             </ul>
-            <p>
-              Nothing else is requested: no other paths, no other hosts or subdomains, no port scans, no login attempts, no exploit payloads.
-              A single host is checked at most 3 times per minute across all of our servers.
-            </p>
+            <p id="redirects">{REDIRECT_COPY}</p>
+            <p>A single host is checked at most 3 times per minute across all of our servers.</p>
             <h2>Opt out</h2>
             <p id="opt-out">
               Domain owners can ask us not to check their domain by emailing <a href={mail}>{CONTACT_EMAIL}</a> with the domain name. A listed domain also covers its subdomains. The list is checked before any request
               is sent, including the DNS lookup, so an opted-out domain receives no traffic from these checks.
             </p>
-            <p>Domains currently opted out: {optOut.length ? optOut.join(", ") : "none yet"}.</p>
+            <p id="opt-out-count">Domains currently opted out: {optOutTotal}. The list itself is not published.</p>
+            <form id="opt-out-check" action="/web-checks/opt-out" method="get">
+              <label>
+                Check one exact domain: <input name="domain" type="text" inputMode="url" maxLength={253} placeholder="example.com" required />
+              </label>{" "}
+              <button type="submit">Check</button>
+            </form>
+            <p>The lookup answers only yes or no for the one domain entered (no wildcards or partial matches) and is rate limited.</p>
           </div>
         </section>
       </main>

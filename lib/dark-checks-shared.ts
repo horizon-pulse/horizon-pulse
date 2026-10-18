@@ -19,7 +19,7 @@ export const CHECKS_PAGE_PATH = "/web-checks";
 export const CHECKS_PAGE_URL = `https://horizonpulse.dev${CHECKS_PAGE_PATH}`;
 /** Sent on every request to a caller-named target (web readiness checks, injection-scan URL mode). */
 export const CHECK_USER_AGENT = `HorizonPulseCheck/1.0 (+${CHECKS_PAGE_URL}; ${CONTACT_EMAIL})`;
-/** Sent to fixed data sources (npm, PyPI, pypistats, OSV.dev, crt.sh). */
+/** Sent to fixed data sources (npm, PyPI, pypistats, OSV.dev, deps.dev, the CISA KEV feed, crt.sh). */
 export const DATA_USER_AGENT = `HorizonPulse/1.0 (+${CHECKS_PAGE_URL}; ${CONTACT_EMAIL})`;
 
 /**
@@ -37,6 +37,38 @@ export function optOutList(env: Env = process.env, base: readonly string[] = OPT
 export function isOptedOut(host: string, list: readonly string[] = optOutList()): boolean {
   const h = host.trim().toLowerCase().replace(/\.$/, "");
   return list.some((d) => h === d || h.endsWith(`.${d}`));
+}
+
+/**
+ * What is requested from the submitted host, Counsel's wording VERBATIM (10/18 rulings;
+ * filed as 03-exchange/to-counsel/2026-10-18-pulse-redirect-copy.md). Used by the
+ * audit method text (both tiers) and the /web-checks page. Matches the code:
+ * audit-security.ts maxRedirects 5 (home) and 2 (security.txt), every hop re-checked
+ * against the opt-out list and the network guard (guardedGet) before it is requested.
+ */
+export const REDIRECT_COPY =
+  "The GET of https://host/ follows the site's own redirects (up to 5), and the security.txt GET follows up to 2; each redirect target is checked against the opt-out list and our network guard before it is requested, and opted-out hosts are never requested. Apart from those redirects, nothing else is requested: no other paths, hosts or subdomains, no port scans, no login attempts, no exploit payloads.";
+
+/**
+ * Opt-out lookup for ONE exact domain (Counsel FAIL on the published list; Odin 10/18):
+ * the /web-checks page shows only a count, and GET /web-checks/opt-out?domain= answers
+ * yes/no for the one domain asked about. No list, no wildcard or prefix search, no
+ * partial matches, no logging of the query. "yes" means checks of exactly that domain
+ * are refused (it is listed, or a listed parent domain covers it).
+ * Rate limited twice: per caller IP in memory on this instance (the IP is never stored
+ * or sent anywhere), and a global per-minute budget in the shared Upstash limiter
+ * (key carries no caller data). The shared limiter failing or over budget = refuse
+ * (fail closed): 503/429, never an answer.
+ */
+export const OPT_OUT_CHECK_PER_IP_PER_MIN = 10;
+export const OPT_OUT_CHECK_GLOBAL_PER_MIN = 120;
+const HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
+export function normalizeOptOutQuery(raw: string | null): string | null {
+  const d = (raw ?? "").trim().toLowerCase().replace(/\.$/, "");
+  return HOSTNAME.test(d) ? d : null;
+}
+export function optOutCount(env: Env = process.env): number {
+  return optOutList(env).length;
 }
 
 // ---------------------------------------------------------------------------
