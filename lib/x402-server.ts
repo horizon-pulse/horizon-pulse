@@ -1,6 +1,19 @@
 import { withPaidCallMeta } from "./paid-call-meta";
 import { logRouteRequest } from "./route-log";
 import { withRelatedRoutes } from "./route-hints";
+import {
+  consumeFreeCall,
+  freeAnswerHeaders,
+  freeTierMode,
+  isFreeTierRoute,
+  routePathOf,
+  scheduleMarkPayer,
+  shouldAdvertise,
+  stripFreeMarker,
+  wantsFree,
+  withFreeTierAdvert,
+  type FreeTierRoute,
+} from "./free-tier";
 import { createFacilitatorConfig } from "@coinbase/x402";
 import {
   FacilitatorTimeoutError,
@@ -1273,8 +1286,12 @@ export async function discoveryOptionsResponse(opts: {
   // Polygon USDC rail (lib/polygon-config.ts): off unless HP_POLYGON_ENABLED=true
   // (+ mainnet code lock). Off → `withXrpl`, unchanged. On → appended LAST.
   const polygon = getPolygonRailConfig();
-  if (!polygon.enabled) return withXrpl;
-  return withPolygonAccept(withXrpl, polygon.config, opts.maxAmountRequired);
+  const out = polygon.enabled ? await withPolygonAccept(withXrpl, polygon.config, opts.maxAmountRequired) : withXrpl;
+  // Free daily cap (lib/free-tier.ts): HP_FREE_TIER=optin only, the 7 free-tier routes
+  // only -> the same OPTIONS answer plus the opt-in advert. Off -> `out`, unchanged.
+  const route = routePathOf(opts.resource);
+  if (freeTierMode() !== "optin" || !isFreeTierRoute(route)) return out;
+  return (await withFreeTierAdvert(out, route)) as NextResponse;
 }
 
 type AppRouteHandler = (req: NextRequest) => Promise<NextResponse>;
@@ -1355,9 +1372,58 @@ export function createX402GetHandler(
   // record (lib/route-log.ts; never awaited, never throws), then the free
   // relatedRoutes hint on settled 2xx JSON bodies (lib/route-hints.ts). None of
   // these runs before or inside verify/settle, and the unpaid 402 is untouched.
-  return async (incoming: NextRequest) => {
-    const paidHeader = hasPaymentHeader(incoming);
-    const res = withPaidCallMeta(routePath, incoming.method, await serve(incoming));
+  //
+  // Free daily cap (lib/free-tier.ts, item 0): only when HP_FREE_TIER=optin and only
+  // on the 7 free-tier routes. Off (code default) -> `freeRoute` is null and this
+  // closure behaves exactly as before. On: an unpaid GET with ?free=1 / X-HP-Free: 1
+  // is counted (one EVAL); allowed -> the route handler runs directly (no verify, no
+  // settle) and the answer carries X-HP-Free-* + X-HP-Next. Capped or counter
+  // unavailable -> the normal path (402), never unlimited free. Paid requests never
+  // touch the counter. The opt-in marker is stripped before any handler sees it.
+  return async (original: NextRequest) => {
+    const paidHeader = hasPaymentHeader(original);
+    const freeRoute: FreeTierRoute | null = freeTierMode() === "optin" && isFreeTierRoute(routePath) ? routePath : null;
+    let incoming = original;
+    let freeExtra: Record<string, string> = {};
+    let advertise: boolean | null = null; // null = decide below (known-payer guard)
+    if (freeRoute) {
+      const optedIn = wantsFree(original);
+      incoming = stripFreeMarker(original, (u, init) => new NextRequest(u, init));
+      if (optedIn && original.method === "GET" && !paidHeader) {
+        const d = await consumeFreeCall({ route: freeRoute, headers: original.headers });
+        if (d.kind === "free") {
+          let res = await routeHandler(incoming);
+          const fh = freeAnswerHeaders(freeRoute, d);
+          try {
+            for (const [k, v] of Object.entries(fh)) res.headers.set(k, v);
+          } catch {
+            // immutable headers (a passed-through fetch Response): same body, copied headers
+            const h = new Headers(res.headers);
+            for (const [k, v] of Object.entries(fh)) h.set(k, v);
+            res = new NextResponse(res.body, { status: res.status, statusText: res.statusText, headers: h });
+          }
+          logRouteRequest({ route: routePath, method: original.method, res, paidHeader: false, amountAtomic: paymentOpts.maxAmountRequired });
+          return res;
+        }
+        if (d.kind === "known_payer") advertise = false; // known payer: today's 402, untouched
+        else advertise = true; // the caller already knows the tier; tell it why it got a 402
+        freeExtra =
+          d.kind === "known_payer"
+            ? {}
+            : d.kind === "capped"
+            ? { "X-HP-Free-Remaining": "0", "X-HP-Free-Reset": d.reset, "X-HP-Free-Status": d.global ? "global_budget_spent" : "daily_limit_reached" }
+            : { "X-HP-Free-Status": "unavailable" };
+      }
+    }
+    let res = withPaidCallMeta(routePath, incoming.method, await serve(incoming));
+    if (freeRoute && !paidHeader && res.status === 402) {
+      if (advertise === null) advertise = await shouldAdvertise({ headers: original.headers });
+      if (advertise) res = (await withFreeTierAdvert(res, freeRoute, freeExtra)) as NextResponse;
+    }
+    // Known-payer guard: a settled paid call (any route) marks the caller's IP (hashed, 30 d).
+    // Only while the guard is active (lib/free-tier.ts payerMarkWriting); fire-and-forget.
+    if (paidHeader && res.status >= 200 && res.status < 300 && (res.headers.get("payment-response") ?? res.headers.get("x-payment-response")))
+      scheduleMarkPayer(original.headers);
     logRouteRequest({ route: routePath, method: incoming.method, res, paidHeader, amountAtomic: paymentOpts.maxAmountRequired });
     return (await withRelatedRoutes(routePath, incoming.method, res)) as NextResponse;
   };

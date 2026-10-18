@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { freeTierRewrites } from "./lib/free-tier-mode";
 import { API_SECURITY_HEADERS, API_SOURCE, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS } from "./lib/security-headers";
 
 const nextConfig: NextConfig = {
@@ -8,6 +9,11 @@ const nextConfig: NextConfig = {
       { source: SITE_PAGES_SOURCE, headers: SITE_SECURITY_HEADERS.map((h) => ({ ...h })) },
       { source: API_SOURCE, headers: API_SECURITY_HEADERS.map((h) => ({ ...h })) },
     ];
+  },
+  // Free daily cap (lib/free-tier-mode.ts): HP_FREE_TIER=optin -> llms.txt / openapi.json
+  // served with the opt-in section; off (default) -> no rewrites, static files unchanged.
+  async rewrites() {
+    return { beforeFiles: freeTierRewrites(), afterFiles: [], fallback: [] };
   },
   // Headless Chromium for /api/screenshot: keep out of the bundle, ship the
   // brotli'd binary with every function that can invoke the handler.
@@ -22,6 +28,8 @@ const nextConfig: NextConfig = {
     "/api/screenshot": ["./node_modules/@sparticuz/chromium/bin/**"],
     "/api/demo/*": ["./node_modules/@sparticuz/chromium/bin/**"],
     "/mcp": ["./node_modules/@sparticuz/chromium/bin/**"],
+    "/free-tier/llms.txt": ["./public/llms.txt"],
+    "/free-tier/openapi.json": ["./public/openapi.json"],
   },
 };
 
