@@ -14,6 +14,12 @@
  *   HINCRBY hp:rl:d:<ET date> "<route>|<method>|<outcome>" 1   (daily counters)
  *   LPUSH/LTRIM hp:rl:r:<ET date> <record>  (capped at RECORDS_PER_DAY_CAP = 5,000)
  *   SET hp:rl:tx:<tx> <record> EX 30d       (paid_settled only: tx -> route)
+ *   HINCRBY hp:rl:p:<ET date> "<route>|<rail>|calls" 1 and
+ *           "<route>|<rail>|atomic" <amount>  (paid_settled only; no payer, 90d)
+ * The hp:rl:p hash answers "which route earned what, per rail, per day"
+ * without reading any payer data. amount = the route's configured USD price
+ * in 6-decimal atomic units (paymentOpts.maxAmountRequired), the same on
+ * every rail; the settled on-chain amount per rail is in the tx itself.
  * Counters keep a 90-day TTL; raw records and tx keys (which carry payer) 30 days. Upstash bills EVAL once regardless of
  * the redis.call()s inside it (free plan: 500K commands/month).
  *
@@ -52,14 +58,24 @@ export const RECORDS_PER_DAY_CAP = 5_000;
 export const DEFAULT_DAILY_CAP = 3000;
 export const ROUTE_LOG_TIMEOUT_MS = 1500;
 
-/** Lua: KEYS[1]=counter hash, KEYS[2]=record list, KEYS[3]=tx key (paid_settled only; numkeys 2 otherwise); ARGV[1]=field, ARGV[2]=record, ARGV[3]=counter ttl, ARGV[4]=list cap-1, ARGV[5]=record ttl */
+/**
+ * Lua: KEYS[1]=counter hash, KEYS[2]=record list, KEYS[3]=paid hash (paid_settled only),
+ * KEYS[4]=tx key (paid_settled with a tx only); numkeys 2, 3 or 4.
+ * ARGV[1]=field, ARGV[2]=record, ARGV[3]=counter ttl, ARGV[4]=list cap-1, ARGV[5]=record ttl,
+ * ARGV[6]=paid calls field, ARGV[7]=paid atomic field, ARGV[8]=atomic amount (ARGV[6..8] "" when unpaid).
+ */
 export const ROUTE_LOG_LUA = [
   "redis.call('HINCRBY', KEYS[1], ARGV[1], 1)",
   "redis.call('EXPIRE', KEYS[1], ARGV[3])",
   "redis.call('LPUSH', KEYS[2], ARGV[2])",
   "redis.call('LTRIM', KEYS[2], 0, ARGV[4])",
   "redis.call('EXPIRE', KEYS[2], ARGV[5])",
-  "if KEYS[3] then redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[5]) end",
+  "if KEYS[3] then",
+  "  redis.call('HINCRBY', KEYS[3], ARGV[6], 1)",
+  "  redis.call('HINCRBY', KEYS[3], ARGV[7], ARGV[8])",
+  "  redis.call('EXPIRE', KEYS[3], ARGV[3])",
+  "end",
+  "if KEYS[4] then redis.call('SET', KEYS[4], ARGV[2], 'EX', ARGV[5]) end",
   "return 1",
 ].join("\n");
 
@@ -117,11 +133,21 @@ export function buildRouteLogRecord(opts: {
 type Env = Record<string, string | undefined>;
 type FetchFn = typeof fetch;
 
+/** HINCRBY needs an integer; anything else counts the call but adds 0. */
+export function atomicOrZero(a: string | null): string {
+  return a !== null && /^\d{1,18}$/.test(a) ? String(BigInt(a)) : "0";
+}
+
 /** EVAL args for one record (exported for tests). */
 export function evalCommand(rec: RouteLogRecord): string[] {
   const day = etDate(new Date(rec.ts));
   const keys = [`hp:rl:d:${day}`, `hp:rl:r:${day}`];
-  if (rec.outcome === "paid_settled" && rec.tx) keys.push(`hp:rl:tx:${rec.tx.toLowerCase()}`);
+  const paid = rec.outcome === "paid_settled";
+  if (paid) {
+    keys.push(`hp:rl:p:${day}`);
+    if (rec.tx) keys.push(`hp:rl:tx:${rec.tx.toLowerCase()}`);
+  }
+  const rail = rec.rail ?? "unknown";
   return [
     "EVAL",
     ROUTE_LOG_LUA,
@@ -132,6 +158,9 @@ export function evalCommand(rec: RouteLogRecord): string[] {
     String(ROUTE_LOG_COUNTER_TTL_S),
     String(RECORDS_PER_DAY_CAP - 1),
     String(ROUTE_LOG_RECORD_TTL_S),
+    paid ? `${rec.route}|${rail}|calls` : "",
+    paid ? `${rec.route}|${rail}|atomic` : "",
+    paid ? atomicOrZero(rec.amount) : "",
   ];
 }
 

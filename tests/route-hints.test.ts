@@ -119,11 +119,16 @@ describe("hint through the real paid handler (Base via mocked CDP; nothing signe
     expect(j.v).toBe(1);
     expect(j[HINT_KEY].routes.length).toBe(3);
     await new Promise((r) => setTimeout(r, 10));
-    const outcomes = upstash.mock.calls.map((c) => JSON.parse(String((c[1] as RequestInit).body))[JSON.parse(String((c[1] as RequestInit).body))[2] === "3" ? 6 : 5]);
+    const cmds = upstash.mock.calls.map((c) => JSON.parse(String((c[1] as RequestInit).body)) as string[]);
+    const outcomes = cmds.map((c) => c[3 + Number(c[2])]);
     expect(outcomes).toEqual(["/api/pulse|GET|402_unpaid", "/api/pulse|GET|paid_settled"]);
-    const paidCmd = JSON.parse(String((upstash.mock.calls[1][1] as RequestInit).body));
-    expect(paidCmd[5]).toBe(`hp:rl:tx:0x${"ab".repeat(32)}`);
-    expect(JSON.parse(paidCmd[7])).toMatchObject({ route: "/api/pulse", outcome: "paid_settled", rail: "eip155:8453", amount: pulseOpts.maxAmountRequired, payer: `0x${"11".repeat(20)}` });
+    const paidCmd = cmds[1];
+    expect(paidCmd[2]).toBe("4");
+    expect(paidCmd[5]).toMatch(/^hp:rl:p:\d{4}-\d{2}-\d{2}$/);
+    expect(paidCmd[6]).toBe(`hp:rl:tx:0x${"ab".repeat(32)}`);
+    // End-to-end: the real route + facilitator settle produce the payer-free per-route paid counter.
+    expect(paidCmd.slice(12)).toEqual(["/api/pulse|eip155:8453|calls", "/api/pulse|eip155:8453|atomic", pulseOpts.maxAmountRequired]);
+    expect(JSON.parse(paidCmd[8])).toMatchObject({ route: "/api/pulse", outcome: "paid_settled", rail: "eip155:8453", amount: pulseOpts.maxAmountRequired, payer: `0x${"11".repeat(20)}` });
     vi.unstubAllGlobals();
   });
 });

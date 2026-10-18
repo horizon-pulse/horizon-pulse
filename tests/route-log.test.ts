@@ -4,6 +4,7 @@ import {
   classifyOutcome,
   DEFAULT_DAILY_CAP,
   etDate,
+  atomicOrZero,
   evalCommand,
   logRouteRequest,
   resetRouteLogState,
@@ -65,23 +66,31 @@ describe("route log: Upstash sink", () => {
     const rec = buildRouteLogRecord({ route: "/api/pulse", method: "GET", res: paidRes(), paidHeader: true, amountAtomic: "2000", now: NOW });
     const cmd = evalCommand(rec);
     expect(cmd[0]).toBe("EVAL");
-    expect(cmd[2]).toBe("3");
-    expect(cmd.slice(3, 6)).toEqual(["hp:rl:d:2026-10-17", "hp:rl:r:2026-10-17", `hp:rl:tx:${TX.toLowerCase()}`]);
-    expect(cmd[6]).toBe("/api/pulse|GET|paid_settled");
-    expect(JSON.parse(cmd[7])).toEqual(rec);
-    expect(cmd[8]).toBe(String(ROUTE_LOG_COUNTER_TTL_S));
-    expect(cmd[9]).toBe(String(RECORDS_PER_DAY_CAP - 1));
-    expect(cmd[10]).toBe(String(ROUTE_LOG_RECORD_TTL_S));
+    expect(cmd[2]).toBe("4");
+    expect(cmd.slice(3, 7)).toEqual(["hp:rl:d:2026-10-17", "hp:rl:r:2026-10-17", "hp:rl:p:2026-10-17", `hp:rl:tx:${TX.toLowerCase()}`]);
+    expect(cmd[7]).toBe("/api/pulse|GET|paid_settled");
+    expect(JSON.parse(cmd[8])).toEqual(rec);
+    expect(cmd[9]).toBe(String(ROUTE_LOG_COUNTER_TTL_S));
+    expect(cmd[10]).toBe(String(RECORDS_PER_DAY_CAP - 1));
+    expect(cmd[11]).toBe(String(ROUTE_LOG_RECORD_TTL_S));
+    // Per-route paid counter (payer-free): calls + atomic sum per route and rail.
+    expect(cmd.slice(12)).toEqual(["/api/pulse|eip155:8453|calls", "/api/pulse|eip155:8453|atomic", "2000"]);
+    // Payer appears only inside the record (ARGV[2]); never in keys or counter fields.
+    expect(cmd.slice(0, 8).concat(cmd.slice(9)).join("\n")).not.toContain(PAYER);
     expect(ROUTE_LOG_COUNTER_TTL_S).toBe(90 * 86400);
     expect(ROUTE_LOG_RECORD_TTL_S).toBe(30 * 86400);
     expect(RECORDS_PER_DAY_CAP).toBe(5000);
     // Lua: counters expire on ARGV[3]; the record list and tx key on ARGV[5].
     expect(cmd[1]).toContain("redis.call('EXPIRE', KEYS[1], ARGV[3])");
     expect(cmd[1]).toContain("redis.call('EXPIRE', KEYS[2], ARGV[5])");
-    expect(cmd[1]).toContain("redis.call('SET', KEYS[3], ARGV[2], 'EX', ARGV[5])");
+    expect(cmd[1]).toContain("redis.call('SET', KEYS[4], ARGV[2], 'EX', ARGV[5])");
+    expect(cmd[1]).toContain("redis.call('HINCRBY', KEYS[3], ARGV[6], 1)");
+    expect(cmd[1]).toContain("redis.call('HINCRBY', KEYS[3], ARGV[7], ARGV[8])");
+    expect(cmd[1]).toContain("redis.call('EXPIRE', KEYS[3], ARGV[3])");
     const unpaid = evalCommand(buildRouteLogRecord({ route: "/api/pulse", method: "GET", res: new Response("", { status: 402 }), paidHeader: false, amountAtomic: "2000", now: NOW }));
     expect(unpaid[2]).toBe("2");
-    expect(unpaid.some((a) => a.startsWith("hp:rl:tx:"))).toBe(false);
+    expect(unpaid.some((a) => a.startsWith("hp:rl:tx:") || a.startsWith("hp:rl:p:"))).toBe(false);
+    expect(unpaid.slice(10)).toEqual(["", "", ""]);
 
     const f = vi.fn(async (..._a: unknown[]) => new Response(JSON.stringify({ result: 1 }), { status: 200 }));
     expect(await sendRouteLog(rec, ENV, f as unknown as typeof fetch)).toBe(true);
@@ -124,5 +133,25 @@ describe("route log: Upstash sink", () => {
     vi.stubEnv("HP_ROUTE_LOG_IN_TESTS", "true");
     expect(logRouteRequest({ route: "/api/pulse", method: "GET", res: hostile, paidHeader: true, amountAtomic: "2000" })).toBeUndefined();
     vi.unstubAllEnvs();
+  });
+});
+
+describe("route log: per-route paid counter (hp:rl:p)", () => {
+  it("paid without a tx still counts (numkeys 3, no tx key); rail falls back to 'unknown'", () => {
+    const noTx = new Response("{}", { status: 200, headers: { "payment-response": settle({ success: true, payer: PAYER }) } });
+    const cmd = evalCommand(buildRouteLogRecord({ route: "/api/gas", method: "GET", res: noTx, paidHeader: true, amountAtomic: "5000", now: NOW }));
+    expect(cmd[2]).toBe("3");
+    expect(cmd.slice(3, 6)).toEqual(["hp:rl:d:2026-10-17", "hp:rl:r:2026-10-17", "hp:rl:p:2026-10-17"]);
+    expect(cmd.slice(11)).toEqual(["/api/gas|unknown|calls", "/api/gas|unknown|atomic", "5000"]);
+  });
+  it("ET day boundary: 11:30 PM ET lands on that ET day", () => {
+    const late = new Date("2026-10-18T03:30:00.000Z");
+    const cmd = evalCommand(buildRouteLogRecord({ route: "/api/pulse", method: "GET", res: paidRes(), paidHeader: true, amountAtomic: "2000", now: late }));
+    expect(cmd[5]).toBe("hp:rl:p:2026-10-17");
+  });
+  it("atomicOrZero only passes plain integers to HINCRBY", () => {
+    expect(atomicOrZero("2000")).toBe("2000");
+    expect(atomicOrZero("0010")).toBe("10");
+    for (const bad of [null, "", "1.5", "-1", "1e3", "abc", "9".repeat(19)]) expect(atomicOrZero(bad)).toBe("0");
   });
 });
