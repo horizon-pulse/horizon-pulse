@@ -18,7 +18,7 @@ import { __flushSolanaBackgroundForTests, __setSolanaRpcForTests, resetSolanaRai
 import { __setXrplFacilitatorSchemeLoaderForTests, __setXrplRpcForTests, resetXrplRailForTests, setXrplReplayStoreForTests, xrplReplayEvalOk } from "@/lib/xrpl-rail";
 import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
 import { resetPolygonRailForTests } from "@/lib/polygon-rail";
-import { SOLANA_MAINNET_CAIP2 } from "@/lib/solana-config";
+import { SOLANA_MAINNET_CAIP2, base58Encode } from "@/lib/solana-config";
 import type { Captured } from "./helpers/capture";
 import { expectRejectedGolden, expectRejectedGoldenPlus } from "./helpers/reject-header";
 import { PAYAI_FEE_PAYER, installRpc, parseableSolanaTx, stubSolanaOn, type AtaMode } from "./helpers/solana-env";
@@ -251,6 +251,41 @@ describe("Solana reject / unavailable 402 lists every healthy rail (Odin 2:13 (4
     expect(h.error).not.toBe("invalid_payload");
     expect(h.error).toMatch(/^[a-z0-9_]+$/);
     expect(h.accepts.map((a) => a.network)).toEqual([BASE, XRPL, POLY]);
+    expect(ran).toBe(0);
+  });
+
+  it("Sentinel LOW (v3): PayAI verify answers \"invalid_payload\" (passed through as the reason) → Solana still NOT re-offered: only OUR local checks set the internal flag", async () => {
+    rails({ xrpl: "ready", polygon: true, fac: { verify: (url) => (url === PAYAI ? { isValid: false, invalidReason: "invalid_payload" } : { isValid: true, payer: "0x" + "ab".repeat(20) }) } });
+    const open = pr(await handler()(unpaid())).accepts as PaymentRequirements[];
+    expect(open.map((a) => a.network)).toEqual([BASE, SOLANA_MAINNET_CAIP2, XRPL, POLY]);
+    const sol = open.find((a) => a.network === SOLANA_MAINNET_CAIP2)!;
+    const res = await handler()(paid(solPayload(sol)));
+    expect(res.status).toBe(402);
+    const h = pr(res);
+    expect(h.error).toBe("invalid_payload"); // same TEXT as our own local reject…
+    expect(solanaSlotBreakerOpen()).toBe(false);
+    expect(h.accepts.map((a) => a.network)).toEqual([BASE, XRPL, POLY]); // …but no Solana re-offer
+    expect(h.accepts.map((a) => a.payTo)).toEqual([APPROVED_BASE, APPROVED_XRPL, APPROVED_POLYGON]);
+    expect(ran).toBe(0);
+    // Control, same instance: OUR local invalid_payload (non-zero fee-payer slot) does re-offer Solana.
+    const own = pr(await handler()(paid(solPayload(sol, parseableSolanaTx(23, { feeFill: 0x55 })))));
+    expect(own.error).toBe("invalid_payload");
+    expect(own.accepts.map((a) => a.network)).toEqual([BASE, SOLANA_MAINNET_CAIP2, XRPL, POLY]);
+  });
+
+  it("Sentinel LOW (v3): the SECOND local site (post-init requirement check: fee payer ≠ PayAI) also flags the re-offer", async () => {
+    rails({ xrpl: "ready", polygon: true });
+    const open = pr(await handler()(unpaid())).accepts as PaymentRequirements[];
+    const sol = open.find((a) => a.network === SOLANA_MAINNET_CAIP2)!;
+    // key 0 = a non-PayAI fee payer that the client also put in accepted.extra.feePayer: passes the local checks,
+    // fails validateSolanaPaymentPayload after init (extra ≠ the built requirement's), before PayAI.
+    const raw = Buffer.from(parseableSolanaTx(24), "base64");
+    Buffer.alloc(32, 0x31).copy(raw, 1 + 64 + 64 + 4);
+    const other = base58Encode(new Uint8Array(32).fill(0x31));
+    const res = await handler()(paid(solPayload({ ...sol, extra: { ...sol.extra, feePayer: other } } as PaymentRequirements, raw.toString("base64"))));
+    const h = pr(res);
+    expect(h.error).toBe("invalid_payload");
+    expect(h.accepts.map((a) => a.network)).toEqual([BASE, SOLANA_MAINNET_CAIP2, XRPL, POLY]);
     expect(ran).toBe(0);
   });
 

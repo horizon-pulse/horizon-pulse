@@ -74,7 +74,7 @@ import { baseRail, runOnPaidRail } from "./paid-rail";
 import { getXrplRailConfig } from "./xrpl-config";
 import { handleXrplPayment, isXrplPaymentRequest, withXrplAccept, withXrplAcceptIfWarm } from "./xrpl-rail";
 import { getPolygonRailConfig } from "./polygon-config";
-import { RAIL_REJECT, withRejectReason } from "./rail-reject";
+import { withRejectReason } from "./rail-reject";
 import { handlePolygonPayment, isPolygonPaymentRequest, withPolygonAccept } from "./polygon-rail";
 
 /**
@@ -1482,8 +1482,10 @@ export function createX402GetHandler(
     }
     if (solana.enabled && isSolanaPaymentRequest(req)) {
       let rejected: string | null = null;
-      const paid = await handleSolanaPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, solana.config, (r) => {
+      let reofferSolana = false;
+      const paid = await handleSolanaPayment(req, routeHandler, routes, paymentOpts.maxAmountRequired, solana.config, (r, meta) => {
         rejected = r;
+        reofferSolana = meta?.reofferSolana === true;
       });
       if (paid) return withVary(paid) as NextResponse;
       // Solana unavailable / rejected / threw → a 402 built from a copy of the
@@ -1497,12 +1499,14 @@ export function createX402GetHandler(
       const clean = withoutPaymentHeaders(req);
       let challenge: NextResponse = await baseChallenge(clean, cdpReady);
       // Odin 2:29 (b) / 2:32 (1) delta6: Solana is re-offered (right after
-      // Base) ONLY when the rejection is client-caused (invalid_payload), via
+      // Base) ONLY when the rejection is client-caused (invalid_payload from
+      // OUR local checks, signalled by the internal reofferSolana flag, never
+      // by the reason text: Sentinel LOW, so a PayAI code can't steer it), via
       // the unpaid 402's own builder, which leaves it out when the token
       // account / rail is absent or the breaker is open. The explicit breaker
       // check only skips the builder's due getSlot probe on this path. Never
       // on rail_unavailable or verify/settle failures.
-      if (rejected === RAIL_REJECT.invalidPayload && !solanaSlotBreakerOpen() && challenge.status === 402) {
+      if (reofferSolana && !solanaSlotBreakerOpen() && challenge.status === 402) {
         challenge = await withSolanaAccept(challenge, solana.config, paymentOpts.maxAmountRequired);
       }
       // Odin 2:32 (2) LOW-1: XRPL only if already WARM on this instance (no
