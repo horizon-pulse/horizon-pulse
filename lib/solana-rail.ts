@@ -104,6 +104,7 @@ import { runOnPaidRail, solanaRail } from "./paid-rail";
 import {
   SOLANA_MAINNET_CAIP2,
   SOLANA_PAYTO,
+  SOLANA_DEFAULT_INIT_TIMEOUT_MS,
   SOLANA_PAYTO_USDC_ATA,
   SPL_TOKEN_PROGRAM,
   USDC_SOLANA_MINT,
@@ -1232,6 +1233,13 @@ async function settledBeforeRequest(
 export const SOLANA_LEDGER_CHECK_DEADLINE_MS = 4_000;
 /** Retry delays inside the deadline (confirmed-commitment indexing lag on public RPC). */
 export const SOLANA_LEDGER_CHECK_DELAYS_MS: readonly number[] = [0, 500, 1000, 1500];
+/**
+ * Odin 12:31: worst-case Solana time inside one paid request (default init timeout): token-account/rail init (the
+ * request-start getSlot runs in parallel and is capped at min(init, 1.5 s)) + PayAI verify + settle + the on-chain
+ * check (incl. its finalized re-read) = 2.5 + 10 + 12 + 4 = 28.5 s. Every route that can take Solana must have
+ * maxDuration ≥ this + a handler margin (tests/solana-time-budget.test.ts).
+ */
+export const SOLANA_WORST_CASE_MS = SOLANA_DEFAULT_INIT_TIMEOUT_MS + SOLANA_VERIFY_TIMEOUT_MS + SOLANA_SETTLE_TIMEOUT_MS + SOLANA_LEDGER_CHECK_DEADLINE_MS;
 /** How many recent payTo-ATA signatures are inspected when PayAI gave us no signature. */
 export const SOLANA_LEDGER_SCAN_LIMIT = 10;
 let ledgerDelays: readonly number[] = SOLANA_LEDGER_CHECK_DELAYS_MS;
@@ -1261,10 +1269,55 @@ export function payloadSignatures(txB64: string): string[] {
   return out;
 }
 
+/**
+ * Wire tx parts: signature slots and the MESSAGE bytes (exactly what every signer signed). Signer i signs slot i and
+ * is account key i of the message (legacy and v0 share the header/key layout after the optional version byte).
+ */
+type WireTx = { sigs: Uint8Array[]; message: Uint8Array; keys: Uint8Array[] };
+export function parseWireTx(bytes: Uint8Array): WireTx | null {
+  const b = Buffer.from(bytes);
+  const cu16 = (at: number): [number, number] | null => {
+    let n = 0;
+    for (let i = 0; i < 3; i++) {
+      if (at + i >= b.length) return null;
+      const byte = b[at + i];
+      n |= (byte & 0x7f) << (7 * i);
+      if ((byte & 0x80) === 0) return [n, at + i + 1];
+    }
+    return null;
+  };
+  const head = cu16(0);
+  if (!head) return null;
+  const [n, sigStart] = head;
+  const msgStart = sigStart + 64 * n;
+  if (n === 0 || msgStart >= b.length) return null;
+  const sigs: Uint8Array[] = [];
+  for (let j = 0; j < n; j++) sigs.push(Uint8Array.from(b.subarray(sigStart + 64 * j, sigStart + 64 * (j + 1))));
+  const message = Uint8Array.from(b.subarray(msgStart));
+  let at = message[0] & 0x80 ? 1 : 0; // v0 prefix
+  at += 3; // header: numRequiredSignatures, numReadonlySigned, numReadonlyUnsigned
+  const mb = Buffer.from(message);
+  let nk = 0;
+  let i = 0;
+  for (;;) {
+    if (i >= 3 || at + i >= mb.length) return null;
+    const byte = mb[at + i];
+    nk |= (byte & 0x7f) << (7 * i);
+    i++;
+    if ((byte & 0x80) === 0) break;
+  }
+  at += i;
+  if (at + 32 * nk > mb.length || nk < n) return null;
+  const keys: Uint8Array[] = [];
+  for (let j = 0; j < nk; j++) keys.push(Uint8Array.from(mb.subarray(at + 32 * j, at + 32 * (j + 1))));
+  return { sigs, message, keys };
+}
+const sameBytes = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((x, i) => x === b[i]);
+
 type ChainTx = {
-  blockTime?: unknown;
+  slot?: unknown;
   meta?: { err?: unknown; preTokenBalances?: unknown; postTokenBalances?: unknown } | null;
-  transaction?: { signatures?: unknown; message?: { accountKeys?: unknown } };
+  transaction?: unknown;
 };
 
 /** USDC (atomic) received by payTo in this tx, from pre/post token balances; null if unreadable. */
@@ -1286,30 +1339,63 @@ function usdcReceivedByPayTo(tx: ChainTx): bigint | null {
   return pre === null || post === null ? null : post - pre;
 }
 
-type ChainFind = { kind: "paid"; signature: string; payer: string } | { kind: "failed" } | { kind: "replay" } | { kind: "unknown" };
+/** Our own payment as we verified it: message bytes, the buyer's slot + signature, and the payer (key of that slot). */
+export type OurPayment = { message: Uint8Array; slot: number; signature: string; payer: string };
+export function ourPayment(txB64: string): OurPayment | null {
+  const w = parseWireTx(Buffer.from(txB64, "base64"));
+  if (!w) return null;
+  const slot = w.sigs.findIndex((x) => x.some((y) => y !== 0));
+  if (slot < 0) return null;
+  return { message: w.message, slot, signature: base58Encode(w.sigs[slot]), payer: base58Encode(w.keys[slot]) };
+}
+
+type ChainFind = { kind: "paid"; signature: string } | { kind: "failed" } | { kind: "replay"; signature: string } | { kind: "unknown" };
+
+/** Start-of-request chain position (Odin 12:31 S1): read before verify/settle, bounded so it never exceeds init. */
+export const SOLANA_START_SLOT_TIMEOUT_MS = 1_500;
+export async function readStartSlot(config: SolanaRailConfig): Promise<number | undefined> {
+  try {
+    const s = await rpc(config.rpcUrl, "getSlot", [{ commitment: "confirmed" }], Math.max(1, Math.min(config.initTimeoutMs, SOLANA_START_SLOT_TIMEOUT_MS)));
+    return typeof s === "number" && Number.isSafeInteger(s) && s > 0 ? s : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
- * After an ambiguous settle: is THIS payment on-chain? A candidate tx counts only if its signature list contains
- * the buyer's own signature from the payload (that signature covers the exact message we verified: mint, amount,
- * destination ATA), so PayAI cannot point us at an unrelated tx. Candidates: PayAI's signature when it gave one,
- * else the last SOLANA_LEDGER_SCAN_LIMIT signatures on payTo's USDC ATA.
- *   - found, meta.err set → "failed" (nothing moved to payTo);
- *   - found, ok, payTo received exactly the amount, block time ≥ start − skew → "paid";
- *   - found, ok, but confirmed before this request → "replay";
- *   - anything else (not indexed yet, RPC down, amount unreadable/different) → "unknown" (unchanged 502/504).
+ * After an ambiguous settle: is OUR payment on-chain? (Odin 12:31 S1/S2, Sentinel S1/S2.)
+ * A candidate counts ONLY if its MESSAGE bytes equal exactly the message we verified (fetched base64, decoded) and
+ * its signature in the buyer's slot equals the buyer's signature in our payload. PayAI's signature is only a lookup
+ * hint (fetched first, accepted only once it passes that binding); otherwise the recent payTo-ATA history with
+ * slot > startSlot is scanned. Freshness is by chain slot, not wall clock: startSlot = confirmed slot read at request
+ * start (before verify/settle), so a tx we submit lands at slot > startSlot; slot ≤ startSlot = it landed before this
+ * request → "replay" (409).
+ *   - bound, meta.err set at confirmed AND again at FINALIZED → "failed" (terminal Base-only 402);
+ *   - bound, ok, payTo received exactly the amount, slot > startSlot → "paid" (delivery at confirmed);
+ *   - bound, ok, slot ≤ startSlot → "replay";
+ *   - anything else (no startSlot, not indexed, RPC down, amount unreadable/different, not finalized) → "unknown".
  */
 async function findPaymentOnChain(
   config: SolanaRailConfig,
-  settleSig: string | undefined,
-  txB64: string,
+  settleSigHint: string | undefined,
+  ours: OurPayment,
   requirement: PaymentRequirements,
-  startedAt: number,
+  startSlot: number | undefined,
 ): Promise<ChainFind> {
-  const buyerSigs = new Set(payloadSignatures(txB64));
-  if (buyerSigs.size === 0) return { kind: "unknown" };
+  if (startSlot === undefined) return { kind: "unknown" };
   const deadline = Date.now() + SOLANA_LEDGER_CHECK_DEADLINE_MS;
   const sigRe = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
   const left = () => Math.max(1, Math.min(config.initTimeoutMs, deadline - Date.now()));
+  const fetchBound = async (sig: string, commitment: "confirmed" | "finalized"): Promise<ChainTx | null> => {
+    const tx = (await rpc(config.rpcUrl, "getTransaction", [sig, { commitment, encoding: "base64", maxSupportedTransactionVersion: 0 }], left())) as ChainTx | null;
+    const enc = tx?.transaction;
+    if (!tx || !Array.isArray(enc) || typeof enc[0] !== "string" || enc[1] !== "base64") return null;
+    const w = parseWireTx(Buffer.from(enc[0], "base64"));
+    if (!w || !sameBytes(w.message, ours.message)) return null; // not OUR message
+    const s = w.sigs[ours.slot];
+    if (!s || base58Encode(s) !== ours.signature) return null;
+    return Object.assign(tx, { __txid: base58Encode(w.sigs[0]) });
+  };
   for (const delay of ledgerDelays) {
     if (delay > 0) {
       if (Date.now() + delay >= deadline) break;
@@ -1317,35 +1403,55 @@ async function findPaymentOnChain(
     }
     if (deadline - Date.now() <= 0) break;
     try {
-      let candidates: string[];
-      if (typeof settleSig === "string" && sigRe.test(settleSig)) candidates = [settleSig];
-      else {
-        const list = await rpc(config.rpcUrl, "getSignaturesForAddress", [SOLANA_PAYTO_USDC_ATA, { limit: SOLANA_LEDGER_SCAN_LIMIT, commitment: "confirmed" }], left());
-        candidates = (Array.isArray(list) ? (list as Array<{ signature?: unknown; blockTime?: unknown }>) : [])
-          .filter((e) => typeof e?.signature === "string" && sigRe.test(e.signature) && (typeof e.blockTime !== "number" || e.blockTime * 1000 >= startedAt - REPLAY_CONFIRM_SKEW_MS))
-          .map((e) => e.signature as string);
+      const candidates: string[] = [];
+      if (typeof settleSigHint === "string" && sigRe.test(settleSigHint)) candidates.push(settleSigHint);
+      const list = await rpc(config.rpcUrl, "getSignaturesForAddress", [SOLANA_PAYTO_USDC_ATA, { limit: SOLANA_LEDGER_SCAN_LIMIT, commitment: "confirmed" }], left());
+      for (const e of Array.isArray(list) ? (list as Array<{ signature?: unknown; slot?: unknown }>) : []) {
+        if (typeof e?.signature === "string" && sigRe.test(e.signature) && typeof e.slot === "number" && e.slot > startSlot && !candidates.includes(e.signature)) candidates.push(e.signature);
       }
       for (const sig of candidates) {
         if (deadline - Date.now() <= 0) break;
-        const tx = (await rpc(config.rpcUrl, "getTransaction", [sig, { commitment: "confirmed", encoding: "json", maxSupportedTransactionVersion: 0 }], left())) as ChainTx | null;
-        const sigs = tx?.transaction?.signatures;
-        if (!tx || !Array.isArray(sigs) || !sigs.some((x) => typeof x === "string" && buyerSigs.has(x))) continue;
+        const tx = await fetchBound(sig, "confirmed");
+        if (!tx) continue;
         if (!tx.meta) return { kind: "unknown" };
-        if (tx.meta.err !== null && tx.meta.err !== undefined) return { kind: "failed" };
+        const txid = (tx as ChainTx & { __txid: string }).__txid;
+        if (tx.meta.err !== null && tx.meta.err !== undefined) {
+          // Terminal 402 only on FINALIZED failure (a confirmed fork could be dropped and the message re-included).
+          const fin = deadline - Date.now() > 0 ? await fetchBound(sig, "finalized") : null;
+          return fin?.meta && fin.meta.err !== null && fin.meta.err !== undefined ? { kind: "failed" } : { kind: "unknown" };
+        }
         const got = usdcReceivedByPayTo(tx);
         if (got === null || got !== BigInt(requirement.amount)) return { kind: "unknown" };
-        const bt = tx.blockTime;
-        if (typeof bt === "number" && bt * 1000 < startedAt - REPLAY_CONFIRM_SKEW_MS) return { kind: "replay" };
-        const keys = tx.transaction?.message?.accountKeys;
-        // Signer i signs slot i: the buyer's account key sits at the index of the buyer's signature.
-        const payer = Array.isArray(keys) ? String(keys[sigs.findIndex((x) => buyerSigs.has(String(x)))] ?? "") : "";
-        return { kind: "paid", signature: String(sigs[0]), payer };
+        if (typeof tx.slot !== "number" || !Number.isSafeInteger(tx.slot)) return { kind: "unknown" };
+        if (tx.slot <= startSlot) return { kind: "replay", signature: txid };
+        return { kind: "paid", signature: txid };
       }
     } catch {
       /* RPC down / malformed: retry within the deadline */
     }
   }
   return { kind: "unknown" };
+}
+
+/**
+ * Manual-refund trail (Odin 12:31): one line per 502/504/409 answered from the ambiguous-settle path. Public chain data
+ * only: payer (from OUR message), amount (server requirement), the buyer's signature from OUR payload, the chain tx
+ * id when found, outcome. Never facilitator text.
+ */
+function logSolanaReconcile(o: { status: number; reason: string; key: string; ours: OurPayment | null; amount: string; txid?: string }): void {
+  console.warn(
+    `[solana-rail] SOLANA_RECONCILE ${JSON.stringify({
+      status: o.status,
+      reason: o.reason,
+      fp: fp(o.key),
+      payer: o.ours?.payer ?? null,
+      amount: o.amount,
+      asset: USDC_SOLANA_MINT,
+      payTo: SOLANA_PAYTO,
+      buyerSignature: o.ours?.signature ?? null,
+      ...(o.txid ? { txid: o.txid } : {}),
+    })}`,
+  );
 }
 
 /** The handler's own response + PAYMENT-RESPONSE + private Cache-Control, as @x402/next's settle-success path. */
@@ -1389,10 +1495,12 @@ export async function handleSolanaPayment(
   };
   let key: string | null = null;
   let decision: Decision;
+  let reconcile: { reason: string; ours: OurPayment | null } | null = null;
   const startedAt = Date.now();
   try {
     // N3: token-account check and rail init in parallel.
-    const [ready, rail] = await Promise.all([solanaTokenAccountReady(config), getRail(config)]);
+    // Odin 12:31 S1: the chain slot at request start (before verify/settle) orders any later on-chain match.
+    const [ready, rail, startSlot] = await Promise.all([solanaTokenAccountReady(config), getRail(config), readStartSlot(config)]);
     if (!ready || !rail) return reject(RAIL_REJECT.unavailable);
 
     const requirement = await buildSolanaRequirement(rail, atomicUsdc);
@@ -1466,28 +1574,41 @@ export async function handleSolanaPayment(
         return jsonError(409, "duplicate_payment");
       }
       if (when === "unknown") warn(`could not read settled tx time fp=${fp(key)}; serving the paid response`, undefined, false);
-    } else if (att.settle?.outcome === "unconfirmed" && att.paidRes && !att.handlerThrew) {
-      // Ambiguous settle (timeout / transport / malformed / pending / success:false with a signature): the tx may
-      // have landed. Look for it on-chain (bounded, read-only) before answering, as on the XRPL rail.
-      const found = await findPaymentOnChain(config, att.settle.transaction, txOf(payload)!, requirement, startedAt);
-      if (found.kind === "paid") {
-        replaySet(key, "settled");
-        warn(`ambiguous settle confirmed on-chain fp=${fp(key)}; serving the paid response`, undefined, false);
-        return deliverConfirmed(att.paidRes, { success: true, transaction: found.signature, network: config.network, payer: found.payer } as SettleResponse);
+    } else if (att.settle?.outcome === "unconfirmed") {
+      const ours = ourPayment(txOf(payload)!);
+      if (att.settle.raw === "duplicate_settlement") {
+        // Odin 12:31 S1: PayAI says this payment was ALREADY settled (a delivery may have happened elsewhere): never
+        // look on-chain, never deliver; main's 502 stands.
+        reconcile = { reason: "duplicate_settlement", ours };
+      } else if (att.paidRes && !att.handlerThrew) {
+        // Ambiguous settle (timeout / transport / malformed / pending / success:false with a signature): the tx may
+        // have landed. Look for OUR message on-chain (bounded, read-only) before answering.
+        const found = ours ? await findPaymentOnChain(config, att.settle.transaction, ours, requirement, startSlot) : ({ kind: "unknown" } as const);
+        if (found.kind === "paid") {
+          replaySet(key, "settled");
+          warn(`ambiguous settle confirmed on-chain fp=${fp(key)}; serving the paid response`, undefined, false);
+          return deliverConfirmed(att.paidRes, { success: true, transaction: found.signature, network: config.network, payer: ours!.payer } as SettleResponse);
+        }
+        if (found.kind === "failed") {
+          replaySet(key, "settle_failed");
+          warn(`ambiguous settle: tx failed on-chain (finalized) fp=${fp(key)}; not charged, client gets the Base-only 402`, undefined, false);
+          return reject(settleFailReason("transaction_failed"));
+        }
+        if (found.kind === "replay") {
+          replaySet(key, "settled");
+          warn(`ambiguous settle: tx landed before this request (slot) fp=${fp(key)}; client gets 409`, undefined, false);
+          logSolanaReconcile({ status: 409, reason: "ambiguous_settle_landed_before_request", key, ours, amount: requirement.amount, txid: found.signature });
+          return jsonError(409, "duplicate_payment");
+        }
+        reconcile = { reason: startSlot === undefined ? "ambiguous_settle_no_start_slot" : "ambiguous_settle_not_found", ours };
+      } else {
+        reconcile = { reason: "ambiguous_settle_handler_failed", ours };
       }
-      if (found.kind === "failed") {
-        replaySet(key, "settle_failed");
-        warn(`ambiguous settle: tx failed on-chain fp=${fp(key)}; not charged, client gets the Base-only 402`, undefined, false);
-        return reject(settleFailReason("transaction_failed"));
-      }
-      if (found.kind === "replay") {
-        replaySet(key, "settled");
-        warn(`ambiguous settle: tx confirmed before this request fp=${fp(key)}; client gets 409`, undefined, false);
-        return jsonError(409, "duplicate_payment");
-      }
-      // unknown → unchanged 502/504 settlement_unconfirmed (decide)
     }
     decision = decide(key, att, res, threw, thrown);
+    if (reconcile && decision.kind === "response" && (decision.res.status === 502 || decision.res.status === 504 || decision.res.status === 409)) {
+      logSolanaReconcile({ status: decision.res.status, reason: reconcile.reason, key, ours: reconcile.ours, amount: requirement.amount });
+    }
   } catch (err) {
     // Our own code threw before/around the facilitator: nothing was settled.
     if (key && !attempts.get(key)?.settle) replay.delete(key);
