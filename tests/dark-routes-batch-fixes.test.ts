@@ -15,7 +15,7 @@ import path from "node:path";
 import { NextRequest } from "next/server";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload } from "@x402/core/types";
-import { assertAllowedSource, checkPackage, DEPSDEV_ATTRIBUTION, deriveDepsDev, isNpmSecurityEndpoint, KEV_ATTRIBUTION, KEV_URL, resetKevCacheForTests, type Deps } from "@/lib/package-safety";
+import { assertAllowedSource, BUILD_PROVENANCE_MEANING, checkPackage, DEPSDEV_ATTRIBUTION, kevCves, KEV_NEGATIVE_TTL_MS, PACKAGE_DEADLINE_MS, packageVerdict, SCORECARD_ATTRIBUTION, deriveDepsDev, isNpmSecurityEndpoint, KEV_ATTRIBUTION, KEV_URL, resetKevCacheForTests, type Deps } from "@/lib/package-safety";
 import { packageCheckHandler } from "@/app/api/package/check/handler";
 import { clientKey, INJECTION_TIERS, newReceiptId, PACKAGE_TIERS, RECEIPT_HEADER, resetRateLimitsForTests } from "@/lib/dark-routes";
 import { makeDarkRoute } from "@/lib/dark-route-runtime";
@@ -231,11 +231,11 @@ describe("B-5: deps.dev (one input, derived signals only, attributed, cached) an
     const d = pdeps({ depsdev: ATTESTED, project: { projectKey: { id: "github.com/acme/widget" }, starsCount: 99, scorecard: { overallScore: 3.14159, checks: [{ name: "Maintained", score: 0 }] } } });
     const r = await checkPackage({ ecosystem: "npm", name: "@x/advisor", version: null }, "deep", d);
     if (!r.ok) throw new Error("expected ok");
-    expect(r.report.provenance).toEqual({ status: "ok", checkedVersion: "1.0.0", buildProvenance: "verified", sourceRepoAttested: true, scorecardOverall: 3.1, source: "deps.dev", attribution: DEPSDEV_ATTRIBUTION });
+    expect(r.report.provenance).toEqual({ status: "ok", checkedVersion: "1.0.0", buildProvenance: "verified", buildProvenanceMeaning: BUILD_PROVENANCE_MEANING, sourceRepoAttested: true, scorecardOverall: 3.1, source: "deps.dev", attribution: DEPSDEV_ATTRIBUTION + SCORECARD_ATTRIBUTION });
     expect(DEPSDEV_ATTRIBUTION).toBe("Includes data from deps.dev (Open Source Insights, Google), generated data under CC-BY 4.0; advisories via OSV.dev, see each record's source.");
     const all = JSON.stringify(r.report);
     for (const raw of ["slsaProvenances", "attestations", "relatedProjects", "projectKey", "acme/widget", "starsCount", "Maintained", "advisoryKeys", "GHSA-zzzz", "https://x"]) expect(all).not.toContain(raw);
-    expect(r.report.signals).toContainEqual({ signal: "Low OpenSSF Scorecard for the attested source repository (3.1/10, via deps.dev)", level: "caution" });
+    expect(r.report.signals).toContainEqual({ signal: "Low OpenSSF Scorecard for the attested source repository (3.1/10, via deps.dev). OpenSSF Scorecard score from the OpenSSF Scorecard project (via deps.dev), data licensed under CDLA-Permissive-2.0: https://cdla.dev/permissive-2-0/", level: "caution" });
     const dd = d.calls.filter((u) => u.includes("api.deps.dev"));
     expect(dd).toEqual(["https://api.deps.dev/v3/systems/npm/packages/%40x%2Fadvisor/versions/1.0.0", "https://api.deps.dev/v3/projects/github.com%2Facme%2Fwidget"]);
     for (const init of d.inits) {
@@ -248,7 +248,7 @@ describe("B-5: deps.dev (one input, derived signals only, attributed, cached) an
     const d = pdeps({ depsdev: ATTESTED });
     const r = await checkPackage({ ecosystem: "npm", name: "widget", version: null }, "base", d);
     if (!r.ok) throw new Error("expected ok");
-    expect(r.report.provenance).toEqual({ status: "ok", checkedVersion: "1.0.0", buildProvenance: "verified", sourceRepoAttested: true, source: "deps.dev", attribution: DEPSDEV_ATTRIBUTION });
+    expect(r.report.provenance).toEqual({ status: "ok", checkedVersion: "1.0.0", buildProvenance: "verified", buildProvenanceMeaning: BUILD_PROVENANCE_MEANING, sourceRepoAttested: true, source: "deps.dev", attribution: DEPSDEV_ATTRIBUTION });
     expect(d.calls.some((u) => u.includes("/v3/projects/"))).toBe(false);
     const d2 = pdeps({ depsdev: { relatedProjects: [{ projectKey: { id: "github.com/a/b" }, relationProvenance: "UNVERIFIED_METADATA", relationType: "SOURCE_REPO" }] } });
     await checkPackage({ ecosystem: "npm", name: "widget", version: null }, "deep", d2);

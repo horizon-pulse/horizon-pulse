@@ -15,14 +15,16 @@ export async function packageCheckHandler(req: NextRequest, tier: Tier, receiptI
   if (!parsed.ok) return refuse(400, "bad_input", parsed.error);
   const r = await checkPackage(parsed.input, tier.id === "deep" ? "deep" : "base", deps);
   if (!r.ok) return refuse(r.status, r.code, r.error);
+  // The answer leads with the verdict (Odin re-review 10/18); ...r.report re-sets it in place.
   return NextResponse.json({
+    verdict: r.report.verdict,
     source: "package-check",
     priced: pricedBlock(TIER_PRICE_USD, TIER_PRICE_ATOMIC),
     receipt: { id: receiptId, route: "/api/package/check", tier: tier.id, amountAtomic: tier.atomicStr, issuedAt: new Date().toISOString() },
     asOf: new Date().toISOString(),
     tier: tier.id,
     ...r.report,
-    note: "Informational signals from public registries and OSV.dev at the time of the check; not a clearance of the package.",
+    note: "Informational signals from public registries, OSV.dev, deps.dev and the CISA KEV catalog at the time of the check; not a clearance of the package.",
     method: PACKAGE_METHOD,
     disclaimer: DISCLAIMER,
     dataNote: PACKAGE_DISCLAIMER_ADDENDUM,

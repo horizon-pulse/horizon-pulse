@@ -12,7 +12,20 @@
 import { DATA_USER_AGENT, OSV_ATTRIBUTION, readTextCapped, BodyTooLargeError, upstashCache, type SharedCache } from "./dark-checks-shared";
 
 export type Ecosystem = "npm" | "pypi";
-export type Deps = { fetch: typeof fetch; now: () => number; cache?: SharedCache };
+export type Deps = {
+  fetch: typeof fetch;
+  now: () => number;
+  cache?: SharedCache;
+  /** Overall deadline for one check (default PACKAGE_DEADLINE_MS); tests shorten it. */
+  deadlineMs?: number;
+  /** Set by checkPackage: aborts every in-flight source request when the overall deadline passes. */
+  signal?: AbortSignal;
+};
+/** One overall deadline per check (Odin re-review 10/18): sources run in parallel; whatever has not answered by then is marked missing and the answer is partial. */
+export const PACKAGE_DEADLINE_MS = 20_000;
+function reqSignal(deps: Deps, ms: number): AbortSignal {
+  return deps.signal ? AbortSignal.any([AbortSignal.timeout(ms), deps.signal]) : AbortSignal.timeout(ms);
+}
 export const defaultDeps = (): Deps => ({ fetch: (...a) => fetch(...a), now: () => Date.now(), cache: upstashCache() });
 
 const UA = { "user-agent": DATA_USER_AGENT };
@@ -46,7 +59,7 @@ export function assertAllowedSource(url: string): void {
 }
 
 export const PACKAGE_METHOD =
-  "Registry metadata from registry.npmjs.org or pypi.org, weekly downloads from api.npmjs.org or pypistats.org (cached 24 h), known vulnerabilities from OSV.dev (api.osv.dev/v1/query), build provenance (and, on deep, the OpenSSF Scorecard of an attested source repository) derived from deps.dev (cached 24 h), a cross-check of advisory CVEs against the CISA KEV catalog (cached 24 h), and a typosquat distance to a static list of popular names. No npm security or advisory data is used. Maintainers are reported as a count only.";
+  "Registry metadata from registry.npmjs.org or pypi.org, weekly downloads from api.npmjs.org or pypistats.org (cached 24 h), known vulnerabilities from OSV.dev (api.osv.dev/v1/query), build provenance as verified by deps.dev (and, on deep, the OpenSSF Scorecard of an attested source repository, via deps.dev) (cached 24 h), a cross-check of advisory CVEs against the CISA KEV catalog (cached 24 h), and a typosquat distance to a static list of popular names. Sources run in parallel under one 20 s deadline; a source that misses it is listed in missing and the answer is marked partial. The answer leads with verdict (install, caution or block) by fixed rules. No npm security or advisory data is used. Maintainers are reported as a count only.";
 const DOC_CAP = 6_000_000;
 const TIMEOUT = 8_000;
 
@@ -142,7 +155,7 @@ async function getJson(deps: Deps, url: string, init: RequestInit = {}): Promise
   assertAllowedSource(url);
   let res: Response;
   try {
-    res = await deps.fetch(url, { ...init, headers: { ...UA, accept: "application/json", ...(init.headers as Record<string, string> | undefined) }, signal: AbortSignal.timeout(TIMEOUT) });
+    res = await deps.fetch(url, { ...init, headers: { ...UA, accept: "application/json", ...(init.headers as Record<string, string> | undefined) }, signal: reqSignal(deps, TIMEOUT) });
   } catch (e) {
     throw new SourceDown(`${new URL(url).host}: ${e instanceof Error ? e.message : "unreachable"}`);
   }
@@ -186,7 +199,7 @@ async function osv(deps: Deps, eco: Ecosystem, name: string, version: string | n
       method: "POST",
       headers: { ...UA, "content-type": "application/json" },
       body: JSON.stringify({ package: { name, ecosystem: eco === "npm" ? "npm" : "PyPI" }, ...(version ? { version } : {}) }),
-      signal: AbortSignal.timeout(TIMEOUT),
+      signal: reqSignal(deps, TIMEOUT),
     });
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});
@@ -213,6 +226,10 @@ async function osv(deps: Deps, eco: Ecosystem, name: string, version: string | n
 export const DEPSDEV_ATTRIBUTION = "Includes data from deps.dev (Open Source Insights, Google), generated data under CC-BY 4.0; advisories via OSV.dev, see each record's source.";
 /** Counsel wording, verbatim. No CISA logo, no "CISA-verified" claim anywhere. */
 export const KEV_ATTRIBUTION = "Known-exploited status from the CISA KEV catalog (CC0)";
+/** Counsel re-read batch 2 (10/18), appended verbatim wherever a Scorecard score is shown (CDLA-Permissive-2.0 s.2.1). */
+export const SCORECARD_ATTRIBUTION = " OpenSSF Scorecard score from the OpenSSF Scorecard project (via deps.dev), data licensed under CDLA-Permissive-2.0: https://cdla.dev/permissive-2-0/";
+/** "verified" is deps.dev's own finding, not ours (Counsel re-read batch 2). */
+export const BUILD_PROVENANCE_MEANING = "verified = the attestation was cryptographically verified by deps.dev (not by Horizon Pulse); unverified = an attestation is published but deps.dev did not verify it; none = no attestation known to deps.dev.";
 export const DEPSDEV_CACHE_TTL_S = 24 * 3600;
 export const KEV_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json";
 const KEV_TTL_MS = 24 * 3600 * 1000;
@@ -230,7 +247,7 @@ export type DepsDevSignals =
 async function sideJson(deps: Deps, url: string, cap: number): Promise<unknown | null> {
   try {
     assertAllowedSource(url);
-    const res = await deps.fetch(url, { headers: { ...UA, accept: "application/json" }, signal: AbortSignal.timeout(SIDE_TIMEOUT) });
+    const res = await deps.fetch(url, { headers: { ...UA, accept: "application/json" }, signal: reqSignal(deps, SIDE_TIMEOUT) });
     if (!res.ok) {
       await res.body?.cancel().catch(() => {});
       return null;
@@ -288,177 +305,292 @@ export async function depsDevSignals(deps: Deps, eco: Ecosystem, name: string, v
   return out;
 }
 
-let kevMemo: { at: number; cves: Set<string> } | null = null;
+let kevMemo: { at: number; cves: Set<string> | null } | null = null;
+let kevInflight: Promise<Set<string> | null> | null = null;
+/** A failed KEV fetch is remembered for 5 minutes per instance, so an outage costs one request per 5 min, not one per check (Odin re-review 10/18). */
+export const KEV_NEGATIVE_TTL_MS = 5 * 60 * 1000;
 export function resetKevCacheForTests(): void {
   kevMemo = null;
+  kevInflight = null;
 }
-/** CISA KEV CVE ids, held in memory for 24 h per instance. A cross-check only; null when unavailable. NVD is never queried. */
+/** CISA KEV CVE ids, held in memory for 24 h per instance (failures 5 min). A cross-check only; null when unavailable. NVD is never queried. */
 export async function kevCves(deps: Deps): Promise<Set<string> | null> {
   const now = deps.now();
-  if (kevMemo && now - kevMemo.at < KEV_TTL_MS) return kevMemo.cves;
-  const j = (await sideJson(deps, KEV_URL, KEV_CAP)) as { vulnerabilities?: { cveID?: unknown }[] } | null;
-  if (!j || !Array.isArray(j.vulnerabilities)) return null;
-  const cves = new Set(j.vulnerabilities.map((x) => (typeof x?.cveID === "string" ? x.cveID.toUpperCase() : "")).filter((c) => /^CVE-\d{4}-\d{4,}$/.test(c)));
-  kevMemo = { at: now, cves };
-  return cves;
+  if (kevMemo && now - kevMemo.at < (kevMemo.cves ? KEV_TTL_MS : KEV_NEGATIVE_TTL_MS)) return kevMemo.cves;
+  if (kevInflight) return kevInflight;
+  kevInflight = (async () => {
+    const j = (await sideJson(deps, KEV_URL, KEV_CAP)) as { vulnerabilities?: { cveID?: unknown }[] } | null;
+    if (!j || !Array.isArray(j.vulnerabilities)) {
+      // Our own deadline aborting the request is not a feed failure: do not negative-cache it.
+      if (!deps.signal?.aborted) kevMemo = { at: now, cves: null };
+      return null;
+    }
+    const cves = new Set(j.vulnerabilities.map((x) => (typeof x?.cveID === "string" ? x.cveID.toUpperCase() : "")).filter((c) => /^CVE-\d{4}-\d{4,}$/.test(c)));
+    kevMemo = { at: now, cves };
+    return cves;
+  })().finally(() => {
+    kevInflight = null;
+  });
+  return kevInflight;
 }
 
 const daysBetween = (a: number, b: number) => Math.floor((b - a) / 86_400_000);
 
 export type PkgReport = Record<string, unknown> & { exists: boolean };
 
-/** Throws SourceDown only when the primary registry cannot answer (caller: 502, not charged). */
-export async function checkPackage(input: PkgInput, tier: "base" | "deep", deps: Deps = defaultDeps()): Promise<{ ok: true; report: PkgReport } | { ok: false; status: number; code: string; error: string }> {
-  const { ecosystem: eco, name, version } = input;
-  const squat = typosquatCheck(name, eco);
-  try {
-    let meta: { exists: boolean; latest: string | null; created: string | null; lastPublish: string | null; license: string | null; maintainers: number | null; repository: string | null; deprecated: string | null; installScripts: string[]; versions: { v: string; t: string }[]; versionExists: boolean | null; docTruncated: boolean };
-    if (eco === "npm") {
-      const enc = name.startsWith("@") ? `@${encodeURIComponent(name.slice(1))}` : encodeURIComponent(name);
-      const latest = await getJson(deps, `https://registry.npmjs.org/${enc}/latest`);
-      if (latest.status === 404) {
-        meta = { exists: false, latest: null, created: null, lastPublish: null, license: null, maintainers: null, repository: null, deprecated: null, installScripts: [], versions: [], versionExists: null, docTruncated: false };
-      } else {
-        const l = (latest.json ?? {}) as Record<string, unknown>;
-        const full = await getJson(deps, `https://registry.npmjs.org/${enc}`);
-        const f = (full.json ?? {}) as { time?: Record<string, string>; versions?: Record<string, unknown> };
-        const time = f.time ?? {};
-        const scripts = (l.scripts ?? {}) as Record<string, string>;
-        const repo = l.repository as { url?: string } | string | undefined;
-        meta = {
-          exists: true,
-          latest: (l.version as string) ?? null,
-          created: time.created ?? null,
-          lastPublish: time.modified ?? null,
-          license: typeof l.license === "string" ? l.license : ((l.license as { type?: string } | undefined)?.type ?? null),
-          maintainers: Array.isArray(l.maintainers) ? l.maintainers.length : null,
-          repository: typeof repo === "string" ? repo : (repo?.url ?? null),
-          deprecated: typeof l.deprecated === "string" ? l.deprecated.slice(0, 300) : null,
-          installScripts: ["preinstall", "install", "postinstall", "prepare"].filter((k) => typeof scripts[k] === "string"),
-          versions: Object.entries(time).filter(([k]) => k !== "created" && k !== "modified").map(([v, t]) => ({ v, t })),
-          versionExists: version ? (f.versions ? Object.hasOwn(f.versions, version) : null) : null,
-          docTruncated: full.truncated,
-        };
-      }
-    } else {
-      const j = await getJson(deps, `https://pypi.org/pypi/${encodeURIComponent(name)}/json`);
-      if (j.status === 404) {
-        meta = { exists: false, latest: null, created: null, lastPublish: null, license: null, maintainers: null, repository: null, deprecated: null, installScripts: [], versions: [], versionExists: null, docTruncated: false };
-      } else {
-        const d = (j.json ?? {}) as { info?: Record<string, unknown>; releases?: Record<string, { upload_time_iso_8601?: string; yanked?: boolean }[]> };
-        const info = d.info ?? {};
-        const versions = Object.entries(d.releases ?? {})
-          .map(([v, files]) => ({ v, t: files.map((x) => x.upload_time_iso_8601 ?? "").filter(Boolean).sort()[0] ?? "" }))
-          .filter((x) => x.t);
-        const times = versions.map((x) => x.t).sort();
-        const urls = (info.project_urls ?? {}) as Record<string, string>;
-        const people = new Set([info.author, info.maintainer].filter((x) => typeof x === "string" && x.trim()));
-        meta = {
-          exists: true,
-          latest: (info.version as string) ?? null,
-          created: times[0] ?? null,
-          lastPublish: times[times.length - 1] ?? null,
-          license: ((info.license_expression as string) || (info.license as string) || null)?.slice(0, 100) ?? null,
-          maintainers: people.size || null,
-          repository: urls.Source ?? urls.Repository ?? urls.Homepage ?? (info.home_page as string) ?? null,
-          deprecated: (info.yanked as boolean) ? String(info.yanked_reason ?? "yanked") : null,
-          installScripts: [],
-          versions,
-          versionExists: version ? Object.hasOwn(d.releases ?? {}, version) : null,
-          docTruncated: j.truncated,
-        };
-      }
-    }
+// ---------------------------------------------------------------------------
+// Verdict (Odin re-review 10/18): one field the answer leads with
+// ---------------------------------------------------------------------------
+export type Verdict = "install" | "caution" | "block";
+export const VERDICT_NOTE =
+  "verdict summarises the signals below by fixed rules (block: the package or version does not exist, an OSV malicious-package record, or an advisory CVE in the CISA KEV catalog; caution: any other warning or caution signal, vulnerability data unavailable, or a partial answer; install: none of these). It is not a clearance of the package.";
+/**
+ * Fixed rules, most severe first:
+ *   block   - package does not exist (hallucinated / typo name), or the requested version is not
+ *             published, or OSV lists a MAL- (known malicious package) record for it, or an
+ *             advisory CVE for the checked version is in the CISA KEV catalog.
+ *   caution - otherwise, any warn/caution signal (typosquat distance, known vulnerabilities,
+ *             first published < 30 days ago, < 100 weekly downloads, no license, install scripts,
+ *             deprecated/yanked, unverified provenance attestation, low Scorecard), or OSV data
+ *             unavailable, or the answer is partial (a source missed the deadline).
+ *   install - none of the above.
+ */
+export function packageVerdict(x: {
+  exists: boolean;
+  versionExists: boolean | null;
+  requestedVersion: string | null;
+  malicious: string[];
+  kevHits: string[];
+  signals: { signal: string; level: "info" | "caution" | "warn" }[];
+  vulnStatus: "ok" | "unavailable";
+  partial: boolean;
+}): { verdict: Verdict; reasons: string[] } {
+  const block: string[] = [];
+  if (!x.exists) block.push("Package does not exist in the registry");
+  if (x.exists && x.requestedVersion && x.versionExists === false) block.push(`Version ${x.requestedVersion} is not published`);
+  if (x.malicious.length) block.push(`OSV lists a malicious-package record: ${x.malicious.join(", ")}`);
+  if (x.kevHits.length) block.push(`Advisory CVE in the CISA KEV catalog: ${x.kevHits.join(", ")}`);
+  if (block.length) return { verdict: "block", reasons: block };
+  const caution = x.signals.filter((s) => s.level !== "info").map((s) => s.signal);
+  if (x.vulnStatus === "unavailable") caution.push("Vulnerability data (OSV.dev) unavailable for this check");
+  if (x.partial) caution.push("Partial answer: some sources did not answer in time");
+  if (caution.length) return { verdict: "caution", reasons: caution };
+  return { verdict: "install", reasons: [] };
+}
 
-    const now = deps.now();
-    let downloads: { lastWeek: number | null; source: string } = { lastWeek: null, source: "unavailable" };
-    if (meta.exists) {
-      try {
-        if (eco === "npm") {
-          const dl = await getJson(deps, `https://api.npmjs.org/downloads/point/last-week/${name.startsWith("@") ? name : encodeURIComponent(name)}`);
-          downloads = { lastWeek: Number((dl.json as { downloads?: number } | null)?.downloads ?? NaN) || 0, source: "api.npmjs.org" };
-        } else {
-          // pypistats updates once a day and asks callers to cache: 24 h shared cache per package (Counsel C6).
-          const key = `pypistats:${name}`;
-          const cached = await deps.cache?.get(key);
-          let lastWeek = cached != null && /^\d+$/.test(cached) ? Number(cached) : null;
-          if (lastWeek == null) {
-            const dl = await getJson(deps, `https://pypistats.org/api/packages/${encodeURIComponent(name)}/recent`);
-            lastWeek = Number((dl.json as { data?: { last_week?: number } } | null)?.data?.last_week ?? NaN) || 0;
-            await deps.cache?.set(key, String(lastWeek), PYPISTATS_CACHE_TTL_S);
-          }
-          downloads = { lastWeek, source: "pypistats.org" };
-        }
-      } catch {
-        /* downloads are best effort */
-      }
-    }
+const TIMED_OUT = Symbol("timed_out");
+type TimedOut = typeof TIMED_OUT;
+function race<T>(p: Promise<T>, deadline: Promise<TimedOut>): Promise<T | TimedOut> {
+  p.catch(() => {}); // a source that loses the race and fails later is not an unhandled rejection
+  return Promise.race([p, deadline]);
+}
 
-    const vuln = meta.exists ? await osv(deps, eco, name, version ?? meta.latest) : ({ status: "ok", vulns: [] } as const);
-    if (tier === "deep" && vuln.status === "unavailable") return { ok: false, status: 503, code: "advisory_source_unavailable", error: `${vuln.error}; deep tier needs vulnerability data, not charged. Retry later.` };
+type Meta = { exists: boolean; latest: string | null; created: string | null; lastPublish: string | null; license: string | null; maintainers: number | null; repository: string | null; deprecated: string | null; installScripts: string[]; versions: { v: string; t: string }[]; versionExists: boolean | null; docTruncated: boolean };
+const NO_META: Meta = { exists: false, latest: null, created: null, lastPublish: null, license: null, maintainers: null, repository: null, deprecated: null, installScripts: [], versions: [], versionExists: null, docTruncated: false };
 
-    // Secondary inputs, best effort; never change the status code or block the answer.
-    const checkedVersion = version ?? meta.latest;
-    const depsDev: DepsDevSignals | null = meta.exists && checkedVersion && (version === null || meta.versionExists !== false) ? await depsDevSignals(deps, eco, name, checkedVersion, tier === "deep") : null;
-    const advisoryCves = vuln.status === "ok" ? [...new Set(vuln.vulns.flatMap((v) => [v.id, ...v.aliases]).map((x) => x.toUpperCase()).filter((x) => /^CVE-\d{4}-\d{4,}$/.test(x)))] : [];
-    const kev = advisoryCves.length ? await kevCves(deps) : null;
-    const kevHits = kev ? advisoryCves.filter((c) => kev.has(c)).slice(0, 20) : [];
-
-    const ageDays = meta.created ? daysBetween(Date.parse(meta.created), now) : null;
-    const signals: { signal: string; level: "info" | "caution" | "warn" }[] = [];
-    if (!meta.exists) signals.push({ signal: "Package does not exist in the registry (possible hallucinated or typo name)", level: "warn" });
-    if (squat.nearest.length) signals.push({ signal: `Name is close to popular package(s): ${squat.nearest.map((h) => h.popular).join(", ")}`, level: "warn" });
-    if (ageDays != null && ageDays < 30) signals.push({ signal: `First published ${ageDays} days ago`, level: "caution" });
-    if (downloads.lastWeek != null && downloads.lastWeek < 100 && meta.exists) signals.push({ signal: `Low weekly downloads (${downloads.lastWeek})`, level: "caution" });
-    if (meta.exists && !meta.license) signals.push({ signal: "No license declared", level: "caution" });
-    if (meta.installScripts.length) signals.push({ signal: `Runs install scripts: ${meta.installScripts.join(", ")}`, level: "caution" });
-    if (meta.deprecated) signals.push({ signal: `Deprecated or yanked: ${meta.deprecated}`, level: "caution" });
-    if (vuln.status === "ok" && vuln.vulns.length) signals.push({ signal: `${vuln.vulns.length} known vulnerabilit${vuln.vulns.length === 1 ? "y" : "ies"} for ${version ?? meta.latest ?? "this package"} (OSV.dev)`, level: "warn" });
-    if (kevHits.length) signals.push({ signal: `${kevHits.length} advisory CVE${kevHits.length === 1 ? " is" : "s are"} in the CISA KEV catalog of known exploited vulnerabilities: ${kevHits.join(", ")}`, level: "warn" });
-    if (depsDev?.status === "ok" && depsDev.buildProvenance === "unverified") signals.push({ signal: "A build provenance attestation is published but could not be verified (deps.dev)", level: "caution" });
-    if (depsDev?.status === "ok" && depsDev.scorecardOverall != null && depsDev.scorecardOverall < 4) signals.push({ signal: `Low OpenSSF Scorecard for the attested source repository (${depsDev.scorecardOverall}/10, via deps.dev)`, level: "caution" });
-    if (version && meta.versionExists === false) signals.push({ signal: `Version ${version} is not published`, level: "warn" });
-
-    const report: PkgReport = {
-      ecosystem: eco,
-      name,
-      exists: meta.exists,
-      requestedVersion: version,
-      versionExists: meta.versionExists,
-      latestVersion: meta.latest,
-      firstPublished: meta.created,
-      ageDays,
-      lastPublished: meta.lastPublish,
-      weeklyDownloads: downloads.lastWeek,
-      downloadsSource: downloads.source,
-      maintainerCount: meta.maintainers,
-      license: meta.license,
-      typosquat: { isPopularName: squat.isPopular, nearestPopular: squat.nearest },
-      vulnerabilities: vuln.status === "ok" ? { status: "ok", count: vuln.vulns.length, source: "api.osv.dev", checkedVersion: version ?? meta.latest, attribution: OSV_ATTRIBUTION } : { status: "unavailable", error: vuln.error },
-      signals,
+async function registryMeta(deps: Deps, eco: Ecosystem, name: string, version: string | null): Promise<Meta> {
+  if (eco === "npm") {
+    const enc = name.startsWith("@") ? `@${encodeURIComponent(name.slice(1))}` : encodeURIComponent(name);
+    // Both registry documents in parallel (one round trip, not two).
+    const [latest, full] = await Promise.all([getJson(deps, `https://registry.npmjs.org/${enc}/latest`), getJson(deps, `https://registry.npmjs.org/${enc}`)]);
+    if (latest.status === 404) return { ...NO_META };
+    const l = (latest.json ?? {}) as Record<string, unknown>;
+    const f = (full.json ?? {}) as { time?: Record<string, string>; versions?: Record<string, unknown> };
+    const time = f.time ?? {};
+    const scripts = (l.scripts ?? {}) as Record<string, string>;
+    const repo = l.repository as { url?: string } | string | undefined;
+    return {
+      exists: true,
+      latest: (l.version as string) ?? null,
+      created: time.created ?? null,
+      lastPublish: time.modified ?? null,
+      license: typeof l.license === "string" ? l.license : ((l.license as { type?: string } | undefined)?.type ?? null),
+      maintainers: Array.isArray(l.maintainers) ? l.maintainers.length : null,
+      repository: typeof repo === "string" ? repo : (repo?.url ?? null),
+      deprecated: typeof l.deprecated === "string" ? l.deprecated.slice(0, 300) : null,
+      installScripts: ["preinstall", "install", "postinstall", "prepare"].filter((k) => typeof scripts[k] === "string"),
+      versions: Object.entries(time).filter(([k]) => k !== "created" && k !== "modified").map(([v, t]) => ({ v, t })),
+      versionExists: version ? (f.versions ? Object.hasOwn(f.versions, version) : null) : null,
+      docTruncated: full.truncated,
     };
-    if (depsDev) {
-      report.provenance =
-        depsDev.status === "ok"
-          ? { status: "ok", checkedVersion, buildProvenance: depsDev.buildProvenance, sourceRepoAttested: depsDev.sourceRepoAttested, ...(tier === "deep" ? { scorecardOverall: depsDev.scorecardOverall } : {}), source: "deps.dev", attribution: DEPSDEV_ATTRIBUTION }
-          : { status: "unavailable", source: "deps.dev" };
+  }
+  const j = await getJson(deps, `https://pypi.org/pypi/${encodeURIComponent(name)}/json`);
+  if (j.status === 404) return { ...NO_META };
+  const d = (j.json ?? {}) as { info?: Record<string, unknown>; releases?: Record<string, { upload_time_iso_8601?: string; yanked?: boolean }[]> };
+  const info = d.info ?? {};
+  const versions = Object.entries(d.releases ?? {})
+    .map(([v, files]) => ({ v, t: files.map((x) => x.upload_time_iso_8601 ?? "").filter(Boolean).sort()[0] ?? "" }))
+    .filter((x) => x.t);
+  const times = versions.map((x) => x.t).sort();
+  const urls = (info.project_urls ?? {}) as Record<string, string>;
+  const people = new Set([info.author, info.maintainer].filter((x) => typeof x === "string" && x.trim()));
+  return {
+    exists: true,
+    latest: (info.version as string) ?? null,
+    created: times[0] ?? null,
+    lastPublish: times[times.length - 1] ?? null,
+    license: ((info.license_expression as string) || (info.license as string) || null)?.slice(0, 100) ?? null,
+    maintainers: people.size || null,
+    repository: urls.Source ?? urls.Repository ?? urls.Homepage ?? (info.home_page as string) ?? null,
+    deprecated: (info.yanked as boolean) ? String(info.yanked_reason ?? "yanked") : null,
+    installScripts: [],
+    versions,
+    versionExists: version ? Object.hasOwn(d.releases ?? {}, version) : null,
+    docTruncated: j.truncated,
+  };
+}
+
+async function weeklyDownloads(deps: Deps, eco: Ecosystem, name: string): Promise<{ lastWeek: number | null; source: string }> {
+  try {
+    if (eco === "npm") {
+      const dl = await getJson(deps, `https://api.npmjs.org/downloads/point/last-week/${name.startsWith("@") ? name : encodeURIComponent(name)}`);
+      return { lastWeek: Number((dl.json as { downloads?: number } | null)?.downloads ?? NaN) || 0, source: "api.npmjs.org" };
     }
-    if (advisoryCves.length) report.knownExploited = kev ? { status: "ok", cves: kevHits, attribution: KEV_ATTRIBUTION } : { status: "unavailable" };
-    if (tier === "deep") {
-      const sorted = meta.versions.filter((x) => x.t).sort((a, b) => a.t.localeCompare(b.t));
-      const last90 = sorted.filter((x) => now - Date.parse(x.t) <= 90 * 86_400_000).length;
-      report.deep = {
-        vulnerabilities: vuln.status === "ok" ? vuln.vulns : [],
-        installScripts: meta.installScripts,
-        deprecated: meta.deprecated,
-        repository: meta.repository,
-        releases: { total: sorted.length, last90Days: last90, latest: sorted[sorted.length - 1] ?? null, documentTooLarge: meta.docTruncated },
-      };
+    // pypistats updates once a day and asks callers to cache: 24 h shared cache per package (Counsel C6).
+    const key = `pypistats:${name}`;
+    const cached = await deps.cache?.get(key);
+    let lastWeek = cached != null && /^\d+$/.test(cached) ? Number(cached) : null;
+    if (lastWeek == null) {
+      const dl = await getJson(deps, `https://pypistats.org/api/packages/${encodeURIComponent(name)}/recent`);
+      lastWeek = Number((dl.json as { data?: { last_week?: number } } | null)?.data?.last_week ?? NaN) || 0;
+      await deps.cache?.set(key, String(lastWeek), PYPISTATS_CACHE_TTL_S);
     }
-    return { ok: true, report };
+    return { lastWeek, source: "pypistats.org" };
+  } catch {
+    return { lastWeek: null, source: "unavailable" }; // downloads are best effort
+  }
+}
+
+/**
+ * Registry first (required: if it cannot answer, 502 not charged), then downloads, OSV,
+ * deps.dev and the KEV cross-check IN PARALLEL, all under ONE overall deadline
+ * (PACKAGE_DEADLINE_MS, 20 s; every source request is also aborted at the deadline).
+ * A source that misses it is listed in `missing` and the answer says `partial: true`.
+ * Never throws: unexpected failures are a 502 refusal (not charged), never a 500.
+ */
+export async function checkPackage(input: PkgInput, tier: "base" | "deep", deps: Deps = defaultDeps()): Promise<{ ok: true; report: PkgReport } | { ok: false; status: number; code: string; error: string }> {
+  const ctl = new AbortController();
+  const deadlineMs = deps.deadlineMs ?? PACKAGE_DEADLINE_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<TimedOut>((resolve) => {
+    timer = setTimeout(() => {
+      ctl.abort(new Error("deadline"));
+      resolve(TIMED_OUT);
+    }, deadlineMs);
+  });
+  const d: Deps = { ...deps, signal: deps.signal ? AbortSignal.any([deps.signal, ctl.signal]) : ctl.signal };
+  try {
+    return await runCheck(input, tier, d, deadline, deadlineMs, ctl.signal);
   } catch (e) {
     if (e instanceof SourceDown) return { ok: false, status: 502, code: "registry_unavailable", error: `${e.message}; not charged. Retry later.` };
     // Never a 500 (Odin B-1): any unexpected failure is a refused, uncharged answer.
     return { ok: false, status: 502, code: "check_failed", error: "The package check could not be completed; not charged. Retry later." };
+  } finally {
+    clearTimeout(timer);
   }
+}
+
+async function runCheck(input: PkgInput, tier: "base" | "deep", deps: Deps, deadline: Promise<TimedOut>, deadlineMs: number, deadlineSignal: AbortSignal): Promise<{ ok: true; report: PkgReport } | { ok: false; status: number; code: string; error: string }> {
+  const { ecosystem: eco, name, version } = input;
+  const squat = typosquatCheck(name, eco);
+  const m = await race(registryMeta(deps, eco, name, version), deadline);
+  if (m === TIMED_OUT) throw new SourceDown(`${eco === "npm" ? "registry.npmjs.org" : "pypi.org"} did not answer within ${deadlineMs / 1000} s`);
+  const meta = m;
+
+  // Everything else in parallel, under the same deadline.
+  const checkedVersion = version ?? meta.latest;
+  const osvP = meta.exists ? osv(deps, eco, name, checkedVersion) : Promise.resolve({ status: "ok", vulns: [] as Vuln[] } as const);
+  const cvesOf = (v: Awaited<typeof osvP>) => (v.status === "ok" ? [...new Set(v.vulns.flatMap((x) => [x.id, ...x.aliases]).map((x) => x.toUpperCase()).filter((x) => /^CVE-\d{4}-\d{4,}$/.test(x)))] : []);
+  const [dlR, vulnR, ddR, kevR] = await Promise.all([
+    race(meta.exists ? weeklyDownloads(deps, eco, name) : Promise.resolve({ lastWeek: null, source: "unavailable" }), deadline),
+    race(osvP, deadline),
+    race(meta.exists && checkedVersion && (version === null || meta.versionExists !== false) ? depsDevSignals(deps, eco, name, checkedVersion, tier === "deep") : Promise.resolve(null), deadline),
+    race(osvP.then((v) => (cvesOf(v).length ? kevCves(deps) : null)), deadline),
+  ]);
+  const late = deadlineSignal.aborted;
+  const missing: string[] = [];
+  const downloads = dlR === TIMED_OUT ? (missing.push("downloads"), { lastWeek: null, source: "timeout" }) : dlR;
+  const vuln = vulnR === TIMED_OUT ? (missing.push("osv"), { status: "unavailable" as const, error: `api.osv.dev did not answer within ${deadlineMs / 1000} s` }) : vulnR;
+  if (vulnR !== TIMED_OUT && vuln.status === "unavailable" && late) missing.push("osv");
+  const depsDev: DepsDevSignals | null = ddR === TIMED_OUT ? (missing.push("deps.dev"), { status: "unavailable" }) : ddR;
+  if (ddR !== TIMED_OUT && ddR?.status === "unavailable" && late) missing.push("deps.dev");
+  const advisoryCves = cvesOf(vuln);
+  const kev = kevR === TIMED_OUT ? (missing.push("cisa-kev"), null) : kevR;
+  if (kevR !== TIMED_OUT && advisoryCves.length && kev === null && late) missing.push("cisa-kev");
+  if (downloads.source === "unavailable" && meta.exists && late && !missing.includes("downloads")) missing.push("downloads");
+  const partial = missing.length > 0;
+
+  if (tier === "deep" && vuln.status === "unavailable") return { ok: false, status: 503, code: "advisory_source_unavailable", error: `${vuln.error}; deep tier needs vulnerability data, not charged. Retry later.` };
+
+  const now = deps.now();
+  const kevHits = kev ? advisoryCves.filter((c) => kev.has(c)).slice(0, 20) : [];
+  const malicious = vuln.status === "ok" ? vuln.vulns.map((v) => v.id).filter((id) => id.startsWith("MAL-")).slice(0, 10) : [];
+  const ageDays = meta.created ? daysBetween(Date.parse(meta.created), now) : null;
+  const signals: { signal: string; level: "info" | "caution" | "warn" }[] = [];
+  if (!meta.exists) signals.push({ signal: "Package does not exist in the registry (possible hallucinated or typo name)", level: "warn" });
+  if (squat.nearest.length) signals.push({ signal: `Name is close to popular package(s): ${squat.nearest.map((h) => h.popular).join(", ")}`, level: "warn" });
+  if (ageDays != null && ageDays < 30) signals.push({ signal: `First published ${ageDays} days ago`, level: "caution" });
+  if (downloads.lastWeek != null && downloads.lastWeek < 100 && meta.exists) signals.push({ signal: `Low weekly downloads (${downloads.lastWeek})`, level: "caution" });
+  if (meta.exists && !meta.license) signals.push({ signal: "No license declared", level: "caution" });
+  if (meta.installScripts.length) signals.push({ signal: `Runs install scripts: ${meta.installScripts.join(", ")}`, level: "caution" });
+  if (meta.deprecated) signals.push({ signal: `Deprecated or yanked: ${meta.deprecated}`, level: "caution" });
+  if (malicious.length) signals.push({ signal: `OSV lists a malicious-package record: ${malicious.join(", ")}`, level: "warn" });
+  if (vuln.status === "ok" && vuln.vulns.length) signals.push({ signal: `${vuln.vulns.length} known vulnerabilit${vuln.vulns.length === 1 ? "y" : "ies"} for ${checkedVersion ?? "this package"} (OSV.dev)`, level: "warn" });
+  if (kevHits.length) signals.push({ signal: `${kevHits.length} advisory CVE${kevHits.length === 1 ? " is" : "s are"} in the CISA KEV catalog of known exploited vulnerabilities: ${kevHits.join(", ")}`, level: "warn" });
+  if (depsDev?.status === "ok" && depsDev.buildProvenance === "unverified") signals.push({ signal: "A build provenance attestation is published but was not verified by deps.dev", level: "caution" });
+  if (depsDev?.status === "ok" && depsDev.scorecardOverall != null && depsDev.scorecardOverall < 4) signals.push({ signal: `Low OpenSSF Scorecard for the attested source repository (${depsDev.scorecardOverall}/10, via deps.dev).${SCORECARD_ATTRIBUTION}`, level: "caution" });
+  if (version && meta.versionExists === false) signals.push({ signal: `Version ${version} is not published`, level: "warn" });
+
+  const v = packageVerdict({ exists: meta.exists, versionExists: meta.versionExists, requestedVersion: version, malicious, kevHits, signals, vulnStatus: vuln.status, partial });
+  const report: PkgReport = {
+    verdict: v.verdict,
+    verdictReasons: v.reasons,
+    verdictNote: VERDICT_NOTE,
+    partial,
+    ...(partial ? { missing, partialNote: `Some sources did not answer within ${deadlineMs / 1000} s (${missing.join(", ")}); their fields are marked unavailable or timeout.` } : {}),
+    ecosystem: eco,
+    name,
+    exists: meta.exists,
+    requestedVersion: version,
+    versionExists: meta.versionExists,
+    latestVersion: meta.latest,
+    firstPublished: meta.created,
+    ageDays,
+    lastPublished: meta.lastPublish,
+    weeklyDownloads: downloads.lastWeek,
+    downloadsSource: downloads.source,
+    maintainerCount: meta.maintainers,
+    license: meta.license,
+    typosquat: { isPopularName: squat.isPopular, nearestPopular: squat.nearest },
+    vulnerabilities: vuln.status === "ok" ? { status: "ok", count: vuln.vulns.length, source: "api.osv.dev", checkedVersion, attribution: OSV_ATTRIBUTION } : { status: "unavailable", error: vuln.error },
+    signals,
+  };
+  if (depsDev) {
+    report.provenance =
+      depsDev.status === "ok"
+        ? {
+            status: "ok",
+            checkedVersion,
+            buildProvenance: depsDev.buildProvenance,
+            buildProvenanceMeaning: BUILD_PROVENANCE_MEANING,
+            sourceRepoAttested: depsDev.sourceRepoAttested,
+            ...(tier === "deep" ? { scorecardOverall: depsDev.scorecardOverall } : {}),
+            source: "deps.dev",
+            attribution: tier === "deep" && depsDev.scorecardOverall != null ? DEPSDEV_ATTRIBUTION + SCORECARD_ATTRIBUTION : DEPSDEV_ATTRIBUTION,
+          }
+        : { status: "unavailable", source: "deps.dev" };
+  }
+  if (advisoryCves.length) report.knownExploited = kev ? { status: "ok", cves: kevHits, attribution: KEV_ATTRIBUTION } : { status: "unavailable" };
+  if (tier === "deep") {
+    const sorted = meta.versions.filter((x) => x.t).sort((a, b) => a.t.localeCompare(b.t));
+    const last90 = sorted.filter((x) => now - Date.parse(x.t) <= 90 * 86_400_000).length;
+    report.deep = {
+      vulnerabilities: vuln.status === "ok" ? vuln.vulns : [],
+      installScripts: meta.installScripts,
+      deprecated: meta.deprecated,
+      repository: meta.repository,
+      releases: { total: sorted.length, last90Days: last90, latest: sorted[sorted.length - 1] ?? null, documentTooLarge: meta.docTruncated },
+    };
+  }
+  return { ok: true, report };
 }

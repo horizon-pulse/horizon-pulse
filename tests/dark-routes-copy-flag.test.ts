@@ -65,7 +65,7 @@ describe("description text, both flag states", () => {
   it("other dark routes' copy does not depend on the flag", () => {
     for (const on of [false, true]) {
       flag(on);
-      expect(darkDescription("/api/package/check")).toBe(DARK_DESCRIPTIONS["/api/package/check"]);
+      expect(darkDescription("/api/package/check")).toBe(darkDescription("/api/package/check", {})); // follows HP_PACKAGE_DEEP_ENABLED only
       expect(darkDescription("/api/injection/scan")).toBe(DARK_DESCRIPTIONS["/api/injection/scan"]);
     }
   });

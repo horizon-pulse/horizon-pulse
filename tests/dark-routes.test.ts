@@ -108,6 +108,7 @@ describe("enabled: unpaid 402 per tier, distinct price, pinned payTo, no Bazaar 
   });
   it("package: base and deep at their proposed prices; injection: one base price", async () => {
     expect((await challenge(ROUTES[1])).accepts[0]!.amount).toBe(PACKAGE_TIERS[0]!.atomicStr);
+    vi.stubEnv("HP_PACKAGE_DEEP_ENABLED", "true"); // deep is off by default (404 before payment)
     expect((await challenge(ROUTES[1], "deep")).accepts[0]!.amount).toBe(PACKAGE_TIERS[1]!.atomicStr);
     expect((await challenge(ROUTES[2])).accepts[0]!.amount).toBe(INJECTION_TIERS[0]!.atomicStr);
   });
@@ -800,6 +801,7 @@ describe("paid-path smoke (facilitator mocked offline): verify -> handler -> set
     });
     setCdp(true);
     vi.stubEnv("HP_PACKAGE_CHECK_ENABLED", "true");
+    vi.stubEnv("HP_PACKAGE_DEEP_ENABLED", "true");
     const base = "https://horizonpulse.dev/api/package/check?ecosystem=npm&name=lodash";
     const accept = decodePaymentRequiredHeader((await pkgRoute.GET(new NextRequest(base))).headers.get("payment-required")!).accepts[0]! as unknown as Record<string, unknown>;
     expect(accept.amount).toBe("20000");

@@ -36,6 +36,19 @@ export function darkEnabled(route: DarkRoute, env: Record<string, string | undef
  * HP_AUDIT_SECURITY_ENABLED=true, unless this SEPARATE flag is exactly "true".
  * Defaults off. Not advertised in the bad_tier list or OPTIONS while off.
  */
+/**
+ * Package check tier=deep is OFF unless HP_PACKAGE_DEEP_ENABLED is exactly "true" (Odin re-review
+ * 10/18): 404 before any payment, not in the bad_tier list or OPTIONS, and the served description
+ * names the base tier only. Defaults off; independent of HP_PACKAGE_CHECK_ENABLED.
+ */
+export const PACKAGE_DEEP_FLAG = "HP_PACKAGE_DEEP_ENABLED";
+export function packageDeepEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env[PACKAGE_DEEP_FLAG] === "true";
+}
+export function packageTierEnabled(t: Pick<Tier, "id">, env: Record<string, string | undefined> = process.env): boolean {
+  return t.id !== "deep" || packageDeepEnabled(env);
+}
+
 export const AUDIT_HIGH_TIERS_FLAG = "HP_AUDIT_HIGH_TIERS_ENABLED";
 export const AUDIT_HIGH_TIER_IDS: readonly string[] = ["full", "history", "deep"];
 export function auditTierEnabled(t: Pick<Tier, "id">, env: Record<string, string | undefined> = process.env): boolean {
@@ -101,11 +114,18 @@ export function auditHighTiersEnabled(env: Record<string, string | undefined> = 
 }
 
 /** DARK_DESCRIPTIONS["/api/audit/security"] is the flag-ON copy; use darkDescription() for what is served. */
+/** Package check copy with tier=deep on (HP_PACKAGE_DEEP_ENABLED=true). */
+export const PACKAGE_DESCRIPTION_DEEP =
+  "npm or PyPI package check before install: a verdict (install, caution or block) plus signals: exists, publish age, weekly downloads, maintainer count, license, typosquat distance, OSV.dev vulnerabilities (attributed), deps.dev provenance, CISA KEV cross-check. GET ecosystem (npm|pypi), name, optional version, tier=base|deep (deep adds vulnerability details, install scripts, deprecation, release cadence). Informational only, no warranty. Bad input or registry down: not charged.";
+/** Package check copy while deep is off (default): base tier only. */
+export const PACKAGE_DESCRIPTION_BASE =
+  "npm or PyPI package check before install: a verdict (install, caution or block) plus signals: exists, publish age, weekly downloads, maintainer count, license, typosquat distance, OSV.dev vulnerabilities (attributed), deps.dev provenance, CISA KEV cross-check. GET ecosystem (npm|pypi), name, optional version. Informational only, no warranty. Bad input or registry down: not charged.";
+
 export const DARK_DESCRIPTIONS = {
   "/api/audit/security":
     AUDIT_DESCRIPTION_HIGH_TIERS,
   "/api/package/check":
-    "npm or PyPI package signals before install: exists, first publish age, weekly downloads, maintainer count, license, typosquat distance to popular names, known vulnerabilities from OSV.dev (attributed per record), deps.dev provenance, CISA KEV cross-check. GET ecosystem (npm|pypi), name, optional version, tier=base|deep (deep adds vulnerability details, install scripts, deprecation, release cadence). Informational only, no warranty. Bad input or registry down: not charged.",
+    PACKAGE_DESCRIPTION_DEEP,
   "/api/injection/scan":
     "Prompt-injection heuristics scan of supplied text (POST JSON {text} or GET text, max 50 KB) or a public URL (url; same SSRF guards as /api/fetch, raw HTML scanned incl. comments and hidden text). Returns a 0-100 risk score, level, and findings with rule, category, severity and a short excerpt. Heuristic patterns only; a low score is not a clearance. Informational only, no warranty. Bad input or fetch errors: not charged.",
 } as const;
@@ -120,6 +140,7 @@ export const DARK_DESCRIPTIONS = {
 /** The description actually served for a dark route (audit copy follows HP_AUDIT_HIGH_TIERS_ENABLED). */
 export function darkDescription(path: keyof typeof DARK_DESCRIPTIONS, env: Record<string, string | undefined> = process.env): string {
   if (path === "/api/audit/security") return auditHighTiersEnabled(env) ? AUDIT_DESCRIPTION_HIGH_TIERS : AUDIT_DESCRIPTION_BASE;
+  if (path === "/api/package/check") return packageDeepEnabled(env) ? PACKAGE_DESCRIPTION_DEEP : PACKAGE_DESCRIPTION_BASE;
   return DARK_DESCRIPTIONS[path];
 }
 

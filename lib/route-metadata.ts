@@ -171,7 +171,10 @@ export const ROUTE_METADATA = {
     tags: ["web-headers", "tls-dns-checks", "readiness-checks", "dns-email-auth", "outside-in-checks"],
   },
   "/api/package/check": {
-    description: DARK_DESCRIPTIONS["/api/package/check"],
+    // Read per access: follows HP_PACKAGE_DEEP_ENABLED (base tier only when off).
+    get description(): string {
+      return darkDescription("/api/package/check");
+    },
     tags: ["supply-chain", "package-signals", "npm-pypi", "typosquat", "osv-vulns"],
   },
   "/api/injection/scan": {

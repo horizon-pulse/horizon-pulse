@@ -57,11 +57,12 @@ export const REDIRECT_COPY =
  * are refused (it is listed, or a listed parent domain covers it).
  * Rate limited twice: per caller IP in memory on this instance (the IP is never stored
  * or sent anywhere), and a global per-minute budget in the shared Upstash limiter
- * (key carries no caller data). The shared limiter failing or over budget = refuse
+ * (key carries no caller data; 20/min per Counsel re-read batch 2, so the list cannot be
+ * bulk-tested). The shared limiter failing or over budget = refuse
  * (fail closed): 503/429, never an answer.
  */
 export const OPT_OUT_CHECK_PER_IP_PER_MIN = 10;
-export const OPT_OUT_CHECK_GLOBAL_PER_MIN = 120;
+export const OPT_OUT_CHECK_GLOBAL_PER_MIN = 20;
 const HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
 export function normalizeOptOutQuery(raw: string | null): string | null {
   const d = (raw ?? "").trim().toLowerCase().replace(/\.$/, "");
