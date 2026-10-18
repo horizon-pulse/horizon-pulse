@@ -182,13 +182,26 @@ export function wantsFree(req: Request): boolean {
   return yes(req.headers.get(FREE_HEADER));
 }
 
+/** The only header the caller IP is read from (Vercel-set; see normalizeCallerIp). */
+export const TRUSTED_IP_HEADER = "x-vercel-forwarded-for";
+
 /**
- * Canonical caller IP: x-real-ip, else the first x-forwarded-for hop (Vercel sets
- * both to the client). Lowercased, brackets/ports/zone ids dropped, IPv4-mapped IPv6
- * folded to IPv4, IPv6 truncated to its /64 (one end-user allocation). null if unusable.
+ * Canonical caller IP, from Vercel's x-vercel-forwarded-for ONLY. Odin 9:06 AM ET 10/18;
+ * https://vercel.com/docs/headers/request-headers: x-forwarded-for is "The public IP address
+ * of the client"; Vercel "overwrite[s] the X-Forwarded-For header and do[es] not forward
+ * external IPs ... to prevent IP spoofing"; x-vercel-forwarded-for "is identical to the
+ * x-forwarded-for header. However, x-forwarded-for could be overwritten if you're using a
+ * proxy on top of Vercel."
+ * x-real-ip and x-forwarded-for are never read (client-settable off Vercel / behind a proxy).
+ * No trusted header -> null (the caller gets the normal 402, no free call, no advert).
+ * If the header ever carries a list, the LAST hop is used: that is the one the platform
+ * added; earlier entries could come from the client.
+ * Lowercased, brackets/ports/zone ids dropped, IPv4-mapped IPv6 folded to IPv4, IPv6
+ * truncated to its /64 (one end-user allocation). null if unusable.
  */
 export function normalizeCallerIp(headers: Headers): string | null {
-  const raw = (headers.get("x-real-ip") ?? headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim().toLowerCase();
+  const hops = (headers.get(TRUSTED_IP_HEADER) ?? "").split(",").map((h) => h.trim()).filter(Boolean);
+  const raw = (hops[hops.length - 1] ?? "").toLowerCase();
   if (!raw) return null;
   let ip = raw;
   const bracket = /^\[([^\]]+)\](?::\d+)?$/.exec(ip);
@@ -431,6 +444,32 @@ export function stripFreeMarker<R extends Request>(req: R, make: (url: string, i
   return make(u.toString(), { method: req.method, headers: h });
 }
 
+/** Replaces the route's `priced` block on a free answer: nothing was charged. */
+export const FREE_PRICED = { free: true, charged: false, note: "free, not charged", amountUsd: "$0", amountAtomic: "0" } as const;
+
+/**
+ * The free answer: the route's own response, with `priced` (the route's price) replaced by
+ * FREE_PRICED and `charged: false`, plus the free-tier headers. JSON object bodies only;
+ * any other body keeps its bytes (the headers still say it was free). Never throws.
+ */
+export async function toFreeAnswer(res: Response, route: FreeTierRoute, d: { remaining: number; limit: number; reset: string }): Promise<Response> {
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(freeAnswerHeaders(route, d))) headers.set(k, v);
+  let body: BodyInit | null = res.body;
+  if ((headers.get("content-type") ?? "").includes("json")) {
+    const text = await res.text();
+    body = text;
+    try {
+      const j = JSON.parse(text) as unknown;
+      if (j && typeof j === "object" && !Array.isArray(j)) body = JSON.stringify({ ...(j as object), priced: FREE_PRICED, charged: false });
+    } catch {
+      /* keep bytes */
+    }
+    headers.delete("content-length");
+  }
+  return new Response(body, { status: res.status, statusText: res.statusText, headers });
+}
+
 /** Headers on a free answer. */
 export function freeAnswerHeaders(route: FreeTierRoute, d: { remaining: number; limit: number; reset: string }): Record<string, string> {
   const next = absNext(route);
@@ -438,6 +477,7 @@ export function freeAnswerHeaders(route: FreeTierRoute, d: { remaining: number; 
     "X-HP-Free-Limit": String(d.limit),
     "X-HP-Free-Remaining": String(d.remaining),
     "X-HP-Free-Reset": d.reset,
+    "X-HP-Charged": "free, not charged",
     "X-HP-Next": next,
     Link: `<${next}>; rel="next"`,
     "Cache-Control": "no-store",

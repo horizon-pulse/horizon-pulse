@@ -20,11 +20,14 @@ import {
   freeTierMode,
   markPayer,
   nextEtMidnight,
+  FREE_PRICED,
   normalizeCallerIp,
   payerMarkerKey,
   payerMarkWriting,
   resetFreeTierState,
   shouldAdvertise,
+  toFreeAnswer,
+  TRUSTED_IP_HEADER,
 } from "@/lib/free-tier";
 import { freeTierRewrites } from "@/lib/free-tier-mode";
 import { createX402GetHandler, discoveryOptionsResponse, pulseRouteConfig, signalsRouteConfig } from "@/lib/x402-server";
@@ -40,7 +43,7 @@ import { CDP_ENV } from "./helpers/capture";
 
 const UP = { UPSTASH_REDIS_REST_URL: "https://example-upstash.test", UPSTASH_REDIS_REST_TOKEN: "t" };
 const NOW = new Date("2026-10-18T03:30:00.000Z"); // 11:30 PM ET Sat 10/17
-const ip = (v: string, h = "x-real-ip") => new Headers({ [h]: v });
+const ip = (v: string, h = "x-vercel-forwarded-for") => new Headers({ [h]: v });
 
 /**
  * In-memory Upstash that runs a JS port of FREE_TIER_LUA (same branch order). The Lua
@@ -121,7 +124,7 @@ describe("free tier: config", () => {
 
 describe("free tier: caller key normalization", () => {
   it("IPv4 forms collapse to one canonical address", () => {
-    for (const h of [ip("1.2.3.4"), ip(" 1.2.3.4 "), ip("1.2.3.4:5678"), ip("::ffff:1.2.3.4"), ip("::FFFF:1.2.3.4"), ip("0:0:0:0:0:ffff:1.2.3.4"), ip("::ffff:102:304"), ip("1.2.3.4, 10.0.0.1", "x-forwarded-for")])
+    for (const h of [ip("1.2.3.4"), ip(" 1.2.3.4 "), ip("1.2.3.4:5678"), ip("::ffff:1.2.3.4"), ip("::FFFF:1.2.3.4"), ip("0:0:0:0:0:ffff:1.2.3.4"), ip("::ffff:102:304"), ip("10.0.0.1, 1.2.3.4")])
       expect(normalizeCallerIp(h)).toBe("1.2.3.4");
   });
   it("IPv6 keys on the /64; zero-prefix addresses key on the full address", () => {
@@ -134,8 +137,18 @@ describe("free tier: caller key normalization", () => {
     expect(normalizeCallerIp(ip("::1"))).toBe("0:0:0:0:0:0:0:1");
     expect(normalizeCallerIp(ip("::2"))).not.toBe(normalizeCallerIp(ip("::1")));
   });
-  it("x-real-ip wins over x-forwarded-for; garbage or missing -> null", () => {
-    expect(normalizeCallerIp(new Headers({ "x-real-ip": "5.6.7.8", "x-forwarded-for": "1.2.3.4" }))).toBe("5.6.7.8");
+  it("only x-vercel-forwarded-for counts: spoofed x-real-ip / x-forwarded-for are ignored; none -> null", () => {
+    expect(TRUSTED_IP_HEADER).toBe("x-vercel-forwarded-for");
+    expect(normalizeCallerIp(new Headers({ "x-vercel-forwarded-for": "5.6.7.8", "x-real-ip": "1.2.3.4", "x-forwarded-for": "1.2.3.4" }))).toBe("5.6.7.8");
+    expect(normalizeCallerIp(new Headers({ "x-real-ip": "1.2.3.4" }))).toBeNull();
+    expect(normalizeCallerIp(new Headers({ "x-forwarded-for": "1.2.3.4, 10.0.0.1" }))).toBeNull();
+    expect(normalizeCallerIp(new Headers({ "x-real-ip": "1.2.3.4", "x-forwarded-for": "1.2.3.4" }))).toBeNull();
+  });
+  it("a list in the trusted header keys on the LAST hop (earlier entries could be client-supplied)", () => {
+    expect(normalizeCallerIp(ip("203.0.113.77, 1.2.3.4"))).toBe("1.2.3.4");
+    expect(normalizeCallerIp(ip("203.0.113.77,1.2.3.4, "))).toBe("1.2.3.4");
+  });
+  it("garbage or missing -> null", () => {
     for (const v of ["", "unknown", "1.2.3", "999.1.1.1", "not-an-ip", "1.2.3.4.5"]) expect(normalizeCallerIp(ip(v))).toBeNull();
     expect(normalizeCallerIp(new Headers())).toBeNull();
   });
@@ -260,7 +273,7 @@ function pulseHandler() {
   return { h, seen };
 }
 const get = (url: string, headers: Record<string, string> = {}, method = "GET") =>
-  new NextRequest(url, { method, headers: { accept: "application/json", "x-real-ip": "1.2.3.4", ...headers } });
+  new NextRequest(url, { method, headers: { accept: "application/json", "x-vercel-forwarded-for": "1.2.3.4", ...headers } });
 const snap = async (r: Response) => ({ status: r.status, pr: r.headers.get("payment-required"), body: await r.text(), h: [...r.headers.keys()].sort() });
 
 describe("free tier: wired (createX402GetHandler)", () => {
@@ -319,7 +332,7 @@ describe("free tier: wired (createX402GetHandler)", () => {
     expect(await snap(await h(get(PULSE, { "X-HP-Free": "1" })))).toEqual(off);
     expect(seen).toEqual([]);
     // an unknown caller on the same instance still sees the advert
-    expect((await h(get(PULSE, { "x-real-ip": "7.7.7.7" }))).headers.get("x-hp-free-tier")).toBeTruthy();
+    expect((await h(get(PULSE, { "x-vercel-forwarded-for": "7.7.7.7" }))).headers.get("x-hp-free-tier")).toBeTruthy();
   });
 
   it("advert lookup in doubt (store down / slow / unconfigured / no IP / lookup cap) -> no advert", async () => {
@@ -410,7 +423,8 @@ describe("free tier: wired (createX402GetHandler)", () => {
     const { h, seen } = pulseHandler();
     const res = await h(get(`${PULSE}?free=1&x=2`));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, v: 1 });
+    expect(await res.json()).toEqual({ ok: true, v: 1, priced: FREE_PRICED, charged: false });
+    expect(res.headers.get("x-hp-charged")).toBe("free, not charged");
     expect(res.headers.get("x-hp-free-limit")).toBe("3");
     expect(res.headers.get("x-hp-free-remaining")).toBe("2");
     expect(res.headers.get("x-hp-free-reset")).toMatch(/^\d{4}-\d{2}-\d{2}T0[45]:00:00\.000Z$/);
@@ -425,6 +439,74 @@ describe("free tier: wired (createX402GetHandler)", () => {
     expect(r2.status).toBe(200);
     expect(r2.headers.get("x-hp-free-remaining")).toBe("1");
     expect(seen[1]).toEqual({ url: PULSE, free: null });
+  });
+
+  it("free answer says 'free, not charged' in place of the route price; charged:false; non-JSON bytes kept", async () => {
+    stubEnv({ ...UP, HP_FREE_TIER: "optin" });
+    vi.stubGlobal("fetch", fakeUpstash().fn);
+    const priced = { amountUsd: "$0.005", amountAtomic: "5000", network: "base" };
+    const h = createX402GetHandler(async () => NextResponse.json({ ok: true, priced, charged: true, data: 1 }), pulseRouteConfig(), pulseOpts);
+    const res = await h(get(`${PULSE}?free=1`));
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain("0.005");
+    expect(text).not.toContain("5000");
+    const j = JSON.parse(text);
+    expect(j).toEqual({ ok: true, priced: FREE_PRICED, charged: false, data: 1 });
+    expect(Object.keys(j)).toEqual(["ok", "priced", "charged", "data"]); // same positions
+    expect(j.priced.note).toBe("free, not charged");
+    expect(res.headers.get("content-length")).toBeNull();
+    // the real price block shape from pricedBlock() is replaced too
+    const real = await toFreeAnswer(NextResponse.json({ priced: { route: "/api/pulse", usd: 0.005 } }), "/api/pulse", { remaining: 1, limit: 3, reset: "x" });
+    expect((await real.json()).priced).toEqual(FREE_PRICED);
+    const txt = await toFreeAnswer(new Response("plain", { headers: { "content-type": "text/plain" } }), "/api/pulse", { remaining: 1, limit: 3, reset: "x" });
+    expect(await txt.text()).toBe("plain");
+    expect(txt.headers.get("x-hp-charged")).toBe("free, not charged");
+    const arr = await toFreeAnswer(NextResponse.json([1, 2]), "/api/pulse", { remaining: 1, limit: 3, reset: "x" });
+    expect(await arr.json()).toEqual([1, 2]);
+  });
+
+  it("no trusted header (only client-settable x-real-ip / x-forwarded-for): 402 byte-identical to mode off, no free, no store call", async () => {
+    stubEnv(UP);
+    const f = fakeUpstash();
+    vi.stubGlobal("fetch", f.fn);
+    const bare = (url: string, headers: Record<string, string> = {}) => new NextRequest(url, { headers: { accept: "application/json", ...headers } });
+    const off = await snap(await pulseHandler().h(bare(PULSE)));
+    vi.stubEnv("HP_FREE_TIER", "optin");
+    const { h, seen } = pulseHandler();
+    const spoof = { "x-real-ip": "1.2.3.4", "x-forwarded-for": "1.2.3.4" };
+    expect(await snap(await h(bare(PULSE, spoof)))).toEqual(off);
+    expect(await snap(await h(bare(`${PULSE}?free=1`, spoof)))).toEqual(off);
+    expect(await snap(await h(bare(PULSE, { ...spoof, "X-HP-Free": "1" })))).toEqual(off);
+    expect(await snap(await h(bare(`${PULSE}?free=1`)))).toEqual(off);
+    expect(seen).toEqual([]);
+    expect(f.fn).not.toHaveBeenCalled();
+  });
+
+  it("spoofed x-real-ip / x-forwarded-for cannot mint a new caller: the counter follows the trusted header", async () => {
+    stubEnv({ ...UP, HP_FREE_TIER: "optin", HP_FREE_DAILY_CAP: "2" });
+    vi.stubGlobal("fetch", fakeUpstash().fn);
+    const { h, seen } = pulseHandler();
+    const r1 = await h(get(`${PULSE}?free=1`, { "x-real-ip": "9.9.9.1", "x-forwarded-for": "9.9.9.1" }));
+    const r2 = await h(get(`${PULSE}?free=1`, { "x-real-ip": "9.9.9.2", "x-forwarded-for": "9.9.9.2" }));
+    const r3 = await h(get(`${PULSE}?free=1`, { "x-real-ip": "9.9.9.3", "x-forwarded-for": "9.9.9.3" }));
+    expect([r1.status, r2.status, r3.status]).toEqual([200, 200, 402]);
+    expect([r1, r2, r3].map((r) => r.headers.get("x-hp-free-remaining"))).toEqual(["1", "0", "0"]);
+    expect(seen.length).toBe(2);
+  });
+
+  it("known-payer guard keys on the trusted header: a spoofed x-real-ip does not escape it", async () => {
+    stubEnv(UP);
+    const f = fakeUpstash();
+    vi.stubGlobal("fetch", f.fn);
+    const off = await snap(await pulseHandler().h(get(PULSE)));
+    vi.stubEnv("HP_FREE_TIER", "optin");
+    f.kv.set(payerMarkerKey("1.2.3.4"), 1);
+    const { h, seen } = pulseHandler();
+    const spoof = { "x-real-ip": "7.7.7.7", "x-forwarded-for": "7.7.7.7" };
+    expect(await snap(await h(get(`${PULSE}?free=1`, spoof)))).toEqual(off);
+    expect(await snap(await h(get(PULSE, spoof)))).toEqual(off);
+    expect(seen).toEqual([]);
   });
 
   it("every free route points at its paid next step", async () => {
@@ -455,8 +537,8 @@ describe("free tier: wired (createX402GetHandler)", () => {
     vi.stubEnv("HP_FREE_GLOBAL_DAILY_CAP", "1");
     vi.stubGlobal("fetch", fakeUpstash().fn);
     const g = pulseHandler();
-    expect((await g.h(get(`${PULSE}?free=1`, { "x-real-ip": "9.9.9.9" }))).status).toBe(200);
-    const spent = await g.h(get(`${PULSE}?free=1`, { "x-real-ip": "8.8.8.8" }));
+    expect((await g.h(get(`${PULSE}?free=1`, { "x-vercel-forwarded-for": "9.9.9.9" }))).status).toBe(200);
+    const spent = await g.h(get(`${PULSE}?free=1`, { "x-vercel-forwarded-for": "8.8.8.8" }));
     expect(spent.status).toBe(402);
     expect(spent.headers.get("x-hp-free-status")).toBe("global_budget_spent");
   });

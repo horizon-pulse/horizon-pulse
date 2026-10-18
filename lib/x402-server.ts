@@ -3,13 +3,13 @@ import { logRouteRequest } from "./route-log";
 import { withRelatedRoutes } from "./route-hints";
 import {
   consumeFreeCall,
-  freeAnswerHeaders,
   freeTierMode,
   isFreeTierRoute,
   routePathOf,
   scheduleMarkPayer,
   shouldAdvertise,
   stripFreeMarker,
+  toFreeAnswer,
   wantsFree,
   withFreeTierAdvert,
   type FreeTierRoute,
@@ -1392,23 +1392,17 @@ export function createX402GetHandler(
       if (optedIn && original.method === "GET" && !paidHeader) {
         const d = await consumeFreeCall({ route: freeRoute, headers: original.headers });
         if (d.kind === "free") {
-          let res = await routeHandler(incoming);
-          const fh = freeAnswerHeaders(freeRoute, d);
-          try {
-            for (const [k, v] of Object.entries(fh)) res.headers.set(k, v);
-          } catch {
-            // immutable headers (a passed-through fetch Response): same body, copied headers
-            const h = new Headers(res.headers);
-            for (const [k, v] of Object.entries(fh)) h.set(k, v);
-            res = new NextResponse(res.body, { status: res.status, statusText: res.statusText, headers: h });
-          }
+          // Free answer: `priced` -> "free, not charged" (FREE_PRICED), charged:false, X-HP-Free-* headers.
+          const res = (await toFreeAnswer(await routeHandler(incoming), freeRoute, d)) as NextResponse;
           logRouteRequest({ route: routePath, method: original.method, res, paidHeader: false, amountAtomic: paymentOpts.maxAmountRequired });
           return res;
         }
-        if (d.kind === "known_payer") advertise = false; // known payer: today's 402, untouched
+        // known payer, or no trusted caller IP (could be a payer we cannot recognize): today's 402, untouched
+        const untouched = d.kind === "known_payer" || (d.kind === "unavailable" && d.reason === "no_caller_ip");
+        if (untouched) advertise = false;
         else advertise = true; // the caller already knows the tier; tell it why it got a 402
         freeExtra =
-          d.kind === "known_payer"
+          untouched
             ? {}
             : d.kind === "capped"
             ? { "X-HP-Free-Remaining": "0", "X-HP-Free-Reset": d.reset, "X-HP-Free-Status": d.global ? "global_budget_spent" : "daily_limit_reached" }
