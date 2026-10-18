@@ -66,10 +66,12 @@
  *     replay of recorded outcomes); a duplicate gets 409
  *     {"error":"duplicate_payment"}. Keys are released when nothing was
  *     charged (verify failed, handler error before settle).
- *     Cross-instance (N1): after a successful settle the tx's block time is
- *     read (read-only getTransaction); confirmed before this request started
- *     (minus REPLAY_CONFIRM_SKEW_MS) → 409 duplicate_payment. RPC error /
- *     unknown → fail open (the paid response is served).
+ *     Cross-instance (N1, Odin 12:51 (b)): after a successful settle OUR
+ *     message is looked up on-chain (base64, exact message + buyer signature;
+ *     PayAI's signature only a hint); landed at slot ≤ the request-start slot
+ *     → 409 duplicate_payment; PayAI's signature not ours / ours failed →
+ *     502 + reconcile; RPC error / unknown → fail open. No start slot → the
+ *     old block-time check (REPLAY_CONFIRM_SKEW_MS) as a fallback.
  *   - Token-account check and PayAI /supported (fee payer list) refresh are
  *     stale-while-revalidate: once warm, a 402 never waits on them. On a cold
  *     instance both run in parallel (N3).
@@ -105,6 +107,7 @@ import {
   SOLANA_MAINNET_CAIP2,
   SOLANA_PAYTO,
   SOLANA_DEFAULT_INIT_TIMEOUT_MS,
+  SOLANA_MAX_INIT_TIMEOUT_MS,
   SOLANA_PAYTO_USDC_ATA,
   SPL_TOKEN_PROGRAM,
   USDC_SOLANA_MINT,
@@ -320,6 +323,22 @@ export type SolanaAlert =
         | "payai_supported_unavailable_stale";
     }
   | {
+      /**
+       * Odin 12:51: one per 502/504/409 answered from the unconfirmed-settle path, and per 502 from an unbindable
+       * settle success: the buyer may have been charged without delivery → manual refund. Public chain data only.
+       */
+      kind: "solana_reconcile";
+      status: number;
+      reason: string;
+      fp: string;
+      payer: string | null;
+      amount: string;
+      asset: string;
+      payTo: string;
+      buyerSignature: string | null;
+      txid?: string;
+    }
+  | {
       kind: "payai_allowance";
       source: "onchain_receipts" | "free_tier_exhausted";
       /** Upper-bound proxy: transactions that touched payTo's USDC account (or null when unknown). */
@@ -402,7 +421,18 @@ function warn(msg: string, err?: unknown, fallback = true): void {
 // ---------------------------------------------------------------------------
 
 /** `reason` is log-safe (safeCode); `raw` is PayAI's value, used for matching only — never logged. */
-type SettleOutcome = { outcome: "success" | "failed" | "unconfirmed"; reason: string; raw: string; timeout: boolean; transaction?: string };
+type SettleOutcome = {
+  outcome: "success" | "failed" | "unconfirmed";
+  reason: string;
+  raw: string;
+  timeout: boolean;
+  transaction?: string;
+  /**
+   * Odin 12:51 C1: PayAI says this payment is already settled / in flight elsewhere (ANY facilitator 409, including a
+   * non-JSON 409, or a duplicate-shaped reason). Never searched on-chain, never delivered: 502 + reconcile.
+   */
+  duplicate?: true;
+};
 type Attempt = {
   handlerRan: boolean;
   handlerThrew: boolean;
@@ -426,16 +456,28 @@ export function safeCode(value: unknown): string {
 
 /** PayAI reasons that mean "the outcome is not known yet" (PayAI developers.md, 2026-10-08). */
 const UNRESOLVED_SETTLE_REASONS = new Set(["settlement_pending", "duplicate_settlement"]);
+/** Odin 12:51 C1: reasons that mean "another request already settled / is settling this payment". */
+const DUPLICATE_SETTLE_REASON_RE = /duplicate|already|in_flight/;
+/** The SDK's error for a non-JSON facilitator reply keeps the HTTP status in its message prefix. */
+const NON_JSON_SETTLE_409_RE = /^Facilitator settle failed \(409\)(?::|$)/;
 
 function classifySettleResult(res: SettleResponse): SettleOutcome {
   if (res.success) {
     return { outcome: "success", reason: "success", raw: "success", timeout: false, transaction: typeof res.transaction === "string" ? res.transaction : undefined };
   }
   const raw = String(res.errorReason ?? "unknown");
-  const unresolved = UNRESOLVED_SETTLE_REASONS.has(raw) || (typeof res.transaction === "string" && res.transaction !== "");
+  const duplicate = DUPLICATE_SETTLE_REASON_RE.test(raw);
+  const unresolved = duplicate || UNRESOLVED_SETTLE_REASONS.has(raw) || (typeof res.transaction === "string" && res.transaction !== "");
   const tx = typeof res.transaction === "string" && res.transaction !== "" ? res.transaction : undefined;
   // The signature (if any) is kept for the on-chain check only; never logged.
-  return { outcome: unresolved ? "unconfirmed" : "failed", reason: safeCode(raw), raw, timeout: false, ...(unresolved && tx ? { transaction: tx } : {}) };
+  return {
+    outcome: unresolved ? "unconfirmed" : "failed",
+    reason: safeCode(raw),
+    raw,
+    timeout: false,
+    ...(unresolved && tx ? { transaction: tx } : {}),
+    ...(duplicate ? { duplicate: true as const } : {}),
+  };
 }
 
 function classifySettleThrow(err: unknown): SettleOutcome {
@@ -446,14 +488,27 @@ function classifySettleThrow(err: unknown): SettleOutcome {
   if (err instanceof SettleError) {
     const raw = String(err.errorReason ?? "unknown");
     const status = err.statusCode;
+    const duplicate = status === 409 || DUPLICATE_SETTLE_REASON_RE.test(raw);
     const unresolved =
+      duplicate ||
       UNRESOLVED_SETTLE_REASONS.has(raw) ||
       status >= 500 ||
       status === 429 ||
       status === 409 ||
       (typeof err.transaction === "string" && err.transaction !== "");
     const tx = typeof err.transaction === "string" && err.transaction !== "" ? err.transaction : undefined;
-    return { outcome: unresolved ? "unconfirmed" : "failed", reason: safeCode(raw), raw, timeout: false, ...(unresolved && tx ? { transaction: tx } : {}) };
+    return {
+      outcome: unresolved ? "unconfirmed" : "failed",
+      reason: safeCode(raw),
+      raw,
+      timeout: false,
+      ...(unresolved && tx ? { transaction: tx } : {}),
+      ...(duplicate ? { duplicate: true as const } : {}),
+    };
+  }
+  // Non-JSON 409 body: the SDK throws a plain Error("Facilitator settle failed (409): …"). Keep the status (C1).
+  if (err instanceof Error && NON_JSON_SETTLE_409_RE.test(err.message)) {
+    return { outcome: "unconfirmed", reason: "facilitator_409", raw: "facilitator_409", timeout: false, duplicate: true };
   }
   // fetch failed / connection reset / non-JSON 5xx body: the request may have reached PayAI.
   return { outcome: "unconfirmed", reason: "transport_error", raw: "transport_error", timeout: false };
@@ -1234,12 +1289,21 @@ export const SOLANA_LEDGER_CHECK_DEADLINE_MS = 4_000;
 /** Retry delays inside the deadline (confirmed-commitment indexing lag on public RPC). */
 export const SOLANA_LEDGER_CHECK_DELAYS_MS: readonly number[] = [0, 500, 1000, 1500];
 /**
- * Odin 12:31: worst-case Solana time inside one paid request (default init timeout): token-account/rail init (the
- * request-start getSlot runs in parallel and is capped at min(init, 1.5 s)) + PayAI verify + settle + the on-chain
- * check (incl. its finalized re-read) = 2.5 + 10 + 12 + 4 = 28.5 s. Every route that can take Solana must have
- * maxDuration ≥ this + a handler margin (tests/solana-time-budget.test.ts).
+ * Odin 12:31 (corrected 12:51): worst-case Solana time inside one paid request at the DEFAULT init timeout, cold
+ * instance: token-account check (up to ATA_COLD_ATTEMPTS tries × init; rail init and the request-start getSlot,
+ * capped at min(init, 1.5 s), run in parallel) + PayAI verify + settle + the on-chain check (ambiguous path incl. its
+ * finalized re-read, or the success-path binding; same 4 s deadline) = 2 × 2.5 + 10 + 12 + 4 = 31 s. The budget test
+ * uses SOLANA_MAX_WORST_CASE_MS (largest accepted init timeout).
  */
-export const SOLANA_WORST_CASE_MS = SOLANA_DEFAULT_INIT_TIMEOUT_MS + SOLANA_VERIFY_TIMEOUT_MS + SOLANA_SETTLE_TIMEOUT_MS + SOLANA_LEDGER_CHECK_DEADLINE_MS;
+export const SOLANA_WORST_CASE_MS = ATA_COLD_ATTEMPTS * SOLANA_DEFAULT_INIT_TIMEOUT_MS + SOLANA_VERIFY_TIMEOUT_MS + SOLANA_SETTLE_TIMEOUT_MS + SOLANA_LEDGER_CHECK_DEADLINE_MS;
+/**
+ * Odin 12:51 C2: worst case at the LARGEST accepted HP_SOLANA_INIT_TIMEOUT_MS (SOLANA_MAX_INIT_TIMEOUT_MS) on a cold
+ * instance, where the token-account check makes up to ATA_COLD_ATTEMPTS sequential tries, each bounded by the init
+ * timeout (rail init and the start-slot read run in parallel with it): 2 × 7 + 10 + 12 + 4 = 40 s. The same 4 s
+ * on-chain deadline bounds the success-path check, so both paths share this bound.
+ */
+export const SOLANA_MAX_WORST_CASE_MS =
+  ATA_COLD_ATTEMPTS * SOLANA_MAX_INIT_TIMEOUT_MS + SOLANA_VERIFY_TIMEOUT_MS + SOLANA_SETTLE_TIMEOUT_MS + SOLANA_LEDGER_CHECK_DEADLINE_MS;
 /** How many recent payTo-ATA signatures are inspected when PayAI gave us no signature. */
 export const SOLANA_LEDGER_SCAN_LIMIT = 10;
 let ledgerDelays: readonly number[] = SOLANA_LEDGER_CHECK_DELAYS_MS;
@@ -1349,7 +1413,12 @@ export function ourPayment(txB64: string): OurPayment | null {
   return { message: w.message, slot, signature: base58Encode(w.sigs[slot]), payer: base58Encode(w.keys[slot]) };
 }
 
-type ChainFind = { kind: "paid"; signature: string } | { kind: "failed" } | { kind: "replay"; signature: string } | { kind: "unknown" };
+type ChainFind =
+  | { kind: "paid"; signature: string }
+  | { kind: "failed" }
+  | { kind: "replay"; signature: string }
+  /** hintForeign: PayAI's signature resolved to a tx that is NOT our message; errSeen: ours, but failed at confirmed. */
+  | { kind: "unknown"; hintForeign?: boolean; errSeen?: boolean };
 
 /** Start-of-request chain position (Odin 12:31 S1): read before verify/settle, bounded so it never exceeds init. */
 export const SOLANA_START_SLOT_TIMEOUT_MS = 1_500;
@@ -1386,14 +1455,18 @@ async function findPaymentOnChain(
   const deadline = Date.now() + SOLANA_LEDGER_CHECK_DEADLINE_MS;
   const sigRe = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
   const left = () => Math.max(1, Math.min(config.initTimeoutMs, deadline - Date.now()));
+  let hintForeign = false;
+  let errSeen = false;
   const fetchBound = async (sig: string, commitment: "confirmed" | "finalized"): Promise<ChainTx | null> => {
     const tx = (await rpc(config.rpcUrl, "getTransaction", [sig, { commitment, encoding: "base64", maxSupportedTransactionVersion: 0 }], left())) as ChainTx | null;
     const enc = tx?.transaction;
     if (!tx || !Array.isArray(enc) || typeof enc[0] !== "string" || enc[1] !== "base64") return null;
     const w = parseWireTx(Buffer.from(enc[0], "base64"));
-    if (!w || !sameBytes(w.message, ours.message)) return null; // not OUR message
-    const s = w.sigs[ours.slot];
-    if (!s || base58Encode(s) !== ours.signature) return null;
+    const s = w ? w.sigs[ours.slot] : undefined;
+    if (!w || !sameBytes(w.message, ours.message) || !s || base58Encode(s) !== ours.signature) {
+      if (sig === settleSigHint) hintForeign = true; // a real tx, but not OUR message / buyer signature
+      return null;
+    }
     return Object.assign(tx, { __txid: base58Encode(w.sigs[0]) });
   };
   for (const delay of ledgerDelays) {
@@ -1412,13 +1485,13 @@ async function findPaymentOnChain(
       for (const sig of candidates) {
         if (deadline - Date.now() <= 0) break;
         const tx = await fetchBound(sig, "confirmed");
-        if (!tx) continue;
-        if (!tx.meta) return { kind: "unknown" };
+        if (!tx || !tx.meta) continue; // not ours / meta not served yet: retry within the deadline
         const txid = (tx as ChainTx & { __txid: string }).__txid;
         if (tx.meta.err !== null && tx.meta.err !== undefined) {
           // Terminal 402 only on FINALIZED failure (a confirmed fork could be dropped and the message re-included).
+          errSeen = true;
           const fin = deadline - Date.now() > 0 ? await fetchBound(sig, "finalized") : null;
-          return fin?.meta && fin.meta.err !== null && fin.meta.err !== undefined ? { kind: "failed" } : { kind: "unknown" };
+          return fin?.meta && fin.meta.err !== null && fin.meta.err !== undefined ? { kind: "failed" } : { kind: "unknown", errSeen };
         }
         const got = usdcReceivedByPayTo(tx);
         if (got === null || got !== BigInt(requirement.amount)) return { kind: "unknown" };
@@ -1430,7 +1503,7 @@ async function findPaymentOnChain(
       /* RPC down / malformed: retry within the deadline */
     }
   }
-  return { kind: "unknown" };
+  return { kind: "unknown", hintForeign, errSeen };
 }
 
 /**
@@ -1439,19 +1512,21 @@ async function findPaymentOnChain(
  * id when found, outcome. Never facilitator text.
  */
 function logSolanaReconcile(o: { status: number; reason: string; key: string; ours: OurPayment | null; amount: string; txid?: string }): void {
-  console.warn(
-    `[solana-rail] SOLANA_RECONCILE ${JSON.stringify({
-      status: o.status,
-      reason: o.reason,
-      fp: fp(o.key),
-      payer: o.ours?.payer ?? null,
-      amount: o.amount,
-      asset: USDC_SOLANA_MINT,
-      payTo: SOLANA_PAYTO,
-      buyerSignature: o.ours?.signature ?? null,
-      ...(o.txid ? { txid: o.txid } : {}),
-    })}`,
-  );
+  const line = {
+    status: o.status,
+    reason: o.reason,
+    fp: fp(o.key),
+    payer: o.ours?.payer ?? null,
+    amount: o.amount,
+    asset: USDC_SOLANA_MINT,
+    payTo: SOLANA_PAYTO,
+    buyerSignature: o.ours?.signature ?? null,
+    ...(o.txid ? { txid: o.txid } : {}),
+  };
+  console.warn(`[solana-rail] SOLANA_RECONCILE ${JSON.stringify(line)}`);
+  // Odin 12:51: also an ALERT through the existing sink (setSolanaAlertHook; default one [ALERT] console.error line).
+  // Every occurrence (each one is a possible refund), not once per episode.
+  emitAlert({ kind: "solana_reconcile", ...line });
 }
 
 /** The handler's own response + PAYMENT-RESPONSE + private Cache-Control, as @x402/next's settle-success path. */
@@ -1567,19 +1642,53 @@ export async function handleSolanaPayment(
       thrown = err;
     }
     if (att.settle?.outcome === "success" && res && res.status < 400) {
-      const when = await settledBeforeRequest(config, att.settle.transaction, startedAt);
-      if (when === "replay") {
-        replaySet(key, "settled");
-        warn(`cross-instance replay: tx confirmed before this request fp=${fp(key)}; client gets 409`, undefined, false);
-        return jsonError(409, "duplicate_payment");
+      const ours = ourPayment(txOf(payload)!);
+      if (startSlot === undefined || !ours) {
+        // Odin 12:51 (b), no start slot: the slot ordering is impossible, so fall back to the old N1 wall-clock check
+        // on PayAI's signature (30 s skew). Fail-safe choice: PayAI reported a settle, so never withhold the paid
+        // response on missing data (no charge-without-delivery); the residual replay window is the pre-existing one,
+        // only while getSlot is failing.
+        const when = await settledBeforeRequest(config, att.settle.transaction, startedAt);
+        if (when === "replay") {
+          replaySet(key, "settled");
+          warn(`cross-instance replay: tx confirmed before this request fp=${fp(key)}; client gets 409`, undefined, false);
+          return jsonError(409, "duplicate_payment");
+        }
+        if (when === "unknown") warn(`could not read settled tx time fp=${fp(key)}; serving the paid response`, undefined, false);
+      } else {
+        // Odin 12:51 (b): slot ordering + S2 binding on the success path too. PayAI's signature is only a hint.
+        const found = await findPaymentOnChain(config, att.settle.transaction, ours, requirement, startSlot);
+        if (found.kind === "replay") {
+          // OUR message landed before this request started: a replay of a payment already served (PayAI's cached
+          // success); nothing new was charged → 409, no reconcile.
+          replaySet(key, "settled");
+          warn(`cross-instance replay: tx confirmed before this request (slot) fp=${fp(key)}; client gets 409`, undefined, false);
+          return jsonError(409, "duplicate_payment");
+        }
+        if (found.kind === "failed" || (found.kind === "unknown" && (found.hintForeign || found.errSeen))) {
+          // PayAI said success but the chain says otherwise: its signature is not OUR message (and ours is not in the
+          // recent history), or OUR tx failed. No evidence we were paid → never deliver; a charge is possible → 502 +
+          // reconcile (never a 402: it would invite a second payment).
+          replaySet(key, "settle_unconfirmed");
+          const reason = found.kind === "failed" || found.errSeen ? "settle_success_failed_on_chain" : "settle_success_unbound";
+          warn(`settle success not bound on-chain fp=${fp(key)} reason=${reason}; client gets 502 settlement_unconfirmed`, undefined, false);
+          logSolanaReconcile({ status: 502, reason, key, ours, amount: requirement.amount });
+          return jsonError(502, "settlement_unconfirmed");
+        }
+        if (found.kind === "unknown") {
+          // RPC down / not indexed within the deadline: fail open as before (PayAI confirmed the settle; never charge
+          // without delivering on an RPC hiccup).
+          warn(`could not bind the settled tx on-chain fp=${fp(key)}; serving the paid response`, undefined, false);
+        }
+        // "paid": OUR message, exact amount, slot > start slot → the normal paid response.
       }
-      if (when === "unknown") warn(`could not read settled tx time fp=${fp(key)}; serving the paid response`, undefined, false);
     } else if (att.settle?.outcome === "unconfirmed") {
       const ours = ourPayment(txOf(payload)!);
-      if (att.settle.raw === "duplicate_settlement") {
-        // Odin 12:31 S1: PayAI says this payment was ALREADY settled (a delivery may have happened elsewhere): never
-        // look on-chain, never deliver; main's 502 stands.
-        reconcile = { reason: "duplicate_settlement", ours };
+      if (att.settle.duplicate) {
+        // Odin 12:31 S1 / 12:51 C1: PayAI says this payment was ALREADY settled or is in flight (ANY 409, incl. a
+        // non-JSON 409, or a duplicate-shaped reason): a delivery may have happened elsewhere. Never look on-chain,
+        // never deliver; main's 502 stands.
+        reconcile = { reason: att.settle.raw === "duplicate_settlement" ? "duplicate_settlement" : "facilitator_duplicate", ours };
       } else if (att.paidRes && !att.handlerThrew) {
         // Ambiguous settle (timeout / transport / malformed / pending / success:false with a signature): the tx may
         // have landed. Look for OUR message on-chain (bounded, read-only) before answering.
