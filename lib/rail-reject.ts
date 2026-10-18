@@ -38,7 +38,13 @@ export const RAIL_REJECT = {
   settleFailed: "settlement_failed",
 } as const;
 
-export type OnReject = (reason: string) => void;
+/**
+ * Internal, never buyer-visible, never derived from a facilitator: set ONLY by our own local payload checks (Sentinel
+ * LOW on delta6). The Solana reject 402 re-offers Solana on this flag, not on the reason TEXT, so a facilitator that
+ * passes through "invalid_payload" can never steer which rails our 402 lists.
+ */
+export type RejectMeta = { readonly reofferSolana?: true };
+export type OnReject = (reason: string, meta?: RejectMeta) => void;
 
 /** Hex-run threshold: 16 lowercase hex chars in a row (shortest real ids we care about are far longer). */
 const HEX_RUN = /[0-9a-f]{16,}/;

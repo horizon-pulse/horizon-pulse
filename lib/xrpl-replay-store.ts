@@ -240,6 +240,8 @@ export class UpstashReplayStore implements ReplayStore {
     private readonly fetchFn: FetchFn = fetch,
     private readonly timeoutMs = 1500,
     private readonly prefix = "hp:xrpl:replay:",
+    /** Self-test key prefix (per rail, so each rail's restricted-token key pattern covers its own self-test). */
+    private readonly selftestPrefix = SELFTEST_KEY_PREFIX,
   ) {
     if (!/^https:\/\//.test(url)) throw new Error("UPSTASH_REDIS_REST_URL must be https");
   }
@@ -298,7 +300,7 @@ export class UpstashReplayStore implements ReplayStore {
     const r = await this.cmd(["EVAL", EVAL_PROBE_SCRIPT, 0]);
     if (r !== 1 && r !== "1") throw new ReplaySelfTestError("eval_result");
     // Self-test (Odin 12:28): random id + random value, no request input; raw key (not the replay prefix).
-    const key = SELFTEST_KEY_PREFIX + hex(16);
+    const key = this.selftestPrefix + hex(16);
     const value = hex(16);
     const wrong = `${value}:wrong`; // never equal to `value`
     const one = (x: unknown) => x === 1 || x === "1";
