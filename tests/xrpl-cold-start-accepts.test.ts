@@ -15,13 +15,18 @@ import type { PaymentRequirements } from "@x402/core/types";
 import {
   __flushXrplBackgroundForTests,
   __setXrplModuleLoaderForTests,
+  __setXrplFacilitatorSchemeLoaderForTests,
   __setXrplRpcForTests,
+  getXrplAccept,
   resetXrplRailForTests,
   setXrplAlertHook,
+  setXrplReplayStoreForTests,
   type XrplAlert,
   type XrplRpc,
 } from "@/lib/xrpl-rail";
 import { resetSolanaRailForTests } from "@/lib/solana-rail";
+import { getXrplRailConfig, type XrplRailConfig } from "@/lib/xrpl-config";
+import { MemoryReplayStore } from "@/lib/xrpl-replay-store";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
 import { X402_ORG_SUPPORTED, XRPL_FAC, installXrplFacilitators, makeXrplRpc, payToForNet, stubXrplOn, type ReadyMode } from "./helpers/xrpl-env";
@@ -233,4 +238,79 @@ describe("XRPL in the 402 on a cold start unless confirmed absent (Odin 11:08)",
     expect(JSON.stringify(await xrplEntry(h))).toBe(ref);
     expect(alerts.filter((a) => a.kind === "xrpl_entry_dropped")).toEqual([]);
   });
+});
+
+/**
+ * Mainnet (xrpl:0) cold start, Sentinel note B / Odin 11:22 AM ET 10/18: the tests above run on xrpl:1. This pins
+ * the money values on the cold path itself, as LITERALS (payTo copied from security/approved-addresses.md line 10;
+ * issuer = Ripple's RLUSD mainnet issuer, docs.ripple.com token-addresses, = lib/xrpl-config.ts + @x402/xrpl).
+ * Config comes from the real env parser (pinned-payTo gate), the store is shared-kind, the facilitator is "self".
+ */
+describe("XRPL mainnet cold start pins the literal payTo / issuer (Sentinel note B)", () => {
+  const MAINNET_PAYTO_LITERAL = "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf";
+  const RLUSD_MAINNET_ISSUER_LITERAL = "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De";
+  const RLUSD_HEX_LITERAL = "524C555344000000000000000000000000000000";
+  const MAIN_ENV = {
+    HP_XRPL_ENABLED: "true",
+    HP_XRPL_NETWORK: "xrpl:0",
+    HP_XRPL_PAYTO: MAINNET_PAYTO_LITERAL,
+    HP_XRPL_FACILITATOR_URL: "self",
+    XRPL_MAINNET_ALLOWED: "true",
+    UPSTASH_REDIS_REST_URL: "https://x.upstash.io",
+    UPSTASH_REDIS_REST_TOKEN: "t",
+    HP_XRPL_INIT_TIMEOUT_MS: String(TIMEOUT_MS),
+  };
+  const selfScheme = { getExtra: () => ({ areFeesSponsored: false }), verify: async () => ({ isValid: false }), settle: async () => ({ success: false }) };
+  /** Fresh instance with a shared-kind replay store (resetXrplRailForTests resets the store to the env default). */
+  const freshInstance = () => {
+    resetXrplRailForTests();
+    setXrplReplayStoreForTests(Object.assign(new MemoryReplayStore(), { kind: "upstash" as const }) as never);
+  };
+  beforeEach(() => {
+    freshInstance();
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+  afterEach(() => {
+    setXrplReplayStoreForTests(null);
+    __setXrplFacilitatorSchemeLoaderForTests(null);
+    __setXrplRpcForTests(null);
+    setXrplAlertHook(null);
+    vi.restoreAllMocks();
+  });
+
+  it("xrpl:0 cold entry (RPC + rail init both time out) = literal r3Fbir… / rMxCK… / RLUSD hex, byte-identical to the SDK-built mainnet entry", async () => {
+    const alerts: XrplAlert[] = [];
+    setXrplAlertHook((a) => alerts.push(a));
+    const r = getXrplRailConfig(MAIN_ENV);
+    expect(r.enabled).toBe(true);
+    const config = (r as { config: XrplRailConfig }).config;
+
+    // Reference: a healthy instance (RPC ready, self facilitator loads) builds the entry through the SDK.
+    __setXrplFacilitatorSchemeLoaderForTests(async () => selfScheme as never);
+    installStepRpc(() => "ready");
+    const ref = await getXrplAccept(config, "5000");
+    expect(ref).not.toBeNull();
+
+    // Cold instance: payTo readiness RPC and rail init (self scheme load) both time out on every attempt.
+    freshInstance();
+    setXrplAlertHook((a) => alerts.push(a));
+    __setXrplFacilitatorSchemeLoaderForTests(() => new Promise(() => {}));
+    const coldStats = installStepRpc(() => "timeout");
+    const cold = await getXrplAccept(config, "5000");
+    expect(coldStats.checks).toBe(2); // really the cold path: in-request retry ran and failed
+
+    expect(cold).not.toBeNull();
+    expect(JSON.stringify(cold)).toBe(JSON.stringify(ref));
+    expect(cold).toEqual({
+      scheme: "exact",
+      network: "xrpl:0",
+      amount: "0.005",
+      asset: RLUSD_HEX_LITERAL,
+      payTo: MAINNET_PAYTO_LITERAL,
+      maxTimeoutSeconds: 300,
+      extra: { issuer: RLUSD_MAINNET_ISSUER_LITERAL, areFeesSponsored: false },
+    });
+    expect(alerts.filter((a) => a.kind === "xrpl_entry_dropped")).toEqual([]);
+  }, 15_000);
 });
