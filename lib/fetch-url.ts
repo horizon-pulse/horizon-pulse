@@ -5,6 +5,7 @@
 
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { guardedFetch, isBlockedIp, isSsrfBlockedError, stripBrackets } from "@/lib/net-guard";
 
 export const FETCH_MAX_BYTES = 200_000; // ~200KB raw before trim
 export const FETCH_TIMEOUT_MS = 8_000;
@@ -71,46 +72,11 @@ function isPreferredContentType(ct: string | null): boolean {
   return PREFERRED_TYPES.some((p) => b === p);
 }
 
-/** IPv4 private / special-use ranges we refuse. */
-function isBlockedIpv4(ip: string): boolean {
-  const parts = ip.split(".").map((x) => Number(x));
-  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n) || n < 0 || n > 255)) {
-    return true;
-  }
-  const [a, b] = parts as [number, number, number, number];
-  if (a === 0) return true; // 0.0.0.0/8
-  if (a === 10) return true; // 10/8
-  if (a === 127) return true; // loopback
-  if (a === 169 && b === 254) return true; // link-local / cloud metadata
-  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16/12
-  if (a === 192 && b === 168) return true; // 192.168/16
-  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10
-  if (a === 192 && b === 0 && parts[2] === 0) return true; // 192.0.0.0/24
-  if (a >= 224) return true; // multicast / reserved
-  return false;
-}
-
-function isBlockedIpv6(ip: string): boolean {
-  const n = ip.toLowerCase();
-  if (n === "::" || n === "::1") return true;
-  // Unique local fc00::/7, link-local fe80::/10, multicast ff00::/8
-  if (n.startsWith("fc") || n.startsWith("fd")) return true;
-  if (n.startsWith("fe8") || n.startsWith("fe9") || n.startsWith("fea") || n.startsWith("feb")) {
-    return true;
-  }
-  if (n.startsWith("ff")) return true;
-  // IPv4-mapped ::ffff:x.x.x.x
-  const mapped = n.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isBlockedIpv4(mapped[1]!);
-  return false;
-}
-
-export function isBlockedIp(ip: string): boolean {
-  const v = isIP(ip);
-  if (v === 4) return isBlockedIpv4(ip);
-  if (v === 6) return isBlockedIpv6(ip);
-  return true;
-}
+/**
+ * Address policy lives in lib/net-guard.ts (byte-level IPv4/IPv6 classifier,
+ * shared with the connect-time guard). Re-exported here for existing imports.
+ */
+export { isBlockedIp };
 
 function hostnameLooksLocal(hostname: string): boolean {
   const h = hostname.toLowerCase().replace(/\.$/, "");
@@ -153,7 +119,8 @@ export async function assertSafePublicUrl(
       status: 400,
     };
   }
-  const host = url.hostname;
+  // IPv6 literals keep their brackets in url.hostname ("[::1]"); classify the bare address.
+  const host = stripBrackets(url.hostname);
   if (hostnameLooksLocal(host)) {
     return {
       ok: false,
@@ -363,7 +330,7 @@ export async function fetchPublicUrl(
     const timer = setTimeout(() => controller.abort(), remaining);
     let res: Response;
     try {
-      res = await fetch(url.toString(), {
+      res = await guardedFetch(url.toString(), {
         method: "GET",
         redirect: "manual",
         signal: controller.signal,
@@ -381,6 +348,9 @@ export async function fetchPublicUrl(
           code: "timeout",
           status: 504,
         };
+      }
+      if (isSsrfBlockedError(err)) {
+        return { ok: false, error: err.message, code: "host_blocked", status: 400 };
       }
       const message = err instanceof Error ? err.message : "upstream fetch failed";
       return {

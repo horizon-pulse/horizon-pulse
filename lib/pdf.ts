@@ -12,6 +12,7 @@
  */
 import { getDocumentProxy } from "unpdf";
 import { assertSafePublicUrl, type FetchUrlError } from "@/lib/fetch-url";
+import { guardedFetch, isSsrfBlockedError } from "@/lib/net-guard";
 
 export const PDF_MAX_BYTES = 10 * 1024 * 1024;
 export const PDF_TIMEOUT_MS = 12_000;
@@ -73,7 +74,7 @@ async function download(raw: string): Promise<{ bytes: Uint8Array; finalUrl: str
     const { url } = checked as { url: URL };
     let res: Response;
     try {
-      res = await fetch(url.toString(), {
+      res = await guardedFetch(url.toString(), {
         redirect: "manual",
         signal: AbortSignal.timeout(remaining),
         headers: { Accept: "application/pdf, */*;q=0.1", "User-Agent": "HorizonPulsePdf/1.0 (+https://horizonpulse.dev)" },
@@ -82,6 +83,7 @@ async function download(raw: string): Promise<{ bytes: Uint8Array; finalUrl: str
       const name = err instanceof Error ? err.name : "";
       if (name === "TimeoutError" || name === "AbortError")
         return { ok: false, error: `Download timed out after ${PDF_TIMEOUT_MS}ms`, code: "timeout", status: 504 };
+      if (isSsrfBlockedError(err)) return { ok: false, error: err.message, code: "host_blocked", status: 400 };
       return { ok: false, error: err instanceof Error ? err.message : "download failed", code: "upstream", status: 502 };
     }
     if (res.status >= 300 && res.status < 400) {

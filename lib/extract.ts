@@ -16,6 +16,7 @@ import {
   FETCH_MAX_REDIRECTS,
   type FetchUrlError,
 } from "./fetch-url";
+import { guardedFetch, isSsrfBlockedError } from "./net-guard";
 import { evaluateFields, type FieldSpecs, type FieldsResult } from "./extract-fields";
 
 /** Same raw body band as /api/fetch. */
@@ -377,7 +378,7 @@ export async function fetchHtmlForExtract(
     const timer = setTimeout(() => controller.abort(), remaining);
     let res: Response;
     try {
-      res = await fetch(url.toString(), {
+      res = await guardedFetch(url.toString(), {
         method: "GET",
         redirect: "manual",
         signal: controller.signal,
@@ -397,6 +398,9 @@ export async function fetchHtmlForExtract(
           status: 504,
           elapsedMs: elapsed(),
         };
+      }
+      if (isSsrfBlockedError(err)) {
+        return { ok: false, error: err.message, code: "host_blocked", status: 400, elapsedMs: elapsed() };
       }
       const message = err instanceof Error ? err.message : "upstream fetch failed";
       return {

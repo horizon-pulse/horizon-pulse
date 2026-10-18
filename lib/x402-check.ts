@@ -15,6 +15,7 @@
  * report (see methodology.billing). Body is streamed and capped at 64KB.
  */
 import { assertSafePublicUrl } from "@/lib/fetch-url";
+import { guardedFetch, isSsrfBlockedError } from "@/lib/net-guard";
 import { RLUSD_CURRENCY_HEX, RLUSD_MAINNET_ISSUER, RLUSD_TESTNET_ISSUER, XRPL_MAINNET_CAIP2, XRPL_TESTNET_CAIP2 } from "@/lib/xrpl-config";
 
 export const CHECK_TIMEOUT_MS = 8_000;
@@ -265,7 +266,7 @@ export async function checkX402Endpoint(input: {
     if ("ok" in checked && checked.ok === false) return checked;
     const { url } = checked as { url: URL };
     try {
-      res = await fetch(url.toString(), {
+      res = await guardedFetch(url.toString(), {
         method,
         redirect: "manual",
         signal: AbortSignal.timeout(remaining),
@@ -280,6 +281,7 @@ export async function checkX402Endpoint(input: {
       const name = err instanceof Error ? err.name : "";
       if (name === "TimeoutError" || name === "AbortError")
         return { ok: false, error: `Target timed out after ${CHECK_TIMEOUT_MS}ms`, code: "timeout", status: 504 };
+      if (isSsrfBlockedError(err)) return { ok: false, error: err.message, code: "host_blocked", status: 400 };
       return { ok: false, error: err instanceof Error ? err.message : "connection failed", code: "unreachable", status: 502 };
     }
     finalUrl = url.toString();

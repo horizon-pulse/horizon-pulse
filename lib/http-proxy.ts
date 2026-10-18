@@ -13,6 +13,18 @@ import {
   assertSafePublicUrl,
   type FetchUrlError,
 } from "./fetch-url";
+import { guardedFetch, isSsrfBlockedError } from "./net-guard";
+
+/**
+ * Caller credentials we never forward once a redirect has left the origin the
+ * caller asked for (same as browsers' fetch dropping Authorization on a
+ * cross-origin redirect): authorization, proxy-authorization, x-api-key and
+ * every custom x-* header. Sticky for the rest of the redirect chain.
+ */
+export function isCredentialHeaderForCrossOrigin(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower === "authorization" || lower === "proxy-authorization" || lower === "x-api-key" || lower.startsWith("x-");
+}
 
 export const HTTP_MAX_RESPONSE_BYTES = 384_000; // ~384KB (within 256–512KB band)
 export const HTTP_MAX_REQUEST_BODY_BYTES = 64_000; // upstream request body cap
@@ -387,6 +399,8 @@ export async function proxyPublicHttp(
   let currentMethod: HttpAllowedMethod = method;
   let currentBody: string | undefined = bodyStr;
   const deadline = Date.now() + HTTP_TIMEOUT_MS;
+  let firstOrigin: string | null = null;
+  let leftOrigin = false;
 
   while (redirects <= HTTP_MAX_REDIRECTS) {
     const remaining = deadline - Date.now();
@@ -405,14 +419,19 @@ export async function proxyPublicHttp(
       return mapFetchUrlError(checked, elapsed());
     }
     const { url } = checked as { url: URL };
+    firstOrigin ??= url.origin;
+    if (url.origin !== firstOrigin) leftOrigin = true;
+    const forwarded: Record<string, string> = leftOrigin
+      ? Object.fromEntries(Object.entries(filtered.headers).filter(([k]) => !isCredentialHeaderForCrossOrigin(k)))
+      : filtered.headers;
 
     const outbound: Record<string, string> = {
-      ...filtered.headers,
+      ...forwarded,
       "User-Agent":
-        filtered.headers["User-Agent"] ??
-        filtered.headers["user-agent"] ??
+        forwarded["User-Agent"] ??
+        forwarded["user-agent"] ??
         "HorizonPulseHttp/1.0 (+https://horizonpulse.dev)",
-      Accept: filtered.headers["Accept"] ?? filtered.headers["accept"] ?? "*/*",
+      Accept: forwarded["Accept"] ?? forwarded["accept"] ?? "*/*",
     };
     // Normalize: drop lowercase dupes if we set canonical keys
     delete outbound["user-agent"];
@@ -422,7 +441,7 @@ export async function proxyPublicHttp(
     const timer = setTimeout(() => controller.abort(), remaining);
     let res: Response;
     try {
-      res = await fetch(url.toString(), {
+      res = await guardedFetch(url.toString(), {
         method: currentMethod,
         redirect: "manual",
         signal: controller.signal,
@@ -442,6 +461,9 @@ export async function proxyPublicHttp(
           status: 504,
           elapsedMs: elapsed(),
         };
+      }
+      if (isSsrfBlockedError(err)) {
+        return { ok: false, error: err.message, code: "host_blocked", status: 400, elapsedMs: elapsed() };
       }
       const message = err instanceof Error ? err.message : "upstream request failed";
       return {

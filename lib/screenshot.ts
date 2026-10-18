@@ -9,6 +9,10 @@
  * and any WebSocket that still opens (e.g. from a worker) is detected via CDP
  * and fails the render. The top-level host is pinned to the IP we checked
  * (--host-resolver-rules) to close DNS rebinding for the main document.
+ * Every connection Chromium makes (document, assets, iframes, fetch/XHR,
+ * ws/wss) goes through an in-process egress proxy (lib/egress-proxy.ts) that
+ * resolves and checks the address at connect time, so sub-requests have no
+ * rebinding window either (Sentinel appsec 2026-10-17, 1i).
  *
  * Failures (bad input, blocked host, navigation error/timeout, oversized
  * image) return >=400 so settlement is skipped and the caller is not charged.
@@ -18,6 +22,7 @@ import puppeteer, { type Browser } from "puppeteer-core";
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { assertSafePublicUrl, isBlockedIp } from "@/lib/fetch-url";
+import { startEgressProxy, type EgressProxy } from "@/lib/egress-proxy";
 
 export const SHOT_NAV_TIMEOUT_MS = 12_000;
 /** Whole-call budget (launch + nav + delay + capture), under maxDuration 30. */
@@ -31,7 +36,7 @@ export const SCREENSHOT_METHODOLOGY = {
   engine: "Headless Chromium (@sparticuz/chromium + puppeteer-core), fresh browser per call, no cookies or storage kept.",
   load: `Navigates with waitUntil=networkidle2 (${SHOT_NAV_TIMEOUT_MS / 1000}s cap, shortened if the browser launch was slow), then an optional delayMs (max 3000, trimmed to fit) before capture. Whole call is budgeted at ${SHOT_TOTAL_BUDGET_MS / 1000}s; over budget returns 504 (not charged).`,
   limits: `Viewport width ${WIDTH_RANGE[0]}-${WIDTH_RANGE[1]}, height ${HEIGHT_RANGE[0]}-${HEIGHT_RANGE[1]}. fullPage is clipped at ${SHOT_MAX_HEIGHT}px. Image capped at ${SHOT_MAX_BYTES / 1e6}MB (PNG falls back to JPEG q70 if larger).`,
-  ssrf: "Covered: the top-level URL and every HTTP(S) sub-request (redirects, assets, iframes, fetch/XHR) are checked and private, loopback, link-local and non-http(s) targets are blocked; the top-level host is pinned to the checked IP (no DNS rebinding for the main document); WebSocket, WebTransport and RTCPeerConnection are removed in every frame before page scripts run; WebRTC non-proxied UDP is disabled; any WebSocket that still opens is detected and fails the render (502, not charged). Remaining: sub-request hosts are checked by a separate DNS lookup from Chromium's (rebinding window for assets), and a WebSocket opened from a worker is detected after it connects, not prevented.",
+  ssrf: "Covered: the top-level URL and every HTTP(S) sub-request (redirects, assets, iframes, fetch/XHR) are checked and private, loopback, link-local and non-http(s) targets are blocked; the top-level host is pinned to the checked IP (no DNS rebinding for the main document); WebSocket, WebTransport and RTCPeerConnection are removed in every frame before page scripts run; WebRTC non-proxied UDP is disabled; any WebSocket that still opens is detected and fails the render (502, not charged). every connection Chromium makes (document, assets, iframes, fetch/XHR, WebSocket) goes through a local egress proxy that resolves the host and checks the address at connect time, so a DNS answer that changes after the check cannot reach a private address. Remaining: a WebSocket opened from a worker is detected after it connects (to a checked public address), not prevented.",
   billing: "Billed when an image is returned, whatever HTTP status the page itself had (reported as pageStatus). Not billed: bad input, blocked host, navigation failure or timeout, or an image over the cap; those return 400/413/502/504.",
   output: "JSON with the image as base64 (imageBase64) plus mimeType, bytes, width, height, finalUrl, pageStatus, title.",
 } as const;
@@ -98,13 +103,17 @@ export async function takeScreenshot(input: {
   const overBudget = (): ScreenshotError => ({ ok: false, error: `Render exceeded the ${SHOT_TOTAL_BUDGET_MS / 1000}s budget`, code: "timeout", status: 504 });
 
   let browser: Browser | null = null;
+  let proxy: EgressProxy | null = null;
   let blocked = 0;
   try {
+    // All Chromium egress through the connect-time guard (no direct connections).
+    proxy = await startEgressProxy();
     browser = await puppeteer.launch({
       args: [
         ...chromium.args,
         "--webrtc-ip-handling-policy=disable_non_proxied_udp",
         "--force-webrtc-ip-handling-policy",
+        ...proxy.chromiumArgs,
         ...(pinArg ? [pinArg] : []),
       ],
       executablePath: await chromium.executablePath(),
@@ -227,12 +236,13 @@ export async function takeScreenshot(input: {
       fullPage,
       bytes: buf.length,
       imageBase64: buf.toString("base64"),
-      blockedRequests: blocked,
+      blockedRequests: blocked + proxy.blockedCount(),
       elapsedMs: Date.now() - started,
     };
   } catch (err) {
     return { ok: false, error: (err instanceof Error ? err.message : "render failed").slice(0, 300), code: "render_failed", status: 502 };
   } finally {
     if (browser) await browser.close().catch(() => {});
+    if (proxy) await proxy.close().catch(() => {});
   }
 }

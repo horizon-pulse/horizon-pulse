@@ -23,6 +23,7 @@
  * volume or customer figures (the on-chain check reports one boolean).
  */
 import { assertSafePublicUrl } from "@/lib/fetch-url";
+import { guardedFetch, isSsrfBlockedError } from "@/lib/net-guard";
 import { USDC_BASE } from "@/lib/config";
 import { DEFAULT_SOLANA_RPC_URL, USDC_SOLANA_MINT } from "@/lib/solana-config";
 import { USDC_POLYGON } from "@/lib/polygon-config";
@@ -211,7 +212,8 @@ export class DeadlineError extends Error {
   }
 }
 
-export const defaultDeps = (): Deps => ({ fetch: (...a) => fetch(...a), assertSafe: assertSafePublicUrl, now: () => Date.now() });
+/** Default fetch is the connect-time guarded fetch (lib/net-guard.ts): no DNS rebinding between assertSafe and connect. */
+export const defaultDeps = (): Deps => ({ fetch: (input, init) => guardedFetch(input as string | URL, init), assertSafe: assertSafePublicUrl, now: () => Date.now() });
 
 export async function safeFetch(
   deps: Deps,
@@ -241,6 +243,7 @@ export async function safeFetch(
     } catch (err) {
       const name = err instanceof Error ? err.name : "";
       if (name === "TimeoutError" || name === "AbortError") return { error: `timed out after ${timeoutMs}ms`, code: "timeout" };
+      if (isSsrfBlockedError(err)) return { error: BLOCKED_HOST_MESSAGE, code: "host_blocked" };
       return { error: "connection failed", code: "unreachable" };
     }
     const loc = res.headers.get("location");
