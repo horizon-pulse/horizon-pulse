@@ -143,6 +143,10 @@
  * golden.local gained ONLY the nine new keys per mode (GET json, GET browser, OPTIONS per route); all 76
  * pre-existing keys per mode are byte-identical. golden.discovery refreshed (openapi.json, llms.txt,
  * skill.md, /.well-known/x402).
+ *
+ * 2026-10-18 (branch fix/xrpl-redeem-fingerprint delta1, off 312a68d): UPDATE_GOLDEN=1 after
+ * one llms.txt sentence (Payment: a redeem retry must resend the identical URL and body).
+ * ONLY discovery["sha256 public/llms.txt"] changed; golden.cdp and golden.local byte-identical.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

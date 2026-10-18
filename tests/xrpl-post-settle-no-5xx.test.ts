@@ -10,7 +10,7 @@
  *     ledger proves failure → Base-only 402; otherwise unchanged 502/504 (genuinely unknown).
  * Offline: the self-facilitation scheme and the read-only RPC are stubbed; nothing is signed or sent.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
@@ -23,6 +23,7 @@ import {
   __setXrplTxLookupDelaysForTests,
   XRPL_EVAL_FAIL_RECHECK_MS,
   XRPL_EVAL_PROBE_DEADLINE_MS,
+  XRPL_FP_ALERT_COOLDOWN_MS,
   XRPL_IN_FLIGHT_STALE_MS,
   LSF_DISABLE_MASTER,
   __setXrplMasterCheckDeadlineForTests,
@@ -52,6 +53,7 @@ import {
 import { RLUSD_CURRENCY_HEX, RLUSD_MAINNET_ISSUER, XRPL_PAYTO, XRPL_SELF_FACILITATOR } from "@/lib/xrpl-config";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
+import { normalizeQuery, requestFingerprint } from "@/lib/request-fingerprint";
 import { installXrplFacilitators, installXrplRpc, makeXrplRpc, specTx, XRPL_PAYER, XRPL_TX_HASH, xrplPayload } from "./helpers/xrpl-env";
 
 const MAIN_ENV = {
@@ -100,6 +102,11 @@ const handler = () =>
     pulseOpts,
   );
 const unpaid = () => new NextRequest("https://horizonpulse.dev/api/pulse", { headers: { accept: "application/json" } });
+/** Odin 5:40 hotfix: the fingerprint of the standard paid request (GET /api/pulse, no query, no body). */
+let RQ = "";
+beforeAll(async () => {
+  RQ = await requestFingerprint(unpaid());
+});
 const paid = (p: PaymentPayload) =>
   new NextRequest("https://horizonpulse.dev/api/pulse", { headers: { accept: "application/json", "payment-signature": encodePaymentSignatureHeader(p) } });
 
@@ -228,7 +235,7 @@ describe("settle reported validated tesSUCCESS (funds moved): the ledger re-read
       expect(res.headers.get("payment-response")).toBeNull();
       expect(alerts).toContainEqual({ kind: "xrpl_settled_unverified", severity: "high", field, reason });
       expect(reconcile()).toEqual([expect.objectContaining({ status: 502, reason, txHash: hashOf(p) })]);
-      expect(slotStates()[0]).toMatch(/^settle_unconfirmed@\d+#[0-9A-F]{64}:\d+$/);
+      expect(slotStates()[0]).toMatch(/^settle_unconfirmed@\d+#[0-9A-F]{64}:\d+~[0-9a-f]{64}$/);
       const again = await handler()(paid(p));
       expect(again.status).toBe(502);
       expect(settleCalls).toBe(1);
@@ -303,7 +310,7 @@ describe("delivered vs not delivered (Odin 11:34): an undelivered payment is red
     const raw = [...((store as unknown as { m: Map<string, { state: string }> }).m.values())].map((e) => e.state);
     expect(raw).toHaveLength(1);
     // undelivered + firstSeen + the SUBMITTED tx hash and its LastLedgerSequence (public ledger data, no payer data)
-    expect(raw[0]).toMatch(/^settle_unconfirmed@\d+#[0-9A-F]{64}:1000000$/);
+    expect(raw[0]).toMatch(/^settle_unconfirmed@\d+#[0-9A-F]{64}:1000000~[0-9a-f]{64}$/);
   }
 
   it("504, then the ledger shows it closed to us → the retry DELIVERS once (route re-run, nothing re-submitted); the next retry is 409", async () => {
@@ -569,7 +576,7 @@ describe("(d) LastLedgerSequence: past it and not found ⇒ provably never lande
       expect(res.status).toBe(504);
       expect(await res.json()).toEqual(SETTLEMENT_UNCONFIRMED_BODY);
       expect(calls.some((c) => c.method === "tx_range")).toBe(searched);
-      expect(slotStates()[0]).toMatch(/^settle_unconfirmed@\d+#[0-9A-F]{64}:\d+$/);
+      expect(slotStates()[0]).toMatch(/^settle_unconfirmed@\d+#[0-9A-F]{64}:\d+~[0-9a-f]{64}$/);
     });
   }
 
@@ -862,7 +869,7 @@ describe("H1 (BLOCKER): the retry blob only LOCATES the slot; lookups and the ne
     const rpc = slotRpc(accept, st);
     expect((await handler()(paid(b1))).status).toBe(504);
     const before = slotRaw();
-    expect(before).toMatch(new RegExp(`^settle_unconfirmed@\\d+#${h1}:1000000$`));
+    expect(before).toMatch(new RegExp(`^settle_unconfirmed@\\d+#${h1}:1000000~${RQ}$`));
     const forged = xrplPayload(accept, { Sequence: S, LastLedgerSequence: 900_000 });
     const hf = hashOf(forged);
     expect(hf).not.toBe(h1);
@@ -979,7 +986,7 @@ describe("H1 (BLOCKER): the retry blob only LOCATES the slot; lookups and the ne
     };
     slotRpc(accept, { landed: new Set(), validated: 1 });
     await handler()(paid(b1));
-    expect(during).toBe(`in_flight@${parseReplayValue(during)!.firstSeen}#${hashOf(b1)}:1000000`);
+    expect(during).toBe(`in_flight@${parseReplayValue(during)!.firstSeen}#${hashOf(b1)}:1000000~${RQ}`);
   });
 });
 
@@ -997,7 +1004,7 @@ describe("M1: a stale in_flight (owner died after submit) is redeemable; a live 
     const m = (store as unknown as { m: Map<string, { state: string; until: number }> }).m;
     const [k, e] = [...m.entries()][0];
     const firstSeen = Date.now() - ageMs;
-    m.set(k, { ...e, state: encodeReplayValue({ state: "in_flight", firstSeen, hash: hashOf(b1), lls: 1_000_000 }) });
+    m.set(k, { ...e, state: encodeReplayValue({ state: "in_flight", firstSeen, hash: hashOf(b1), lls: 1_000_000, rq: RQ }) });
     return { accept, b1, st, m, k };
   }
 
@@ -1048,7 +1055,7 @@ describe("M1: a stale in_flight (owner died after submit) is redeemable; a live 
     const r = await handler()(paid(b1));
     expect(r.status).toBe(502);
     expect(await r.json()).toEqual(SETTLEMENT_UNCONFIRMED_BODY);
-    expect(slotRaw()).toMatch(new RegExp(`^settle_unconfirmed@\\d+#${hashOf(b1)}:1000000$`));
+    expect(slotRaw()).toMatch(new RegExp(`^settle_unconfirmed@\\d+#${hashOf(b1)}:1000000~${RQ}$`));
   });
 });
 
@@ -1066,7 +1073,7 @@ describe("L1/N5: after an ambiguous settle we look up OUR blob hash and require 
     expect(alerts).toContainEqual({ kind: "xrpl_settle_hash_mismatch", severity: "high" });
     expect(reconcile()).toEqual([expect.objectContaining({ status: 502, reason: "settle_hash_mismatch", txHash: other })]);
     expect(rpc.lookups).toEqual([]); // neither hash is trusted on this request
-    expect(slotRaw()).toMatch(/^settle_unconfirmed@\d+$/);
+    expect(slotRaw()).toMatch(new RegExp(`^settle_unconfirmed@\\d+~${RQ}$`));
     const again = await handler()(paid(b1));
     expect(again.status).toBe(502);
     expect(ran).toBe(1);
@@ -1133,8 +1140,8 @@ describe("N3: the redeem failure reset is ONE atomic compare-and-set against exa
       throw new Error("lost after mark");
     });
     expect((await handler()(paid(b1))).status).toBe(502);
-    expect(marked).toMatch(new RegExp(`^settled@\\d+![0-9a-f]{16}#${hashOf(b1)}:1000000$`));
-    expect(slotRaw()).toMatch(new RegExp(`^settle_unconfirmed@\\d+#${hashOf(b1)}:1000000$`));
+    expect(marked).toMatch(new RegExp(`^settled@\\d+![0-9a-f]{16}#${hashOf(b1)}:1000000~${RQ}$`));
+    expect(slotRaw()).toMatch(new RegExp(`^settle_unconfirmed@\\d+#${hashOf(b1)}:1000000~${RQ}$`));
     __setXrplAfterDeliveryMarkHookForTests(null);
     expect((await handler()(paid(b1))).status).toBe(200);
   });
@@ -1168,6 +1175,15 @@ describe("N3: the redeem failure reset is ONE atomic compare-and-set against exa
     expect(parseReplayValue(`in_flight@7#${h}:1`)).toEqual({ state: "in_flight", firstSeen: 7, hash: h, lls: 1 });
     expect(parseReplayValue(`in_flight@7#${h.toLowerCase()}:1`)).toBeNull();
     expect(parseReplayValue("in_flight@7#XYZ:1")).toBeNull();
+    // Odin 5:40 hotfix: the request fingerprint suffix round-trips; values without it (current prod) parse with rq undefined.
+    const rq = "0f".repeat(32);
+    expect(encodeReplayValue({ ...full, rq })).toBe(`redeeming@1@2!0123456789abcdef#${h}:99~${rq}`);
+    expect(parseReplayValue(encodeReplayValue({ ...full, rq }))).toEqual({ ...full, rq });
+    expect(parseReplayValue(`settle_unconfirmed@5~${rq}`)).toEqual({ state: "settle_unconfirmed", firstSeen: 5, rq });
+    expect(parseReplayValue(`settle_unconfirmed@5#${h}:9`)!.rq).toBeUndefined();
+    expect(parseReplayValue(`settle_unconfirmed@5~${rq.toUpperCase()}`)).toBeNull();
+    expect(parseReplayValue(`settle_unconfirmed@5~abc`)).toBeNull();
+    expect(encodeReplayValue({ state: "settled", rq: "not-hex" })).toBe("settled");
   });
 });
 
@@ -1263,7 +1279,7 @@ describe("F2: settle success whose facilitator hash differs from our blob hash �
     expect(alerts.filter((a) => a.kind === "xrpl_settle_hash_mismatch")).toEqual([expect.objectContaining({ severity: "high" })]);
     expect(reconcile()).toEqual([expect.objectContaining({ status: 502, reason: "settle_hash_mismatch", txHash: other })]);
     expect(slotStates()).toHaveLength(1);
-    expect(slotStates()[0]).toMatch(/^settle_unconfirmed@\d+$/);
+    expect(slotStates()[0]).toMatch(new RegExp(`^settle_unconfirmed@\\d+~${RQ}$`));
     expect(slotStates()[0]).not.toMatch(/settle_failed/);
     // A retry finds no stored tx → bare 502 (manual reconcile), never a 402.
     const r2 = await handler()(paid(p));
@@ -1576,5 +1592,198 @@ describe("(2) replay-store self-test inside the first-use EVAL probe (fail close
     const keys = new Set(base.sent.filter((x) => x[0] === "SET").map((x) => x[1]));
     expect(keys.size).toBe(4); // each probe its own key
     expect(data.size).toBe(0);
+  });
+});
+
+// ===========================================================================
+// Odin 5:40 PM ET hotfix (Sentinel shared-claim-v3 F1, applied to XRPL): redeem is bound to the paying REQUEST.
+// The stored blob / hash is public once validated, so a chain watcher could rebuild the payload and redeem the
+// victim's undelivered payment on its OWN request. Now the first use stores a request fingerprint in the slot.
+// ===========================================================================
+describe("hotfix: XRPL redeem-on-retry requires the paying request's fingerprint", () => {
+  const paidAt = (url: string, p: PaymentPayload, init: { method?: string; body?: string } = {}) =>
+    new NextRequest(url, { method: init.method ?? "GET", body: init.body, headers: { accept: "application/json", "payment-signature": encodePaymentSignatureHeader(p) } });
+  beforeEach(() => {
+    settleImpl = async () => {
+      throw new Error("ws closed");
+    };
+  });
+  /** Victim's first request (at `url`) settles ambiguously → 504, slot undelivered; then its tx is on the ledger. */
+  async function victimStuck(S: number, url: string) {
+    const accept = await xrplAccept();
+    const b1 = signedPayload(accept, { Sequence: S });
+    const st = { landed: new Set<string>(), validated: 999_000, account: walletA.classicAddress };
+    const rpc = slotRpc(accept, st);
+    expect((await handler()(paidAt(url, b1))).status).toBe(504);
+    expect(slotRaw()).toMatch(new RegExp(`^settle_unconfirmed@\\d+#${hashOf(b1)}:1000000~${await requestFingerprint(paidAt(url, b1))}$`));
+    st.landed.add(hashOf(b1)); // the tx is now validated on the ledger: its blob is PUBLIC
+    return { accept, b1, st, rpc };
+  }
+
+  it("SENTINEL HIJACK: a watcher replays the public blob on its OWN request → 409, HIGH alert, reconcile line, nothing run or looked up, slot untouched; the victim's retry then delivers once", async () => {
+    const { b1, rpc } = await victimStuck(79_001, "https://horizonpulse.dev/api/pulse?q=victim");
+    const before = slotRaw();
+    rpc.lookups.length = 0;
+    const ranBefore = ran;
+    const urls: string[] = [];
+    const spy = createX402GetHandler(
+      async (r) => {
+        urls.push(r.url);
+        return NextResponse.json({ ok: true, paid: "body" });
+      },
+      pulseRouteConfig(),
+      pulseOpts,
+    );
+    const atk = await spy(paidAt("https://horizonpulse.dev/api/pulse?who=attacker", b1));
+    expect(atk.status).toBe(409);
+    expect(await atk.json()).toEqual({ error: "duplicate_payment" });
+    expect(atk.headers.get("payment-response")).toBeNull();
+    expect(urls).toEqual([]); // the attacker's request never reaches the route
+    expect(ran).toBe(ranBefore);
+    expect(rpc.lookups).toEqual([]);
+    expect(slotRaw()).toBe(before);
+    expect(alerts).toContainEqual({ kind: "xrpl_redeem_fingerprint_mismatch", severity: "high" });
+    expect(reconcile()).toContainEqual(expect.objectContaining({ status: 409, reason: "redeem_fingerprint_mismatch", txHash: hashOf(b1), slot: "redeem" }));
+    // The victim's honest retry (same request) still redeems, once.
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=victim", b1)));
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=victim", b1))).status).toBe(409);
+  });
+
+  it("hijack with NO query on either side but another method/path is refused too (route + method are bound)", async () => {
+    const { b1 } = await victimStuck(79_002, "https://horizonpulse.dev/api/pulse?q=v2");
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse", b1))).status).toBe(409); // query dropped
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=v2&x=1", b1))).status).toBe(409); // param added
+    // delta1 C1: same slot → ONE HIGH alert, but a reconcile line per mismatching request.
+    expect(alerts.filter((a) => a.kind === "xrpl_redeem_fingerprint_mismatch")).toHaveLength(1);
+    expect(reconcile().filter((l) => l.reason === "redeem_fingerprint_mismatch")).toHaveLength(2);
+  });
+
+  it("delta1 C1: N mismatches on one slot → 1 HIGH alert + N reconcile lines; no re-alert inside 15 min; alerts again after the cooldown; another slot alerts on its own", async () => {
+    const { accept, b1, st } = await victimStuck(79_010, "https://horizonpulse.dev/api/pulse?q=c1");
+    const fpAlerts = () => alerts.filter((a) => a.kind === "xrpl_redeem_fingerprint_mismatch").length;
+    const lines = () => reconcile().filter((l) => l.reason === "redeem_fingerprint_mismatch" && l.txHash === hashOf(b1)).length;
+    const N = 5;
+    for (let i = 0; i < N; i++) expect((await handler()(paidAt(`https://horizonpulse.dev/api/pulse?q=atk${i}`, b1))).status).toBe(409);
+    expect(fpAlerts()).toBe(1);
+    expect(lines()).toBe(N);
+    const t0 = Date.now();
+    const now = vi.spyOn(Date, "now");
+    try {
+      now.mockReturnValue(t0 + XRPL_FP_ALERT_COOLDOWN_MS - 1_000); // still inside the cooldown
+      expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=late", b1))).status).toBe(409);
+      expect(fpAlerts()).toBe(1);
+      expect(lines()).toBe(N + 1);
+      now.mockReturnValue(t0 + XRPL_FP_ALERT_COOLDOWN_MS + 1_000); // cooldown over → alerts again (once)
+      expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=after", b1))).status).toBe(409);
+      expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=after2", b1))).status).toBe(409);
+      expect(fpAlerts()).toBe(2);
+      expect(lines()).toBe(N + 3);
+    } finally {
+      now.mockRestore();
+    }
+    // A different slot (another payment) has its own once-per-slot alert.
+    const b2 = signedPayload(accept, { Sequence: 79_011 });
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=c1b", b2))).status).toBe(504);
+    st.landed.add(hashOf(b2));
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=x", b2))).status).toBe(409);
+    expect(fpAlerts()).toBe(3);
+    // The victim's own retry is unaffected by the dedupe.
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=c1", b1)));
+  });
+
+  it("delta1 L1: a master-key re-sign on ANOTHER request is refused 409 with ZERO account_info calls (fingerprint checked first)", async () => {
+    const { accept, rpc } = await victimStuck(79_012, "https://horizonpulse.dev/api/pulse?q=l1");
+    const resigned = signedPayload(accept, { Sequence: 79_012, LastLedgerSequence: 1_000_050, Fee: "15" }, "master");
+    rpc.accountInfo.length = 0;
+    rpc.lookups.length = 0;
+    const before = slotRaw();
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=other", resigned))).status).toBe(409);
+    expect(rpc.accountInfo).toEqual([]);
+    expect(rpc.lookups).toEqual([]);
+    expect(slotRaw()).toBe(before);
+    // On the paying request the master key is still checked (exactly one account_info), then delivered.
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=l1", resigned)));
+    expect(rpc.accountInfo).toEqual([walletA.classicAddress]);
+  });
+
+  it("sort (Odin 6:08, stable by key only): reordered VALUES of a repeated key are a different request → 409; reordered distinct keys still redeem", async () => {
+    const { b1 } = await victimStuck(79_013, "https://horizonpulse.dev/api/pulse?t=b&q=1&t=a");
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?t=a&t=b&q=1", b1))).status).toBe(409);
+    expect(alerts.filter((a) => a.kind === "xrpl_redeem_fingerprint_mismatch")).toHaveLength(1);
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=1&t=b&t=a", b1)));
+  });
+
+  it("legitimate same-request retry: query order / percent-encoding differences normalize away → delivered once", async () => {
+    const { b1 } = await victimStuck(79_003, "https://horizonpulse.dev/api/pulse?b=2&a=hello%20world");
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?a=hello+world&b=2", b1)));
+    expect(alerts.some((a) => a.kind === "xrpl_redeem_fingerprint_mismatch")).toBe(false);
+  });
+
+  it("F1(b) master-key re-sign by the payer is ALSO bound: on the paying request → delivered; on another request → 409", async () => {
+    const { accept, b1, st } = await victimStuck(79_004, "https://horizonpulse.dev/api/pulse?q=resign");
+    st.validated = 999_500;
+    const resigned = signedPayload(accept, { Sequence: 79_004, LastLedgerSequence: 1_000_050, Fee: "15" }, "master");
+    expect(hashOf(resigned)).not.toBe(hashOf(b1));
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=other", resigned))).status).toBe(409);
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=resign", resigned)));
+  });
+
+  it("LEGACY slot (written by the current prod code: no fingerprint) → never auto-redeemed: bare 502, reconcile line, slot untouched, nothing run or looked up, no alert", async () => {
+    const { b1, rpc } = await victimStuck(79_005, "https://horizonpulse.dev/api/pulse");
+    const m = (store as unknown as { m: Map<string, { state: string; until: number }> }).m;
+    const [k, e] = [...m.entries()][0];
+    const legacy = e.state.replace(/~[0-9a-f]{64}$/, ""); // exactly what 39bf241 writes: settle_unconfirmed@firstSeen#HASH:LLS
+    expect(parseReplayValue(legacy)).toMatchObject({ state: "settle_unconfirmed", hash: hashOf(b1), lls: 1_000_000 });
+    m.set(k, { ...e, state: legacy });
+    rpc.lookups.length = 0;
+    const ranBefore = ran;
+    const r = await handler()(paid(b1)); // even the genuine same request
+    expect(r.status).toBe(502);
+    expect(await r.json()).toEqual({ error: "settlement_unconfirmed" });
+    expect(m.get(k)!.state).toBe(legacy);
+    expect(rpc.lookups).toEqual([]);
+    expect(ran).toBe(ranBefore);
+    expect(reconcile()).toContainEqual(expect.objectContaining({ status: 502, reason: "redeem_legacy_no_fingerprint", txHash: hashOf(b1) }));
+    expect(alerts.some((a) => a.kind === "xrpl_redeem_fingerprint_mismatch")).toBe(false);
+    // A legacy STALE in_flight claim (dead request) is not taken over either.
+    m.set(k, { ...e, state: encodeReplayValue({ state: "in_flight", firstSeen: Date.now() - XRPL_IN_FLIGHT_STALE_MS - 1_000, hash: hashOf(b1), lls: 1_000_000 }) });
+    expect((await handler()(paid(b1))).status).toBe(502);
+    expect(parseReplayValue(m.get(k)!.state)!.state).toBe("in_flight");
+  });
+
+  it("every slot write keeps the fingerprint: claim, undelivered, redeeming lease, delivered mark", async () => {
+    const { b1 } = await victimStuck(79_006, "https://horizonpulse.dev/api/pulse?q=keep");
+    const rq = await requestFingerprint(paidAt("https://horizonpulse.dev/api/pulse?q=keep", b1));
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=keep", b1)));
+    expect(parseReplayValue(slotRaw())).toMatchObject({ state: "settled", rq });
+  });
+
+  it("unit: requestFingerprint binds method, path, sorted query and body; headers do not matter", async () => {
+    const f = (u: string, i: RequestInit = {}) => requestFingerprint(new Request(u, i));
+    const base = await f("https://h.dev/api/x?a=1&b=2");
+    expect(base).toMatch(/^[0-9a-f]{64}$/);
+    expect(await f("https://h.dev/api/x?b=2&a=1")).toBe(base);
+    // Odin 6:08: STABLE sort by key only. Reordered distinct keys match; reordered values of a repeated key do NOT.
+    const dup = await f("https://h.dev/api/x?a=2&b=1&a=1");
+    expect(await f("https://h.dev/api/x?b=1&a=2&a=1")).toBe(dup); // distinct keys moved, a's values in the same order
+    expect(await f("https://h.dev/api/x?a=2&a=1&b=1")).toBe(dup);
+    expect(await f("https://h.dev/api/x?a=1&a=2&b=1")).not.toBe(dup); // a's values reordered
+    expect(await f("https://h.dev/api/x?b=1&a=1&a=2")).not.toBe(dup);
+    expect(await f("https://h.dev/api/x?a=1&a=3&b=1")).not.toBe(dup);
+    expect(await f("https://h.dev/api/x?a=1&b=1")).not.toBe(dup);
+    expect(normalizeQuery("?t=b&q=1&t=a")).toBe("q=1&t=b&t=a");
+    expect(await f("https://h.dev/api/x?b=2&a=1", { headers: { "x-anything": "1", "payment-signature": "zz" } })).toBe(base);
+    expect(await f("https://other.host/api/x?a=1&b=2")).toBe(base); // host is not bound (same deployment, any alias)
+    expect(await f("https://h.dev/api/X?a=1&b=2")).not.toBe(base);
+    expect(await f("https://h.dev/api/x?a=1&b=3")).not.toBe(base);
+    expect(await f("https://h.dev/api/x?a=1&b=2&free=1")).not.toBe(base); // no parameter is excluded
+    expect(await f("https://h.dev/api/x?a=1&b=2", { method: "HEAD" })).not.toBe(base);
+    const p1 = await f("https://h.dev/api/x?a=1&b=2", { method: "POST", body: '{"u":1}' });
+    expect(p1).not.toBe(base);
+    expect(await f("https://h.dev/api/x?a=1&b=2", { method: "POST", body: '{"u":1}' })).toBe(p1);
+    expect(await f("https://h.dev/api/x?a=1&b=2", { method: "POST", body: '{"u":2}' })).not.toBe(p1);
+    const req = new Request("https://h.dev/api/x", { method: "POST", body: "keep" });
+    await requestFingerprint(req);
+    expect(await req.text()).toBe("keep"); // the route still gets the original body
   });
 });

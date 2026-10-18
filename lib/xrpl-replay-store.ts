@@ -51,11 +51,13 @@ const STATES: readonly ReplayState[] = ["in_flight", "settled", "settle_failed",
  * Parsed store value: state; for claimed/undelivered states when we first saw the payment and the redemption
  * lease start; the lease owner nonce; and the SUBMITTED tx hash + its LastLedgerSequence (set at claim time).
  */
-export type ReplayRecord = { state: ReplayState; firstSeen?: number; lease?: number; owner?: string; hash?: string; lls?: number };
+export type ReplayRecord = { state: ReplayState; firstSeen?: number; lease?: number; owner?: string; hash?: string; lls?: number; rq?: string };
 
 /**
- * `state[@firstSeen[@lease]][!owner][#HASH:LLS]` (ms since epoch / ledger index: integers; owner: 8-32 lowercase
- * hex; HASH: 64 uppercase hex). The bare forms `state`, `state@firstSeen`, `state@firstSeen@lease` stay valid.
+ * `state[@firstSeen[@lease]][!owner][#HASH:LLS][~RQ]` (ms since epoch / ledger index: integers; owner: 8-32 lowercase
+ * hex; HASH: 64 uppercase hex; RQ: 64 lowercase hex = the first request's fingerprint, lib/request-fingerprint.ts,
+ * Odin 5:40 PM ET). The bare forms `state`, `state@firstSeen`, `state@firstSeen@lease` and every value written before
+ * the fingerprint existed (no `~RQ`) stay valid and parse with rq undefined (a "legacy" slot).
  */
 export function encodeReplayValue(r: ReplayRecord): string {
   let v: string = r.state;
@@ -67,13 +69,14 @@ export function encodeReplayValue(r: ReplayRecord): string {
   if (r.hash !== undefined && r.lls !== undefined && /^[0-9A-Fa-f]{64}$/.test(r.hash) && Number.isSafeInteger(r.lls) && r.lls > 0) {
     v += `#${r.hash.toUpperCase()}:${r.lls}`;
   }
+  if (r.rq !== undefined && /^[0-9a-f]{64}$/.test(r.rq)) v += `~${r.rq}`;
   return v;
 }
 
 /** Inverse of encodeReplayValue; null for anything unrecognised. */
 export function parseReplayValue(raw: unknown): ReplayRecord | null {
   if (typeof raw !== "string") return null;
-  const m = /^([a-z_]+)(?:@(\d{1,16}))?(?:@(\d{1,16}))?(?:!([0-9a-f]{8,32}))?(?:#([0-9A-F]{64}):(\d{1,12}))?$/.exec(raw);
+  const m = /^([a-z_]+)(?:@(\d{1,16}))?(?:@(\d{1,16}))?(?:!([0-9a-f]{8,32}))?(?:#([0-9A-F]{64}):(\d{1,12}))?(?:~([0-9a-f]{64}))?$/.exec(raw);
   if (!m || !(STATES as readonly string[]).includes(m[1])) return null;
   const r: ReplayRecord = { state: m[1] as ReplayState };
   if (m[2] !== undefined) r.firstSeen = Number(m[2]);
@@ -83,6 +86,7 @@ export function parseReplayValue(raw: unknown): ReplayRecord | null {
     r.hash = m[5];
     r.lls = Number(m[6]);
   }
+  if (m[7] !== undefined) r.rq = m[7];
   return r;
 }
 

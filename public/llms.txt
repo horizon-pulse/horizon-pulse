@@ -16,6 +16,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
   - Polygon: network Polygon PoS mainnet CAIP-2 `eip155:137`; asset native USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` (not bridged USDC.e `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`; never pay USDC.e); payTo `0x5b32c973596078a967562ca652761404f19be0e9` (the same address as Base); `extra: { name: "USD Coin", version: "2" }`; facilitator: Coinbase CDP
 - If a challenge lists only the Base entry, the Solana, XRP Ledger and Polygon rails are temporarily unavailable: pay on Base. Any rail not listed in a challenge is unavailable for that call.
 - Retry the same request with `PAYMENT-SIGNATURE` (v2). On success the settlement receipt is in the `PAYMENT-RESPONSE` header: base64 JSON `{ success, transaction, network, payer }` (transaction = the on-chain tx hash on the network you paid; `X-PAYMENT-RESPONSE` is not sent). A HEAD request is never charged: a HEAD carrying a payment header gets the same 402 as an unpaid HEAD; pay with GET. Optional: `OPTIONS` returns discovery + `PAYMENT-REQUIRED` without charging.
+- If a paid call fails with 502/504 `settlement_unconfirmed`, a retry with the same payment must resend the identical URL (same path and query) and body to redeem it; a different request with that payment gets 409.
 
 ## Live paid routes
 

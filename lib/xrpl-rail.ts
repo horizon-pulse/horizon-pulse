@@ -132,6 +132,7 @@ import {
   type XrplRailConfig,
 } from "./xrpl-config";
 import { ReplaySelfTestError, createReplayStore, encodeReplayValue, parseReplayValue, type ReplayState, type ReplayStore } from "./xrpl-replay-store";
+import { requestFingerprint } from "./request-fingerprint";
 import { runOnPaidRail, xrplRail } from "./paid-rail";
 
 const LOG = "[xrpl-rail]";
@@ -279,6 +280,7 @@ export function __setXrplFacilitatorTimeoutsForTests(t: { verifyMs: number; sett
 }
 
 export function resetXrplRailForTests(): void {
+  fpAlertAt.clear();
   railState = null;
   railInit = null;
   failedKey = null;
@@ -346,7 +348,13 @@ export type XrplAlert =
    */
   | { kind: "xrpl_replay_eval_unavailable"; severity: "high"; reason: string }
   /** HIGH: an ambiguous settle named a tx hash other than the one we computed from the blob we submitted (L1). Not delivered. */
-  | { kind: "xrpl_settle_hash_mismatch"; severity: "high" };
+  | { kind: "xrpl_settle_hash_mismatch"; severity: "high" }
+  /**
+   * HIGH (Odin 5:40 PM ET hotfix): a retry bound to an undelivered payment (blob or master-key re-sign) tried to
+   * redeem it on a DIFFERENT request than the one that paid (request fingerprint mismatch): a possible hijack by a
+   * chain watcher. Refused with 409, slot untouched (the original request can still redeem).
+   */
+  | { kind: "xrpl_redeem_fingerprint_mismatch"; severity: "high" };
 
 /** Which part of a settled payment the ledger re-read disagreed on ("transaction": not a Payment / other payer). */
 export type XrplMismatchField = "destination" | "issuer" | "amount" | "unreadable" | "transaction";
@@ -480,6 +488,8 @@ type Attempt = {
   sub?: SubmittedTx;
   /** The exact value our claim wrote (N6 compare-and-delete). */
   claimValue?: string;
+  /** Odin 5:40 hotfix: this request's fingerprint, kept in every slot value written for it (redeem binding). */
+  rq?: string;
 };
 /** Stored in the replay slot from claim time on (Odin 11:56 H1): later lookups / never-landed proofs use ONLY this. */
 type SubmittedTx = { hash: string; lls: number };
@@ -599,6 +609,26 @@ function makeKeyFn(network: string, mods: Pick<XrplModules, "decodeSignedTransac
   };
 }
 
+/**
+ * delta1 C1 (Odin 5:59 PM ET): the xrpl_redeem_fingerprint_mismatch HIGH alert fires once per slot (payment key =
+ * the slot / tx identity), then not again for that slot for XRPL_FP_ALERT_COOLDOWN_MS. The XRPL_RECONCILE line is
+ * still written on every mismatching request. IN-PROCESS only (per serverless instance, not shared across
+ * instances): N instances can each alert once per slot per cooldown, which bounds the noise without a store write.
+ */
+export const XRPL_FP_ALERT_COOLDOWN_MS = 15 * 60_000;
+const XRPL_FP_ALERT_MAX_TRACKED = 1_000;
+const fpAlertAt = new Map<string, number>();
+function fingerprintAlertDue(key: string, now: number): boolean {
+  const last = fpAlertAt.get(key);
+  if (last !== undefined && now - last < XRPL_FP_ALERT_COOLDOWN_MS) return false;
+  if (fpAlertAt.size >= XRPL_FP_ALERT_MAX_TRACKED) {
+    for (const [k, t] of fpAlertAt) if (now - t >= XRPL_FP_ALERT_COOLDOWN_MS) fpAlertAt.delete(k);
+    if (fpAlertAt.size >= XRPL_FP_ALERT_MAX_TRACKED) fpAlertAt.delete(fpAlertAt.keys().next().value!); // oldest
+  }
+  fpAlertAt.delete(key);
+  fpAlertAt.set(key, now);
+  return true;
+}
 /** Short, non-reversible fingerprint for logs / reconciliation (16 hex of the key). */
 const fp = (key: string) => key.slice(0, 16);
 
@@ -686,7 +716,7 @@ export const XRPL_RECONCILE_TAG = "XRPL_RECONCILE";
  * Not redacted on purpose: only public ledger data (hash, addresses,
  * amounts), no payload, no facilitator text. See docs/xrpl-rail.md runbook.
  */
-export function logXrplReconcile(ctx: ReconcileCtx, status: 200 | 402 | 502 | 504, reason: string, settledHash?: string, delivered?: unknown): void {
+export function logXrplReconcile(ctx: ReconcileCtx, status: 200 | 402 | 409 | 502 | 504, reason: string, settledHash?: string, delivered?: unknown): void {
   const rec = {
     tag: XRPL_RECONCILE_TAG,
     at: new Date().toISOString(),
@@ -1630,8 +1660,8 @@ async function replaySet(key: string, state: ReplayState | string): Promise<void
  * `sub` = the submitted tx (hash + LLS) that redemption will look up; omitted → not auto-redeemable (502 until
  * reconciled by hand: used when the facilitator named a different tx than ours, L1).
  */
-async function replayMarkUndelivered(key: string, firstSeen: number, sub: SubmittedTx | undefined): Promise<void> {
-  await replaySet(key, encodeReplayValue({ state: "settle_unconfirmed", firstSeen, ...(sub ?? {}) }) as ReplayState);
+async function replayMarkUndelivered(key: string, firstSeen: number, sub: SubmittedTx | undefined, rq: string | undefined): Promise<void> {
+  await replaySet(key, encodeReplayValue({ state: "settle_unconfirmed", firstSeen, ...(sub ?? {}), ...(rq ? { rq } : {}) }) as ReplayState);
 }
 let afterDeliveryMarkHook: (() => void) | null = null;
 /** Tests only: runs right after a payment is marked delivered (simulates a failure between the mark and the response). */
@@ -1713,7 +1743,7 @@ async function decide(key: string, att: Attempt, res: NextResponse | null, threw
     // Ambiguous (or settled but no deliverable response): the tx may have
     // landed. Never a 402 (would invite a second payment); no facilitator text.
     // Not delivered: a retry of the same payment redeems it once the ledger shows it (redeemUndelivered).
-    await replayMarkUndelivered(key, firstSeen, att.sub);
+    await replayMarkUndelivered(key, firstSeen, att.sub, att.rq);
     const timeout = s.outcome === "unconfirmed" && s.timeout;
     warn(
       `settlement unconfirmed fp=${fp(key)} reason=${s.outcome === "success" ? "settled_without_response" : s.reason}; client gets ${timeout ? 504 : 502} settlement_unconfirmed (reconcile on-ledger)`,
@@ -1922,6 +1952,8 @@ type RedeemCtx = {
   /** The retry's signed blob (hex). F1: used ONLY to check it is bound to the stored tx; never looked up or stored. */
   retryBlob: string | null;
   route: string;
+  /** Odin 5:40 hotfix: the retry's request fingerprint; must equal the one stored at first use. */
+  rq: string;
   reject: (reason: string) => null;
 };
 
@@ -1976,7 +2008,9 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
   // payer re-signed the same Sequence). Anything else (unsigned, regular-key, multisig, bad signature) → 502 with
   // the slot untouched: no lease, no takeover, no transition, no lookup.
   const retryHash = ctx.retryBlob ? xrplSignedTxHash(ctx.retryBlob) : null;
+  let masterAccount: string | null = null;
   if (retryHash !== rec.hash) {
+    // Local signature check only (no RPC).
     const sig = ctx.retryBlob ? await xrplMasterKeySigned(ctx.retryBlob) : ({ ok: false, reason: "undecodable" } as const);
     if (!sig.ok) {
       // Odin 12:28 (1): BARE 502 body (not the redeemable "retry with the same payment" body): this blob is not
@@ -1984,9 +2018,37 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
       warn(`XRPL retry not bound to the stored tx fp=${fp(k)} (${sig.reason}); slot untouched, client gets bare 502`, undefined, false);
       return jsonError(502, "settlement_unconfirmed");
     }
+    masterAccount = sig.account;
+  }
+  // Odin 5:40 PM ET hotfix (Sentinel v3 F1 applied to XRPL): the blob / hash is public once the tx validates, so it
+  // cannot say WHICH request was paid for. Redeem only for the request whose fingerprint the first use stored.
+  const rcEarly: ReconcileCtx = {
+    network: config.network,
+    route: ctx.route,
+    payer: ctx.payer,
+    slot: "redeem",
+    required: { currency: ctx.requirement.asset, issuer: String((ctx.requirement.extra as Record<string, unknown>).issuer), value: ctx.requirement.amount },
+    blobHash: rec.hash,
+  };
+  if (rec.rq === undefined) {
+    // Legacy slot (written before the fingerprint existed): we can't tell the payer's retry from a chain watcher's
+    // replay of the public blob → fail safe: never auto-redeemed; bare 502, slot untouched, manual reconcile (as H1).
+    logXrplReconcile(rcEarly, 502, "redeem_legacy_no_fingerprint");
+    warn(`undelivered XRPL payment fp=${fp(k)} has no request fingerprint (legacy slot); not auto-redeemable, client gets bare 502`, undefined, false);
+    return jsonError(502, "settlement_unconfirmed");
+  }
+  if (ctx.rq !== rec.rq) {
+    // A bound payment on a DIFFERENT request: never delivered; slot untouched so the original request can still redeem.
+    logXrplReconcile(rcEarly, 409, "redeem_fingerprint_mismatch"); // on EVERY mismatching request
+    if (fingerprintAlertDue(k, Date.now())) emitAlert({ kind: "xrpl_redeem_fingerprint_mismatch", severity: "high" });
+    warn(`XRPL redeem refused: request fingerprint differs from the paying request fp=${fp(k)}; slot untouched, client gets 409`, undefined, false);
+    return jsonError(409, "duplicate_payment");
+  }
+  if (masterAccount !== null) {
     // Delta 5 (Odin 12:17): F1(b) only. The master key must still be enabled (validated account_info, bounded);
     // lsfDisableMaster set, or the read fails / times out → 502, slot untouched (fail closed). F1(a) never reads.
-    const master = await xrplMasterKeyEnabled(config, sig.account);
+    // delta1 L1 (Odin 5:59 PM ET): read only AFTER the fingerprint checks, so a mismatching request spends no RPC.
+    const master = await xrplMasterKeyEnabled(config, masterAccount);
     if (master !== "enabled") {
       warn(`XRPL master-key re-sign rejected fp=${fp(k)} (master key ${master}); slot untouched, client gets bare 502`, undefined, false);
       return jsonError(502, "settlement_unconfirmed");
@@ -1996,9 +2058,10 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
   const firstSeen = rec.firstSeen;
   const sub: SubmittedTx = { hash: rec.hash, lls: rec.lls };
   const owner = randomBytes(8).toString("hex");
-  const mine = encodeReplayValue({ state: "redeeming", firstSeen, lease: now, owner, ...sub });
-  const myDelivered = encodeReplayValue({ state: "settled", firstSeen, owner, ...sub });
-  const undelivered = encodeReplayValue({ state: "settle_unconfirmed", firstSeen, ...sub });
+  const rq = rec.rq;
+  const mine = encodeReplayValue({ state: "redeeming", firstSeen, lease: now, owner, ...sub, rq });
+  const myDelivered = encodeReplayValue({ state: "settled", firstSeen, owner, ...sub, rq });
+  const undelivered = encodeReplayValue({ state: "settle_unconfirmed", firstSeen, ...sub, rq });
   const cas = async (to: string): Promise<boolean> => {
     try {
       return await replay.cas!(k, mine, to, REPLAY_TTL_MS);
@@ -2016,14 +2079,7 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
   }
   if (!won) return inProgress(k);
 
-  const rc: ReconcileCtx = {
-    network: config.network,
-    route: ctx.route,
-    payer: ctx.payer,
-    slot: "redeem",
-    required: { currency: ctx.requirement.asset, issuer: String((ctx.requirement.extra as Record<string, unknown>).issuer), value: ctx.requirement.amount },
-    blobHash: sub.hash,
-  };
+  const rc: ReconcileCtx = rcEarly;
   try {
     // H1: the STORED submitted hash / LLS only. The retry blob (unverified: no signature or LLS check on this path)
     // just located the slot; it is never looked up and never used for the never-landed proof.
@@ -2170,7 +2226,15 @@ export async function handleXrplPayment(
     const llsHere = check.tx.LastLedgerSequence;
     const subHere: SubmittedTx | undefined =
       blobHashHere && typeof llsHere === "number" && Number.isSafeInteger(llsHere) && llsHere > 0 ? { hash: blobHashHere, lls: llsHere } : undefined;
-    const claimValue = encodeReplayValue({ state: "in_flight", firstSeen, ...(subHere ?? {}) });
+    // Odin 5:40 hotfix: the request fingerprint is stored at first use; a later redeem must match it.
+    let rqHere: string;
+    try {
+      rqHere = await requestFingerprint(req);
+    } catch (err) {
+      warn(`could not fingerprint the XRPL-paid request fp=${fp(k)}; payment not accepted`, err);
+      return reject(RAIL_REJECT.error);
+    }
+    const claimValue = encodeReplayValue({ state: "in_flight", firstSeen, ...(subHere ?? {}), rq: rqHere });
     try {
       seen = await replay.claim(k, REPLAY_TTL_MS, claimValue);
     } catch (err) {
@@ -2200,6 +2264,7 @@ export async function handleXrplPayment(
         compare: rail.mods.compareDecimalStrings,
         payer: String(check.tx.Account),
         retryBlob: blobOf(payload),
+        rq: rqHere,
         route: (() => {
           try {
             return new URL(req.url).pathname;
@@ -2227,7 +2292,7 @@ export async function handleXrplPayment(
       blobHash: blobHashHere,
     };
     rcOuter = rc;
-    const att: Attempt = { handlerRan: false, handlerThrew: false, sub: subHere, claimValue };
+    const att: Attempt = { handlerRan: false, handlerThrew: false, sub: subHere, claimValue, rq: rqHere };
     attempts.set(key, att);
 
     let entry = paidHandlers.get(routes as object);
@@ -2284,7 +2349,7 @@ export async function handleXrplPayment(
       const oursS = rc.blobHash ?? undefined;
       const facS = wellFormedHash(att.settle.transaction)?.toUpperCase();
       if (!oursS || (facS !== undefined && facS !== oursS.toUpperCase())) {
-        await replayMarkUndelivered(key, firstSeen, undefined);
+        await replayMarkUndelivered(key, firstSeen, undefined, attempts.get(key)?.rq);
         logXrplReconcile(rc, 502, "settle_hash_mismatch", facS);
         emitAlert({ kind: "xrpl_settle_hash_mismatch", severity: "high" });
         warn(`settle success named a tx other than the one we submitted fp=${fp(key)}; not delivered, client gets 502 (manual reconcile)`, undefined, false);
@@ -2314,7 +2379,7 @@ export async function handleXrplPayment(
         // reconcile; slot undelivered with the stored submitted tx, so a retry re-checks the ledger (delivers only
         // if a later read is clean, else 502 again).
         const reason = `self_check_${safeCode(v)}`;
-        await replayMarkUndelivered(key, firstSeen, att.sub);
+        await replayMarkUndelivered(key, firstSeen, att.sub, att.rq);
         logXrplReconcile(rc, 502, reason, att.settle.transaction, delivered);
         emitAlert({ kind: "xrpl_settled_unverified", severity: "high", field: xrplMismatchField(v), reason });
         warn(`settled tx CONTRADICTED by the validated ledger re-read fp=${fp(key)} reason=${safeCode(v)}; not delivered, client gets 502 (reconcile)`, undefined, false);
@@ -2350,7 +2415,7 @@ export async function handleXrplPayment(
       const ours = rc.blobHash ?? undefined;
       const facHash = att.settle.transaction && /^[0-9A-Fa-f]{64}$/.test(att.settle.transaction) ? att.settle.transaction.toUpperCase() : undefined;
       if (facHash && (!ours || facHash !== ours.toUpperCase())) {
-        await replayMarkUndelivered(key, firstSeen, undefined);
+        await replayMarkUndelivered(key, firstSeen, undefined, attempts.get(key)?.rq);
         logXrplReconcile(rc, 502, "settle_hash_mismatch", facHash);
         emitAlert({ kind: "xrpl_settle_hash_mismatch", severity: "high" });
         warn(`ambiguous settle named a tx other than the one we submitted fp=${fp(key)}; not delivered, client gets 502 (manual reconcile)`, undefined, false);
@@ -2398,7 +2463,7 @@ export async function handleXrplPayment(
     if (key && s && s.outcome !== "failed") {
       // Our code threw AFTER a settle that moved (or may have moved) funds, e.g. between the delivered mark and the
       // response: never a 402 / never "delivered". Mark undelivered so a retry of the same payment redeems it.
-      await replayMarkUndelivered(key, firstSeen, attempts.get(key)?.sub);
+      await replayMarkUndelivered(key, firstSeen, attempts.get(key)?.sub, attempts.get(key)?.rq);
       if (rcOuter) logXrplReconcile(rcOuter, 502, "post_settle_error", s.transaction);
       warn(`XRPL post-settle error fp=${fp(key)}; marked undelivered, client gets 502 settlement_unconfirmed (retry redeems)`, err, false);
       return unconfirmed(502);
