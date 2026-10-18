@@ -369,7 +369,7 @@ describe("OSV unavailable is never billed (Odin 10:05 AM ET 10/18)", () => {
 
 describe("Odin Class A delta on dd634d8 (10/18)", () => {
   /** npm packument over DOC_CAP: streamed past 6 MB so getJson reports truncated. */
-  function oversized(per: "404" | "200" | "500") {
+  function oversized(per: "404" | "200" | "500" | "tag") {
     const d = deps();
     const inner = d.fetch;
     d.fetch = (async (u: string | URL | Request, init?: RequestInit) => {
@@ -382,7 +382,8 @@ describe("Odin Class A delta on dd634d8 (10/18)", () => {
       }
       if (url.startsWith("https://registry.npmjs.org/lodash/") && !url.endsWith("/latest")) {
         d.calls.push(url);
-        return per === "404" ? new Response("{}", { status: 404 }) : per === "500" ? new Response("x", { status: 500 }) : Response.json({ name: "lodash", version: "4.17.21" });
+        // "tag": npm resolves a dist-tag (e.g. /lodash/beta) to that release's document
+        return per === "404" ? new Response("{}", { status: 404 }) : per === "500" ? new Response("x", { status: 500 }) : per === "tag" ? Response.json({ name: "lodash", version: "5.0.0-beta.1" }) : Response.json({ name: "lodash", version: "4.17.21" });
       }
       return inner(u, init);
     }) as typeof fetch;
@@ -401,6 +402,27 @@ describe("Odin Class A delta on dd634d8 (10/18)", () => {
     expect(ok).toMatchObject({ ok: true, report: { versionExists: true } });
     expect((ok as unknown as { report: { verdict: string } }).report.verdict).not.toBe("block");
     expect(await checkPackage({ ecosystem: "npm", name: "lodash", version: "4.17.21" }, "base", oversized("500"))).toMatchObject({ ok: false, status: 502, code: "registry_unavailable" });
+  });
+  it("LOW (Odin 10:20): a dist-tag on the huge-index path is not a version -> not published -> block, same as the normal path", async () => {
+    for (const tag of ["beta", "next", "latest"]) {
+      const d = oversized("tag");
+      const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: tag }, "base", d);
+      if (!r.ok) throw new Error(JSON.stringify(r));
+      expect(d.calls).toContain(`https://registry.npmjs.org/lodash/${tag}`);
+      expect(r.report, tag).toMatchObject({ verdict: "block", versionExists: false });
+      expect(r.report.verdictReasons).toEqual(expect.arrayContaining([`Version ${tag} is not published`]));
+    }
+    // normal-size packument: the same tag is also not an exact version -> block (parity)
+    const n = await checkPackage({ ecosystem: "npm", name: "lodash", version: "beta" }, "base", deps());
+    expect(n).toMatchObject({ ok: true, report: { verdict: "block", versionExists: false } });
+  });
+  it("huge-index path: the exact version still resolves (document version equals the request)", async () => {
+    const r = await checkPackage({ ecosystem: "npm", name: "lodash", version: "4.17.21" }, "base", oversized("200"));
+    expect(r).toMatchObject({ ok: true, report: { versionExists: true } });
+    expect((r as unknown as { report: { verdict: string } }).report.verdict).not.toBe("block");
+    // a document for a different version than requested (e.g. a tag-like spec that happens to resolve) is not a match
+    const m = await checkPackage({ ecosystem: "npm", name: "lodash", version: "4.17.21" }, "base", oversized("tag"));
+    expect(m).toMatchObject({ ok: true, report: { verdict: "block", versionExists: false } });
   });
   it("normal-size packument: no extra per-version request", async () => {
     const d = deps();

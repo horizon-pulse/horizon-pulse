@@ -414,7 +414,11 @@ async function registryMeta(deps: Deps, eco: Ecosystem, name: string, version: s
     // A 5xx here is SourceDown -> 502 not charged, never a guess.
     if (version && versionExists === null) {
       const one = await getJson(deps, `https://registry.npmjs.org/${enc}/${encodeURIComponent(version)}`);
-      versionExists = one.status === 404 ? false : one.json !== null || one.truncated;
+      // npm resolves dist-tags here (/typescript/beta -> the beta release), but the normal path only
+      // matches exact versions: require the document's own version to equal the request exactly,
+      // else it is not found (block), same as the normal path (Odin 10:20 AM ET 10/18, LOW).
+      const got = (one.json as { version?: unknown } | null)?.version;
+      versionExists = one.status !== 404 && typeof got === "string" && got === version;
     }
     return {
       exists: true,
