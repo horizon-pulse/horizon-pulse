@@ -464,7 +464,9 @@ describe("paid isolation", () => {
       } else {
         expect(res.headers.get("payment-required")).toBeNull();
         // Odin 11:44 (b): the 5xx body tells the buyer to retry with the SAME signed payment.
-        expect(body).toBe(JSON.stringify(SETTLEMENT_UNCONFIRMED_BODY));
+        // Odin 11:56 L1: this row's facilitator names a hash (XRPL_TX_HASH) that is not our blob's hash → not
+        // auto-redeemable (manual reconcile): the bare body. Every other row: the retry-with-the-same-payment body.
+        expect(body).toBe(name === "settle success:false WITH a tx hash" ? '{"error":"settlement_unconfirmed"}' : JSON.stringify(SETTLEMENT_UNCONFIRMED_BODY));
       }
       expect(body).not.toContain(MARKER);
       expect(calls.filter((c) => c.url.startsWith(CDP_URL_PREFIX) && c.op !== "supported")).toEqual([]);
@@ -706,7 +708,7 @@ describe("replay guard + cross-instance check", () => {
     const accepts = await getAccepts();
     const run = makeHandler();
     const mem = new MemoryReplayStore();
-    setXrplReplayStoreForTests({ kind: "upstash", claim: (k, t) => mem.claim(k, t), set: (k, st, t) => mem.set(k, st, t), release: (k) => mem.release(k) });
+    setXrplReplayStoreForTests({ kind: "upstash", claim: (k, t, v) => mem.claim(k, t, v), set: (k, st, t) => mem.set(k, st, t), release: (k) => mem.release(k) });
     try {
       for (const tx of [() => { throw new Error("rpc down"); }, () => ({ validated: false, status: "success" })]) {
         installXrplRpc("ready", tx);

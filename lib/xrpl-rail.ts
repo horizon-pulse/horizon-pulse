@@ -91,7 +91,7 @@
  *   - Ops alert: ≥ WARN_ALERT_THRESHOLD [xrpl-rail] warnings in
  *     WARN_ALERT_WINDOW_MS → one setXrplAlertHook call (default console.error).
  */
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { RAIL_REJECT, reasonFromRailResponse, settleFailReason, type OnReject } from "./rail-reject";
 import { NextRequest as NextRequestCtor, NextResponse } from "next/server";
@@ -186,6 +186,8 @@ export const REPLAY_CONFIRM_SKEW_MS = 30_000;
  * lease can be taken over (again by CAS) after it.
  */
 export const XRPL_REDEEM_LEASE_MS = 90_000;
+/** M1: an in_flight claim older than this (> route maxDuration 60 s) belongs to a dead request → redeemable. */
+export const XRPL_IN_FLIGHT_STALE_MS = XRPL_REDEEM_LEASE_MS;
 /** XRPL "ripple epoch" (2000-01-01T00:00:00Z) in Unix ms. */
 const RIPPLE_EPOCH_MS = 946_684_800_000;
 /** Warn-rate alert: this many [xrpl-rail] warnings inside the window. */
@@ -342,7 +344,9 @@ export type XrplAlert =
    * confirmed absent on this instance (no XRPL entry in the 402, XRPL payments refused) until a recheck passes.
    * Once per failure episode.
    */
-  | { kind: "xrpl_replay_eval_unavailable"; severity: "high"; reason: string };
+  | { kind: "xrpl_replay_eval_unavailable"; severity: "high"; reason: string }
+  /** HIGH: an ambiguous settle named a tx hash other than the one we computed from the blob we submitted (L1). Not delivered. */
+  | { kind: "xrpl_settle_hash_mismatch"; severity: "high" };
 
 /** Which part of a settled payment the ledger re-read disagreed on ("transaction": not a Payment / other payer). */
 export type XrplMismatchField = "destination" | "issuer" | "amount" | "unreadable" | "transaction";
@@ -472,7 +476,11 @@ type Attempt = {
   settle?: SettleOutcome;
   /** Clone of the route handler's own (<400) response: delivered if an ambiguous settle is then confirmed on the ledger. */
   paidRes?: Response;
+  /** The SUBMITTED tx (hash computed from the blob we verified + submitted, its LastLedgerSequence), stored in the slot. */
+  sub?: SubmittedTx;
 };
+/** Stored in the replay slot from claim time on (Odin 11:56 H1): later lookups / never-landed proofs use ONLY this. */
+type SubmittedTx = { hash: string; lls: number };
 const attempts = new Map<string, Attempt>();
 
 /** R1: only plain lower-case reason codes (/^[a-z0-9_]+$/, ≤ 80 chars) are ever logged. */
@@ -483,13 +491,18 @@ export function safeCode(value: unknown): string {
 /** Reasons that mean "the outcome is not known yet" (spec §Duplicate Settlement: duplicate_settlement = seen, not settled). */
 const UNRESOLVED_SETTLE_REASONS = new Set(["settlement_pending", "duplicate_settlement"]);
 
+function wellFormedHash(v: unknown): string | undefined {
+  return typeof v === "string" && /^[0-9A-Fa-f]{64}$/.test(v) ? v : undefined;
+}
+
 function classifySettleResult(res: SettleResponse): SettleOutcome {
   if (res.success) {
     return { outcome: "success", reason: "success", raw: "success", timeout: false, transaction: typeof res.transaction === "string" ? res.transaction : undefined };
   }
   const raw = String(res.errorReason ?? "unknown");
   const unresolved = UNRESOLVED_SETTLE_REASONS.has(raw) || (typeof res.transaction === "string" && res.transaction !== "");
-  return { outcome: unresolved ? "unconfirmed" : "failed", reason: safeCode(raw), raw, timeout: false };
+  // L1: keep the hash the facilitator named (if well-formed) so the ambiguous path can require it to equal ours.
+  return { outcome: unresolved ? "unconfirmed" : "failed", reason: safeCode(raw), raw, timeout: false, transaction: wellFormedHash(res.transaction) };
 }
 
 function classifySettleThrow(err: unknown): SettleOutcome {
@@ -506,7 +519,7 @@ function classifySettleThrow(err: unknown): SettleOutcome {
       status === 429 ||
       status === 409 ||
       (typeof err.transaction === "string" && err.transaction !== "");
-    return { outcome: unresolved ? "unconfirmed" : "failed", reason: safeCode(raw), raw, timeout: false };
+    return { outcome: unresolved ? "unconfirmed" : "failed", reason: safeCode(raw), raw, timeout: false, transaction: wellFormedHash(err.transaction) };
   }
   // fetch failed / connection reset / non-JSON 5xx body: the request may have reached the facilitator.
   return { outcome: "unconfirmed", reason: "transport_error", raw: "transport_error", timeout: false };
@@ -1511,9 +1524,13 @@ async function replaySet(key: string, state: ReplayState | string): Promise<void
     warn(`replay store set failed fp=${fp(key)} state=${state}`, err, false);
   }
 }
-/** Not delivered (charged or unknown): redeemable by a retry once the ledger confirms (see redeemUndelivered). */
-async function replayMarkUndelivered(key: string, firstSeen: number): Promise<void> {
-  await replaySet(key, encodeReplayValue({ state: "settle_unconfirmed", firstSeen }) as ReplayState);
+/**
+ * Not delivered (charged or unknown): redeemable by a retry once the ledger confirms (see redeemUndelivered).
+ * `sub` = the submitted tx (hash + LLS) that redemption will look up; omitted → not auto-redeemable (502 until
+ * reconciled by hand: used when the facilitator named a different tx than ours, L1).
+ */
+async function replayMarkUndelivered(key: string, firstSeen: number, sub: SubmittedTx | undefined): Promise<void> {
+  await replaySet(key, encodeReplayValue({ state: "settle_unconfirmed", firstSeen, ...(sub ?? {}) }) as ReplayState);
 }
 let afterDeliveryMarkHook: (() => void) | null = null;
 /** Tests only: runs right after a payment is marked delivered (simulates a failure between the mark and the response). */
@@ -1542,7 +1559,7 @@ export const SETTLEMENT_UNCONFIRMED_BODY = {
   error: "settlement_unconfirmed",
   retry: "same_payment",
   message:
-    "Settlement could not be confirmed yet. Retry this request with the SAME PAYMENT-SIGNATURE header (do not sign a new payment): it is delivered once the ledger confirms it and is never charged twice. A newly signed payment is a separate payment.",
+    "Settlement could not be confirmed yet. Retry this request with the SAME PAYMENT-SIGNATURE header (do not sign a new payment): it is delivered once the ledger confirms it (retry within 24 hours) and is never charged twice. A newly signed payment is a separate payment.",
 } as const;
 function unconfirmed(status: 502 | 504): NextResponse {
   return new NextResponse(JSON.stringify(SETTLEMENT_UNCONFIRMED_BODY), {
@@ -1579,7 +1596,7 @@ async function decide(key: string, att: Attempt, res: NextResponse | null, threw
     // Ambiguous (or settled but no deliverable response): the tx may have
     // landed. Never a 402 (would invite a second payment); no facilitator text.
     // Not delivered: a retry of the same payment redeems it once the ledger shows it (redeemUndelivered).
-    await replayMarkUndelivered(key, firstSeen);
+    await replayMarkUndelivered(key, firstSeen, att.sub);
     const timeout = s.outcome === "unconfirmed" && s.timeout;
     warn(
       `settlement unconfirmed fp=${fp(key)} reason=${s.outcome === "success" ? "settled_without_response" : s.reason}; client gets ${timeout ? 504 : 502} settlement_unconfirmed (reconcile on-ledger)`,
@@ -1779,9 +1796,6 @@ type RedeemCtx = {
   requirement: PaymentRequirements;
   compare: (a: string, b: string) => number;
   payer: string;
-  blobHash: string | null;
-  /** LastLedgerSequence of THIS request's signed tx (for the never-landed proof). */
-  lastLedgerSequence: unknown;
   route: string;
   reject: (reason: string) => null;
 };
@@ -1812,17 +1826,31 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
   if (!raw || !rec) return inProgress(k);
   if (rec.state === "settled") return jsonError(409, "duplicate_payment");
   if (rec.state === "settle_failed") return ctx.reject(settleFailReason("transaction_failed"));
-  if (rec.state === "in_flight") return inProgress(k);
+  const now = Date.now();
+  if (rec.state === "in_flight") {
+    // M1: an in_flight claim older than the lease belongs to a request that died (maxDuration 60 s < 90 s): it may
+    // have submitted, so treat it as undelivered (ledger-only redemption below). Bare legacy in_flight: busy.
+    if (rec.firstSeen === undefined || now - rec.firstSeen < XRPL_IN_FLIGHT_STALE_MS) return inProgress(k);
+    warn(`stale in_flight XRPL slot fp=${fp(k)} (owner died); taking it over for ledger-only redemption`, undefined, false);
+  }
   if (rec.firstSeen === undefined) {
     // Legacy / testnet-memory marker without firstSeen: can't prove it closed after we saw it → manual reconcile.
     warn(`undelivered XRPL payment fp=${fp(k)} has no firstSeen; not auto-redeemable, client gets 502`, undefined, false);
     return jsonError(502, "settlement_unconfirmed");
   }
-  const now = Date.now();
+  if (rec.hash === undefined || rec.lls === undefined) {
+    // H1: no stored submitted tx (legacy value, or the facilitator named a different tx than ours): the retry blob
+    // is NEVER used for a lookup or a never-landed proof → manual reconcile, slot unchanged.
+    warn(`undelivered XRPL payment fp=${fp(k)} has no stored submitted tx; not auto-redeemable, client gets 502`, undefined, false);
+    return jsonError(502, "settlement_unconfirmed");
+  }
   if (rec.state === "redeeming" && rec.lease !== undefined && now - rec.lease < XRPL_REDEEM_LEASE_MS) return inProgress(k);
   const firstSeen = rec.firstSeen;
-  const mine = encodeReplayValue({ state: "redeeming", firstSeen, lease: now });
-  const undelivered = encodeReplayValue({ state: "settle_unconfirmed", firstSeen });
+  const sub: SubmittedTx = { hash: rec.hash, lls: rec.lls };
+  const owner = randomBytes(8).toString("hex");
+  const mine = encodeReplayValue({ state: "redeeming", firstSeen, lease: now, owner, ...sub });
+  const myDelivered = encodeReplayValue({ state: "settled", firstSeen, owner, ...sub });
+  const undelivered = encodeReplayValue({ state: "settle_unconfirmed", firstSeen, ...sub });
   const cas = async (to: string): Promise<boolean> => {
     try {
       return await replay.cas!(k, mine, to, REPLAY_TTL_MS);
@@ -1846,10 +1874,12 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
     payer: ctx.payer,
     slot: "redeem",
     required: { currency: ctx.requirement.asset, issuer: String((ctx.requirement.extra as Record<string, unknown>).issuer), value: ctx.requirement.amount },
-    blobHash: ctx.blobHash,
+    blobHash: sub.hash,
   };
   try {
-    const looked = await lookupValidatedTx(config, ctx.blobHash ?? undefined);
+    // H1: the STORED submitted hash / LLS only. The retry blob (unverified: no signature or LLS check on this path)
+    // just located the slot; it is never looked up and never used for the never-landed proof.
+    const looked = await lookupValidatedTx(config, sub.hash);
     const v = looked ? verifySettledTx(looked, ctx.requirement as never, ctx.compare, ctx.payer) : "missing";
     if (looked && v === "result_not_tessuccess") {
       await cas("settle_failed");
@@ -1857,9 +1887,12 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
       return ctx.reject(settleFailReason("transaction_failed"));
     }
     if (looked && v === "ok") {
+      // N4: redeem requires "fresh" (unknown time → not delivered). Unlike the first request (which SDK-verified the
+      // slot unused during this very request), a redeemer has verified nothing itself; only a readable close time
+      // ≥ firstSeen − skew ties the on-ledger payment to our own flow.
       const when = await settledBeforeRequest(looked, firstSeen);
       if (when === "replay") {
-        await cas("settled");
+        await cas(myDelivered);
         warn(`redeem: payment closed before we first saw it fp=${fp(k)}; not paid through this flow, client gets 409`, undefined, false);
         return jsonError(409, "duplicate_payment");
       }
@@ -1875,32 +1908,34 @@ async function redeemUndelivered(k: string, ctx: RedeemCtx): Promise<NextRespons
           await cas(undelivered);
           return out instanceof NextResponse ? out : new NextResponse(out.body, { status: out.status, headers: out.headers });
         }
-        if (!(await cas("settled"))) warn(`redeem: delivered mark lost (lease expired) fp=${fp(k)}; delivering anyway (paid)`, undefined, false);
+        if (!(await cas(myDelivered))) warn(`redeem: delivered mark lost (lease expired) fp=${fp(k)}; delivering anyway (paid)`, undefined, false);
         afterDeliveryMarkHook?.();
-        const txHash = (typeof looked.hash === "string" && /^[0-9A-Fa-f]{64}$/.test(looked.hash) ? looked.hash : ctx.blobHash ?? "").toUpperCase();
+        const txHash = (typeof looked.hash === "string" && /^[0-9A-Fa-f]{64}$/.test(looked.hash) ? looked.hash : sub.hash).toUpperCase();
         logXrplReconcile(rc, 200, "redeemed_after_undelivered", txHash, (looked.meta as { delivered_amount?: unknown } | undefined)?.delivered_amount);
         warn(`redeemed undelivered XRPL payment fp=${fp(k)}; serving the paid response`, undefined, false);
         return deliverConfirmed(out, { success: true, transaction: txHash, network: config.network, payer: ctx.payer } as SettleResponse);
       }
     }
-    if (!looked && (await provablyNeverLanded(config, ctx.blobHash, ctx.lastLedgerSequence))) {
-      // Past LastLedgerSequence and not on the validated ledger: it can never land. Nothing moved → Base-only 402.
+    if (!looked && (await provablyNeverLanded(config, sub.hash, sub.lls))) {
+      // The SUBMITTED tx: validated ledger past its LastLedgerSequence and not in any ledger up to it → it can never
+      // land. Nothing moved → Base-only 402.
       await cas("settle_failed");
       logXrplReconcile(rc, 402, "redeem_never_landed_past_last_ledger");
-      warn(`redeem: validated ledger is past LastLedgerSequence and the tx is not in it fp=${fp(k)}; never charged, Base-only 402`, undefined, false);
+      warn(`redeem: validated ledger is past the submitted tx's LastLedgerSequence and the tx is not in it fp=${fp(k)}; never charged, Base-only 402`, undefined, false);
       return ctx.reject(settleFailReason("transaction_failed"));
     }
     await cas(undelivered);
     logXrplReconcile(rc, 502, `redeem_${looked ? safeCode(v) : "not_visible"}`);
     return unconfirmed(502);
   } catch (err) {
-    // Any failure (route threw, store error, a failure right after the delivered mark) after we own the lease: never delivered → put it back to undelivered (the delivered mark is
-    // undone too: a failure after "settled" but before the response went out must stay redeemable).
+    // Any failure after we own the lease (route threw, store error, a failure right after OUR delivered mark): never
+    // delivered → back to undelivered. N3: one atomic compare-and-set against exactly our lease value or our own
+    // owner-tagged delivered mark; another redeemer's values (after a lease takeover) are never touched.
     try {
-      const cur = await replay.get!(k);
-      if (cur === mine || cur === "settled") await replay.set(k, undelivered, REPLAY_TTL_MS);
-    } catch {
-      /* logged by set failures elsewhere */
+      if (replay.casAny) await replay.casAny(k, [mine, myDelivered], undelivered, REPLAY_TTL_MS);
+      else if (!(await replay.cas!(k, mine, undelivered, REPLAY_TTL_MS))) await replay.cas!(k, myDelivered, undelivered, REPLAY_TTL_MS);
+    } catch (e) {
+      warn(`replay store reset failed fp=${fp(k)}`, e, false);
     }
     warn(`redeem failed fp=${fp(k)}; back to undelivered, client gets 502`, err, false);
     return unconfirmed(502);
@@ -1978,8 +2013,16 @@ export async function handleXrplPayment(
     }
     let seen: ReplayState | null;
     firstSeen = Date.now();
+    // H1: the slot records the tx THIS request will verify and submit (hash of its blob + its LastLedgerSequence).
+    const blobHashHere = (() => {
+      const b = blobOf(payload);
+      return b ? xrplSignedTxHash(b) : null;
+    })();
+    const llsHere = check.tx.LastLedgerSequence;
+    const subHere: SubmittedTx | undefined =
+      blobHashHere && typeof llsHere === "number" && Number.isSafeInteger(llsHere) && llsHere > 0 ? { hash: blobHashHere, lls: llsHere } : undefined;
     try {
-      seen = await replay.claim(k, REPLAY_TTL_MS);
+      seen = await replay.claim(k, REPLAY_TTL_MS, encodeReplayValue({ state: "in_flight", firstSeen, ...(subHere ?? {}) }));
     } catch (err) {
       // Fail closed: nothing verified or charged; caller serves the Base-only 402.
       // Reason code (Odin F4): our replay store is down, not the buyer's fault →
@@ -1998,7 +2041,7 @@ export async function handleXrplPayment(
         warn(`XRPL payment slot already failed fp=${fp(k)}; client gets the Base-only 402`, undefined, false);
         return reject(settleFailReason("transaction_failed"));
       }
-      if (seen === "in_flight") return inProgress(k);
+      // in_flight: busy (503) unless stale (M1) → redeemUndelivered decides.
       return await redeemUndelivered(k, {
         req: payload === received ? req : withPaymentSignature(req, payload),
         routeHandler,
@@ -2006,11 +2049,6 @@ export async function handleXrplPayment(
         requirement,
         compare: rail.mods.compareDecimalStrings,
         payer: String(check.tx.Account),
-        blobHash: (() => {
-          const b = blobOf(payload);
-          return b ? xrplSignedTxHash(b) : null;
-        })(),
-        lastLedgerSequence: check.tx.LastLedgerSequence,
         route: (() => {
           try {
             return new URL(req.url).pathname;
@@ -2035,13 +2073,10 @@ export async function handleXrplPayment(
       payer: String(check.tx.Account),
       slot: typeof ticket === "number" ? `ticket:${ticket}` : `sequence:${String(check.tx.Sequence)}`,
       required: { currency: requirement.asset, issuer: String((requirement.extra as Record<string, unknown>).issuer), value: requirement.amount },
-      blobHash: (() => {
-        const b = blobOf(payload);
-        return b ? xrplSignedTxHash(b) : null;
-      })(),
+      blobHash: blobHashHere,
     };
     rcOuter = rc;
-    const att: Attempt = { handlerRan: false, handlerThrew: false };
+    const att: Attempt = { handlerRan: false, handlerThrew: false, sub: subHere };
     attempts.set(key, att);
 
     let entry = paidHandlers.get(routes as object);
@@ -2110,13 +2145,28 @@ export async function handleXrplPayment(
         warn(`cross-instance replay: ledger closed before this request fp=${fp(key)}; client gets 409`, undefined, false);
         return jsonError(409, "duplicate_payment");
       }
-      if (v !== "ok" && (v !== "missing" || config.network === XRPL_MAINNET_CAIP2)) {
-        // Funds moved per the validated settle, but our re-read could not confirm it: deliver + ALERT + reconcile.
+      if (v !== "ok" && v !== "missing") {
+        // N1 (Odin 11:56): the validated ledger CONTRADICTS the payment (destination / issuer / amount / not a Payment
+        // or another payer). A facilitator/SDK bug or a hash mix-up: never deliver on that. 502 + HIGH ALERT +
+        // reconcile; slot undelivered with the stored submitted tx, so a retry re-checks the ledger (delivers only
+        // if a later read is clean, else 502 again).
         const reason = `self_check_${safeCode(v)}`;
-        logXrplReconcile(rc, 200, reason, att.settle.transaction, delivered);
+        await replayMarkUndelivered(key, firstSeen, att.sub);
+        logXrplReconcile(rc, 502, reason, att.settle.transaction, delivered);
         emitAlert({ kind: "xrpl_settled_unverified", severity: "high", field: xrplMismatchField(v), reason });
-        warn(`settled tx not confirmed by the ledger re-read fp=${fp(key)} reason=${safeCode(v)}; serving the paid response (funds moved per validated settle; reconcile)`, undefined, false);
+        warn(`settled tx CONTRADICTED by the validated ledger re-read fp=${fp(key)} reason=${safeCode(v)}; not delivered, client gets 502 (reconcile)`, undefined, false);
+        return unconfirmed(502);
+      }
+      if (v === "missing" && config.network === XRPL_MAINNET_CAIP2) {
+        // Funds moved per the validated settle, but our re-read could not be read (lagging / unreachable node, no
+        // meta): deliver + HIGH ALERT (field unreadable) + reconcile. The only non-ok re-read that delivers.
+        const reason = "self_check_missing";
+        logXrplReconcile(rc, 200, reason, att.settle.transaction, delivered);
+        emitAlert({ kind: "xrpl_settled_unverified", severity: "high", field: "unreadable", reason });
+        warn(`settled tx not readable on the ledger re-read fp=${fp(key)}; serving the paid response (funds moved per validated settle; reconcile)`, undefined, false);
       } else if (when === "unknown") {
+        // N4: success path delivers on an unknown close time with the shared store: settle success = OUR verified
+        // blob validated tesSUCCESS, and the SDK verify in this request proved the slot unused when it started.
         if (replay.kind === "memory") {
           // Testnet only (xrpl:0 requires the shared store). No shared store and the ledger time can't be read:
           // a cross-instance replay can't be ruled out, so don't deliver. Settled → never a 402.
@@ -2130,7 +2180,20 @@ export async function handleXrplPayment(
     } else if (att.settle?.outcome === "unconfirmed" && att.paidRes && !att.handlerThrew) {
       // Ambiguous settle (throw / timeout / unresolved code): the blob may have landed. Ask the validated ledger
       // (bounded, same budget as the success path's re-read; only one of the two runs per request).
-      const hash = att.settle.transaction && /^[0-9A-Fa-f]{64}$/.test(att.settle.transaction) ? att.settle.transaction : rc.blobHash ?? undefined;
+      // L1/N5 (Odin 11:56): look up OUR computed blob hash only. If the facilitator named a different tx, don't
+      // deliver: 502 + HIGH ALERT; the slot is marked undelivered WITHOUT a stored tx (manual reconcile), because
+      // the facilitator may have submitted another tx for this slot: neither auto-delivery on our hash nor a
+      // never-landed 402 on our hash would be safe.
+      const ours = rc.blobHash ?? undefined;
+      const facHash = att.settle.transaction && /^[0-9A-Fa-f]{64}$/.test(att.settle.transaction) ? att.settle.transaction.toUpperCase() : undefined;
+      if (facHash && (!ours || facHash !== ours.toUpperCase())) {
+        await replayMarkUndelivered(key, firstSeen, undefined);
+        logXrplReconcile(rc, 502, "settle_hash_mismatch", facHash);
+        emitAlert({ kind: "xrpl_settle_hash_mismatch", severity: "high" });
+        warn(`ambiguous settle named a tx other than the one we submitted fp=${fp(key)}; not delivered, client gets 502 (manual reconcile)`, undefined, false);
+        return jsonError(502, "settlement_unconfirmed");
+      }
+      const hash = ours;
       const looked = await lookupValidatedTx(config, hash);
       if (looked) {
         const v = verifySettledTx(looked, requirement as never, rail.mods.compareDecimalStrings, rc.payer);
@@ -2145,6 +2208,8 @@ export async function handleXrplPayment(
           warn(`ambiguous settle: ledger closed before this request fp=${fp(key)}; client gets 409`, undefined, false);
           return jsonError(409, "duplicate_payment");
         }
+        // N4: unknown close time delivers only with the shared store (as the success path): the SDK verify in THIS
+        // request proved the slot unused when it started, so the validated tx (our hash) closed after that.
         if (v === "ok" && (when === "fresh" || replay.kind === "upstash")) {
           // The exact payment is on the validated ledger: the buyer paid → deliver the handler's response.
           await markDelivered(key);
@@ -2153,7 +2218,7 @@ export async function handleXrplPayment(
           warn(`ambiguous settle confirmed on the validated ledger fp=${fp(key)}; serving the paid response`, undefined, false);
           return deliverConfirmed(att.paidRes, { success: true, transaction: txHash, network: config.network, payer: rc.payer } as SettleResponse);
         }
-      } else if (await provablyNeverLanded(config, rc.blobHash, check.tx.LastLedgerSequence)) {
+      } else if (await provablyNeverLanded(config, att.sub?.hash, att.sub?.lls)) {
         // Odin 11:44 (d): the validated ledger is past this tx's LastLedgerSequence and the tx is not in any ledger
         // up to it → it can never land, nothing moved. Definitive: slot settle_failed, Base-only 402.
         await replaySet(key, "settle_failed");
@@ -2169,7 +2234,7 @@ export async function handleXrplPayment(
     if (key && s && s.outcome !== "failed") {
       // Our code threw AFTER a settle that moved (or may have moved) funds, e.g. between the delivered mark and the
       // response: never a 402 / never "delivered". Mark undelivered so a retry of the same payment redeems it.
-      await replayMarkUndelivered(key, firstSeen);
+      await replayMarkUndelivered(key, firstSeen, attempts.get(key)?.sub);
       if (rcOuter) logXrplReconcile(rcOuter, 502, "post_settle_error", s.transaction);
       warn(`XRPL post-settle error fp=${fp(key)}; marked undelivered, client gets 502 settlement_unconfirmed (retry redeems)`, err, false);
       return unconfirmed(502);
