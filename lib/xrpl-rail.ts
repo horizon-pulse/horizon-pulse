@@ -110,6 +110,7 @@ import {
   decodePaymentRequiredHeader,
   decodePaymentSignatureHeader,
   encodePaymentRequiredHeader,
+  encodePaymentResponseHeader,
   encodePaymentSignatureHeader,
 } from "@x402/core/http";
 import { FacilitatorResponseError, FacilitatorTimeoutError, SettleError, VerifyError } from "@x402/core/types";
@@ -322,7 +323,9 @@ export type XrplAlert =
   /** A check keeps failing (3 in a row, or no success for 30 min). entry: whether this instance still shows XRPL. */
   | { kind: "xrpl_check_failing"; check: XrplCheck; reason: "consecutive_failures" | "stale"; failures: number; sinceMs: number; entry: "kept" | "hidden" }
   /** A confirmed absence hid the entry (an entry this instance had confirmed, or a cold instance's first definitive answer). Once per transition. */
-  | { kind: "xrpl_entry_dropped"; reason: "payto_not_ready" | "facilitator_kind_absent" | "sdk_unavailable" };
+  | { kind: "xrpl_entry_dropped"; reason: "payto_not_ready" | "facilitator_kind_absent" | "sdk_unavailable" }
+  /** Settle reported validated tesSUCCESS (funds moved) but our independent ledger re-read could not confirm it: delivered anyway, reconcile. */
+  | { kind: "xrpl_settled_unverified"; reason: string };
 
 function defaultAlertHook(alert: XrplAlert): void {
   console.error(`${LOG}[ALERT] ${JSON.stringify(alert)}`);
@@ -438,6 +441,8 @@ type Attempt = {
   handlerError?: unknown;
   verify?: "valid" | "invalid" | "error";
   settle?: SettleOutcome;
+  /** Clone of the route handler's own (<400) response: delivered if an ambiguous settle is then confirmed on the ledger. */
+  paidRes?: Response;
 };
 const attempts = new Map<string, Attempt>();
 
@@ -576,11 +581,12 @@ export type ReconcileCtx = {
 export const XRPL_RECONCILE_TAG = "XRPL_RECONCILE";
 
 /**
- * One grep-able JSON line per settlement_unconfirmed (502/504) outcome.
+ * One grep-able JSON line per settlement_unconfirmed (502/504) outcome, and per
+ * paid response delivered without a clean ledger confirmation (status 200).
  * Not redacted on purpose: only public ledger data (hash, addresses,
  * amounts), no payload, no facilitator text. See docs/xrpl-rail.md runbook.
  */
-export function logXrplReconcile(ctx: ReconcileCtx, status: 502 | 504, reason: string, settledHash?: string, delivered?: unknown): void {
+export function logXrplReconcile(ctx: ReconcileCtx, status: 200 | 502 | 504, reason: string, settledHash?: string, delivered?: unknown): void {
   const rec = {
     tag: XRPL_RECONCILE_TAG,
     at: new Date().toISOString(),
@@ -1582,6 +1588,20 @@ async function settledBeforeRequest(
   return closedMs < startedAt - REPLAY_CONFIRM_SKEW_MS ? "replay" : "fresh";
 }
 
+/**
+ * The paid response for a payment confirmed on the validated ledger after an ambiguous settle: the route
+ * handler's own response plus PAYMENT-RESPONSE and a private Cache-Control, as @x402/next's settle-success path.
+ */
+function deliverConfirmed(handlerRes: Response, settle: SettleResponse): NextResponse {
+  const headers = new Headers(handlerRes.headers);
+  headers.delete("transfer-encoding");
+  headers.delete("settlement-overrides");
+  headers.set("PAYMENT-RESPONSE", encodePaymentResponseHeader(settle));
+  const cc = headers.get("cache-control");
+  headers.set("Cache-Control", !cc ? "private" : cc.split(",").map((d) => d.trim().toLowerCase()).includes("private") ? cc : `${cc}, private`);
+  return new NextResponse(handlerRes.body, { status: handlerRes.status, headers });
+}
+
 /** Mainnet needs the shared (Upstash) replay store; per-instance memory is testnet-only. */
 function replayStoreOkFor(config: XrplRailConfig): boolean {
   return config.network !== XRPL_MAINNET_CAIP2 || replay.kind === "upstash";
@@ -1595,8 +1615,9 @@ function replayStoreOkFor(config: XrplRailConfig): boolean {
  *   - 409 {"error":"duplicate_payment"} → replay of a payment slot already in
  *     flight / settled / unconfirmed (checked before verify), or a settle whose
  *     ledger closed before this request started;
- *   - 502/504 {"error":"settlement_unconfirmed"} → ambiguous settle;
- *   - the paid response → settled;
+ *   - 502/504 {"error":"settlement_unconfirmed"} → ambiguous settle the validated ledger can't confirm
+ *     either way (never after a settle success: funds moved → the paid response, ALERT if unverified);
+ *   - the paid response → settled, or an ambiguous settle confirmed on the validated ledger;
  *   - throws → the route handler threw (same as the Base path: Next 500).
  */
 export async function handleXrplPayment(
@@ -1697,7 +1718,9 @@ export async function handleXrplPayment(
         }
         if (a) a.handlerRan = true;
         try {
-          return await runOnPaidRail(() => xrplRail(rail.config), routeHandler)(r);
+          const out = await runOnPaidRail(() => xrplRail(rail.config), routeHandler)(r);
+          if (a && out.status < 400) a.paidRes = out.clone();
+          return out;
         } catch (err) {
           if (a) {
             a.handlerThrew = true;
@@ -1724,26 +1747,39 @@ export async function handleXrplPayment(
       thrown = err;
     }
     if (att.settle?.outcome === "success" && res && res.status < 400) {
+      // Settle succeeded: on xrpl:0 (in-process facilitator) that means submitAndWait saw the tx VALIDATED with
+      // tesSUCCESS, i.e. the funds moved. The re-read below is an independent check on another node and can
+      // lag or fail (txnNotFound / validated:false / timeout). Rule (as Base/Solana): after funds moved, the
+      // buyer gets the response, never a 5xx. Only a validated ledger answer proving the tx FAILED (nothing
+      // moved) withholds it.
       const looked = await lookupValidatedTx(config, att.settle.transaction);
       const when = await settledBeforeRequest(looked, startedAt);
       // Self-verification against the validated ledger. Mainnet: must be
-      // checkable AND ok. Testnet: checked when the result carries meta.
+      // checkable AND ok to be clean. Testnet: checked when the result carries meta.
       const v = looked ? verifySettledTx(looked, requirement as never, rail.mods.compareDecimalStrings, rc.payer) : "missing";
-      if (v !== "ok" && (v !== "missing" || config.network === XRPL_MAINNET_CAIP2)) {
-        await replaySet(key, "settle_unconfirmed");
-        logXrplReconcile(rc, 502, `self_check_${v}`, att.settle.transaction, (looked?.meta as { delivered_amount?: unknown } | undefined)?.delivered_amount);
-        warn(`settled tx failed ledger self-check fp=${fp(key)} reason=${safeCode(v)}; client gets 502 settlement_unconfirmed`, undefined, false);
-        return jsonError(502, "settlement_unconfirmed");
+      const delivered = (looked?.meta as { delivered_amount?: unknown } | undefined)?.delivered_amount;
+      if (v === "result_not_tessuccess") {
+        // The validated ledger says this tx did not succeed: no RLUSD moved (only the buyer's XRP fee, as for any
+        // failed submit). Not charged → definitive settle failure: Base-only 402, slot kept as settle_failed.
+        await replaySet(key, "settle_failed");
+        warn(`settled tx is not tesSUCCESS on the validated ledger fp=${fp(key)}; not charged, client gets the Base-only 402`, undefined, false);
+        return reject(settleFailReason("transaction_failed"));
       }
       if (when === "replay") {
         await replaySet(key, "settled");
         warn(`cross-instance replay: ledger closed before this request fp=${fp(key)}; client gets 409`, undefined, false);
         return jsonError(409, "duplicate_payment");
       }
-      if (when === "unknown") {
+      if (v !== "ok" && (v !== "missing" || config.network === XRPL_MAINNET_CAIP2)) {
+        // Funds moved per the validated settle, but our re-read could not confirm it: deliver + ALERT + reconcile.
+        const reason = `self_check_${safeCode(v)}`;
+        logXrplReconcile(rc, 200, reason, att.settle.transaction, delivered);
+        emitAlert({ kind: "xrpl_settled_unverified", reason });
+        warn(`settled tx not confirmed by the ledger re-read fp=${fp(key)} reason=${safeCode(v)}; serving the paid response (funds moved per validated settle; reconcile)`, undefined, false);
+      } else if (when === "unknown") {
         if (replay.kind === "memory") {
-          // No shared store and the ledger time can't be read: a cross-instance
-          // replay can't be ruled out, so don't deliver. Settled → never a 402.
+          // Testnet only (xrpl:0 requires the shared store). No shared store and the ledger time can't be read:
+          // a cross-instance replay can't be ruled out, so don't deliver. Settled → never a 402.
           await replaySet(key, "settle_unconfirmed");
           logXrplReconcile(rc, 502, "settled_tx_time_unreadable", att.settle.transaction);
           warn(`could not read settled tx time fp=${fp(key)} on memory replay store; client gets 502 settlement_unconfirmed`, undefined, false);
@@ -1751,6 +1787,34 @@ export async function handleXrplPayment(
         }
         warn(`could not read settled tx time fp=${fp(key)}; serving the paid response (shared replay store)`, undefined, false);
       }
+    } else if (att.settle?.outcome === "unconfirmed" && att.paidRes && !att.handlerThrew) {
+      // Ambiguous settle (throw / timeout / unresolved code): the blob may have landed. Ask the validated ledger
+      // (bounded, same budget as the success path's re-read; only one of the two runs per request).
+      const hash = att.settle.transaction && /^[0-9A-Fa-f]{64}$/.test(att.settle.transaction) ? att.settle.transaction : rc.blobHash ?? undefined;
+      const looked = await lookupValidatedTx(config, hash);
+      if (looked) {
+        const v = verifySettledTx(looked, requirement as never, rail.mods.compareDecimalStrings, rc.payer);
+        const when = await settledBeforeRequest(looked, startedAt);
+        if (v === "result_not_tessuccess") {
+          await replaySet(key, "settle_failed");
+          warn(`ambiguous settle: tx is not tesSUCCESS on the validated ledger fp=${fp(key)}; not charged, client gets the Base-only 402`, undefined, false);
+          return reject(settleFailReason("transaction_failed"));
+        }
+        if (v === "ok" && when === "replay") {
+          await replaySet(key, "settled");
+          warn(`ambiguous settle: ledger closed before this request fp=${fp(key)}; client gets 409`, undefined, false);
+          return jsonError(409, "duplicate_payment");
+        }
+        if (v === "ok" && (when === "fresh" || replay.kind === "upstash")) {
+          // The exact payment is on the validated ledger: the buyer paid → deliver the handler's response.
+          await replaySet(key, "settled");
+          const txHash = (typeof looked.hash === "string" && /^[0-9A-Fa-f]{64}$/.test(looked.hash) ? looked.hash : hash ?? "").toUpperCase();
+          logXrplReconcile(rc, 200, "settle_unconfirmed_ledger_confirmed", txHash, (looked.meta as { delivered_amount?: unknown } | undefined)?.delivered_amount);
+          warn(`ambiguous settle confirmed on the validated ledger fp=${fp(key)}; serving the paid response`, undefined, false);
+          return deliverConfirmed(att.paidRes, { success: true, transaction: txHash, network: config.network, payer: rc.payer } as SettleResponse);
+        }
+      }
+      // Not visible / not checkable: genuinely unknown → unchanged 502/504 settlement_unconfirmed (decide).
     }
     decision = await decide(key, att, res, threw, thrown, rc);
   } catch (err) {
