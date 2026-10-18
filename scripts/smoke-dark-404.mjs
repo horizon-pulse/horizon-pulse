@@ -10,6 +10,9 @@
  * are ignored; everything else must match, including absence of Allow / x-matched-path /
  * x-nextjs-rewritten-* leaks and cache-control. Body: length + sha256 (not for HEAD/OPTIONS).
  * Prints a per-variant tally; exit 1 on any difference.
+ * v1.2: a request that fails with a connect timeout / ECONNRESET is retried (max 3 retries, 0.5/1/2 s backoff).
+ * v1.2.1: the unknown twin itself must answer 404 for every method except OPTIONS (a twin that is not a 404 makes
+ *   the comparison meaningless). OPTIONS on any unknown path is answered 204 by the framework; it is still compared.
  */
 import { createHash, randomBytes } from "node:crypto";
 
@@ -45,13 +48,27 @@ const withVariant = (u, v) => {
   return pv === null ? null : pv + (q ? `?${q}` : "");
 };
 
+/** Connect timeout / connection reset only (v1.2); any other network error still fails the run. */
+const RETRYABLE = new Set(["UND_ERR_CONNECT_TIMEOUT", "ECONNRESET"]);
+
 async function hit(method, path, extra) {
-  const init = { method, redirect: "manual", headers: { "user-agent": "HorizonPulse-dark404-smoke/1.1", accept: "*/*", ...extra } };
+  const init = { method, redirect: "manual", headers: { "user-agent": "HorizonPulse-dark404-smoke/1.2.1", accept: "*/*", ...extra } };
   if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
     init.body = "{}";
     init.headers["content-type"] = "application/json";
   }
-  const res = await fetch(BASE + path, init);
+  let res;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(BASE + path, init);
+      break;
+    } catch (e) {
+      const code = e?.cause?.code ?? e?.code;
+      if (attempt >= 3 || !RETRYABLE.has(code)) throw e;
+      console.error(`network retry ${attempt + 1}/3 ${method} ${path}: ${code}`);
+      await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+    }
+  }
   const body = Buffer.from(await res.arrayBuffer());
   const headers = {};
   for (const [k, v] of res.headers) if (!VOLATILE.has(k.toLowerCase())) headers[k.toLowerCase()] = v;
@@ -73,6 +90,7 @@ for (const u of DARK) {
         const ku = withVariant(unknownTwin(u), v);
         const [d, k] = await Promise.all([hit(m, du, extra), hit(m, ku, extra)]);
         const diffs = [];
+        if (m !== "OPTIONS" && k.status !== 404) diffs.push(`unknown twin answered ${k.status}, expected 404`);
         if (d.status !== k.status) diffs.push(`status ${d.status} vs unknown ${k.status}`);
         for (const h of new Set([...Object.keys(d.headers), ...Object.keys(k.headers)])) if (d.headers[h] !== k.headers[h]) diffs.push(`${h}: ${JSON.stringify(d.headers[h] ?? null)} vs unknown ${JSON.stringify(k.headers[h] ?? null)}`);
         if (m !== "OPTIONS" && m !== "HEAD" && (d.len !== k.len || d.sha !== k.sha)) diffs.push(`body ${d.len}B/${d.sha} vs unknown ${k.len}B/${k.sha}`);
