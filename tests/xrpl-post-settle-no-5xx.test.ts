@@ -1706,10 +1706,11 @@ describe("hotfix: XRPL redeem-on-retry requires the paying request's fingerprint
     expect(rpc.accountInfo).toEqual([walletA.classicAddress]);
   });
 
-  it("delta1 sort: reordered DUPLICATE keys are the same request (sorted by key, then value) → delivered", async () => {
+  it("sort (Odin 6:08, stable by key only): reordered VALUES of a repeated key are a different request → 409; reordered distinct keys still redeem", async () => {
     const { b1 } = await victimStuck(79_013, "https://horizonpulse.dev/api/pulse?t=b&q=1&t=a");
-    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?t=a&t=b&q=1", b1)));
-    expect(alerts.some((a) => a.kind === "xrpl_redeem_fingerprint_mismatch")).toBe(false);
+    expect((await handler()(paidAt("https://horizonpulse.dev/api/pulse?t=a&t=b&q=1", b1))).status).toBe(409);
+    expect(alerts.filter((a) => a.kind === "xrpl_redeem_fingerprint_mismatch")).toHaveLength(1);
+    await expectDelivered(await handler()(paidAt("https://horizonpulse.dev/api/pulse?q=1&t=b&t=a", b1)));
   });
 
   it("legitimate same-request retry: query order / percent-encoding differences normalize away → delivered once", async () => {
@@ -1762,13 +1763,15 @@ describe("hotfix: XRPL redeem-on-retry requires the paying request's fingerprint
     const base = await f("https://h.dev/api/x?a=1&b=2");
     expect(base).toMatch(/^[0-9a-f]{64}$/);
     expect(await f("https://h.dev/api/x?b=2&a=1")).toBe(base);
-    // delta1: duplicate keys sort by key, then value (reordered duplicates normalize; different values do not).
+    // Odin 6:08: STABLE sort by key only. Reordered distinct keys match; reordered values of a repeated key do NOT.
     const dup = await f("https://h.dev/api/x?a=2&b=1&a=1");
-    expect(await f("https://h.dev/api/x?a=1&a=2&b=1")).toBe(dup);
-    expect(await f("https://h.dev/api/x?b=1&a=1&a=2")).toBe(dup);
+    expect(await f("https://h.dev/api/x?b=1&a=2&a=1")).toBe(dup); // distinct keys moved, a's values in the same order
+    expect(await f("https://h.dev/api/x?a=2&a=1&b=1")).toBe(dup);
+    expect(await f("https://h.dev/api/x?a=1&a=2&b=1")).not.toBe(dup); // a's values reordered
+    expect(await f("https://h.dev/api/x?b=1&a=1&a=2")).not.toBe(dup);
     expect(await f("https://h.dev/api/x?a=1&a=3&b=1")).not.toBe(dup);
     expect(await f("https://h.dev/api/x?a=1&b=1")).not.toBe(dup);
-    expect(normalizeQuery("?t=b&q=1&t=a")).toBe("q=1&t=a&t=b");
+    expect(normalizeQuery("?t=b&q=1&t=a")).toBe("q=1&t=b&t=a");
     expect(await f("https://h.dev/api/x?b=2&a=1", { headers: { "x-anything": "1", "payment-signature": "zz" } })).toBe(base);
     expect(await f("https://other.host/api/x?a=1&b=2")).toBe(base); // host is not bound (same deployment, any alias)
     expect(await f("https://h.dev/api/X?a=1&b=2")).not.toBe(base);

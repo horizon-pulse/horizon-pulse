@@ -9,8 +9,9 @@
  *   fingerprint = sha256( "hp-rq-v1\n" + METHOD + "\n" + pathname + "\n" + normalizedQuery + "\n" + sha256(body) )  (hex)
  *
  * - METHOD: upper-case. pathname: exactly as received (routes are case-sensitive; no decoding/re-encoding).
- * - normalizedQuery: every (key, value) pair, percent-decoded, sorted by key then value, re-encoded with
- *   encodeURIComponent and joined with "&". Order and encoding differences of the same pairs normalize away.
+ * - normalizedQuery: every (key, value) pair, percent-decoded, STABLE-sorted by key only (a repeated key keeps its
+ *   value order: routes read the first value), re-encoded with encodeURIComponent and joined with "&". Reordered
+ *   distinct keys and encoding differences normalize away; reordered values of a repeated key do not (Odin 6:08 PM ET).
  *   NO parameter is excluded, including `free` (the free tier only applies to unpaid requests, so on a paid request
  *   it is just another query parameter): a legitimate retry repeats the exact request, and excluding nothing keeps
  *   "the request that was paid for" strict. Payment data never travels in the query (it is the PAYMENT-SIGNATURE
@@ -28,7 +29,7 @@ const sha256Hex = (b: Uint8Array | string) => createHash("sha256").update(b).dig
 
 export function normalizeQuery(search: string): string {
   const pairs = [...new URLSearchParams(search).entries()];
-  pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0));
+  pairs.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)); // stable: a repeated key keeps its value order
   return pairs.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
 }
 
