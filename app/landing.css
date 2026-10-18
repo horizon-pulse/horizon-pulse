@@ -1,7 +1,7 @@
 :root {
   --bg: #08090a; --bg-1: #0f1011; --bg-2: #141516;
   --line: rgba(255,255,255,.08); --line-2: rgba(255,255,255,.14);
-  --text: #f7f8f8; --text-2: #8a8f98; --text-3: #62666d;
+  --text: #f7f8f8; --text-2: #8a8f98; --text-3: #80858d; /* was #62666d: 3.45:1 on --bg, Lighthouse color-contrast; now 5.37:1 (>= 4.9:1 on #111214) */
   --accent: #22d3ee;
   --t-err: #e5b567; --t-key: #8ab4f8; --t-ok: #6fd3a8;
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -125,7 +125,7 @@
 
 .hp-footer { border-top: 1px solid var(--line); padding: 44px 0 56px; font-size: 13.5px; }
 .hp-foot-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 24px; }
-.hp-foot-grid h4 { font-size: 12px; font-weight: 500; color: var(--text); margin: 0 0 12px; }
+.hp-foot-grid h2, .hp-foot-grid h4 { font-size: 12px; font-weight: 500; color: var(--text); margin: 0 0 12px; }
 .hp-foot-grid a { display: block; color: var(--text-2); text-decoration: none; margin-bottom: 8px; }
 .hp-foot-grid a:hover { color: var(--text); }
 .hp-fine { color: var(--text-3); font-size: 12.5px; margin-top: 32px; }

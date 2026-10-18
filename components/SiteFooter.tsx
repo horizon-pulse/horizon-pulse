@@ -10,23 +10,23 @@ export function SiteFooter() {
         <div className="hp-wrap">
           <div className="hp-foot-grid">
             <div>
-              <h4>Horizon Pulse</h4>
+              <h2>Horizon Pulse</h2>
               <p style={{ color: "var(--text-2)", margin: 0, maxWidth: 300 }}>Pay-per-call APIs for AI agents, settled in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, with x402.</p>
             </div>
             <div>
-              <h4>Developers</h4>
+              <h2>Developers</h2>
               <Link href="/docs">API docs</Link>
               <Link href="/docs#quickstart">Quickstart</Link>
               <a href="/try">Free samples</a>
               <Link href="/agents">For agents: skill + MCP</Link>
-              <h4 style={{ marginTop: 18 }}>For agents (raw)</h4>
+              <h2 style={{ marginTop: 18 }}>For agents (raw)</h2>
               <a href="/skill.md">skill.md</a>
               <a href="/openapi.json">openapi.json</a>
               <a href="/llms.txt">llms.txt</a>
               <a href="/.well-known/x402">.well-known/x402</a>
             </div>
             <div>
-              <h4>Project</h4>
+              <h2>Project</h2>
               <a href={GITHUB_REPO} target="_blank" rel="noreferrer">Source on GitHub</a>
               <a href={X_URL} target="_blank" rel="noreferrer">@HorizonPulseAPI on X</a>
               <Link href="/status">Status</Link>
@@ -37,7 +37,7 @@ export function SiteFooter() {
               <a href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
             </div>
             <div>
-              <h4>Network</h4>
+              <h2>Network</h2>
               <a href="https://www.x402.org/" target="_blank" rel="noreferrer">x402 protocol</a>
               <a href="https://base.org" target="_blank" rel="noreferrer">Base</a>
               <a href="https://solana.com" target="_blank" rel="noreferrer">Solana</a>
