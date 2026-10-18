@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload } from "@x402/core/types";
-import * as auditRoute from "@/app/api/audit/security/route";
+import * as auditRoute from "@/app/api/audit/security/route.audit";
 import { auditHandler } from "@/app/api/audit/security/handler";
 import { AUDIT_HIGH_TIERS_FLAG, AUDIT_HIGH_TIER_IDS, AUDIT_TIERS, auditTierEnabled, resetRateLimitsForTests } from "@/lib/dark-routes";
 import { guardedGetWith, type GuardedGetDeps, type GuardedGetOpts, type guardedGet } from "@/lib/guarded-get";

@@ -1,9 +1,14 @@
 import type { NextConfig } from "next";
+import { darkPageExtensions } from "./lib/dark-paths";
 import { freeTierRewrites } from "./lib/free-tier-mode";
 import { API_SECURITY_HEADERS, API_SOURCE, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS, WELL_KNOWN_SECURITY_HEADERS, WELL_KNOWN_SOURCE } from "./lib/security-headers";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  // Dark routes (lib/dark-paths.ts): their route/page files carry a flag extension (route.pkg.ts ...)
+  // that is a page extension only when the flag is exactly "true" at build time. Flag off -> the file
+  // is not a route, the URL is a plain unknown path (every method, header, case and encoding).
+  pageExtensions: darkPageExtensions(),
   async headers() {
     return [
       { source: SITE_PAGES_SOURCE, headers: SITE_SECURITY_HEADERS.map((h) => ({ ...h })) },

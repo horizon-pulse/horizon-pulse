@@ -12,7 +12,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { decodePaymentRequiredHeader } from "@x402/core/http";
-import * as pkgRoute from "@/app/api/package/check/route";
+import * as pkgRoute from "@/app/api/package/check/route.pkg";
 import { packageCheckHandler } from "@/app/api/package/check/handler";
 import { darkDescription, darkPaymentOpts, PACKAGE_DEEP_FLAG, PACKAGE_DESCRIPTION_BASE, PACKAGE_DESCRIPTION_DEEP, PACKAGE_TIERS, packageTierEnabled, resetRateLimitsForTests } from "@/lib/dark-routes";
 import { ROUTE_METADATA } from "@/lib/route-metadata";

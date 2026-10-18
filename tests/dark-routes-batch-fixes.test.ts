@@ -162,7 +162,7 @@ describe("B-4: Counsel's redirect wording, verbatim", () => {
   });
   it("/web-checks renders it", async () => {
     vi.stubEnv("HP_AUDIT_SECURITY_ENABLED", "true");
-    const page = (await import("@/app/web-checks/page")).default;
+    const page = (await import("@/app/web-checks/page.audit")).default;
     const { renderToStaticMarkup } = await import("react-dom/server");
     const html = renderToStaticMarkup(page()).replace(/&#x27;/g, "'");
     expect(html).toContain(COUNSEL);
@@ -171,7 +171,7 @@ describe("B-4: Counsel's redirect wording, verbatim", () => {
   it("/web-checks says the lookup covers subdomains, because isOptedOut really matches them (h === d || h.endsWith(`.${d}`))", async () => {
     vi.stubEnv("HP_AUDIT_SECURITY_ENABLED", "true");
     expect(src("lib/dark-checks-shared.ts")).toMatch(/h === d \|\| h\.endsWith\(`\.\$\{d\}`\)/);
-    const page = (await import("@/app/web-checks/page")).default;
+    const page = (await import("@/app/web-checks/page.audit")).default;
     const { renderToStaticMarkup } = await import("react-dom/server");
     const html = renderToStaticMarkup(page()).replace(/&#x27;/g, "'");
     expect(html).toContain("The lookup answers only yes or no for the one domain entered (no wildcards or partial matches) and is rate limited (a listed domain also covers its subdomains).");
@@ -214,9 +214,11 @@ describe("Counsel FAIL fix: opt-out count + rate-limited exact-domain yes/no", (
     expect((await optOutHandler(req("domain=example.com", "203.0.113.9"), async () => ({ ok: true, retryAfter: 12 }))).status).toBe(429);
     expect((await optOutHandler(req("domain=example.com", "203.0.113.10"), async () => ({ ok: false, error: "down" }))).status).toBe(503);
   });
-  it("route is GET-only and logs nothing", () => {
-    const r = src("app/web-checks/opt-out/route.ts");
-    expect(r.match(/export (async )?function (\w+)/g)).toEqual(["export async function GET"]);
+  it("route serves GET only (every other method is a bare 404, Odin 10:31) and logs nothing", () => {
+    const r = src("app/web-checks/opt-out/route.audit.ts");
+    expect(r.match(/export (async )?function (\w+)/g)).toEqual(["export async function GET", "export async function HEAD"]);
+    expect(r).toMatch(/export async function HEAD[\s\S]*darkEnabled\("audit"\) \? await optOutHandler\(req\) : notFound\(\)/);
+    for (const m of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) expect(r).toContain(`export const ${m} = async () => notFound();`);
     expect(r + src("app/web-checks/opt-out/handler.ts")).not.toMatch(/console\.|logRouteRequest/);
   });
 });
@@ -317,7 +319,7 @@ describe("route log: the receipt id is random and never joined", () => {
     walk("lib");
     walk("app");
     // The three dark routes' route.ts only pass the id from the runtime to their handler.
-    expect(hits.sort()).toEqual(["app/api/audit/security/handler.ts", "app/api/audit/security/route.ts", "app/api/injection/scan/handler.ts", "app/api/injection/scan/route.ts", "app/api/package/check/handler.ts", "app/api/package/check/route.ts", "lib/dark-route-runtime.ts", "lib/dark-routes.ts"].sort());
+    expect(hits.sort()).toEqual(["app/api/audit/security/handler.ts", "app/api/audit/security/route.audit.ts", "app/api/injection/scan/handler.ts", "app/api/injection/scan/route.inj.ts", "app/api/package/check/handler.ts", "app/api/package/check/route.pkg.ts", "lib/dark-route-runtime.ts", "lib/dark-routes.ts"].sort());
     for (const f of hits) for (const line of src(f).split("\n").filter((l) => /receiptId/.test(l))) expect(line, f).not.toMatch(/logRouteRequest|upstash|cache\.set|limiter\(|EVAL/i);
   });
 });

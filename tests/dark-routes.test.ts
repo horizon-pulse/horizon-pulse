@@ -15,9 +15,9 @@ import { LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 import { ROUTE_INFO } from "@/lib/route-hints";
 import { AUDIT_TIERS, DARK_DESCRIPTIONS, darkDescription, INJECTION_TIERS, PACKAGE_TIERS, RECEIPT_HEADER, rateLimitHit, resetRateLimitsForTests, usdFromAtomic, type Tier } from "@/lib/dark-routes";
-import * as auditRoute from "@/app/api/audit/security/route";
-import * as pkgRoute from "@/app/api/package/check/route";
-import * as injRoute from "@/app/api/injection/scan/route";
+import * as auditRoute from "@/app/api/audit/security/route.audit";
+import * as pkgRoute from "@/app/api/package/check/route.pkg";
+import * as injRoute from "@/app/api/injection/scan/route.inj";
 import { auditHandler } from "@/app/api/audit/security/handler";
 import { packageCheckHandler } from "@/app/api/package/check/handler";
 import { injectionScanHandler } from "@/app/api/injection/scan/handler";
@@ -576,7 +576,7 @@ describe("Counsel C3: contact User-Agent, opt-out list, public checks page", () 
     expect(isOptedOut("notexample.org", list)).toBe(false);
   });
   it("/web-checks: 404 while the route is dark; when enabled it lists the checks, the UA, the contact and the opt-out (count only, never the list)", async () => {
-    const page = (await import("@/app/web-checks/page")).default;
+    const page = (await import("@/app/web-checks/page.audit")).default;
     expect(() => page()).toThrow();
     vi.stubEnv("HP_AUDIT_SECURITY_ENABLED", "true");
     vi.stubEnv("HP_WEB_CHECKS_OPTOUT", "optedout.example");
