@@ -95,6 +95,46 @@ code change + owner approval; env can only turn the rail on/off.
 | settle, **ambiguous** | malformed response, transport error (`fetch failed`), `SettleError` 5xx/429/409, `settlement_pending`, `duplicate_settlement`, or `success:false` carrying a tx signature | **502** `{"error":"settlement_unconfirmed"}` |
 | settle | success | the paid response + PAYMENT-RESPONSE |
 
+**Ambiguous settle → on-chain check (v2 + delta 1, Odin 12:31 PM ET 10/18).** Before answering an ambiguous settle
+(other than `duplicate_settlement`), a bounded (4 s) read-only search looks for OUR payment:
+- **Binding (S2):** each candidate is fetched with `encoding:"base64"`. Its MESSAGE bytes must equal exactly the message
+  we verified, and the signature in the buyer's slot must equal the buyer's signature in our payload. Candidates are
+  PayAI's signature (only a lookup hint: accepted only once it passes that binding) plus the recent payTo-ATA history
+  with slot > the start slot. The payer in PAYMENT-RESPONSE is the account key of the buyer's slot in OUR message.
+- **Freshness by chain slot (S1):** `getSlot` (confirmed) is read at request start, in parallel with init, before verify
+  and settle. Bound tx at slot > start slot → deliver (confirmed). Slot ≤ start slot → 409. Wall-clock block time is
+  not used anywhere on the paid path.
+- **No start slot (Odin 1:19 / 1:21):** getSlot is tried up to twice, all inside the init window (each try ≤ 1.5 s and
+  ≤ what is left of initTimeoutMs). If both fail, the answer is **503** `{"error":"solana_rpc_unavailable"}` (fixed
+  body, `Retry-After: 5`, `Cache-Control: no-store`) right after the rail-ready check: no PayAI verify or settle, no
+  handler, no replay key, nothing charged. The same payload works on retry. 5 consecutive no-slot requests on one
+  instance raise one HIGH ALERT `solana_start_slot_unavailable` per episode (reset by the next good read).
+- **Duplicates (S1; widened by Odin 12:51 C1):** `duplicate_settlement`, ANY facilitator 409 (any reason, or a non-JSON
+  409, which the SDK reports as `Facilitator settle failed (409)`), and any reason matching `/duplicate|already|in_flight/`
+  (also on a 200 `success:false` without a signature, which used to be a terminal 402): never searched, never
+  delivered: 502 + reconcile (`facilitator_duplicate`, or `duplicate_settlement` for that exact reason).
+- **Failed on-chain:** the terminal Base-only 402 needs `meta.err` at confirmed AND at **finalized**. Otherwise 502/504.
+- **Settle SUCCESS path (Odin 12:51 (b)):** the old N1 wall-clock check (30 s skew) on PayAI's signature is replaced
+  by the same start-slot + binding search (same 4 s deadline; PayAI's signature is a hint):
+  - bound OUR message, exact amount, slot > start slot → the paid response;
+  - bound, slot ≤ start slot → 409 `duplicate_payment` (replay of a payment already served; nothing new charged);
+  - PayAI's signature resolves to a tx that is NOT ours and ours is not in the recent history, or OUR tx failed →
+    502 `settlement_unconfirmed` + reconcile (`settle_success_unbound` / `settle_success_failed_on_chain`), never a 402;
+  - RPC down / not indexed within the deadline → paid response (fail open, as before: PayAI confirmed the settle);
+  - our tx found, but PayAI's signature was not ours → paid response with PAYMENT-RESPONSE rewritten from the chain
+    result (tx id = our bound tx, payer = buyer key of OUR message) (Odin 1:21);
+  - no start slot cannot reach this path (503 before PayAI). The old wall-clock fallback (`settledBeforeRequest`,
+    `REPLAY_CONFIRM_SKEW_MS`) was removed.
+- **Reconcile:** every 502/504/409 from this path (and every 502 from the success-path binding) raises a
+  `solana_reconcile` ALERT through `setSolanaAlertHook` (default `[solana-rail][ALERT] {...}` console.error line;
+  deduped per buyer signature for 25 h, Odin 1:21) and logs (every occurrence) `[solana-rail] SOLANA_RECONCILE {status, reason, fp, payer, amount,
+  asset, payTo, buyerSignature[, txid]}` (public chain data only) for manual refunds.
+- **Time budget (corrected Odin 12:51 C2):** a cold token-account check makes up to 2 tries × init, so the worst case is
+  2 × init + 10 + 12 + 4: 31 s by default (SOLANA_WORST_CASE_MS) and 40 s at the largest accepted init timeout
+  (`HP_SOLANA_INIT_TIMEOUT_MS` is now clamped to SOLANA_MAX_INIT_TIMEOUT_MS = 7 s; SOLANA_MAX_WORST_CASE_MS). Every
+  route whose import graph reaches lib/solana-rail.ts (route.ts and dark route.<flag>.ts) needs maxDuration ≥ 40 s + 20 s. route.inj.ts was raised
+  30 → 60 s. /mcp (30 s) is exempt: its payment path is the Base-only @x402/mcp wrapper (tests/solana-time-budget.test.ts).
+
 No PayAI text ever reaches the client (the SDK's own 502 `{"error":"<facilitator
 message>"}` is never passed through). Server logs carry the reason code and, for an
 unconfirmed settle, a 16-hex fingerprint of the payment key (`fp=`) for on-chain
@@ -153,19 +193,10 @@ the client to sign and pay again (double charge).
   appears in any `console.*` argument; plus "(R1) safeCode keeps only plain reason codes".
 
 ### N1 — cross-instance replay check (no new account)
-- After a **successful** settle, the rail reads the tx's `blockTime` via read-only
-  `getTransaction` (`commitment: confirmed`). If the tx confirmed **before this request
-  started** (minus `REPLAY_CONFIRM_SKEW_MS` = **30 s**, block times are 1 s validator
-  estimates), PayAI re-reported an old success (its 24 h idempotent replay) → **409**
-  `{"error":"duplicate_payment"}`, paid body withheld, key marked `settled` locally.
-- **Fails open**: RPC error, `null` (not yet visible) or no `blockTime` → the paid
-  response is served and a warning logged (never withhold a settled payment on an RPC
-  hiccup). Limit: a replay landing on another instance within 30 s of the original
-  confirmation is not caught.
-- Tests: "(N1) replay on ANOTHER instance: … => 409 duplicate_payment, paid body
-  withheld", "(N1) genuine payment confirmed during the request => 200",
-  "(N1) inside the 30 s clock-skew allowance => 200 (no false 409)", and three
-  fail-open cases.
+- Superseded (Odin 12:51 (b) / 1:19): the block-time check with a 30 s skew is removed. A settle success is checked by
+  the request-start slot plus the S2 binding (see "Settle SUCCESS path" above); no start slot → 503 before PayAI.
+- Tests: tests/solana-ambiguous-settle.test.ts ("delta 2 … (b)", "delta 3 …") and "(N1) genuine payment → 200; getSlot
+  was read BEFORE PayAI settle" in tests/solana-rereview-fixes.test.ts.
 
 ### N2 — tinypool override
 - `package.json` `"overrides": {"tinypool": "^2.1.2"}` → tinypool 1.1.1 → **2.2.0**

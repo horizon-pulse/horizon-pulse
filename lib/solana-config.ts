@@ -173,6 +173,15 @@ export function isValidSolanaPubkey(value: unknown): value is string {
 type Env = Record<string, string | undefined>;
 
 const DEFAULT_INIT_TIMEOUT_MS = 2500;
+/** Default per-call init/RPC timeout (HP_SOLANA_INIT_TIMEOUT_MS unset); used by the Solana time-budget test. */
+export const SOLANA_DEFAULT_INIT_TIMEOUT_MS = DEFAULT_INIT_TIMEOUT_MS;
+/**
+ * Odin 12:51 C2: largest init timeout the paid-path budget allows. Cold worst case = 2 token-account tries × init +
+ * verify 10 + settle 12 + on-chain check 4 s must leave a 20 s handler margin on 60 s routes: 2·init + 26 ≤ 40 →
+ * init ≤ 7 s (stricter than the single-try 14 s, because a cold token-account check retries once). Larger values
+ * are clamped to this.
+ */
+export const SOLANA_MAX_INIT_TIMEOUT_MS = 7_000;
 
 function off(reason: string, misconfigured: boolean): SolanaConfigResult {
   return { enabled: false, reason, misconfigured };
@@ -207,7 +216,7 @@ export function getSolanaRailConfig(env: Env = process.env): SolanaConfigResult 
 
     const rawTimeout = Number((env.HP_SOLANA_INIT_TIMEOUT_MS ?? "").trim() || DEFAULT_INIT_TIMEOUT_MS);
     const initTimeoutMs =
-      Number.isInteger(rawTimeout) && rawTimeout > 0 && rawTimeout <= 30_000 ? rawTimeout : DEFAULT_INIT_TIMEOUT_MS;
+      Number.isInteger(rawTimeout) && rawTimeout > 0 && rawTimeout <= 30_000 ? Math.min(rawTimeout, SOLANA_MAX_INIT_TIMEOUT_MS) : DEFAULT_INIT_TIMEOUT_MS;
 
     return {
       enabled: true,
