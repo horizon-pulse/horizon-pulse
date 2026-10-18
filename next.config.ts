@@ -1,10 +1,13 @@
 import type { NextConfig } from "next";
-import { SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS } from "./lib/security-headers";
+import { API_SECURITY_HEADERS, API_SOURCE, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS } from "./lib/security-headers";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   async headers() {
-    return [{ source: SITE_PAGES_SOURCE, headers: SITE_SECURITY_HEADERS.map((h) => ({ ...h })) }];
+    return [
+      { source: SITE_PAGES_SOURCE, headers: SITE_SECURITY_HEADERS.map((h) => ({ ...h })) },
+      { source: API_SOURCE, headers: API_SECURITY_HEADERS.map((h) => ({ ...h })) },
+    ];
   },
   // Headless Chromium for /api/screenshot: keep out of the bundle, ship the
   // brotli'd binary with every function that can invoke the handler.

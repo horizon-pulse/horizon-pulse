@@ -28,3 +28,11 @@ export const SITE_SECURITY_HEADERS = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
 ] as const;
+
+/**
+ * API responses: X-Content-Type-Options nosniff ONLY (Odin 10:47 PM ET 10/17).
+ * No Referrer-Policy, CSP or frame headers on the API; CORS, x402 payment
+ * headers and bodies are untouched (headers() only adds a header).
+ */
+export const API_SOURCE = "/api/:path*";
+export const API_SECURITY_HEADERS = [{ key: "X-Content-Type-Options", value: "nosniff" }] as const;
