@@ -1,7 +1,8 @@
 /**
  * Odin re-review of d8a9e2a (2026-10-08, PASS WITH 1 FIX):
  *   R1  PayAI free text never reaches our logs (reason codes only)
- *   N1  cross-instance replay check via read-only getTransaction (no new account)
+ *   N1  cross-instance replay check — wall-clock version REMOVED (Odin 1:19); now start slot + binding, see
+ *       tests/solana-ambiguous-settle.test.ts "delta 2 … (b)" and "delta 3 … 503"
  *   N3  cold start: token-account check and rail init in parallel
  * (N2 — tinypool override — is asserted in tests/solana-review-fixes.test.ts "(4/N2) …".)
  * Mocked / stubbed only: no network, no keys, no wallets, no money.
@@ -13,7 +14,6 @@ import { HTTPFacilitatorClient } from "@x402/core/server";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import {
-  REPLAY_CONFIRM_SKEW_MS,
   __flushSolanaBackgroundForTests,
   __setSolanaRpcForTests,
   resetSolanaRailForTests,
@@ -163,83 +163,23 @@ describe("R1: PayAI free text never reaches the logs (reason codes only)", () =>
 });
 
 // ===========================================================================
-describe("N1: cross-instance replay check (read-only getTransaction, no new account)", () => {
-  function settleOk() {
-    const seen: string[] = [];
+describe("N1 (Odin 1:19): the wall-clock check is gone; a settle success is ordered by the request-start slot", () => {
+  it("(N1) genuine payment → 200; getSlot was read BEFORE PayAI settle; no wall-clock (json blockTime) lookup", async () => {
+    const order: string[] = [];
     installBothFacilitators({
-      verify: (url: string) => (url.startsWith(CDP_URL_PREFIX) ? { isValid: true } : (seen.push("verify"), { isValid: true, payer: SOL_PAYER })),
+      verify: (url: string) => (url.startsWith(CDP_URL_PREFIX) ? { isValid: true } : { isValid: true, payer: SOL_PAYER }),
       settle: (url: string, _p: unknown, r: PaymentRequirements) =>
-        url.startsWith(CDP_URL_PREFIX) ? { success: true } : (seen.push("settle"), { success: true, transaction: SOL_SIG, network: r.network, payer: SOL_PAYER }),
+        url.startsWith(CDP_URL_PREFIX) ? { success: true } : (order.push("settle"), { success: true, transaction: SOL_SIG, network: r.network, payer: SOL_PAYER }),
     } as never);
-    return seen;
-  }
-
-  it("(N1) replay on ANOTHER instance: PayAI re-reports the old success, tx confirmed before this request => 409 duplicate_payment, paid body withheld", async () => {
-    useClock();
-    const seen = settleOk();
-    let confirmedAt: number | null = null;
-    stubSolanaOn();
-    installRpc("present", 0, () => ({ slot: 1, blockTime: Math.floor((confirmedAt ?? now) / 1000), meta: { err: null } }));
-    const [, sol] = await accepts();
-    const p = solPayload(sol);
-
-    // Instance A: genuine payment, confirmed during the request.
-    const a = handler();
-    const first = await a.handler(paid(p));
-    expect(first.status).toBe(200);
-    confirmedAt = now;
-
-    // Instance B: fresh process (empty local replay map), 1 h later, same PAYMENT-SIGNATURE.
-    resetSolanaRailForTests();
-    installRpc("present", 0, () => ({ slot: 1, blockTime: Math.floor(confirmedAt! / 1000), meta: { err: null } }));
-    now += 3600_000;
-    const b = handler();
-    const replay = await b.handler(paid(p));
-    expect(replay.status).toBe(409);
-    expect(await replay.text()).toBe('{"error":"duplicate_payment"}');
-    expect(replay.headers.get("payment-response")).toBeNull();
-    expect(replay.headers.get("payment-required")).toBeNull();
-    // And instance B now remembers it locally (no second PayAI round trip).
-    expect((await b.handler(paid(p))).status).toBe(409);
-    expect(seen.filter((x) => x === "settle")).toHaveLength(2); // A + B's one replay attempt
-    const lines = vi.mocked(console.warn).mock.calls.map((c) => String(c[0]));
-    expect(lines.some((l) => /cross-instance replay: tx confirmed before this request fp=[0-9a-f]{16}/.test(l))).toBe(true);
-    expect(lines.join("\n")).not.toContain(SOL_SIG);
-  });
-
-  it("(N1) genuine payment confirmed during the request => 200", async () => {
-    settleOk();
     const rpc = stubSolanaOn();
-    const [, sol] = await accepts();
-    const res = await handler().handler(paid(solPayload(sol)));
-    expect(res.status).toBe(200);
-    const tx = rpc.find((c) => c.method === "getTransaction")!;
-    expect(tx).toMatchObject({ url: "https://api.mainnet-beta.solana.com", account: SOL_SIG }); // read-only, allow-listed RPC, settled signature
-  });
-
-  it(`(N1) inside the ${REPLAY_CONFIRM_SKEW_MS / 1000} s clock-skew allowance => 200 (no false 409)`, async () => {
-    useClock();
-    settleOk();
-    stubSolanaOn();
-    installRpc("present", 0, () => ({ slot: 1, blockTime: Math.floor((now - REPLAY_CONFIRM_SKEW_MS + 2000) / 1000) }));
+    const push = rpc.push.bind(rpc);
+    rpc.push = (...c) => (c.forEach((x) => order.push(x.method)), push(...c));
     const [, sol] = await accepts();
     expect((await handler().handler(paid(solPayload(sol)))).status).toBe(200);
+    expect(order.indexOf("getSlot")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("getSlot")).toBeLessThan(order.indexOf("settle"));
+    expect(rpc.filter((c) => c.method === "getTransaction" && (c.opts as { encoding?: string })?.encoding === "json")).toEqual([]);
   });
-
-  for (const [name, reply] of [
-    ["RPC error", () => { throw new Error("RPC unreachable"); }],
-    ["tx not indexed yet (null)", () => null],
-    ["no blockTime", () => ({ slot: 1, blockTime: null })],
-  ] as const) {
-    it(`(N1) ${name} => paid response served (fail open: the payment did settle), logged`, async () => {
-      settleOk();
-      stubSolanaOn();
-      installRpc("present", 0, reply as () => unknown);
-      const [, sol] = await accepts();
-      expect((await handler().handler(paid(solPayload(sol)))).status).toBe(200);
-      expect(vi.mocked(console.warn).mock.calls.some((c) => String(c[0]).includes("could not read settled tx time"))).toBe(true);
-    });
-  }
 });
 
 // ===========================================================================

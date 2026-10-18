@@ -61,6 +61,9 @@ export const ATA_ACCOUNT_VALUE = {
   },
 };
 
+/** Default request-start slot answered by getSlot in tests. */
+export const DEFAULT_START_SLOT = 300_000_000;
+
 export type AtaMode = "present" | "absent" | "error" | (() => unknown);
 export type RpcCall = { url: string; method: string; account: unknown; opts?: unknown };
 
@@ -70,10 +73,8 @@ export function installRpc(
   receipts: number | (() => unknown) = 0,
   /** getTransaction result for a settled signature (default: confirmed "now"). */
   getTransaction: (signature: string, opts?: Record<string, unknown>) => unknown = () => ({ slot: 1, blockTime: Math.floor(Date.now() / 1000), meta: { err: null } }),
-  /** getSlot (Odin 12:31 S1, request-start chain slot); default: not answered (as before). */
-  getSlot: () => unknown = () => {
-    throw new Error("unexpected RPC getSlot");
-  },
+  /** getSlot (request-start chain slot). Default: a healthy node answers (Odin 1:19: no start slot = 503 before PayAI). */
+  getSlot: () => unknown = () => DEFAULT_START_SLOT,
 ): RpcCall[] {
   const calls: RpcCall[] = [];
   let current: AtaMode = mode;

@@ -9,7 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest, NextResponse } from "next/server";
 import { FacilitatorTimeoutError, SettleError } from "@x402/core/types";
-import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
+import { decodePaymentRequiredHeader, decodePaymentResponseHeader, encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PaymentPayload, PaymentRequirements } from "@x402/core/types";
 import {
   __flushSolanaBackgroundForTests,
@@ -257,38 +257,6 @@ describe("ambiguous PayAI settle → look for OUR message on-chain (Odin 12:31 S
     expect((await handler()(paid(solPayload(accept, tx)))).status).toBe(200);
   });
 
-  it("S1: no request-start slot, even with a bound fresh PayAI hint → never delivered, unchanged 502 + reconcile, nothing fetched", async () => {
-    const accept = await solAccept();
-    const { tx, msg } = payTx(0xbe);
-    settle = () => ({ success: false, errorReason: "confirmation_timeout", transaction: txidOf(), network: SOLANA_MAINNET_CAIP2 });
-    const calls = setup({
-      tx: () => chainTx(wire(0xbe, msg, FEE), accept.amount, { slot: START_SLOT + 5 }),
-      slot: () => {
-        throw new Error("rpc down");
-      },
-    });
-    const res = await handler()(paid(solPayload(accept, tx)));
-    expect(res.status).toBe(502);
-    expect(res.headers.get("payment-response")).toBeNull();
-    expect(calls.filter((c) => c.method === "getTransaction")).toEqual([]);
-    expect(reconcileLines()).toEqual([expect.objectContaining({ status: 502, reason: "ambiguous_settle_no_start_slot", payer: SOL_PAYER })]);
-  });
-
-  it("S1: no request-start slot (getSlot failed) → never delivered from chain: unchanged 504 + reconcile", async () => {
-    const accept = await solAccept();
-    const { tx, msg } = payTx(0xb3);
-    setup({
-      list: () => [{ signature: txidOf(), slot: START_SLOT + 5 }],
-      tx: () => chainTx(wire(0xb3, msg, FEE), accept.amount),
-      slot: () => {
-        throw new Error("rpc down");
-      },
-    });
-    const res = await handler()(paid(solPayload(accept, tx)));
-    expect(res.status).toBe(504);
-    expect(reconcileLines()).toEqual([expect.objectContaining({ status: 504, reason: "ambiguous_settle_no_start_slot" })]);
-  });
-
   it("ATA entries at slot ≤ request-start slot are not even fetched", async () => {
     const accept = await solAccept();
     const { tx, msg } = payTx(0xb4);
@@ -515,18 +483,197 @@ describe("delta 2 (Odin 12:51): C1 any 409 = duplicate; (b) settle-success path 
     expect(vi.mocked(console.warn).mock.calls.some((c) => String(c[0]).includes("could not bind the settled tx on-chain"))).toBe(true);
     expect(reconcileLines()).toEqual([]);
   });
+});
 
-  it("(b) success, NO start slot → fallback to the wall-clock check: old block time → 409; fresh → 200 (documented tradeoff)", async () => {
+// ===========================================================================
+// Odin 1:19 PM ET delta 3: no request-start slot → 503 + Retry-After BEFORE PayAI verify/settle (both settle paths).
+// ===========================================================================
+describe("delta 3 (Odin 1:19): no start slot → 503 before PayAI; slot present → normal flow", () => {
+  let facilitator: string[] = [];
+  beforeEach(() => {
+    facilitator = [];
+    installBothFacilitators({
+      verify: (url: string) => (url.startsWith(CDP_URL_PREFIX) ? { isValid: true, payer: BASE_PAYER } : (facilitator.push("verify"), { isValid: true, payer: SOL_PAYER })),
+      settle: async (url: string, _p: PaymentPayload, r: PaymentRequirements) => {
+        if (url.startsWith(CDP_URL_PREFIX)) return { success: true, transaction: `0x${"ab".repeat(32)}`, network: r.network, payer: BASE_PAYER };
+        facilitator.push("settle");
+        return settle();
+      },
+    } as never);
+  });
+  const settleModes = [
+    ["settle would succeed", () => ({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER })],
+    ["settle would be ambiguous", () => {
+      throw new FacilitatorTimeoutError("settle", 12_000);
+    }],
+  ] as const;
+  for (const [mode, s] of settleModes) {
+    it(`getSlot ERROR (${mode}) → 503 solana_rpc_unavailable + Retry-After 5, no PayAI verify/settle, handler not run, nothing claimed`, async () => {
+      const accept = await solAccept();
+      const { tx, msg } = payTx(0xd0);
+      settle = s;
+      const calls = setup({
+        tx: () => chainTx(wire(0xd0, msg, FEE), accept.amount),
+        slot: () => {
+          throw new Error("rpc down");
+        },
+      });
+      const res = await handler()(paid(solPayload(accept, tx)));
+      expect(res.status).toBe(503);
+      expect(await res.text()).toBe('{"error":"solana_rpc_unavailable"}');
+      expect(res.headers.get("retry-after")).toBe("5");
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expect(res.headers.get("payment-response")).toBeNull();
+      expect(facilitator).toEqual([]);
+      expect(ran).toBe(0);
+      expect(calls.filter((c) => c.method === "getTransaction")).toEqual([]);
+      expect(reconcileLines()).toEqual([]);
+      // Nothing was claimed: the same payment goes through normally once getSlot answers.
+      setup({ tx: () => chainTx(wire(0xd0, msg, FEE), accept.amount) });
+      settle = settleModes[0][1];
+      expect((await handler()(paid(solPayload(accept, tx)))).status).toBe(200);
+      expect(facilitator).toEqual(["verify", "settle"]);
+    });
+  }
+
+  it("getSlot TIMEOUT (never answers, both tries) → 503 inside the init window (2.5 s), no PayAI call", async () => {
     const accept = await solAccept();
-    const noSlot = () => {
-      throw new Error("getSlot down");
+    const { tx, msg } = payTx(0xd1);
+    setup({ tx: () => chainTx(wire(0xd1, msg, FEE), accept.amount), slot: () => new Promise(() => {}) });
+    const t0 = Date.now();
+    const res = await handler()(paid(solPayload(accept, tx)));
+    expect(res.status).toBe(503);
+    expect(res.headers.get("retry-after")).toBe("5");
+    expect(Date.now() - t0).toBeLessThan(3_500);
+    expect(facilitator).toEqual([]);
+  });
+
+  it.each([["string", "300000000"], ["zero", 0], ["negative", -1], ["fraction", 1.5], ["unsafe", 2 ** 53], ["null", null]] as const)(
+    "getSlot answers garbage (%s, not a positive safe integer) → 503, no PayAI call", async (_n, bad) => {
+    const accept = await solAccept();
+    const { tx, msg } = payTx(0xd2);
+    setup({ tx: () => chainTx(wire(0xd2, msg, FEE), accept.amount), slot: () => bad });
+    expect((await handler()(paid(solPayload(accept, tx)))).status).toBe(503);
+    expect(facilitator).toEqual([]);
+  });
+
+  it("slot present → normal flow: verify + settle, 200 with PAYMENT-RESPONSE", async () => {
+    const accept = await solAccept();
+    const { tx, msg } = payTx(0xd3);
+    settle = settleModes[0][1];
+    setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xd3, msg, FEE), accept.amount) : null) });
+    const res = await handler()(paid(solPayload(accept, tx)));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("payment-response")).not.toBeNull();
+    expect(facilitator).toEqual(["verify", "settle"]);
+  });
+
+  it("Odin 1:21: getSlot is retried ONCE: first try fails, second answers → normal flow (2 getSlot calls)", async () => {
+    const accept = await solAccept();
+    const { tx, msg } = payTx(0xd4);
+    settle = settleModes[0][1];
+    let n = 0;
+    const calls = setup({
+      tx: (sig) => (sig === txidOf() ? chainTx(wire(0xd4, msg, FEE), accept.amount) : null),
+      slot: () => {
+        if (++n === 1) throw new Error("blip");
+        return START_SLOT;
+      },
+    });
+    expect((await handler()(paid(solPayload(accept, tx)))).status).toBe(200);
+    expect(calls.filter((c) => c.method === "getSlot")).toHaveLength(2);
+    expect(facilitator).toEqual(["verify", "settle"]);
+  });
+
+  it("Odin 1:21: getSlot error → exactly 2 tries, then the 503 (fixed body)", async () => {
+    const accept = await solAccept();
+    const { tx } = payTx(0xd5);
+    const calls = setup({
+      slot: () => {
+        throw new Error("down");
+      },
+    });
+    const res = await handler()(paid(solPayload(accept, tx)));
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe('{"error":"solana_rpc_unavailable"}');
+    expect(calls.filter((c) => c.method === "getSlot")).toHaveLength(2);
+  });
+
+  it(`Odin 1:21: sustained getSlot failure → ONE high alert after 5 consecutive no-slot requests; 4 → none; a success resets the episode`, async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    const down = () => {
+      throw new Error("down");
     };
-    settle = settleOk;
-    const a = payTx(0xca);
-    setup({ slot: noSlot, tx: () => chainTx(wire(0xca, a.msg, FEE), accept.amount, { blockTime: Math.floor(Date.now() / 1000) - 3600 }) });
-    expect((await handler()(paid(solPayload(accept, a.tx)))).status).toBe(409);
-    const b = payTx(0xcb);
-    setup({ slot: noSlot, tx: () => chainTx(wire(0xcb, b.msg, FEE), accept.amount, { blockTime: Math.floor(Date.now() / 1000) }) });
-    expect((await handler()(paid(solPayload(accept, b.tx)))).status).toBe(200);
+    const slotAlerts = () => alerts.filter((a) => a.kind === "solana_start_slot_unavailable");
+    for (let i = 0; i < 4; i++) {
+      setup({ slot: down });
+      expect((await handler()(paid(solPayload(accept, payTx(0xd6).tx)))).status).toBe(503);
+    }
+    expect(slotAlerts()).toEqual([]);
+    setup({ slot: down });
+    await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
+    expect(slotAlerts()).toEqual([{ kind: "solana_start_slot_unavailable", severity: "high", consecutive: 5 }]);
+    setup({ slot: down });
+    await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
+    expect(slotAlerts()).toHaveLength(1); // same episode
+    settle = settleModes[0][1];
+    const ok = payTx(0xd7);
+    setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xd7, ok.msg, FEE), accept.amount) : null) });
+    expect((await handler()(paid(solPayload(accept, ok.tx)))).status).toBe(200); // resets
+    for (let i = 0; i < 4; i++) {
+      setup({ slot: down });
+      await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
+    }
+    expect(slotAlerts()).toHaveLength(1); // streak restarted from 0: 4 after the reset → no new alert yet
+    setup({ slot: down });
+    await handler()(paid(solPayload(accept, payTx(0xd6).tx)));
+    expect(slotAlerts()).toHaveLength(2); // new episode
+    expect(slotAlerts()[1]).toEqual({ kind: "solana_start_slot_unavailable", severity: "high", consecutive: 5 });
+    setSolanaAlertHook(null);
+  });
+});
+
+describe("delta 3 (Odin 1:21): PAYMENT-RESPONSE from the chain; reconcile alert deduped by buyer signature", () => {
+  it("success, PayAI's signature is NOT ours but OUR tx is found on-chain → 200 with PAYMENT-RESPONSE tx id + payer from the CHAIN result", async () => {
+    const accept = await solAccept();
+    const { tx, msg } = payTx(0xd8);
+    const mine = buyerSigOf(0x56); // our chain tx id (slot-0 signature of the bound tx)
+    settle = () => ({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: "11111111111111111111111111111111" });
+    setup({
+      list: () => [{ signature: mine, slot: START_SLOT + 4 }],
+      tx: (sig) => (sig === mine ? chainTx(wire(0xd8, msg, 0x56), accept.amount, { slot: START_SLOT + 4 }) : chainTx(wire(0xd8, msgBytes(0xec), FEE), accept.amount)),
+    });
+    const res = await handler()(paid(solPayload(accept, tx)));
+    expect(res.status).toBe(200);
+    const pr = decodePaymentResponseHeader(res.headers.get("payment-response")!);
+    expect(pr).toMatchObject({ success: true, transaction: mine, network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER });
+    expect(await res.json()).toMatchObject({ ok: true, paid: "sol" });
+  });
+
+  it("success, PayAI's signature IS ours → PAYMENT-RESPONSE left as PayAI's (unchanged path)", async () => {
+    const accept = await solAccept();
+    const { tx, msg } = payTx(0xd9);
+    settle = () => ({ success: true, transaction: txidOf(), network: SOLANA_MAINNET_CAIP2, payer: SOL_PAYER });
+    setup({ tx: (sig) => (sig === txidOf() ? chainTx(wire(0xd9, msg, FEE), accept.amount) : null) });
+    const res = await handler()(paid(solPayload(accept, tx)));
+    expect(decodePaymentResponseHeader(res.headers.get("payment-response")!)).toMatchObject({ transaction: txidOf() });
+  });
+
+  it("solana_reconcile ALERT deduped per buyer signature: same buyer signature twice → 2 log lines, 1 alert; another signature → its own alert", async () => {
+    const alerts: SolanaAlert[] = [];
+    setSolanaAlertHook((a) => alerts.push(a));
+    const accept = await solAccept();
+    const down = () => {
+      throw new Error("rpc down");
+    };
+    for (const fill of [0xda, 0xda, 0xdb]) {
+      setup({ list: down });
+      expect((await handler()(paid(solPayload(accept, payTx(fill).tx)))).status).toBe(504); // distinct messages, so no replay 409
+    }
+    expect(reconcileLines().map((l) => l.buyerSignature)).toEqual([buyerSigOf(0xda), buyerSigOf(0xda), buyerSigOf(0xdb)]);
+    expect(alerts.filter((a) => a.kind === "solana_reconcile").map((a) => (a as { buyerSignature: string }).buyerSignature)).toEqual([buyerSigOf(0xda), buyerSigOf(0xdb)]);
+    setSolanaAlertHook(null);
   });
 });
