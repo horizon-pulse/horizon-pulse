@@ -15,6 +15,7 @@ import {
   XRPL_REDEEM_LEASE_MS,
   XRPL_MASTER_CHECK_DEADLINE_MS,
   XRPL_REDEEM_WORST_CASE_MS,
+  XRPL_EVAL_PROBE_DEADLINE_MS,
 } from "@/lib/xrpl-rail";
 
 /** Time left for the route handler itself after the XRPL worst case. */
@@ -138,5 +139,15 @@ describe("Delta 5: the F1(b) master-key account_info read fits the existing budg
     expect(XRPL_REDEEM_WORST_CASE_MS).toBe(XRPL_MAX_INIT_TIMEOUT_MS + XRPL_MASTER_CHECK_DEADLINE_MS + XRPL_TX_LOOKUP_DEADLINE_MS + XRPL_LLS_CHECK_DEADLINE_MS);
     expect(XRPL_REDEEM_WORST_CASE_MS).toBeLessThanOrEqual(XRPL_WORST_CASE_MS);
     expect(XRPL_REDEEM_WORST_CASE_MS + HANDLER_MARGIN_MS).toBeLessThan(XRPL_ROUTE_MAX_DURATION_S * 1000);
+  });
+});
+
+describe("Odin 12:28: replay-store probe (EVAL + self-test) stays inside the budget", () => {
+  it("whole probe ≤ 3 s and ≤ the init cap it runs in parallel with (Promise.all with rail init), so the worst case is unchanged", () => {
+    expect(XRPL_EVAL_PROBE_DEADLINE_MS).toBe(3_000);
+    expect(XRPL_EVAL_PROBE_DEADLINE_MS).toBeLessThanOrEqual(XRPL_MAX_INIT_TIMEOUT_MS);
+    const src = readFileSync(path.join(__dirname, "..", "lib", "xrpl-rail.ts"), "utf8");
+    // Both the 402 path and the paid path await the probe in the same Promise.all as rail init.
+    expect(src.match(/Promise\.all\(\[xrplPayToReady\(config\), getRail\(config\), xrplReplayEvalOk\(\)\]\)/g)?.length).toBe(2);
   });
 });

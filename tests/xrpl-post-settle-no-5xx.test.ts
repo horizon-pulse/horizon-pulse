@@ -22,6 +22,7 @@ import {
   __setXrplRpcForTests,
   __setXrplTxLookupDelaysForTests,
   XRPL_EVAL_FAIL_RECHECK_MS,
+  XRPL_EVAL_PROBE_DEADLINE_MS,
   XRPL_IN_FLIGHT_STALE_MS,
   LSF_DISABLE_MASTER,
   __setXrplMasterCheckDeadlineForTests,
@@ -36,7 +37,18 @@ import {
 } from "@/lib/xrpl-rail";
 import { resetSolanaRailForTests } from "@/lib/solana-rail";
 import { Wallet, decode as decodeBlob, encode as encodeBlob } from "xrpl";
-import { CAS_ANY_SCRIPT, CAS_DELETE_SCRIPT, EVAL_PROBE_SCRIPT, MemoryReplayStore, UpstashReplayStore, encodeReplayValue, parseReplayValue } from "@/lib/xrpl-replay-store";
+import {
+  CAS_ANY_SCRIPT,
+  CAS_DELETE_SCRIPT,
+  CAS_SCRIPT,
+  EVAL_PROBE_SCRIPT,
+  MemoryReplayStore,
+  ReplaySelfTestError,
+  SELFTEST_KEY_PREFIX,
+  UpstashReplayStore,
+  encodeReplayValue,
+  parseReplayValue,
+} from "@/lib/xrpl-replay-store";
 import { RLUSD_CURRENCY_HEX, RLUSD_MAINNET_ISSUER, XRPL_PAYTO, XRPL_SELF_FACILITATOR } from "@/lib/xrpl-config";
 import { createX402GetHandler, pulseRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
@@ -709,23 +721,17 @@ describe("(e) BLOCKER: replay-store EVAL probe, fail closed", () => {
     expect(await xrplReplayEvalStatus()).toBe("not_applicable");
   });
 
-  it("UpstashReplayStore.probeEval sends EVAL \"return 1\" 0 (no keys, no data) and throws on an error / wrong answer / HTTP failure", async () => {
-    const sent: unknown[] = [];
-    let answer: { status: number; body: unknown } = { status: 200, body: { result: 1 } };
-    const fetchFn = (async (_u: string, init: RequestInit) => {
-      sent.push(JSON.parse(String(init.body)));
-      return new Response(JSON.stringify(answer.body), { status: answer.status });
-    }) as unknown as typeof fetch;
-    const s = new UpstashReplayStore("https://x.upstash.io", "t", fetchFn);
+  it("UpstashReplayStore.probeEval starts with EVAL \"return 1\" 0 (no keys, no data) and throws on an error / wrong answer / HTTP failure", async () => {
+    const up = fakeUpstash();
+    const s = new UpstashReplayStore("https://x.upstash.io", "t", up.fetchFn);
     await expect(s.probeEval()).resolves.toBeUndefined();
-    expect(sent).toEqual([["EVAL", EVAL_PROBE_SCRIPT, "0"]]);
+    expect(up.sent[0]).toEqual(["EVAL", EVAL_PROBE_SCRIPT, "0"]);
     expect(EVAL_PROBE_SCRIPT).toBe("return 1");
-    answer = { status: 200, body: { error: "ERR unknown command 'EVAL'" } };
-    await expect(s.probeEval()).rejects.toThrow();
-    answer = { status: 200, body: { result: 0 } };
-    await expect(s.probeEval()).rejects.toThrow();
-    answer = { status: 403, body: { error: "NOPERM" } };
-    await expect(s.probeEval()).rejects.toThrow();
+    for (const bad of [{ status: 200, body: { error: "ERR unknown command 'EVAL'" } }, { status: 200, body: { result: 0 } }, { status: 403, body: { error: "NOPERM" } }]) {
+      const f = fakeUpstash((args) => (args[0] === "EVAL" && args[1] === EVAL_PROBE_SCRIPT ? bad : undefined));
+      await expect(new UpstashReplayStore("https://x.upstash.io", "t", f.fetchFn).probeEval()).rejects.toThrow();
+      expect(f.sent).toHaveLength(1); // nothing after a failed EVAL
+    }
   });
 
   it("default alert sink tags xrpl_replay_eval_unavailable as [ALERT][HIGH]", async () => {
@@ -744,6 +750,43 @@ describe("(e) BLOCKER: replay-store EVAL probe, fail closed", () => {
 // ---------------------------------------------------------------------------
 // Delta 3: Odin Class A 11:56 AM ET (H1 blocker, N1, M1, L1/N5, N3, N4, L3)
 // ---------------------------------------------------------------------------
+
+/**
+ * Minimal in-memory Upstash REST double (SET [NX] [PX], GET, DEL, EVAL of the repo's scripts). `override(args)` may
+ * return a canned {status, body} for one command to inject a fault; undefined = normal behaviour.
+ */
+type UpCmd = string[];
+function fakeUpstash(override?: (args: UpCmd, n: number) => { status: number; body: unknown } | undefined, data = new Map<string, string>()) {
+  const sent: UpCmd[] = [];
+  const run = (a: UpCmd): unknown => {
+    const [cmd] = a;
+    if (cmd === "SET") {
+      if (a.includes("NX") && data.has(a[1])) return null;
+      data.set(a[1], a[2]);
+      return "OK";
+    }
+    if (cmd === "GET") return data.get(a[1]) ?? null;
+    if (cmd === "DEL") return data.delete(a[1]) ? 1 : 0;
+    if (cmd === "EVAL") {
+      const [, script, , k, ...argv] = a;
+      if (script === EVAL_PROBE_SCRIPT) return 1;
+      if (script === CAS_DELETE_SCRIPT) return data.get(k) === argv[0] ? (data.delete(k), 1) : 0;
+      if (script === CAS_SCRIPT) return data.get(k) === argv[0] ? (data.set(k, argv[1]), 1) : 0;
+      if (script === CAS_ANY_SCRIPT) return data.has(k) && argv.slice(2).includes(data.get(k)!) ? (data.set(k, argv[0]), 1) : 0;
+    }
+    return { __error: "ERR unknown" };
+  };
+  const fetchFn = (async (_u: string, init: RequestInit) => {
+    const args = JSON.parse(String(init.body)) as UpCmd;
+    sent.push(args);
+    const o = override?.(args, sent.length);
+    if (o) return new Response(JSON.stringify(o.body), { status: o.status });
+    const r = run(args);
+    if (r && typeof r === "object" && "__error" in r) return new Response(JSON.stringify({ error: "ERR unknown" }), { status: 200 });
+    return new Response(JSON.stringify({ result: r }), { status: 200 });
+  }) as unknown as typeof fetch;
+  return { fetchFn, sent, data };
+}
 
 const hashOf = (p: PaymentPayload) => xrplSignedTxHash(String((p.payload as { signedTxBlob: string }).signedTxBlob))!;
 const decodeTx = (p: PaymentPayload) => decodeBlob(String((p.payload as { signedTxBlob: string }).signedTxBlob)) as Record<string, unknown>;
@@ -1177,6 +1220,7 @@ describe("F1: a retry with another hash may redeem ONLY when it is master-key si
       expect(hashOf(bad)).not.toBe(hashOf(b1));
       const r = await handler()(paid(bad));
       expect(r.status).toBe(502);
+      expect(await r.json()).toEqual({ error: "settlement_unconfirmed" }); // Odin 12:28 (1): BARE body, not the redeemable one
       expect(r.headers.get("payment-response")).toBeNull();
       expect(r.headers.get("payment-required")).toBeNull();
       expect(slotRaw()).toBe(before);
@@ -1353,5 +1397,182 @@ describe("Delta 5 (Odin 12:17): F1(b) master-key re-sign also needs the master k
     const bad = signedPayload(accept, { Sequence: 79_300, LastLedgerSequence: 1_000_050 }, "unsigned");
     expect((await handler()(paid(bad))).status).toBe(502);
     expect(rpc.accountInfo).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Odin 12:28 PM ET: (1) F1 bare 502 body; (2) replay-store self-test inside the first-use EVAL probe
+// ---------------------------------------------------------------------------
+
+describe("(1) F1 rejections answer the BARE 502 body", () => {
+  beforeEach(() => {
+    settleImpl = async () => {
+      throw new Error("ws closed");
+    };
+  });
+  it("undecodable retry blob (same slot) → bare 502, slot untouched, nothing looked up", async () => {
+    const { xrplMasterKeySigned } = await import("@/lib/xrpl-rail");
+    const accept = await xrplAccept();
+    const S = 80_001;
+    const b1 = signedPayload(accept, { Sequence: S });
+    const st = { landed: new Set<string>(), validated: 999_000, account: walletA.classicAddress };
+    const rpc = slotRpc(accept, st);
+    expect((await handler()(paid(b1))).status).toBe(504);
+    const before = slotRaw();
+    rpc.lookups.length = 0;
+    // A blob that locates the same slot but carries a TxnSignature the signature check cannot parse.
+    const d = decodeTx(signedPayload(accept, { Sequence: S, Fee: "15" }));
+    d.SigningPubKey = "ED" + "00".repeat(32); // well-formed length, not a valid key for this Account
+    const odd = xrplPayload(accept, {}, {}, encodeBlob(d as never));
+    expect((await xrplMasterKeySigned(String((odd.payload as { signedTxBlob: string }).signedTxBlob))).ok).toBe(false);
+    const r = await handler()(paid(odd));
+    expect(r.status).toBe(502);
+    expect(await r.json()).toEqual({ error: "settlement_unconfirmed" });
+    expect(slotRaw()).toBe(before);
+    expect(rpc.lookups).toEqual([]);
+  });
+  it("the forged unsigned retry (H1 regression) also gets the bare body; the genuine blob's redeemable 504 keeps retry:same_payment", async () => {
+    const accept = await xrplAccept();
+    const S = 80_002;
+    const b1 = xrplPayload(accept, { Sequence: S });
+    slotRpc(accept, { landed: new Set<string>(), validated: 950_000 });
+    const r0 = await handler()(paid(b1));
+    expect(r0.status).toBe(504);
+    expect(await r0.json()).toEqual(SETTLEMENT_UNCONFIRMED_BODY);
+    const r = await handler()(paid(xrplPayload(accept, { Sequence: S, LastLedgerSequence: 900_000 })));
+    expect(r.status).toBe(502);
+    expect(await r.json()).toEqual({ error: "settlement_unconfirmed" });
+  });
+});
+
+describe("(2) replay-store self-test inside the first-use EVAL probe (fail closed)", () => {
+  const evalAlerts = () => alerts.filter((a) => a.kind === "xrpl_replay_eval_unavailable");
+  const xrplIn402 = async () => {
+    const res = await handler()(unpaid());
+    expect(res.status).toBe(402);
+    const pr = decodePaymentRequiredHeader(res.headers.get("payment-required")!);
+    expect(pr.accepts.some((a) => a.network.startsWith("eip155:"))).toBe(true);
+    return pr.accepts.some((a) => a.network === "xrpl:0");
+  };
+  const selftestCmds = (sent: UpCmd[]) => sent.filter((a) => a.some((x) => x.startsWith("hp:selftest:")));
+  beforeEach(() => {
+    installXrplRpc("ready", () => ({ status: "error", error: "txnNotFound" }));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  it("all steps pass: EVAL, SET (random value, 60 s TTL) → wrong-value CAS_DELETE keeps it → right-value CAS_DELETE removes it; only random hex, no request input; key gone", async () => {
+    const up = fakeUpstash();
+    await new UpstashReplayStore("https://x.upstash.io", "t", up.fetchFn).probeEval();
+    expect(up.sent).toHaveLength(6);
+    const [e, set, wrongDel, get1, rightDel, get2] = up.sent;
+    expect(e).toEqual(["EVAL", EVAL_PROBE_SCRIPT, "0"]);
+    const key = set[1];
+    const value = set[2];
+    expect(key).toMatch(/^hp:selftest:xrpl-replay-eval:[0-9a-f]{32}$/);
+    expect(key.startsWith(SELFTEST_KEY_PREFIX)).toBe(true);
+    expect(key.startsWith("hp:xrpl:replay:")).toBe(false); // never inside the replay keyspace
+    expect(value).toMatch(/^[0-9a-f]{32}$/);
+    expect(set).toEqual(["SET", key, value, "PX", "60000"]);
+    expect(wrongDel).toEqual(["EVAL", CAS_DELETE_SCRIPT, "1", key, `${value}:wrong`]);
+    expect(get1).toEqual(["GET", key]);
+    expect(rightDel).toEqual(["EVAL", CAS_DELETE_SCRIPT, "1", key, value]);
+    expect(get2).toEqual(["GET", key]);
+    expect(up.data.size).toBe(0);
+    // A second probe uses a fresh random key and value.
+    await new UpstashReplayStore("https://x.upstash.io", "t", up.fetchFn).probeEval();
+    expect(up.sent[7][1]).not.toBe(key);
+    expect(up.sent[7][2]).not.toBe(value);
+  });
+
+  it("all pass via the rail → status ok, XRPL in the 402, no ALERT; the self-test commands carry no request data", async () => {
+    const up = fakeUpstash();
+    setXrplReplayStoreForTests(new UpstashReplayStore("https://x.upstash.io", "t", up.fetchFn));
+    expect(await xrplIn402()).toBe(true);
+    expect(await xrplReplayEvalStatus()).toBe("ok");
+    expect(evalAlerts()).toEqual([]);
+    const accept = await xrplAccept();
+    const p = xrplPayload(accept);
+    const blob = String((p.payload as { signedTxBlob: string }).signedTxBlob);
+    for (const a of selftestCmds(up.sent)) {
+      for (const x of a) {
+        expect(x.includes(XRPL_PAYER) || x.includes(accept.payTo) || x.includes(blob.slice(0, 40)) || x.includes(hashOf(p))).toBe(false);
+        expect(x === "SET" || x === "GET" || x === "EVAL" || x === "PX" || x === "60000" || x === "1" || x === CAS_DELETE_SCRIPT || /^[0-9a-f]{32}(:wrong)?$/.test(x) || /^hp:selftest:xrpl-replay-eval:[0-9a-f]{32}$/.test(x)).toBe(true);
+      }
+    }
+  });
+
+  const isEval = (a: UpCmd) => a[0] === "EVAL" && a[1] === EVAL_PROBE_SCRIPT;
+  const isSet = (a: UpCmd) => a[0] === "SET" && a[1].startsWith("hp:selftest:");
+  const isWrongDel = (a: UpCmd) => a[0] === "EVAL" && a[1] === CAS_DELETE_SCRIPT && a[3].startsWith("hp:selftest:") && a[4].endsWith(":wrong");
+  const isRightDel = (a: UpCmd) => a[0] === "EVAL" && a[1] === CAS_DELETE_SCRIPT && a[3].startsWith("hp:selftest:") && !a[4].endsWith(":wrong");
+  const ok = (result: unknown) => ({ status: 200, body: { result } });
+  let gets = 0;
+  const cases: [string, string, (a: UpCmd, data: Map<string, string>) => { status: number; body: unknown } | undefined][] = [
+    ["EVAL answers 0", "eval_result", (a) => (isEval(a) ? ok(0) : undefined)],
+    ["EVAL errors", "Error", (a) => (isEval(a) ? { status: 200, body: { error: "ERR unknown command 'EVAL'" } } : undefined)],
+    ["SET not OK", "selftest_set", (a) => (isSet(a) ? ok(null) : undefined)],
+    ["SET HTTP failure", "Error", (a) => (isSet(a) ? { status: 500, body: {} } : undefined)],
+    ["wrong-value CAS_DELETE deletes (answers 1)", "selftest_wrong_value_deleted", (a, d) => (isWrongDel(a) ? (d.delete(a[3]), ok(1)) : undefined)],
+    ["wrong-value CAS_DELETE answers junk", "selftest_wrong_value_deleted", (a) => (isWrongDel(a) ? ok("x") : undefined)],
+    ["value changed after the wrong-value delete", "selftest_value_changed", (a) => (a[0] === "GET" && a[1].startsWith("hp:selftest:") && ++gets === 1 ? ok("other") : undefined)],
+    ["right-value CAS_DELETE does not delete", "selftest_delete_failed", (a) => (isRightDel(a) ? ok(0) : undefined)],
+    ["key still there after the right-value delete", "selftest_not_deleted", (a, d) => (isRightDel(a) ? ok(1) : undefined)],
+    ["GET errors", "Error", (a) => (a[0] === "GET" && a[1].startsWith("hp:selftest:") ? { status: 200, body: { error: "ERR" } } : undefined)],
+  ];
+  for (const [label, reason, fault] of cases) {
+    it(`${label} → unavailable, fail closed (XRPL off the 402, XRPL payment → Base-only 402 rail_unavailable, nothing claimed), HIGH ALERT once, reason ${reason}`, async () => {
+      gets = 0;
+      const data = new Map<string, string>();
+      const up = fakeUpstash((a) => fault(a, data), data);
+      const s = new UpstashReplayStore("https://x.upstash.io", "t", up.fetchFn);
+      const accept = await xrplAccept(); // the entry a buyer saw before the probe ran (default store)
+      setXrplReplayStoreForTests(s);
+      expect(await xrplIn402()).toBe(false);
+      expect(await xrplIn402()).toBe(false);
+      expect(await xrplReplayEvalStatus()).toBe("unavailable");
+      expect(evalAlerts()).toEqual([{ kind: "xrpl_replay_eval_unavailable", severity: "high", reason }]);
+      const probesSent = up.sent.filter(isEval).length;
+      expect(probesSent).toBe(1); // failure cached, single probe
+      const res = await handler()(paid(xrplPayload(accept)));
+      expect(res.status).toBe(402);
+      const pr = decodePaymentRequiredHeader(res.headers.get("payment-required")!);
+      expect(pr.error).toBe("rail_unavailable");
+      expect(pr.accepts.some((a) => a.network === "xrpl:0")).toBe(false);
+      expect(settleCalls).toBe(0);
+      expect(ran).toBe(0);
+      expect(up.sent.some((a) => a.some((x) => x.startsWith("hp:xrpl:replay:")))).toBe(false); // never claimed
+      if (reason.startsWith("selftest_")) await expect(new UpstashReplayStore("https://x.upstash.io", "t", fakeUpstash((a) => (gets = 0, fault(a, data)), data).fetchFn).probeEval()).rejects.toBeInstanceOf(ReplaySelfTestError);
+    });
+  }
+
+  it("the whole probe is bounded: a hung self-test → unavailable after XRPL_EVAL_PROBE_DEADLINE_MS (3 s), reason timeout, fail closed", async () => {
+    expect(XRPL_EVAL_PROBE_DEADLINE_MS).toBe(3_000);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    setXrplReplayStoreForTests({ ...new MemoryReplayStore(), kind: "upstash", claim: async () => null, set: async () => {}, release: async () => {}, probeEval: () => new Promise<void>(() => {}) } as never);
+    const p = xrplReplayEvalOk();
+    await vi.advanceTimersByTimeAsync(XRPL_EVAL_PROBE_DEADLINE_MS - 10);
+    let settled = false;
+    void p.then(() => (settled = true));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(20);
+    expect(await p).toBe(false);
+    expect(evalAlerts()).toEqual([{ kind: "xrpl_replay_eval_unavailable", severity: "high", reason: "timeout" }]);
+  });
+
+  it("concurrent instances sharing ONE Upstash: interleaved probes never break each other (own random key + CAS on own value)", async () => {
+    const data = new Map<string, string>();
+    // Interleave: every command waits a tick so the two probes alternate on the shared data.
+    const base = fakeUpstash(undefined, data);
+    const slow = (async (u: string, init: RequestInit) => {
+      await new Promise((r) => setTimeout(r, Math.random() * 3));
+      return base.fetchFn(u, init);
+    }) as unknown as typeof fetch;
+    const a = new UpstashReplayStore("https://x.upstash.io", "t", slow);
+    const b = new UpstashReplayStore("https://x.upstash.io", "t", slow);
+    await expect(Promise.all([a.probeEval(), b.probeEval(), a.probeEval(), b.probeEval()])).resolves.toBeDefined();
+    const keys = new Set(base.sent.filter((x) => x[0] === "SET").map((x) => x[1]));
+    expect(keys.size).toBe(4); // each probe its own key
+    expect(data.size).toBe(0);
   });
 });

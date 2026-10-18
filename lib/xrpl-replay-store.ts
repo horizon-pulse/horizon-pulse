@@ -105,7 +105,10 @@ export interface ReplayStore {
   /** Atomic compare-and-DELETE: remove the key only if its value is exactly `expected` (one Lua script on Upstash). */
   casDelete?(key: string, expected: string): Promise<boolean>;
   /**
-   * Shared stores only: run a trivial server-side script (`EVAL "return 1" 0`) and throw unless it answers 1.
+   * Shared stores only: run a trivial server-side script (`EVAL "return 1" 0`) and throw unless it answers 1, then
+   * the replay-store self-test (Odin 12:28): SET a random value on a throwaway hp:selftest: key (60 s TTL),
+   * CAS_DELETE_SCRIPT with a WRONG value must not delete (value still there), CAS_DELETE_SCRIPT with the RIGHT value
+   * must delete (key gone). Throws ReplaySelfTestError(step) on the first failing step. Uses no request input.
    * cas depends on EVAL; the rail treats a failing probe as the XRPL rail confirmed absent (Odin 11:44 (e)).
    */
   probeEval?(): Promise<void>;
@@ -194,6 +197,36 @@ export const CAS_DELETE_SCRIPT = "if redis.call('GET', KEYS[1]) == ARGV[1] then 
 /** The trivial script probeEval runs: no keys, no data, answers 1. */
 export const EVAL_PROBE_SCRIPT = "return 1";
 
+/**
+ * Self-test key (Odin 12:28): fixed `hp:selftest:` prefix, OUTSIDE the replay prefix, plus this probe's own random
+ * id. A fully fixed key would race between instances (B's SET overwrites A's value → A's "still there" check and
+ * A's right-value delete fail spuriously; A's right-value delete could never remove B's value, but A would report
+ * unavailable). With the random id each probe owns its key, so concurrent instances never touch each other's key;
+ * the random VALUE + CAS still guarantees a delete only ever removes the exact value this probe wrote. 60 s TTL
+ * bounds any leftover from a probe that died mid-way.
+ */
+export const SELFTEST_KEY_PREFIX = "hp:selftest:xrpl-replay-eval:";
+export const SELFTEST_TTL_MS = 60_000;
+export type ReplaySelfTestStep =
+  | "eval_result"
+  | "selftest_set"
+  | "selftest_wrong_value_deleted"
+  | "selftest_value_changed"
+  | "selftest_delete_failed"
+  | "selftest_not_deleted";
+/** A failed probe step; `step` is a fixed reason code (safe to log / alert). */
+export class ReplaySelfTestError extends Error {
+  override name = "ReplaySelfTestError";
+  constructor(readonly step: ReplaySelfTestStep) {
+    super(`replay store self-test failed: ${step}`);
+  }
+}
+const hex = (bytes: number): string => {
+  const a = new Uint8Array(bytes);
+  globalThis.crypto.getRandomValues(a);
+  return Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
+};
+
 export class UpstashReplayStore implements ReplayStore {
   readonly kind = "upstash" as const;
   constructor(
@@ -258,7 +291,18 @@ export class UpstashReplayStore implements ReplayStore {
   }
   async probeEval(): Promise<void> {
     const r = await this.cmd(["EVAL", EVAL_PROBE_SCRIPT, 0]);
-    if (r !== 1 && r !== "1") throw new Error("upstash EVAL probe: unexpected result");
+    if (r !== 1 && r !== "1") throw new ReplaySelfTestError("eval_result");
+    // Self-test (Odin 12:28): random id + random value, no request input; raw key (not the replay prefix).
+    const key = SELFTEST_KEY_PREFIX + hex(16);
+    const value = hex(16);
+    const wrong = `${value}:wrong`; // never equal to `value`
+    const one = (x: unknown) => x === 1 || x === "1";
+    if ((await this.cmd(["SET", key, value, "PX", SELFTEST_TTL_MS])) !== "OK") throw new ReplaySelfTestError("selftest_set");
+    const w = await this.cmd(["EVAL", CAS_DELETE_SCRIPT, 1, key, wrong]);
+    if (w !== 0 && w !== "0") throw new ReplaySelfTestError("selftest_wrong_value_deleted"); // must answer exactly 0
+    if ((await this.cmd(["GET", key])) !== value) throw new ReplaySelfTestError("selftest_value_changed");
+    if (!one(await this.cmd(["EVAL", CAS_DELETE_SCRIPT, 1, key, value]))) throw new ReplaySelfTestError("selftest_delete_failed");
+    if ((await this.cmd(["GET", key])) !== null) throw new ReplaySelfTestError("selftest_not_deleted");
   }
   async release(key: string): Promise<void> {
     await this.cmd(["DEL", this.prefix + key]);
