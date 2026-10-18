@@ -173,6 +173,8 @@ export function isValidSolanaPubkey(value: unknown): value is string {
 type Env = Record<string, string | undefined>;
 
 const DEFAULT_INIT_TIMEOUT_MS = 2500;
+/** Default per-call init/RPC timeout (HP_SOLANA_INIT_TIMEOUT_MS unset); used by the Solana time-budget test. */
+export const SOLANA_DEFAULT_INIT_TIMEOUT_MS = DEFAULT_INIT_TIMEOUT_MS;
 
 function off(reason: string, misconfigured: boolean): SolanaConfigResult {
   return { enabled: false, reason, misconfigured };

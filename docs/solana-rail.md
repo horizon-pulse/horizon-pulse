@@ -95,6 +95,23 @@ code change + owner approval; env can only turn the rail on/off.
 | settle, **ambiguous** | malformed response, transport error (`fetch failed`), `SettleError` 5xx/429/409, `settlement_pending`, `duplicate_settlement`, or `success:false` carrying a tx signature | **502** `{"error":"settlement_unconfirmed"}` |
 | settle | success | the paid response + PAYMENT-RESPONSE |
 
+**Ambiguous settle → on-chain check (v2 + delta 1, Odin 12:31 PM ET 10/18).** Before answering an ambiguous settle
+(other than `duplicate_settlement`), a bounded (4 s) read-only search looks for OUR payment:
+- **Binding (S2):** each candidate is fetched with `encoding:"base64"`. Its MESSAGE bytes must equal exactly the message
+  we verified, and the signature in the buyer's slot must equal the buyer's signature in our payload. Candidates are
+  PayAI's signature (only a lookup hint: accepted only once it passes that binding) plus the recent payTo-ATA history
+  with slot > the start slot. The payer in PAYMENT-RESPONSE is the account key of the buyer's slot in OUR message.
+- **Freshness by chain slot (S1):** `getSlot` (confirmed) is read at request start, in parallel with init and capped at
+  min(init, 1.5 s), before verify and settle. Bound tx at slot > start slot → deliver (confirmed). Slot ≤ start slot →
+  409. No start slot → 502/504. Wall-clock block time is not used on this path.
+- **`duplicate_settlement` (S1):** never searched, never delivered: main's 502.
+- **Failed on-chain:** the terminal Base-only 402 needs `meta.err` at confirmed AND at **finalized**. Otherwise 502/504.
+- **Reconcile:** every 502/504/409 from this path logs `[solana-rail] SOLANA_RECONCILE {status, reason, fp, payer, amount,
+  asset, payTo, buyerSignature[, txid]}` (public chain data only) for manual refunds.
+- **Time budget:** worst case 2.5 + 10 + 12 + 4 = 28.5 s (SOLANA_WORST_CASE_MS). Every route whose import graph reaches
+  lib/solana-rail.ts (route.ts and dark route.<flag>.ts) needs maxDuration ≥ that + 20 s. route.inj.ts was raised
+  30 → 60 s. /mcp (30 s) is exempt: its payment path is the Base-only @x402/mcp wrapper (tests/solana-time-budget.test.ts).
+
 No PayAI text ever reaches the client (the SDK's own 502 `{"error":"<facilitator
 message>"}` is never passed through). Server logs carry the reason code and, for an
 unconfirmed settle, a 16-hex fingerprint of the payment key (`fp=`) for on-chain
