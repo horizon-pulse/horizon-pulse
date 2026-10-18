@@ -1,4 +1,5 @@
 import { buildSkillMarkdown } from "@/lib/agent-skill";
+import { freeTierMode, skillWithFreeTier } from "@/lib/free-tier";
 
 /**
  * GET /skill.md — agent skill (plain markdown with name/description front
@@ -9,7 +10,9 @@ import { buildSkillMarkdown } from "@/lib/agent-skill";
 export const dynamic = "force-static";
 
 export function GET(): Response {
-  return new Response(buildSkillMarkdown(), {
+  const md = buildSkillMarkdown();
+  // HP_FREE_TIER=optin appends the free-tier section; off -> byte-identical.
+  return new Response(freeTierMode() === "optin" ? skillWithFreeTier(md) : md, {
     headers: {
       "Content-Type": "text/markdown; charset=utf-8",
       "Access-Control-Allow-Origin": "*",

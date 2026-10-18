@@ -9,6 +9,7 @@ import {
   DEFAULT_PAY_TO,
 } from "@/lib/config";
 import { SOLANA_MAINNET_CAIP2, SOLANA_PAYTO } from "@/lib/solana-config";
+import { freeTierMode, wellKnownFreeTier } from "@/lib/free-tier";
 
 /**
  * GET /.well-known/x402 — x402 discovery fan-out (compatibility path).
@@ -33,13 +34,15 @@ function buildResources(): string[] {
 }
 
 export function GET(): NextResponse {
+  const doc = {
+    version: 1,
+    resources: buildResources(),
+    description: DISCOVERY_DESCRIPTION,
+    instructions: `x402 v2, scheme exact, USDC on Base mainnet (${BASE_CAIP2}, Coinbase CDP facilitator) or Solana mainnet (${SOLANA_MAINNET_CAIP2}, PayAI facilitator), or RLUSD on the XRP Ledger mainnet (xrpl:0, issuer rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De, verified on the validated ledger), or USDC on Polygon PoS mainnet (eip155:137, native USDC 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359, Coinbase CDP facilitator), same price on every network. Unpaid requests return HTTP 402 with a PAYMENT-REQUIRED header listing one accepts entry per network; pay exactly one and retry with PAYMENT-SIGNATURE. payTo: Base ${DEFAULT_PAY_TO} (Basename ${BASE_PAY_TO_BASENAME}, a label for that address; compare the hex payTo in the challenge), Solana ${SOLANA_PAYTO}, XRP Ledger r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf, Polygon ${DEFAULT_PAY_TO} (same address as Base). Full schemas: ${PUBLIC_BASE_URL}/openapi.json and ${PUBLIC_BASE_URL}/llms.txt. Agent skill (step-by-step pay flow): ${PUBLIC_BASE_URL}/skill.md. MCP setup: ${PUBLIC_BASE_URL}/agents. Contact: ${CONTACT_EMAIL}.`,
+  };
+  // Free daily cap (lib/free-tier.ts): HP_FREE_TIER=optin adds the copy + a freeTier block; off -> `doc` unchanged.
   return NextResponse.json(
-    {
-      version: 1,
-      resources: buildResources(),
-      description: DISCOVERY_DESCRIPTION,
-      instructions: `x402 v2, scheme exact, USDC on Base mainnet (${BASE_CAIP2}, Coinbase CDP facilitator) or Solana mainnet (${SOLANA_MAINNET_CAIP2}, PayAI facilitator), or RLUSD on the XRP Ledger mainnet (xrpl:0, issuer rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De, verified on the validated ledger), or USDC on Polygon PoS mainnet (eip155:137, native USDC 0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359, Coinbase CDP facilitator), same price on every network. Unpaid requests return HTTP 402 with a PAYMENT-REQUIRED header listing one accepts entry per network; pay exactly one and retry with PAYMENT-SIGNATURE. payTo: Base ${DEFAULT_PAY_TO} (Basename ${BASE_PAY_TO_BASENAME}, a label for that address; compare the hex payTo in the challenge), Solana ${SOLANA_PAYTO}, XRP Ledger r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf, Polygon ${DEFAULT_PAY_TO} (same address as Base). Full schemas: ${PUBLIC_BASE_URL}/openapi.json and ${PUBLIC_BASE_URL}/llms.txt. Agent skill (step-by-step pay flow): ${PUBLIC_BASE_URL}/skill.md. MCP setup: ${PUBLIC_BASE_URL}/agents. Contact: ${CONTACT_EMAIL}.`,
-    },
+    freeTierMode() === "optin" ? wellKnownFreeTier(doc) : doc,
     {
       headers: {
         "Access-Control-Allow-Origin": "*",

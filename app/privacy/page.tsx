@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
-import { ROUTE_LOG_PRIVACY_LINE } from "@/lib/privacy-copy";
+import { privacyLine } from "@/lib/privacy-copy";
 
 export const dynamic = "force-static";
 
@@ -19,7 +19,7 @@ export default function PrivacyPage() {
         <section className="hp-section">
           <div className="hp-wrap">
             <h1>Privacy</h1>
-            <p id="route-log">{ROUTE_LOG_PRIVACY_LINE}</p>
+            <p id="route-log">{privacyLine()}</p>
           </div>
         </section>
       </main>
