@@ -1,0 +1,65 @@
+import { describe, expect, it } from "vitest";
+import fixture from "./fixtures/prem2-brief-results.json";
+import { compile, isOpinion, isSelfContained, isSyndicated, MIN_INDEPENDENT_DOMAINS, UNCONFIRMED_EMPTY_NOTE } from "@/lib/premium/research";
+import { tierFor } from "@/lib/premium/tiers";
+
+const brief = tierFor("research" as never, "brief")!;
+const clone = () => JSON.parse(JSON.stringify(fixture));
+const r = (url: string, title: string, excerpts: string[]) => ({ url, title, publish_date: null, excerpts });
+
+describe("brief quality (Odin 10/19, fixture from prem2-redeem.json)", () => {
+  it("fixture: >=3 distinct domains quoted, <=2 claims per domain, no opinion, no dangling pronoun, unconfirmed section present", () => {
+    const out: any = compile(brief, "USDC on Base overview", clone(), "2026-10-19T21:25:19.594Z");
+    const doms = out.snippets.map((s: any) => out.sources[s.source - 1].domain);
+    expect(new Set(doms).size).toBeGreaterThanOrEqual(MIN_INDEPENDENT_DOMAINS);
+    for (const d of new Set(doms)) expect(doms.filter((x: string) => x === d).length).toBeLessThanOrEqual(2);
+    for (const c of out.claims) {
+      expect(isOpinion(c.claim)).toBe(false);
+      expect(c.claim).not.toMatch(/^(It|This|They)\b/);
+    }
+    expect(JSON.stringify(out.claims)).not.toContain("best default");
+    expect(Array.isArray(out.could_not_confirm)).toBe(true);
+    expect(typeof out.could_not_confirm_note).toBe("string");
+    expect(out.coverage_note).toBeUndefined();
+  });
+  it("syndication: Business Wire + Morningstar copy of the same release count as one source and the copy is never quoted", () => {
+    const out: any = compile(brief, "USDC on Base overview", clone());
+    const ms = out.sources.find((s: any) => s.domain === "morningstar.com");
+    const bw = out.sources.find((s: any) => s.domain === "businesswire.com");
+    expect(ms.syndicated_copy_of).toBe(bw.n);
+    expect(out.snippets.some((s: any) => s.source === ms.n)).toBe(false);
+    expect(out.independent_domains.domains).not.toContain("morningstar.com");
+    // also by near-identical title alone (no shared wire id)
+    expect(isSyndicated(r("https://a.example/x", "Acme Raises $10M Series A to Expand Payments Network", ["x"]), r("https://b.example/y", "Acme Raises $10M Series A to Expand Payments Network | Yahoo Finance", ["y"]))).toBe(true);
+    expect(isSyndicated(r("https://a.example/x", "Acme Raises $10M Series A", ["x"]), r("https://b.example/y", "Base Fees Fall After Upgrade", ["y"]))).toBe(false);
+  });
+  it("opinion filter", () => {
+    expect(isOpinion("For most everyday USDC use cases, Base is the best default.")).toBe(true);
+    expect(isOpinion("The core pitch is simple: Ethereum's security at a fraction of the cost.")).toBe(true);
+    expect(isOpinion("Transaction fees on Base are typically under a penny, and confirmations take about two seconds.")).toBe(false);
+  });
+  it("pronoun fix: claims led by It/This/They are dropped (extractive: never rewritten)", () => {
+    expect(isSelfContained("It launched in August 2023 and has grown fast.")).toBe(false);
+    expect(isSelfContained("This makes it ideal for payments today.")).toBe(false);
+    expect(isSelfContained("They settle in about two seconds on Base.")).toBe(false);
+    expect(isSelfContained("Itself aside, Base launched in August 2023.")).toBe(true);
+    expect(isSelfContained("Base launched in August 2023 as an Ethereum L2.")).toBe(true);
+  });
+  it("unconfirmed section is always present, with an explicit note when empty", () => {
+    const out: any = compile(brief, "q", [r("https://a.example/1", "A one", ["Base fees are under one cent per transfer on average."]), r("https://b.example/2", "B two", ["Base fees are under one cent per transfer on average."]), r("https://c.example/3", "C three", ["Base fees are under one cent per transfer on average today."])]);
+    expect(out.could_not_confirm).toEqual([]);
+    expect(out.could_not_confirm_note).toBe(UNCONFIRMED_EMPTY_NOTE);
+    const empty: any = compile(brief, "q", []);
+    expect(empty.could_not_confirm).toEqual([]);
+    expect(empty.could_not_confirm_note).toBe(UNCONFIRMED_EMPTY_NOTE);
+  });
+  it("fewer than 3 independent domains -> plain shortfall note, no padding", () => {
+    const out: any = compile(brief, "q", [
+      r("https://usdc.org/a", "One", ["Base is an Ethereum Layer 2 network built by Coinbase.", "Fees on Base are usually under one cent per transfer.", "USDC on Base is issued natively by Circle today."]),
+      r("https://help.coinbase.com/b", "Two", ["Coinbase accounts can send USDC on Base without network fees."]),
+    ]);
+    expect(out.independent_domains.found).toBe(2);
+    expect(out.coverage_note).toMatch(/Only 2 independent domains/);
+    expect(out.snippets.filter((s: any) => s.source === 1).length).toBeLessThanOrEqual(2);
+  });
+});
