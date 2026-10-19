@@ -2,8 +2,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  ALERT_LIST_CAP, alertEntry, countKey, flushAlertPersistForTests, listKey, persistAlert, readAlertSummary,
-  setAlertPersistForTests, truncateAddress,
+  ALERT_LIST_CAP, ALERT_STATUS_CACHE_S, alertEntry, cachedAlertSummary, countKey, flushAlertPersistForTests, listKey, persistAlert, readAlertSummary,
+  resetAlertSummaryCacheForTests, setAlertPersistForTests, truncateAddress,
 } from "@/lib/alert-persist";
 import { AlertCounts } from "@/components/AlertCounts";
 import { setXrplAlertHook } from "@/lib/xrpl-rail";
@@ -35,6 +35,7 @@ function fakeUpstash() {
 
 afterEach(() => {
   setAlertPersistForTests(null);
+  resetAlertSummaryCacheForTests();
   setXrplAlertHook(null);
   setSolanaAlertHook(null);
   vi.restoreAllMocks();
@@ -131,24 +132,50 @@ describe("alert persistence", () => {
     expect(u.f).not.toHaveBeenCalled();
   });
 
-  it("/status: readAlertSummary + AlertCounts render today / 7 d / last alert; no secrets", async () => {
+  it("/status: counts only (today / 7 d); markup has no alert code, timestamp, route, payer or secret", async () => {
     const u = fakeUpstash();
     setAlertPersistForTests({ fetch: u.f as never, env: ENV });
-    persistAlert("xrpl", { kind: "xrpl_settle_hash_mismatch", severity: "high" });
+    persistAlert("xrpl", { kind: "xrpl_settle_hash_mismatch", severity: "high", route: "/api/pulse" });
     persistAlert("xrpl", { kind: "xrpl_redeem_fingerprint_mismatch", severity: "high" });
     persistAlert("solana", { kind: "solana_reconcile", payer: "FC5VNJ3x3DpYkYrvK4LQonJdFv6wWwXSm59JhWQN8BAa" });
     await flushAlertPersistForTests();
     const old = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
     u.kv.set(countKey("xrpl", old), 4);
     const s = await readAlertSummary();
-    expect(s.status).toBe("ok");
-    expect(s.xrpl).toMatchObject({ today: 2, last7d: 6, lastCode: "xrpl_redeem_fingerprint_mismatch" });
-    expect(s.solana).toMatchObject({ today: 1, last7d: 1, lastCode: "solana_reconcile" });
+    expect(s).toEqual({ status: "ok", xrpl: { today: 2, last7d: 6 }, solana: { today: 1, last7d: 1 } });
     const html = renderToStaticMarkup(AlertCounts({ a: s }));
     expect(html).toContain('data-hp-alerts="ok"');
-    expect(html).toMatch(/data-hp-alert-rail="XRPL".*?>2<.*?>6<.*?xrpl_redeem_fingerprint_mismatch/);
-    expect(html).not.toMatch(/fake\.example|tok|FC5VNJ/);
+    expect(html).toMatch(/data-hp-alert-rail="XRPL".*?>2<.*?>6</);
+    expect(html).not.toMatch(/xrpl_|solana_|reconcile|mismatch|severity|high/i); // no alert code
+    expect(html).not.toMatch(/\d{4}-\d{2}-\d{2}|\d{2}:\d{2}|UTC \d|T\d{2}:/); // no timestamp
+    expect(html).not.toMatch(/\/api\/|route/i); // no route
+    expect(html).not.toMatch(/fake\.example|tok|FC5VNJ|8BAa/);
     const na = renderToStaticMarkup(AlertCounts({ a: { status: "not_applicable", xrpl: null, solana: null } }));
     expect(na).toContain("not recorded on this deployment");
+  });
+
+  it("cached read: repeated /status renders within the 300 s TTL make exactly ONE Upstash fetch; refetch after TTL", async () => {
+    const u = fakeUpstash();
+    setAlertPersistForTests({ fetch: u.f as never, env: ENV });
+    resetAlertSummaryCacheForTests({ disableNextCache: true });
+    expect(ALERT_STATUS_CACHE_S).toBeGreaterThanOrEqual(300);
+    const t0 = 1_800_000_000_000;
+    const rs = await Promise.all(Array.from({ length: 50 }, (_, i) => cachedAlertSummary(t0 + i * 1000))); // concurrent + spread over 49 s
+    for (let i = 0; i < 20; i++) await cachedAlertSummary(t0 + 299_000);
+    expect(u.f).toHaveBeenCalledTimes(1);
+    expect(rs.every((r) => r.status === "ok")).toBe(true);
+    await cachedAlertSummary(t0 + 300_000);
+    expect(u.f).toHaveBeenCalledTimes(2);
+  });
+
+  it("cached read: the real page path (Next cache unavailable outside a request) still makes one fetch per TTL, never throws", async () => {
+    const u = fakeUpstash();
+    setAlertPersistForTests({ fetch: u.f as never, env: ENV });
+    const t0 = 1_800_000_000_000;
+    for (let i = 0; i < 30; i++) expect((await cachedAlertSummary(t0 + i)).status).toBe("ok");
+    expect(u.f).toHaveBeenCalledTimes(1);
+    setAlertPersistForTests({ fetch: (async () => { throw new Error("boom token"); }) as never, env: ENV });
+    resetAlertSummaryCacheForTests({ disableNextCache: true });
+    await expect(cachedAlertSummary(t0)).resolves.toEqual({ status: "unavailable", xrpl: null, solana: null });
   });
 });

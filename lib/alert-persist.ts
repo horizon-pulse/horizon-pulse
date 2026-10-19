@@ -10,6 +10,7 @@
  *     the payment path, never throws, never delays a response.
  *   - Credentials: the app's existing server env via resolveSharedReplayStoreEnv (the claim store's read-write creds).
  *     KV_REST_API_READ_ONLY_TOKEN is never read.
+ *   - /status shows counts only (today, last 7 days), cached 300 s (cachedAlertSummary).
  *   - Preview isolation: writes (and /status reads) only when VERCEL_ENV is unset (local/tests) or "production".
  *     Previews would otherwise resolve to the prod Upstash and pollute the prod lists.
  */
@@ -29,6 +30,7 @@ let fetchOverride: FetchFn | null = null;
 let envOverride: Env | null = null;
 /** Tests only. */
 export function setAlertPersistForTests(o: { fetch?: FetchFn | null; env?: Env | null } | null): void {
+  memo = null;
   fetchOverride = o?.fetch ?? null;
   envOverride = o?.env ?? null;
 }
@@ -119,40 +121,74 @@ export function persistAlert(rail: AlertRail, alert: unknown): void {
   }
 }
 
-export type RailAlertSummary = { today: number; last7d: number; lastAt: string | null; lastCode: string | null };
+/** Public /status shape: counts only (Odin 9:16 AM AST CHANGES REQUIRED: no code, timestamp or route in public markup). */
+export type RailAlertSummary = { today: number; last7d: number };
 export type AlertSummary = { status: "ok" | "unavailable" | "not_applicable"; xrpl: RailAlertSummary | null; solana: RailAlertSummary | null };
 
-/** Server-side read for /status: counts (today + last 7 UTC days) and newest entry per rail. Never throws. */
+/** Uncached server-side read: today + last 7 UTC days per rail (one MGET pipeline, 800 ms bound). Never throws. */
 export async function readAlertSummary(now: Date = new Date()): Promise<AlertSummary> {
-  const c = creds();
-  if (!c) return { status: "not_applicable", xrpl: null, solana: null };
-  const days = Array.from({ length: 7 }, (_, i) => utcDay(new Date(now.getTime() - i * 86_400_000)));
-  const rails: AlertRail[] = ["xrpl", "solana"];
-  const cmds: (string | number)[][] = [];
-  for (const r of rails) {
-    cmds.push(["MGET", ...days.map((d) => countKey(r, d))]);
-    cmds.push(["LINDEX", listKey(r), 0]);
-  }
   try {
-    const out = await pipeline(c, cmds, ALERT_STATUS_TIMEOUT_MS);
+    const c = creds();
+    if (!c) return { status: "not_applicable", xrpl: null, solana: null };
+    const days = Array.from({ length: 7 }, (_, i) => utcDay(new Date(now.getTime() - i * 86_400_000)));
+    const rails: AlertRail[] = ["xrpl", "solana"];
+    const out = await pipeline(c, rails.map((r) => ["MGET", ...days.map((d) => countKey(r, d))]), ALERT_STATUS_TIMEOUT_MS);
     if (!out) return { status: "unavailable", xrpl: null, solana: null };
     const sum = (i: number): RailAlertSummary => {
-      const counts = (Array.isArray(out[i * 2]) ? (out[i * 2] as unknown[]) : []).map((v) => Number(v ?? 0) || 0);
-      let last: Partial<PersistedAlert> = {};
-      try {
-        if (typeof out[i * 2 + 1] === "string") last = JSON.parse(out[i * 2 + 1] as string);
-      } catch {
-        /* ignore */
-      }
-      return {
-        today: counts[0] ?? 0,
-        last7d: counts.reduce((a, b) => a + b, 0),
-        lastAt: typeof last.ts === "string" ? last.ts : null,
-        lastCode: typeof last.code === "string" ? last.code : null,
-      };
+      const counts = (Array.isArray(out[i]) ? (out[i] as unknown[]) : []).map((v) => Number(v ?? 0) || 0);
+      return { today: counts[0] ?? 0, last7d: counts.reduce((a, b) => a + b, 0) };
     };
     return { status: "ok", xrpl: sum(0), solana: sum(1) };
   } catch {
     return { status: "unavailable", xrpl: null, solana: null };
   }
+}
+
+/**
+ * /status read, cached so public traffic cannot burn the Upstash budget shared with the Solana claim store
+ * (Odin 9:16 AM AST): at most one Upstash read per ALERT_STATUS_CACHE_S.
+ *   - Next data cache (unstable_cache, revalidate 300 s, shared across instances on Vercel) when available;
+ *   - wrapped in a per-instance memory cache with the same TTL + single-flight, which also covers environments where
+ *     unstable_cache is unavailable (tests, scripts). A failed/unavailable result is cached too (bounded budget).
+ * /status itself stays force-dynamic, so its other content and meta (live balance, replay-eval fields) are unchanged.
+ * Never throws.
+ */
+export const ALERT_STATUS_CACHE_S = 300;
+let memo: { at: number; p: Promise<AlertSummary> } | null = null;
+let nextCacheRead: (() => Promise<AlertSummary>) | null | undefined;
+
+async function viaNextCache(): Promise<AlertSummary> {
+  if (nextCacheRead === undefined) {
+    try {
+      const { unstable_cache } = await import("next/cache");
+      nextCacheRead = unstable_cache(() => readAlertSummary(), ["hp-alert-counts-v1"], { revalidate: ALERT_STATUS_CACHE_S });
+    } catch {
+      nextCacheRead = null;
+    }
+  }
+  if (nextCacheRead) {
+    try {
+      return await nextCacheRead();
+    } catch {
+      /* outside a Next request context (no incremental cache): fall through to the direct read */
+    }
+  }
+  return readAlertSummary();
+}
+
+export function cachedAlertSummary(nowMs: number = Date.now()): Promise<AlertSummary> {
+  try {
+    if (memo && nowMs - memo.at < ALERT_STATUS_CACHE_S * 1000) return memo.p;
+    const p = viaNextCache().catch((): AlertSummary => ({ status: "unavailable", xrpl: null, solana: null }));
+    memo = { at: nowMs, p };
+    return p;
+  } catch {
+    return Promise.resolve({ status: "unavailable", xrpl: null, solana: null });
+  }
+}
+
+/** Tests only. */
+export function resetAlertSummaryCacheForTests(opts?: { disableNextCache?: boolean }): void {
+  memo = null;
+  nextCacheRead = opts?.disableNextCache ? null : undefined;
 }

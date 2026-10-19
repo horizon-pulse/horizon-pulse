@@ -8,7 +8,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { xrplReplayEvalStatus } from "@/lib/xrpl-rail";
 import { solanaReplayEvalStatus } from "@/lib/solana-rail";
-import { readAlertSummary } from "@/lib/alert-persist";
+import { cachedAlertSummary } from "@/lib/alert-persist";
 import { AlertCounts } from "@/components/AlertCounts";
 
 export const runtime = "nodejs";
@@ -58,7 +58,7 @@ export default async function StatusPage() {
   } catch (err) {
     bal = { ok: false, error: err instanceof Error ? err.message : "balance read failed" };
   }
-  const alerts = await readAlertSummary(); // never throws; 800 ms bound
+  const alerts = await cachedAlertSummary(); // counts only; cached 300 s; 800 ms bound; never throws
   const usdc = bal.ok ? Number(bal.usdc).toLocaleString("en-US", { maximumFractionDigits: 6 }) : "Unavailable";
 
   return (
