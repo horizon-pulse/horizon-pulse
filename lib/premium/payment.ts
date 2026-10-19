@@ -194,13 +194,22 @@ export function reasonCode(v: unknown): string {
   return typeof v === "string" && /^[a-z0-9_]{1,64}$/.test(v) ? v : "invalid_payment";
 }
 
+/** Non-secret facilitator error summary for logs: operation + HTTP status (or error class). Never the body or headers. */
+export function facilitatorErrorSummary(op: "verify" | "settle", e: unknown): string {
+  const m = e instanceof Error ? e.message : String(e);
+  const status = /\((\d{3})\)/.exec(m)?.[1] ?? null;
+  const kind = e instanceof Error ? e.name : typeof e;
+  return `[premium][facilitator] ${op} error ${status ? `http_${status}` : kind}${status === "401" || status === "403" ? " (CDP credentials rejected: check CDP_API_KEY_ID / CDP_API_KEY_SECRET for this environment)" : ""}`;
+}
+
 export type VerifyResult = { ok: true; payer: string | null } | { ok: false; kind: "invalid"; reason: string } | { ok: false; kind: "error" };
 export async function verifyPayment(d: Decoded, x: Tier): Promise<VerifyResult> {
   try {
     const r: any = await premiumVerifyClient().verify(d.raw, requirementFor(x) as never);
     if (r?.isValid === true) return { ok: true, payer: typeof r.payer === "string" ? r.payer : d.from };
     return { ok: false, kind: "invalid", reason: reasonCode(r?.invalidReason) };
-  } catch {
+  } catch (e) {
+    console.error(facilitatorErrorSummary("verify", e));
     return { ok: false, kind: "error" };
   }
 }
@@ -215,6 +224,7 @@ export async function settlePayment(d: Decoded, x: Tier): Promise<SettleResult> 
     if (r?.success === true && tx) return { ok: true, tx, payer: typeof r.payer === "string" ? r.payer : d.from, header: encodePaymentResponseHeader(r) };
     return { ok: false, kind: "ambiguous", tx };
   } catch (e) {
+    console.error(facilitatorErrorSummary("settle", e));
     const t = getFacilitatorResponseError(e);
     const isTimeout = t instanceof FacilitatorTimeoutError || (e instanceof Error && /abort|timeout/i.test(`${e.name} ${e.message}`));
     return { ok: false, kind: isTimeout ? "timeout" : "ambiguous", tx: null };

@@ -594,3 +594,23 @@ describe("copy (Counsel v3.2)", () => {
     expect(all).toContain("at most 12 months");
   });
 });
+
+describe("facilitator error diagnostics (Preview 503 root cause, 10/19)", () => {
+  it("verify 401 -> 503 facilitator_unavailable, uncharged, and a non-secret log line naming http_401 + the CDP env names", async () => {
+    on();
+    fac = installFacilitatorMock({ verify: () => { throw new Error("Facilitator verify failed (401): Unauthorized"); } });
+    const r = await call("brief", input("brief"), { "payment-signature": await payment() });
+    expect(r.status).toBe(503);
+    expect(((await r.json()) as any).charged).toBe(false);
+    const line = errors.find((l) => l.includes("[premium][facilitator] verify error"));
+    expect(line).toContain("http_401");
+    expect(line).toContain("CDP_API_KEY_ID");
+    expect(line).not.toContain("test-key-secret");
+    expect(line).not.toContain("test-key-id");
+  });
+  it("summary never includes the facilitator message body", async () => {
+    const { facilitatorErrorSummary } = await import("@/lib/premium/payment");
+    expect(facilitatorErrorSummary("settle", new Error("Facilitator settle failed (500): secret-ish body text"))).toBe("[premium][facilitator] settle error http_500");
+    expect(facilitatorErrorSummary("verify", new TypeError("fetch failed"))).toBe("[premium][facilitator] verify error TypeError");
+  });
+});
