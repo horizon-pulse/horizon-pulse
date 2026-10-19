@@ -22,7 +22,7 @@ const pr = (c: Captured) => decodePaymentRequiredHeader(header(c)!);
 /** main's per-route Base prices (atomic USDC) — must be matched exactly on Solana. */
 const MAIN_PRICES: Record<string, string> = {
   pulse: "2000", signals: "5000", yield: "20000", portfolio: "40000", gas: "2000", funding: "3000",
-  fetch: "20000", http: "10000", extract: "15000", "x402-check": "10000", "bazaar-check": "10000", screenshot: "20000",
+  fetch: "20000", http: "10000", extract: "15000", "x402-check": "10000", "x402-check/deep": "30000", "bazaar-check": "10000", screenshot: "20000",
   search: "30000", pdf: "20000",
   // market-mvp: new routes, priced like every route (same atomic amount on both rails).
   "market/search": "5000", "market/quote": "5000",
@@ -113,7 +113,7 @@ describe("flag on", () => {
         checked++;
       }
     }
-    expect(checked).toBe(170); // 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local) + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient + 18 wave-1 (3 GET routes x 6: chain/head, token/meta, name/resolve)
+    expect(checked).toBe(176); // + 6 x402-check/deep (GET json/browser, OPTIONS x cdp/local; 2026-10-19) + 88 on main + 12 market-mvp (2 routes x GET json/browser/OPTIONS x cdp/local) + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient + 18 wave-1 (3 GET routes x 6: chain/head, token/meta, name/resolve)
     expect(JSON.stringify(all.cdp)).not.toBe(JSON.stringify(golden.cdp));
   });
 

@@ -115,6 +115,8 @@ export type Check = { id: "expected_match" | "ofac_sdn" | "account_age" | "scam_
 
 /** Body after the chain prefix, used for the first/last-4 lookalike comparison. */
 const body = (chain: Chain, a: string) => (chain === "base" || chain === "polygon" ? a.slice(2).toLowerCase() : chain === "xrpl" ? a.slice(1) : a);
+/** The comparable part of an address (EVM: no 0x, lowercased; XRPL: no leading r). Shared with lib/x402-check-deep lookalike. */
+export const addressBody = body;
 
 export function expectedMatch(chain: Chain, to: string, expected?: string): Check {
   if (!expected) return { id: "expected_match", result: "skipped", detail: "No expected address given." };

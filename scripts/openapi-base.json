@@ -458,6 +458,55 @@
         }
       }
     },
+    "/api/x402-check/deep": {
+      "get": {
+        "summary": "Deep check of an x402 endpoint (TLS, CORS, payTo vs published, drift)",
+        "description": "$0.03 USDC x402. Everything /api/x402-check returns (one unpaid probe, decoded accepts, payTo EOA vs contract on Base/Ethereum), plus live black-box checks: TLS handshake (trust, expiry), security headers, CORS as served (PAYMENT-REQUIRED exposed), each payTo compared with the payee's own published addresses (/.well-known/x402, openapi.json, llms.txt), lookalike payTo detection (same leading and trailing characters, different middle), and drift between the live 402 and the well-known, openapi and CDP Bazaar listings. Never pays or signs. SSRF-safe at every hop. Any HTTP answer from the target is a billed report; bad input, blocked hosts, DNS/connection failures and timeouts return 400/502/504 and are not charged.",
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "description": "Absolute http(s) URL of the x402 endpoint to check"
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST"
+              ],
+              "default": "GET"
+            },
+            "description": "Method for the unpaid probe"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: deep check report JSON"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Missing, bad, or blocked URL / method (not charged)"
+          },
+          "502": {
+            "description": "Target unreachable or too many redirects (not charged)"
+          },
+          "504": {
+            "description": "Target timeout (not charged)"
+          }
+        }
+      }
+    },
     "/api/bazaar-check": {
       "get": {
         "responses": {

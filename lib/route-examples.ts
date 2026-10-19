@@ -75,6 +75,13 @@
  * (lib/demo-catalog.ts) against the live public RPCs: the same code path as
  * GET /api/demo/<route>. Untrimmed; no value was edited. Raw recordings:
  * /workspace/hp-tmp/utilities-wave1/rec-*.json (box only).
+ * 2026-10-19 (branch feat/x402-check-deep): /api/x402-check/deep recorded by running
+ * its handler on the demo's fixed input (url=https://horizonpulse.dev/api/pulse,
+ * method=GET) against live horizonpulse.dev and CDP discovery; nothing paid or
+ * signed. The box resolves every host to a 198.18/15 proxy address, so the
+ * recording harness stubbed the SSRF guard for that one fixed public host only
+ * (production keeps the guard). Only `methodology` dropped; no value edited.
+ * Raw: /workspace/hp-tmp/x402-deep/rec.json (box only).
  */
 
 export const EXAMPLES_RECORDED_AT = "2026-10-01T14:36Z" as const;
@@ -100,6 +107,7 @@ export const EXAMPLE_RECORDED_AT_BY_PATH: Record<string, string> = {
   "/api/chain/head": "2026-10-16T15:31Z",
   "/api/token/meta": "2026-10-16T15:31Z",
   "/api/name/resolve": "2026-10-16T15:31Z",
+  "/api/x402-check/deep": "2026-10-19T19:46Z",
 };
 
 export function exampleRecordedAt(path: string): string {
@@ -107,6 +115,296 @@ export function exampleRecordedAt(path: string): string {
 }
 
 export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
+  "/api/x402-check/deep": {
+    "source": "x402-check-deep",
+    "priced": {
+      "amountUsd": "$0.03",
+      "amountAtomic": "30000",
+      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "network": "base",
+      "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+    },
+    "asOf": "2026-10-19T19:46:19.614Z",
+    "ok": true,
+    "target": "https://horizonpulse.dev/api/pulse",
+    "finalUrl": "https://horizonpulse.dev/api/pulse",
+    "method": "GET",
+    "httpStatus": 402,
+    "isX402": true,
+    "x402Version": 2,
+    "challengeSource": "header",
+    "resource": {
+      "url": "https://horizonpulse.dev/api/pulse",
+      "description": "Crypto price API: BTC, ETH and SOL spot prices in USD in one GET, no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat), avgChange24hPct and asOf. Prices from Coinbase Exchange with CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
+      "mimeType": "application/json"
+    },
+    "accepts": [
+      {
+        "scheme": "exact",
+        "network": "eip155:8453",
+        "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        "assetLabel": "USDC (Base)",
+        "amountAtomic": "2000",
+        "amountUsd": "$0.002",
+        "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+        "payToType": "eoa_7702",
+        "payToDelegate": "0x7702cb554e6bfb442cb743a7df23154544a7176c",
+        "maxTimeoutSeconds": 300
+      },
+      {
+        "scheme": "exact",
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+        "assetLabel": "USDC (Solana)",
+        "amountAtomic": "2000",
+        "amountUsd": "$0.002",
+        "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+        "payToType": null,
+        "payToDelegate": null,
+        "maxTimeoutSeconds": 300
+      },
+      {
+        "scheme": "exact",
+        "network": "xrpl:0",
+        "asset": "524C555344000000000000000000000000000000",
+        "assetLabel": "RLUSD (XRP Ledger)",
+        "amountAtomic": "0.002",
+        "amountUsd": "$0.002",
+        "payTo": "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
+        "payToType": null,
+        "payToDelegate": null,
+        "maxTimeoutSeconds": 300
+      },
+      {
+        "scheme": "exact",
+        "network": "eip155:137",
+        "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+        "assetLabel": "USDC (Polygon)",
+        "amountAtomic": "2000",
+        "amountUsd": "$0.002",
+        "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+        "payToType": null,
+        "payToDelegate": null,
+        "maxTimeoutSeconds": 300
+      }
+    ],
+    "discovery": {
+      "present": true,
+      "method": "GET",
+      "hasInputSchema": true,
+      "hasOutputExample": true
+    },
+    "tier": "deep",
+    "baseChecks": [
+      {
+        "id": "status_402",
+        "level": "pass",
+        "message": "Unpaid request returned HTTP 402."
+      },
+      {
+        "id": "challenge",
+        "level": "pass",
+        "message": "x402 challenge parsed from PAYMENT-REQUIRED header."
+      },
+      {
+        "id": "version",
+        "level": "pass",
+        "message": "x402 v2."
+      },
+      {
+        "id": "payto_type",
+        "level": "info",
+        "message": "payTo 0x5b32c973596078a967562ca652761404f19be0e9 is an EOA with an EIP-7702 delegation to 0x7702cb554e6bfb442cb743a7df23154544a7176c: the account's private key still controls funds, and the delegate contract's code also runs for this account (e.g. a smart-wallet upgrade) (accepts[0])."
+      },
+      {
+        "id": "discovery",
+        "level": "pass",
+        "message": "Discovery metadata present (method GET)."
+      }
+    ],
+    "tls": {
+      "ok": true,
+      "protocol": "TLSv1.3",
+      "authorized": true,
+      "authorizationError": null,
+      "validFrom": "Sep 19 17:49:24 2026 GMT",
+      "validTo": "Dec 18 17:49:23 2026 GMT",
+      "daysLeft": 59,
+      "issuer": "Let's Encrypt / YR2",
+      "subject": "horizonpulse.dev",
+      "san": [
+        "horizonpulse.dev"
+      ],
+      "checked": true
+    },
+    "securityHeaders": {
+      "status": 402,
+      "hsts": "max-age=63072000",
+      "contentTypeOptions": "nosniff",
+      "frameOptions": null,
+      "csp": null,
+      "referrerPolicy": null,
+      "error": null
+    },
+    "cors": {
+      "allowOrigin": null,
+      "exposeHeaders": null,
+      "allowCredentials": null,
+      "paymentRequiredExposed": false
+    },
+    "publishedSources": [
+      {
+        "name": "well-known",
+        "url": "https://horizonpulse.dev/.well-known/x402",
+        "status": 200,
+        "addresses": [],
+        "error": null
+      },
+      {
+        "name": "openapi",
+        "url": "https://horizonpulse.dev/openapi.json",
+        "status": 200,
+        "addresses": [
+          "0x5b32c973596078a967562ca652761404f19be0e9",
+          "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+          "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf"
+        ],
+        "error": null
+      },
+      {
+        "name": "llms",
+        "url": "https://horizonpulse.dev/llms.txt",
+        "status": 200,
+        "addresses": [
+          "0x5b32c973596078a967562ca652761404f19be0e9"
+        ],
+        "error": null
+      }
+    ],
+    "payToReports": [
+      {
+        "network": "eip155:8453",
+        "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+        "payToType": "eoa_7702",
+        "published": "match",
+        "publishedIn": [
+          "openapi",
+          "llms",
+          "well-known"
+        ],
+        "lookalikes": []
+      },
+      {
+        "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+        "payToType": null,
+        "published": "match",
+        "publishedIn": [
+          "openapi",
+          "well-known",
+          "llms"
+        ],
+        "lookalikes": []
+      },
+      {
+        "network": "xrpl:0",
+        "payTo": "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
+        "payToType": null,
+        "published": "match",
+        "publishedIn": [
+          "openapi",
+          "well-known",
+          "llms"
+        ],
+        "lookalikes": []
+      }
+    ],
+    "drift": {
+      "wellKnown": "listed",
+      "openapi": {
+        "status": "consistent",
+        "detail": null
+      },
+      "bazaar": {
+        "status": "consistent",
+        "networks": [
+          "base",
+          "solana",
+          "xrpl",
+          "polygon"
+        ],
+        "detail": null
+      }
+    },
+    "checks": [
+      {
+        "id": "tls",
+        "level": "pass",
+        "message": "TLS TLSv1.3 trusted, 59 days to expiry."
+      },
+      {
+        "id": "hsts",
+        "level": "pass",
+        "message": "HSTS present (max-age >= 180 days)."
+      },
+      {
+        "id": "nosniff",
+        "level": "pass",
+        "message": "X-Content-Type-Options: nosniff."
+      },
+      {
+        "id": "frame_policy",
+        "level": "info",
+        "message": "No frame policy (X-Frame-Options or CSP frame-ancestors); low impact for a JSON API."
+      },
+      {
+        "id": "referrer_policy",
+        "level": "info",
+        "message": "No Referrer-Policy header."
+      },
+      {
+        "id": "cors",
+        "level": "info",
+        "message": "No Access-Control-Allow-Origin on the unpaid response (passive read, no Origin sent): browser-based agents on other origins cannot read the challenge; server-side agents are unaffected."
+      },
+      {
+        "id": "payto_published",
+        "level": "pass",
+        "message": "payTo 0x5b32c973596078a967562ca652761404f19be0e9 (EIP-7702-delegated EOA) matches the address the payee publishes in openapi, llms, well-known."
+      },
+      {
+        "id": "payto_published",
+        "level": "pass",
+        "message": "payTo BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz matches the address the payee publishes in openapi, well-known, llms."
+      },
+      {
+        "id": "payto_published",
+        "level": "pass",
+        "message": "payTo r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf matches the address the payee publishes in openapi, well-known, llms."
+      },
+      {
+        "id": "drift_well_known",
+        "level": "pass",
+        "message": "URL is listed in the origin's /.well-known/x402."
+      },
+      {
+        "id": "drift_openapi",
+        "level": "pass",
+        "message": "openapi.json operation is consistent with the live 402."
+      },
+      {
+        "id": "drift_bazaar",
+        "level": "pass",
+        "message": "CDP Bazaar entry matches the live 402 (base, solana, xrpl, polygon)."
+      }
+    ],
+    "summary": {
+      "pass": 13,
+      "warn": 0,
+      "fail": 0
+    },
+    "elapsedMs": 765
+  },
   "/api/chain/head": {
     "source": "chain-head",
     "priced": {

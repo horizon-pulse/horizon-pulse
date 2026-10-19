@@ -43,6 +43,7 @@ import {
   TX_STATUS_PRICE_USD,
   WATCH_PRICE_USD,
   X402_CHECK_PRICE_USD,
+  X402_CHECK_DEEP_PRICE_USD,
   YIELD_PRICE_USD,
 } from "./config";
 
@@ -60,6 +61,7 @@ export const ROUTE_INFO: Readonly<Record<string, RouteInfo>> = {
   "/api/http": { price: HTTP_PRICE_USD, what: "HTTP proxy request" },
   "/api/extract": { price: EXTRACT_PRICE_USD, what: "structured fields from a page" },
   "/api/x402-check": { price: X402_CHECK_PRICE_USD, what: "decode an x402 endpoint's payment terms" },
+  "/api/x402-check/deep": { price: X402_CHECK_DEEP_PRICE_USD, what: "deep x402 check: TLS, CORS, payTo vs published, drift" },
   "/api/bazaar-check": { price: BAZAAR_CHECK_PRICE_USD, what: "is an x402 seller listed in CDP Bazaar" },
   "/api/screenshot": { price: SCREENSHOT_PRICE_USD, what: "page screenshot" },
   "/api/search": { price: SEARCH_PRICE_USD, what: "web search results" },
@@ -92,6 +94,7 @@ export const RELATED: Readonly<Record<string, readonly string[]>> = {
   "/api/http": ["/api/fetch", "/api/x402-check"],
   "/api/extract": ["/api/fetch", "/api/pdf", "/api/search"],
   "/api/x402-check": ["/api/bazaar-check", "/api/market/search", "/api/http"],
+  "/api/x402-check/deep": ["/api/bazaar-check", "/api/tx-guard", "/api/market/quote"],
   "/api/bazaar-check": ["/api/x402-check", "/api/market/search"],
   "/api/screenshot": ["/api/fetch", "/api/pdf", "/api/extract"],
   "/api/search": ["/api/fetch", "/api/extract"],

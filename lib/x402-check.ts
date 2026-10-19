@@ -226,11 +226,15 @@ const str = (v: unknown): string | null => (typeof v === "string" && v.length ? 
 const obj = (v: unknown): Record<string, unknown> | null =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 
-export async function checkX402Endpoint(input: {
-  url?: string;
-  method?: string;
-  body?: string;
-}): Promise<X402CheckResult | X402CheckError> {
+export async function checkX402Endpoint(
+  input: {
+    url?: string;
+    method?: string;
+    body?: string;
+  },
+  // Optional per-hop opt-out predicate (used by /api/x402-check/deep). Unset for /api/x402-check: behaviour unchanged.
+  opts: { optedOut?: (host: string) => boolean } = {},
+): Promise<X402CheckResult | X402CheckError> {
   const started = Date.now();
   const raw = input.url?.trim();
   if (!raw) return { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url", status: 400 };
@@ -262,6 +266,16 @@ export async function checkX402Endpoint(input: {
   probe: while (true) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) return { ok: false, error: `Target timed out after ${CHECK_TIMEOUT_MS}ms`, code: "timeout", status: 504 };
+    if (opts.optedOut) {
+      let hopHost = "";
+      try {
+        hopHost = new URL(current).hostname.replace(/^\[|\]$/g, "");
+      } catch {
+        /* invalid URL: assertSafePublicUrl answers below */
+      }
+      if (hopHost && opts.optedOut(hopHost))
+        return { ok: false, error: `${redirects === 0 ? "Target" : "Redirect target"} ${hopHost} is on the web-checks opt-out list; no request was sent to it.`, code: "opted_out", status: 403 };
+    }
     const checked = await assertSafePublicUrl(current);
     if ("ok" in checked && checked.ok === false) return checked;
     const { url } = checked as { url: URL };

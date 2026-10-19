@@ -13,6 +13,7 @@ import { fetchHandler } from "@/app/api/fetch/handler";
 import { httpHandler } from "@/app/api/http/handler";
 import { extractHandler } from "@/app/api/extract/handler";
 import { x402CheckHandler } from "@/app/api/x402-check/handler";
+import { x402CheckDeepHandler } from "@/app/api/x402-check/deep/handler";
 import { bazaarCheckHandler } from "@/app/api/bazaar-check/handler";
 import { marketSearchHandler } from "@/app/api/market/search/handler";
 import { marketQuoteHandler } from "@/app/api/market/quote/handler";
@@ -39,7 +40,7 @@ type Handler = (req: NextRequest) => Promise<NextResponse>;
 
 // bazaar-check: CDP discovery + ~15 outbound probes per run, so one sample per instance per 10 min.
 // market-search / market-quote: CDP discovery + live probes of third-party sellers, same 10 min reuse.
-const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf", "bazaar-check", "market-search", "market-quote", "tx-status", "tokenized-stock", "watch", "balance", "tx-guard", "chain-head", "token-meta", "name-resolve"]);
+const HEAVY_DEMOS = new Set(["screenshot", "search", "pdf", "bazaar-check", "market-search", "market-quote", "tx-status", "tokenized-stock", "watch", "balance", "tx-guard", "chain-head", "token-meta", "name-resolve", "x402-check-deep"]);
 const HEAVY_TTL_MS = 10 * 60 * 1000;
 /** search spends paid provider quota: one sample per instance per day. */
 const TTL_MS: Record<string, number> = { search: 24 * 60 * 60 * 1000 };
@@ -59,6 +60,7 @@ const HANDLERS: Record<string, Handler> = {
   http: httpHandler,
   extract: extractHandler,
   "x402-check": x402CheckHandler,
+  "x402-check-deep": (req) => x402CheckDeepHandler(req),
   "bazaar-check": bazaarCheckHandler,
   "market-search": marketSearchHandler,
   "market-quote": marketQuoteHandler,
@@ -118,7 +120,8 @@ export async function GET(
 
   const origin = req.nextUrl.origin;
   // Demo names are flat; nested paid routes map back (market-search -> /api/market/search, discourse-split -> /api/discourse/split, grocery-normalize -> /api/grocery/normalize, grocery-ingredient -> /api/grocery/ingredient, chain-head -> /api/chain/head, token-meta -> /api/token/meta, name-resolve -> /api/name/resolve).
-  const paidPath = `/api/${route.replace(/^(market|discourse|grocery|chain|token|name)-/, "$1/")}`;
+  // x402-check-deep -> /api/x402-check/deep (the tier lives under its parent route).
+  const paidPath = route === "x402-check-deep" ? "/api/x402-check/deep" : `/api/${route.replace(/^(market|discourse|grocery|chain|token|name)-/, "$1/")}`;
   const inner = new NextRequest(
     `${origin}${paidPath}${demo.query ? `?${demo.query}` : ""}`,
     { method: "GET" },

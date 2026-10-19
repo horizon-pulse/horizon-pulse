@@ -29,7 +29,7 @@ const pr = (c: Captured) => decodePaymentRequiredHeader(header(c)!);
 const MAIN_PRICES: Record<string, [string, string]> = {
   pulse: ["2000", "0.002"], signals: ["5000", "0.005"], yield: ["20000", "0.02"], portfolio: ["40000", "0.04"],
   gas: ["2000", "0.002"], funding: ["3000", "0.003"], fetch: ["20000", "0.02"], http: ["10000", "0.01"],
-  extract: ["15000", "0.015"], "x402-check": ["10000", "0.01"], screenshot: ["20000", "0.02"],
+  extract: ["15000", "0.015"], "x402-check": ["10000", "0.01"], "x402-check/deep": ["30000", "0.03"], screenshot: ["20000", "0.02"],
   search: ["30000", "0.03"], pdf: ["20000", "0.02"],
   // landed on main after rail-xrpl bef2ab6 (rebased onto 82ce1c3):
   "bazaar-check": ["10000", "0.01"], "market/search": ["5000", "0.005"], "market/quote": ["5000", "0.005"],
@@ -89,7 +89,7 @@ function expectShape(
       checked++;
     }
   }
-  expect(checked).toBe(170); // as tests/solana-flag-on: 88 on main + 12 market-mvp + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient + 18 wave-1 (chain/head, token/meta, name/resolve x 6)
+  expect(checked).toBe(176); // + 6 x402-check/deep (2026-10-19) + as tests/solana-flag-on: 88 on main + 12 market-mvp + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient + 18 wave-1 (chain/head, token/meta, name/resolve x 6)
 }
 
 const xrplEntry = (route: string, network = "xrpl:1", issuer = TESTNET_ISSUER, extra: Record<string, unknown> = {}) => ({

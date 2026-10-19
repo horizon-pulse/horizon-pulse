@@ -147,6 +147,12 @@
  * 2026-10-18 (branch fix/xrpl-redeem-fingerprint delta1, off 312a68d): UPDATE_GOLDEN=1 after
  * one llms.txt sentence (Payment: a redeem retry must resend the identical URL and body).
  * ONLY discovery["sha256 public/llms.txt"] changed; golden.cdp and golden.local byte-identical.
+ *
+ * 2026-10-19 (branch feat/x402-check-deep, off c02946a): regenerated with UPDATE_GOLDEN=1 after
+ * adding /api/x402-check/deep ($0.03, GET). golden.cdp and golden.local gained ONLY the three new
+ * keys per mode (GET json, GET browser, OPTIONS); all 85 pre-existing keys per mode, including the
+ * three /api/x402-check keys, are byte-identical. golden.discovery refreshed (openapi.json,
+ * llms.txt, skill.md, /.well-known/x402).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

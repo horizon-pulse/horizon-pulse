@@ -42,6 +42,7 @@ import {
   FETCH_PRICE_USD,
   SCREENSHOT_PRICE_USD,
   X402_CHECK_PRICE_USD,
+  X402_CHECK_DEEP_PRICE_USD,
   BAZAAR_CHECK_PRICE_USD,
   MARKET_SEARCH_PRICE_USD,
   MARKET_QUOTE_PRICE_USD,
@@ -1923,4 +1924,52 @@ export function batchRouteConfig(): RoutesConfig {
       } as DiscoveryDecl),
     },
   );
+}
+
+/** Deep tier of x402-check ($0.03). Same rails, payTo and Bazaar pattern as x402-check (GET + HEAD keys). */
+export function x402CheckDeepRouteConfig(): RoutesConfig {
+  const payTo = getPayTo();
+  const network = getNetworkCaip2();
+  return keyGetHead({
+    "/api/x402-check/deep": {
+      accepts: [
+        {
+          scheme: "exact",
+          price: X402_CHECK_DEEP_PRICE_USD,
+          network,
+          payTo,
+        },
+      ],
+      description: routeDescription("/api/x402-check/deep"),
+      mimeType: "application/json",
+      ...serviceMetadata("/api/x402-check/deep"),
+      extensions: {
+        ...declareChargedDiscovery({
+          method: "GET",
+          input: {
+            url: "https://horizonpulse.dev/api/pulse",
+            method: "GET",
+          },
+          inputSchema: {
+            properties: {
+              url: {
+                type: "string",
+                description: "Absolute http(s) URL of the x402 endpoint to check (required). Private/localhost blocked.",
+              },
+              method: {
+                type: "string",
+                description: "HTTP method for the unpaid probe: GET (default; one POST retry on 405) or POST.",
+              },
+              body: {
+                type: "string",
+                description: "Optional JSON body (<=8KB, URL-encoded) sent with a POST probe. Implies POST.",
+              },
+            },
+            required: ["url"],
+          },
+          output: outputOf("/api/x402-check/deep", "Horizon Pulse x402 deep check: x402-check report plus TLS, security headers, CORS, payTo vs published addresses, lookalike payTo, discovery drift"),
+        } as DiscoveryDecl),
+      },
+    },
+  });
 }

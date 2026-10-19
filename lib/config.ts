@@ -82,6 +82,14 @@ export const X402_CHECK_PRICE_USD = "$0.01" as const;
 export const X402_CHECK_PRICE_ATOMIC = "10000" as const; // USDC 6 decimals
 
 /**
+ * /api/x402-check/deep — deep tier of x402-check (Michael approved $0.03 at 3:37 PM ET 10/19 via Odin):
+ * the x402-check report plus TLS, security headers, CORS, payTo vs the payee's published
+ * addresses, lookalike payTo and discovery drift. Black-box, never pays or signs.
+ */
+export const X402_CHECK_DEEP_PRICE_USD = "$0.03" as const;
+export const X402_CHECK_DEEP_PRICE_ATOMIC = "30000" as const; // USDC 6 decimals
+
+/**
  * /api/bazaar-check — is an x402 seller indexed in CDP Bazaar, and if not, why
  * not (CDP discovery lookup + unpaid lint of each listed route).
  * $0.01 (10000 atomic): same tier as /api/x402-check.

@@ -37,6 +37,7 @@ import * as fetchR from "@/app/api/fetch/handler";
 import * as http from "@/app/api/http/handler";
 import * as extract from "@/app/api/extract/handler";
 import * as x402check from "@/app/api/x402-check/handler";
+import * as x402checkDeep from "@/app/api/x402-check/deep/handler";
 import * as bazaarCheck from "@/app/api/bazaar-check/handler";
 import * as marketSearch from "@/app/api/market/search/handler";
 import * as discourseSplit from "@/app/api/discourse/split/handler";
@@ -183,6 +184,17 @@ export const TOOLS: ToolDef[] = [
     },
     call: (a) =>
       runHandler(x402check.x402CheckHandler, makeRequest("/api/x402-check", { url: s(a.url), method: s(a.method), body: s(a.body) })),
+  },
+  {
+    name: "x402_check_deep",
+    opts: x402checkDeep.paymentOpts,
+    schema: {
+      url: z.string().describe("Public http(s) URL of the x402 endpoint to check"),
+      method: z.string().optional().describe("Probe method: GET (default; retries POST on 405) or POST"),
+      body: z.string().optional().describe("Optional JSON body (string, <=8KB) for a POST probe; implies POST"),
+    },
+    call: (a) =>
+      runHandler((req) => x402checkDeep.x402CheckDeepHandler(req), makeRequest("/api/x402-check/deep", { url: s(a.url), method: s(a.method), body: s(a.body) })),
   },
   {
     name: "bazaar_check",

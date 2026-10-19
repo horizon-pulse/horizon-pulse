@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-19 (branch feat/x402-check-deep, not deployed): /api/x402-check/deep, $0.03
+
+- **New:** `GET /api/x402-check/deep` ($0.03): the full `/api/x402-check` report plus live black-box checks: TLS (trust, expiry), security headers, CORS as served (PAYMENT-REQUIRED exposed), each payTo compared with the payee's own published addresses (`/.well-known/x402`, `openapi.json`, `llms.txt`), lookalike payTo detection (same leading and trailing characters, different middle), and drift between the live 402 and the well-known, openapi and CDP Bazaar listings. Never pays or signs; every outbound request goes through the existing SSRF guards.
+- **MCP:** hosted `/mcp` gains `x402_check_deep` (same terms and output as REST).
+- **Unchanged:** `/api/x402-check` ($0.01) and every other route's 402, price and payTo, byte for byte.
+
 ## 2026-10-13: HEAD is never charged; bazaar-check labels Polygon and XRPL
 
 - **Fixed:** a HEAD request to a paid route now returns the same 402 as GET, byte for byte (the PAYMENT-REQUIRED header, including the bazaar method, which is GET). A HEAD that carries a payment header (PAYMENT-SIGNATURE or X-PAYMENT) is served as that unpaid 402: no verify, no settle, on any rail. Before, a paid HEAD could settle and return no body.

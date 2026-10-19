@@ -31,6 +31,7 @@ const BAD_REQUEST: Record<string, Json> = {
   "/api/http": { ok: false, error: "url is required (absolute http/https URL)", code: "missing_url" },
   "/api/extract": { ok: false, error: "url is required when html is not provided", code: "missing_input" },
   "/api/x402-check": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url" },
+  "/api/x402-check/deep": { ok: false, error: "Query param url is required (absolute http/https URL)", code: "missing_url", charged: false },
   "/api/bazaar-check": { ok: false, error: "Query param url is required (a host like example.com or an https URL)", code: "missing_url" },
   "/api/market/search": { ok: false, error: "Query param q is required", code: "missing_query" },
   "/api/market/quote": { ok: false, error: "Query param url is required (the https URL of an x402 resource)", code: "missing_url" },
@@ -220,7 +221,7 @@ for (const r of LIVE_PAID_ROUTES) {
       if (dir) dir.enum = ["up", "down", "flat"];
       // x402-check accepts[]: these stay nullable even when the recorded example has no null (unrecognized asset,
       // non-EVM payTo). Inference from one example would narrow them to "string" (Odin review 10/16).
-      const acc = p === "/api/x402-check" ? schemas[respName]?.properties?.accepts?.items?.properties : undefined;
+      const acc = p === "/api/x402-check" || p === "/api/x402-check/deep" ? schemas[respName]?.properties?.accepts?.items?.properties : undefined;
       if (acc) for (const k of ["assetLabel", "amountUsd", "payToType", "payToDelegate"]) acc[k] = { type: ["string", "null"] };
       // evidence/unknowns: declared explicitly (id enums) on top of the schema inferred from the recorded example.
       if (p === "/api/market/quote" && schemas[respName]?.properties) {
