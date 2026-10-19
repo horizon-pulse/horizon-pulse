@@ -404,6 +404,9 @@ export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
 };
 
 /** Route name used by /api/demo/<name>, derived from the display path. */
+/** Real request path (no query), same string /.well-known/x402 lists. Always display this, never `/api/${routeName(r)}`. */
+export const routePath = (r: LiveRoute) => r.path.replace(/\?.*$/, "");
+/** Demo slug / anchor id: nested paths join with "-" (/api/market/search -> market-search). Not a route path. */
 export const routeName = (r: LiveRoute) => r.path.replace(/^\/api\//, "").replace(/\?.*$/, "").replace(/\//g, "-");
 
 const usd = (p: string) => Number(p.replace(/[^0-9.]/g, ""));

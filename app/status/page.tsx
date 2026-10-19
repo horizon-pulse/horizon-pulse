@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { BASE_PAY_TO_BASENAME, DEFAULT_PAY_TO, USDC_BASE, CDP_FACILITATOR_URL, BASE_CAIP2, PUBLIC_BASE_URL } from "@/lib/config";
 import { fetchTreasuryUsdcBalance } from "@/lib/treasury";
 import { PAYAI_FACILITATOR_URL, SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
-import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
+import { catalogStats, routeName, routePath, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -199,7 +199,7 @@ export default async function StatusPage() {
                     const name = routeName(r);
                     return (
                       <tr key={r.path}>
-                        <td className="r">{`/api/${name}`}</td>
+                        <td className="r">{routePath(r)}</td>
                         <td className="m">{r.method === "GET|POST" ? "GET · POST" : "GET"}</td>
                         <td className="b">{r.docBlurb ?? r.blurb}</td>
                         <td className="p">{r.priceUsd}</td>

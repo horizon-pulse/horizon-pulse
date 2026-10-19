@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { BASE_PAY_TO_BASENAME, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE } from "@/lib/config";
 import { SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
-import { catalogStats, routeName, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
+import { catalogStats, routeName, routePath, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -106,7 +106,7 @@ export default function HomePage() {
                 return (
                   <div className="hp-tile" key={r.path} data-reveal>
                     <Ico d={ICONS[name] ?? ICONS.call} />
-                    <h3>{`/api/${name}`}</h3>
+                    <h3>{routePath(r)}</h3>
                     <p>{r.blurb}</p>
                     <div className="hp-tile-foot">
                       <b>{r.priceUsd}</b>
@@ -136,7 +136,7 @@ export default function HomePage() {
                     const name = routeName(r);
                     return (
                       <tr key={r.path}>
-                        <td className="r">{`/api/${name}`}</td>
+                        <td className="r">{routePath(r)}</td>
                         <td className="m">{r.method === "GET|POST" ? "GET · POST" : "GET"}</td>
                         <td className="b">{r.blurb}</td>
                         <td className="p">{r.priceUsd}</td>
