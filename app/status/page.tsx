@@ -8,6 +8,8 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { xrplReplayEvalStatus } from "@/lib/xrpl-rail";
 import { solanaReplayEvalStatus } from "@/lib/solana-rail";
+import { readAlertSummary } from "@/lib/alert-persist";
+import { AlertCounts } from "@/components/AlertCounts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,6 +58,7 @@ export default async function StatusPage() {
   } catch (err) {
     bal = { ok: false, error: err instanceof Error ? err.message : "balance read failed" };
   }
+  const alerts = await readAlertSummary(); // never throws; 800 ms bound
   const usdc = bal.ok ? Number(bal.usdc).toLocaleString("en-US", { maximumFractionDigits: 6 }) : "Unavailable";
 
   return (
@@ -210,6 +213,7 @@ export default async function StatusPage() {
             <p className="hp-fine">{LIVE_PAID_ROUTES.length} routes from the live catalog. How agents pay is on the <a href="/#how">homepage</a>.</p>
           </div>
         </section>
+        <AlertCounts a={alerts} />
       </main>
       <SiteFooter />
     </div>

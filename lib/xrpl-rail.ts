@@ -91,6 +91,7 @@
  *   - Ops alert: ≥ WARN_ALERT_THRESHOLD [xrpl-rail] warnings in
  *     WARN_ALERT_WINDOW_MS → one setXrplAlertHook call (default console.error).
  */
+import { persistAlert } from "@/lib/alert-persist";
 import { createHash, randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { RAIL_REJECT, reasonFromRailResponse, settleFailReason, type OnReject } from "./rail-reject";
@@ -388,7 +389,12 @@ function emitAlert(alert: XrplAlert): void {
   } catch {
     /* an alert sink must never break a request */
   }
+  // Odin 9:09 AM AST 10/19: ALSO persist (best-effort, fire-and-forget, never throws) to hp:alerts:xrpl.
+  persistAlert("xrpl", alert);
 }
+
+/** Tests only: emit through the real alert path (hook + persistence). */
+export const __emitXrplAlertForTests = emitAlert;
 
 /** Consecutive failed checks for one check kind (a cold check's in-request retry counts as one check). */
 type Failure = { streak: number; firstFailAt: number };
