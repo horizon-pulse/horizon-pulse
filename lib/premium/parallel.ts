@@ -82,8 +82,33 @@ export async function parallelSearch(objective: string, queries: string[], maxRe
   return clean(j?.results);
 }
 
+/**
+ * Odin ruling A+B (B): live fetch only for this allowlist (pages whose live value is the point: gas tracker, USDC stats).
+ * Parallel v1 /v1/extract advanced_settings.fetch_policy (max_age_seconds min 600; cache fallback kept on). No surcharge
+ * is listed for live fetch (Extract is $1 / 1,000 URLs); it adds latency, so it is bounded by LIVE_FETCH_TIMEOUT_S.
+ */
+export const LIVE_FETCH_ALLOWLIST = ["etherscan.io", "usdc.org"] as const;
+export const LIVE_FETCH_TIMEOUT_S = 6;
+export const liveFetchAllowed = (url: string) => {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return LIVE_FETCH_ALLOWLIST.some((d) => h === d || h.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+};
+export function extractBody(objective: string, urls: string[], live = false) {
+  const body: Record<string, unknown> = { urls: urls.slice(0, 20), objective };
+  if (live) body.advanced_settings = { fetch_policy: { max_age_seconds: 600, timeout_seconds: LIVE_FETCH_TIMEOUT_S, disable_cache_fallback: false } };
+  return body;
+}
 export async function parallelExtract(objective: string, urls: string[], deadline: number): Promise<ParallelResult[]> {
   if (urls.length === 0) return [];
-  const j = await post("/v1/extract", { urls: urls.slice(0, 20), objective }, deadline);
-  return clean(j?.results);
+  const live = urls.filter(liveFetchAllowed);
+  const cached = urls.filter((u) => !liveFetchAllowed(u));
+  const [a, b] = await Promise.all([
+    cached.length ? post("/v1/extract", extractBody(objective, cached), deadline) : Promise.resolve({ results: [] }),
+    live.length ? post("/v1/extract", extractBody(objective, live, true), deadline).catch(() => post("/v1/extract", extractBody(objective, live), deadline)) : Promise.resolve({ results: [] }),
+  ]);
+  return clean([...(a?.results ?? []), ...(b?.results ?? [])]);
 }
