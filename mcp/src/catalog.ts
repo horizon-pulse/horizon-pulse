@@ -15,8 +15,8 @@ export type RouteTool = {
   name: string;
   /** Route path, e.g. "/api/pulse". */
   path: string;
-  /** Short route name used by the free sample endpoint /api/demo/<route>. */
-  demo: string;
+  /** Short route name used by the free sample endpoint /api/demo/<route>; null when the route has no free sample (/api/batch). */
+  demo: string | null;
   method: "GET" | "POST";
   description: string;
   inputSchema: { type: "object"; properties: Record<string, Json>; required?: string[] };
@@ -28,6 +28,9 @@ export type RouteTool = {
   asset: string;
 };
 
+/** Routes with no /api/demo/<route> twin. */
+const NO_DEMO = new Set(["batch"]);
+
 export function toolsFromOpenApi(spec: Json): RouteTool[] {
   const out: RouteTool[] = [];
   for (const [p, item] of Object.entries<Json>(spec?.paths ?? {})) {
@@ -38,7 +41,8 @@ export function toolsFromOpenApi(spec: Json): RouteTool[] {
     const pay = op["x-payment-info"];
     const rel = p.replace(/^\/api\//, "");
     // Nested paths: demo names join with "-" (/api/market/search -> market-search), tool names with "_" (market_search).
-    const demo = rel.replace(/\//g, "-");
+    // /api/batch has no free sample (/api/demo/batch 404s), so it gets none rather than a dead link.
+    const demo = NO_DEMO.has(rel) ? null : rel.replace(/\//g, "-");
     const name = rel.replace(/[^a-zA-Z0-9]+/g, "_");
 
     let inputSchema: RouteTool["inputSchema"];

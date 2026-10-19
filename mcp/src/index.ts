@@ -144,7 +144,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         amountAtomic: t.amount,
         inputs: Object.keys(t.inputSchema.properties),
         required: t.inputSchema.required ?? [],
-        freeSample: `${cfg.baseUrl}/api/demo/${t.demo}`,
+        freeSample: t.demo ? `${cfg.baseUrl}/api/demo/${t.demo}` : null,
       })),
     };
     return { content: [text(JSON.stringify(out, null, 2))] };
@@ -162,6 +162,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   if (name === "demo") {
     const tool = findTool(tools, args.route);
     if (!tool) return { content: [text(`Unknown route ${JSON.stringify(args.route)}. ${ROUTE_ENUM_HINT}`)], isError: true };
+    if (!tool.demo) return { content: [text(`No free sample for ${tool.path}; use quote for the unpaid 402.`)], isError: true };
     try {
       const r = await fetch(`${cfg.baseUrl}/api/demo/${tool.demo}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(cfg.timeoutMs) });
       const t = await r.text();

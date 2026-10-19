@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
+import { LIVE_PAID_ROUTES, routeName, routePath } from "@/lib/live-catalog";
 import { TryPlayground } from "@/components/TryPlayground";
 
 export const metadata: Metadata = {
@@ -11,7 +12,8 @@ export const metadata: Metadata = {
 };
 
 export default function TryPage() {
-  const routes = DEMO_ROUTES.map((d) => ({ route: d.route, priceUsd: d.priceUsd, input: d.input }));
+  const paths = new Map(LIVE_PAID_ROUTES.map((r) => [routeName(r), routePath(r)]));
+  const routes = DEMO_ROUTES.map((d) => ({ route: d.route, path: paths.get(d.route) ?? `/api/${d.route}`, priceUsd: d.priceUsd, input: d.input }));
   return (
     <>
       <SiteHeader />

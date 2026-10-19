@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { CopyBlock } from "@/components/CopyBlock";
 
-type R = { route: string; priceUsd: string; input: string };
+type R = { route: string; path: string; priceUsd: string; input: string };
 const BASE = "https://horizonpulse.dev";
 const REFRESH: Record<string, string> = {
   screenshot: "Cached sample, refreshed at most every 10 minutes",
@@ -77,7 +77,7 @@ export function TryPlayground({ routes }: { routes: R[] }) {
       </div>
       <div className="hp-try-next">
         <CopyBlock title="Same thing from your terminal" code={`curl ${BASE}/api/demo/${sel}`} />
-        <CopyBlock title="Paid call, your own input (returns 402 with the price)" code={`curl -i '${BASE}/api/${sel}'`} />
+        <CopyBlock title="Paid call, your own input (returns 402 with the price)" code={`curl -i '${BASE}${cur.path}'`} />
       </div>
       <p className="hp-try-foot">
         Ready to pay per call? <a href="/docs#quickstart">See the quickstart</a> for the x402 client that handles the 402 and retry for you.
