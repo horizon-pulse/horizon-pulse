@@ -172,7 +172,7 @@ async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded
   const mine = await moveClaim(store, held, { s: "redeemed" });
   if (!mine) return inProgress();
   try {
-    const result = await runResearch(x, input, t0 + SYNC_HARD_LIMIT_S * 1000);
+    const result = await runResearch(x, input, t0 + SYNC_HARD_LIMIT_S * 1000, undefined, held.key);
     return okResponse(x, { ...(result as object), redeemed: { reconcile_id: c.rc } }, null, null);
   } catch {
     // Sentinel LOW-A: rotate the reconcile_id (new redeem_message) so the used proof cannot be replayed
@@ -311,7 +311,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     held = (await moveClaim(store, held, { s: "settled" }).catch(() => null)) ?? held;
     try {
       const sink: CaptureSink = {};
-      const result = await runResearch(x, v.input, t0 + SYNC_HARD_LIMIT_S * 1000, sink);
+      const result = await runResearch(x, v.input, t0 + SYNC_HARD_LIMIT_S * 1000, sink, held.key);
       const cap = captureAllowed(req.headers) ? captureBody(sink) : null;
       return okResponse(x, cap ? { ...(result as object), debug_capture: cap } : result, s.tx, s.header);
     } catch (e) {

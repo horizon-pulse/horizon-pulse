@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { BUYER_TERMS, TECHNICAL_NOTES } from "@/lib/premium/copy";
+import { AI_PROVIDER_TERMS, BUYER_TERMS, TECHNICAL_NOTES } from "@/lib/premium/copy";
+import { premiumLlmEnabled } from "@/lib/premium/synthesis";
 import { premiumEnabled } from "@/lib/premium/tiers";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,14 @@ export default function PremiumTermsPage() {
       {BUYER_TERMS.map((p, i) => (
         <p key={i}>{p}</p>
       ))}
+      {premiumLlmEnabled() && (
+        <>
+          <h2>AI-assisted quote selection</h2>
+          {AI_PROVIDER_TERMS.map((p, i) => (
+            <p key={`ai${i}`}>{p}</p>
+          ))}
+        </>
+      )}
       <h2>How the status link and redeem work</h2>
       {TECHNICAL_NOTES.map((p, i) => (
         <p key={`t${i}`}>{p}</p>

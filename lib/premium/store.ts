@@ -30,7 +30,14 @@ export interface PremiumStore {
   reserve(keys: string[], limits: number[], member: string, score: number, pruneMax: number, ttlS: number): Promise<boolean>;
   /** Atomic compare-and-delete against exactly `expected`. */
   casDel(key: string, expected: string): Promise<boolean>;
+  /** Odin 10/19: atomic spend reservation (one Lua script): add `amount` to the float counter only if the total stays <= cap. */
+  spendReserve(key: string, amount: number, cap: number, ttlS: number): Promise<boolean>;
+  /** INCRBYFLOAT key delta (+ EXPIRE); used to refund / reconcile a reservation. */
+  spendAdjust(key: string, delta: number, ttlS: number): Promise<void>;
 }
+
+export const SPEND_RESERVE_LUA =
+  "local cur = tonumber(redis.call('GET', KEYS[1]) or '0') local a = tonumber(ARGV[1]) if cur + a > tonumber(ARGV[2]) then return 0 end redis.call('INCRBYFLOAT', KEYS[1], ARGV[1]) redis.call('EXPIRE', KEYS[1], ARGV[3]) return 1";
 
 export const CAS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 else return 0 end";
 export const CASDEL_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) return 1 else return 0 end";
@@ -118,7 +125,16 @@ export class UpstashPremiumStore implements PremiumStore {
     const [r] = await this.pipe([["EVAL", RESERVE_LUA, keys.length, ...keys.map(this.k), member, score, pruneMax, Math.max(1, Math.ceil(ttlS)), ...limits]]);
     return Number(r) === 1;
   }
-
+  async spendReserve(key: string, amount: number, cap: number, ttlS: number) {
+    const [r] = await this.pipe([["EVAL", SPEND_RESERVE_LUA, 1, this.k(key), amount.toFixed(8), cap.toFixed(8), Math.max(1, Math.ceil(ttlS))]]);
+    return Number(r) === 1;
+  }
+  async spendAdjust(key: string, delta: number, ttlS: number) {
+    await this.pipe([
+      ["INCRBYFLOAT", this.k(key), delta.toFixed(8)],
+      ["EXPIRE", this.k(key), Math.max(1, Math.ceil(ttlS))],
+    ]);
+  }
 }
 
 /** Test backend. Records every write with its TTL so tests can assert "no write without a TTL". */
@@ -192,6 +208,18 @@ export class MemoryPremiumStore implements PremiumStore {
     if (this.alive(key)?.v !== expected) return false;
     this.kv.delete(key);
     return true;
+  }
+  async spendReserve(key: string, amount: number, cap: number, ttlS: number) {
+    const cur = Number(this.alive(key)?.v ?? "0");
+    if (cur + amount > cap) return false;
+    this.writes.push({ op: "spendReserve", key, ttlMs: ttlS * 1000 });
+    this.kv.set(key, { v: String(cur + amount), exp: this.now() + ttlS * 1000 });
+    return true;
+  }
+  async spendAdjust(key: string, delta: number, ttlS: number) {
+    const cur = Number(this.alive(key)?.v ?? "0");
+    this.writes.push({ op: "spendAdjust", key, ttlMs: ttlS * 1000 });
+    this.kv.set(key, { v: String(cur + delta), exp: this.now() + ttlS * 1000 });
   }
 }
 

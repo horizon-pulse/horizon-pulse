@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { compile, isDateline } from "@/lib/premium/research";
 import { tierFor } from "@/lib/premium/tiers";
@@ -16,19 +17,24 @@ const RECORDED: Record<string, { answer: string[]; claims: string[][] }> = {
   howmuch: { answer: ["u3s4"], claims: [["u3s4"], ["u1s1"], ["u3s3"], ["u1s5"]] },
   x402: { answer: [], claims: [["u2s2"], ["u1s63"], ["u1s67"], ["u1s106"], ["u2s3"]] },
 };
-function recordedModel(n: string, e: any, tweak?: (o: any) => void): ModelCall {
-  const { list } = pageSentences(e.results);
+/** A model can only pick sentences it was shown: ids cut by the 7k ranked input budget are not selectable. */
+function recordedModel(n: string, e: any, tweak?: (o: any) => void, question = ""): ModelCall {
+  const { list } = pageSentences(e.results, question);
   const q = (id: string) => {
-    const s = list.find((x) => x.id === id)!;
-    return { id, url: s.url, quote: s.text };
+    const s = list.find((x) => x.id === id);
+    return s ? { id, url: s.url, quote: s.text } : null;
   };
   return async () => {
-    const out: any = { answer: RECORDED[n].answer.map(q), claims: RECORDED[n].claims.map((ids) => ({ quotes: ids.map(q) })), unanswerable: false };
+    const out: any = { answer: RECORDED[n].answer.map(q).filter(Boolean), claims: RECORDED[n].claims.map((ids) => ({ quotes: ids.map(q).filter(Boolean) })).filter((c) => c.quotes.length), unanswerable: false };
     tweak?.(out);
     return { text: JSON.stringify(out), inputTokens: 9000, outputTokens: 600 };
   };
 }
-afterEach(() => resetSynthesisForTests());
+beforeEach(() => setPremiumStoreForTests(new MemoryPremiumStore()));
+afterEach(() => {
+  resetSynthesisForTests();
+  setPremiumStoreForTests(undefined);
+});
 
 const codeOnly = (n: string) => {
   const { s, e } = load(n);
@@ -36,7 +42,7 @@ const codeOnly = (n: string) => {
 };
 const viaLlm = async (n: string, tweak?: (o: any) => void, env: Record<string, string> = ON) => {
   const { s, e } = load(n);
-  setSynthesisForTests({ env, model: recordedModel(n, e, tweak) });
+  setSynthesisForTests({ env, model: recordedModel(n, e, tweak, s.question) });
   return (await synthesizeBrief(s.question, codeOnly(n), e.results, Date.now() + 30_000)) as any;
 };
 const verbatim = (n: string, out: any) => {

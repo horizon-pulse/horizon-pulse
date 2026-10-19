@@ -408,7 +408,7 @@ export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N): 
 /** Run the upstream calls for one sync tier within the deadline. Units come from the tier table only. */
 /** C1: optional sink for the cleaned search + extract results (Preview debug capture only; see capture.ts). */
 export type CaptureSink = { data?: { search: ParallelResult[]; extract: ParallelResult[] } };
-export async function runResearch(x: Tier, q: string, deadline: number, capture?: CaptureSink) {
+export async function runResearch(x: Tier, q: string, deadline: number, capture?: CaptureSink, jobKey?: string) {
   const subs = x.id === "brief" ? [q] : subQuestionList(q);
   const queries = [q, ...subs.filter((s) => s !== q)].slice(0, Math.max(1, x.searches));
   const perSearch = Math.max(3, Math.ceil(x.reads / Math.max(1, queries.length)));
@@ -423,7 +423,7 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
     const read = urls.length ? await parallelExtract(q, urls, deadline).catch(() => [] as ParallelResult[]) : [];
     if (capture) capture.data = { search: found, extract: read };
     const code = compile(x, q, found, undefined, read);
-    return await synthesizeBrief(q, code, read, deadline);
+    return await synthesizeBrief(q, code, read, deadline, jobKey);
   }
   const urls = [...new Set(found.map((r) => r.url))].slice(0, x.reads);
   const read = await parallelExtract(q, urls, deadline);

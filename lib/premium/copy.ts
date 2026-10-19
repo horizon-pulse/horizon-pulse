@@ -36,6 +36,19 @@ export const RECONCILE_RETENTION_S = 365 * 86_400;
  * Buyer terms (Counsel cond. 1, [M] approved): at least as protective of Parallel's IP as Parallel Customer Terms
  * §1(f) (effective 2026-10-17; re-read at sign-up). Linked from every premium 402 and response.
  */
+/**
+ * Counsel X7 (10/20 memo): buyer terms must flow down the providers' terms. DRAFT wording by engineering, not yet
+ * approved by Counsel; covers the search/extract provider and the AI model provider.
+ */
+export const BUYER_FLOWDOWN =
+  "You must not use premium results in a way that breaks the acceptable use policies of the providers we use to produce them (our web search provider and an AI model provider), including to violate anyone's privacy. You must not use premium results to train or improve AI models, and you must not present them, or any part of them, as written by a human.";
+/** Counsel X1, verbatim. Shown on /premium-terms only while LLM synthesis is enabled. */
+export const AI_PROVIDER_PRIVACY =
+  "For premium briefs we send your question and the text we extracted from the cited public web pages to an AI model provider, which processes it on our behalf only to select and order quotes, does not use it to train its models, and does not keep it after returning the result. We do not send your wallet address or payment details.";
+/** Counsel X6 line (Odin: names "an AI model provider"). Shown with X1. */
+export const AI_SELECTION_TERM = "In premium briefs, quotes are selected and ordered with the help of an AI model provider. We add no prose of our own: every quote is verbatim from the cited page and checked against it by code.";
+export const AI_PROVIDER_TERMS: readonly string[] = [AI_PROVIDER_PRIVACY, AI_SELECTION_TERM];
+
 export const BUYER_TERMS: readonly string[] = [
   "These terms apply to every paid call to a Horizon Pulse premium URL (/api/research/report/* and /api/seller-watch/*). Paying for a call means you accept them.",
   "Use of results: results are for your own internal use. You may not resell, redistribute, sublicense or publish results in bulk, use them to build or train any machine-learning model, or sell or broker the data they contain. Our upstream providers' rights in the results are reserved, and you may not remove any notices they carry.",
@@ -49,6 +62,8 @@ export const BUYER_TERMS: readonly string[] = [
   `${PRIVACY_PREMIUM_REPLACEMENT} ${PRIVACY_PREMIUM_ADDITION}`,
   DISCLAIMER,
   `Contact for refunds, corrections and takedowns: ${PREMIUM_CONTACT}.`,
+  // Counsel X7 flow-down (DRAFT wording, pending Counsel approval; one clause covers both vendors).
+  BUYER_FLOWDOWN,
 ];
 
 export const R1_DESCRIPTION =
