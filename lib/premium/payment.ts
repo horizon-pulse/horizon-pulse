@@ -229,9 +229,12 @@ export function windowError(d: Decoded, nowS: number, minRemainingS: number): st
   if (!Number.isFinite(a) || !Number.isFinite(b)) return "malformed_authorization";
   if (a > nowS) return "authorization_not_yet_valid";
   if (b < nowS + minRemainingS) return "authorization_window_too_short";
+  // Sentinel delta-3 LOW-1: bound how long a live authorization stays outstanding (and the time to a confirmed strike)
+  if (b > nowS + MAX_VALID_BEFORE_S) return "authorization_window_too_long";
   return null;
 }
 export const SYNC_MIN_REMAINING_S = 120;
+export const MAX_VALID_BEFORE_S = 3600;
 export const ASYNC_MIN_REMAINING_S = 11 * 60;
 
 /* ---------- Sentinel MEDIUM-1: local EIP-3009 signature check before any 409 / alert / write ---------- */

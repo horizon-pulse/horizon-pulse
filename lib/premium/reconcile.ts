@@ -18,7 +18,7 @@ import { persistAlert, truncateAddress } from "@/lib/alert-persist";
 import { resolveSharedReplayStoreEnv } from "@/lib/xrpl-replay-store";
 import { RECONCILE_RETENTION_S } from "./copy";
 
-export type ReconcileOutcome = "settle_timeout" | "settle_ambiguous" | "authorization_already_used" | "charged_not_delivered" | "refund_owed" | "redeem_mismatch";
+export type ReconcileOutcome = "settle_timeout" | "settle_ambiguous" | "authorization_already_used" | "charged_not_delivered" | "refund_owed" | "redeem_mismatch" | "failed_charged";
 export type ReconcileLine = {
   reconcile_id: string;
   ts: string;
@@ -38,7 +38,7 @@ export type ReconcileLine = {
 /** Per-instance daily cap on reconcile writes (Sentinel MEDIUM-1); past it only console + an in-memory count. */
 export const RECONCILE_WRITE_CAP_PER_DAY = 50;
 /** Odin P3: money-owed records are never dropped by the daily cap (their volume is bounded by P2 + the open-job caps). */
-export const CAP_EXEMPT_OUTCOMES: ReadonlySet<ReconcileOutcome> = new Set(["charged_not_delivered", "refund_owed"]);
+export const CAP_EXEMPT_OUTCOMES: ReadonlySet<ReconcileOutcome> = new Set(["charged_not_delivered", "refund_owed", "failed_charged"]);
 let capDay = "";
 let capWritten = 0;
 let capDropped = 0;

@@ -355,7 +355,7 @@ async function stepWatchDay0(store: PremiumStore, job: Job): Promise<boolean> {
 
 /** Charged (settle-first) job whose deliverable could not be built: refund owed via the reconcile line. */
 async function failCharged(store: PremiumStore, job: Job, x: Tier, why: string) {
-  const line = recordReconcile({ reconcile_id: newReconcileId(), route: `${x.route === "research" ? "/api/research/report" : "/api/seller-watch"}/${x.id}`, tier: x.id, payer: job.payer, nonce: job.nonce, amount: job.amount, payTo: DEFAULT_PAY_TO, tx: job.settle_tx, fingerprint: job.rq, outcome: "charged_not_delivered", job_id: job.id });
+  const line = recordReconcile({ reconcile_id: newReconcileId(), route: `${x.route === "research" ? "/api/research/report" : "/api/seller-watch"}/${x.id}`, tier: x.id, payer: job.payer, nonce: job.nonce, amount: job.amount, payTo: DEFAULT_PAY_TO, tx: job.settle_tx, fingerprint: job.rq, outcome: "failed_charged", job_id: job.id });
   job.status = "failed_charged";
   job.failure = why;
   job.reconcile_id = line.reconcile_id;
@@ -367,7 +367,19 @@ async function failCharged(store: PremiumStore, job: Job, x: Tier, why: string) 
 
 /** Settle-first mode: settle now (after verify, before work). On success the job runs prepaid; failure = settle_unconfirmed. */
 export async function settleAtAccept(store: PremiumStore, job: Job, x: Tier): Promise<Job> {
-  await settleJob(store, job, x, true);
+  try {
+    await settleJob(store, job, x, true);
+  } catch {
+    // Sentinel delta-3 LOW-2: a throw mid-settle (e.g. store error) -> reconcile path; the job stays in jobs:active
+    // (indexed by createJob) so the cron / a poll resolves it on-chain (Q4) like any settle_unconfirmed job.
+    const line = recordReconcile({ reconcile_id: newReconcileId(), route: `${x.route === "research" ? "/api/research/report" : "/api/seller-watch"}/${x.id}`, tier: x.id, payer: job.payer, nonce: job.nonce, amount: job.amount, payTo: DEFAULT_PAY_TO, tx: null, fingerprint: job.rq, outcome: "settle_ambiguous", job_id: job.id });
+    job.status = "settle_unconfirmed";
+    job.http_equivalent = 502;
+    job.reconcile_id = line.reconcile_id;
+    job.purge_at = clock() + RETENTION_MS;
+    await saveJob(store, job).catch(() => undefined);
+    await store.zadd(K.active, clock(), job.id, INDEX_TTL_S).catch(() => undefined);
+  }
   return job;
 }
 

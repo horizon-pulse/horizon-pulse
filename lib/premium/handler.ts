@@ -243,7 +243,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
       }
       after(() => runJob(store, job.id, clock() + (SYNC_HARD_LIMIT_S - 5) * 1000 - (clock() - t0)).then(() => undefined, () => undefined));
       return NextResponse.json(
-        { job_id: job.id, status: job.status, status_url: `/api/premium/job/${job.id}`, job_token: token, charged: job.charged, message: job.settle_first
+        { job_id: job.id, status: job.status, ...(job.reconcile_id ? { reconcile_id: job.reconcile_id } : {}), status_url: `/api/premium/job/${job.id}`, job_token: token, charged: job.charged, message: job.settle_first
             ? "Accepted. Poll status_url with header Authorization: Bearer <job_token>. Payments are temporarily settled when verified, before the job runs; if the job then fails, see the refund terms at /premium-terms. The token is shown once."
             : "Accepted. Poll status_url with header Authorization: Bearer <job_token>. You are charged only after the first deliverable is built; the token is shown once.", ...legalBlock() },
         { status: 202, headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } },

@@ -43,7 +43,7 @@ type PayOpts = { amount?: string; value?: string; network?: string; scheme?: str
 /** Real EIP-3009 signature by a throwaway test key (never a real wallet), so the local signature check passes. */
 async function payment(o: PayOpts = {}) {
   const amount = o.amount ?? price("brief");
-  const auth = { from: FROM, to: o.to ?? o.payTo ?? PAYTO, value: o.value ?? amount, validAfter: o.validAfter ?? "0", validBefore: o.validBefore ?? "9999999999", nonce: o.nonce ?? nonce() };
+  const auth = { from: FROM, to: o.to ?? o.payTo ?? PAYTO, value: o.value ?? amount, validAfter: o.validAfter ?? "0", validBefore: o.validBefore ?? String(Math.floor(Date.now() / 1000) + 1800), nonce: o.nonce ?? nonce() };
   let signature = "0x" + "ab".repeat(65);
   if (!o.badSig && /^0x[0-9a-fA-F]{40}$/.test(auth.to)) {
     signature = await ACCOUNT.signTypedData({
