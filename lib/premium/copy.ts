@@ -37,14 +37,13 @@ export const RECONCILE_RETENTION_S = 365 * 86_400;
  * §1(f) (effective 2026-10-17; re-read at sign-up). Linked from every premium 402 and response.
  */
 /**
- * Counsel X7 (10/20 memo): buyer terms must flow down the providers' terms. DRAFT wording by engineering, not yet
- * approved by Counsel; covers the search/extract provider and the AI model provider.
+ * Counsel X7 (10/20 memo): buyer terms must flow down the providers' terms. Counsel R3 wording (10/19 ~6:40 PM ET), verbatim. Always shown.
  */
 export const BUYER_FLOWDOWN =
-  "You must not use premium results in a way that breaks the acceptable use policies of the providers we use to produce them (our web search provider and an AI model provider), including to violate anyone's privacy. You must not use premium results to train or improve AI models, and you must not present them, or any part of them, as written by a human.";
-/** Counsel X1, verbatim. Shown on /premium-terms only while LLM synthesis is enabled. */
+  "You must not use premium results for any unlawful purpose, to harass, track or profile any private person or otherwise violate anyone's privacy, or as the basis for decisions about a person's eligibility for credit, employment, housing or insurance. You must not use premium results to train or improve AI models, and you must not represent that the selection or ordering of quotes was done by a human.";
+/** Counsel X1 with R1 edit (10/19), verbatim. True only once ZDR is confirmed on the account (PREMIUM_LLM_ZDR_CONFIRMED gate). Shown on /premium-terms only while LLM synthesis is enabled. */
 export const AI_PROVIDER_PRIVACY =
-  "For premium briefs we send your question and the text we extracted from the cited public web pages to an AI model provider, which processes it on our behalf only to select and order quotes, does not use it to train its models, and does not keep it after returning the result. We do not send your wallet address or payment details.";
+  "For premium briefs we send your question and the text we extracted from the cited public web pages to an AI model provider, which processes it on our behalf only to select and order quotes, does not use it to train its models, and deletes it within one hour of returning the result. We do not send your wallet address or payment details.";
 /** Counsel X6 line (Odin: names "an AI model provider"). Shown with X1. */
 export const AI_SELECTION_TERM = "In premium briefs, quotes are selected and ordered with the help of an AI model provider. We add no prose of our own: every quote is verbatim from the cited page and checked against it by code.";
 export const AI_PROVIDER_TERMS: readonly string[] = [AI_PROVIDER_PRIVACY, AI_SELECTION_TERM];
@@ -62,7 +61,7 @@ export const BUYER_TERMS: readonly string[] = [
   `${PRIVACY_PREMIUM_REPLACEMENT} ${PRIVACY_PREMIUM_ADDITION}`,
   DISCLAIMER,
   `Contact for refunds, corrections and takedowns: ${PREMIUM_CONTACT}.`,
-  // Counsel X7 flow-down (DRAFT wording, pending Counsel approval; one clause covers both vendors).
+  // Counsel X7 flow-down (R3 wording, approved 10/19).
   BUYER_FLOWDOWN,
 ];
 

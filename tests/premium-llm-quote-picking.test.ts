@@ -138,8 +138,12 @@ describe("backing quotes and confirmation", () => {
     expect(out.claims[0].confirmed_by).toContain("b.example");
     expect(out.could_not_confirm).toEqual([]);
   });
-  it("backing from the SAME publisher, or on an unrelated subject, is dropped", async () => {
+  it("model backing from the SAME publisher, or on an unrelated subject, is dropped (code-side backing may then attach another publisher)", async () => {
     const out = await run([[0, 2], [0, 3]]);
-    for (const c of out.claims) expect(c.snippets).toHaveLength(1);
+    for (const c of out.claims) {
+      const pubs = c.snippets.map((id: string) => out.sources[out.snippets.find((x: any) => x.id === id).source - 1].url).map((u: string) => new URL(u).hostname);
+      expect(new Set(pubs).size).toBe(pubs.length); // never two quotes from one publisher
+      expect(pubs).not.toContain("c.example");
+    }
   });
 });

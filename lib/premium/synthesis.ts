@@ -31,13 +31,14 @@ export const LLM_PROVIDER_DEFAULTS: Record<string, { base: string; model: string
 export const LLM_MAX_INPUT_CHARS = 7_000;
 /** System prompt + schema + framing, chars (counted in the reservation). */
 export const LLM_OVERHEAD_CHARS = 2_500;
-export const LLM_MAX_OUTPUT_TOKENS = 800;
+/** Odin 10/19 replay #2: 800 truncated the strict JSON (prem4 bad_json twice); back to 1,500. */
+export const LLM_MAX_OUTPUT_TOKENS = 1_500;
 /** USD per 1M tokens for the default model (re-check https://docs.x.ai/docs/models before enabling). Override: PREMIUM_LLM_PRICE_IN_PER_M / _OUT_PER_M. */
 export const LLM_PRICE = { inPerM: 1.25, outPerM: 2.5 };
 const LLM_PROMPT_CHARS = LLM_MAX_INPUT_CHARS + LLM_OVERHEAD_CHARS + 600; // + question and per-sentence id framing
-/** Max model cost per call at ~4 chars/token (typical English): about $0.0052. Brief total with Parallel $0.005: about $0.0102. */
+/** Max model cost per call at ~4 chars/token (typical English): about $0.0069. Brief total with Parallel $0.005: about $0.0119. */
 export const LLM_MAX_COST_USD = ((LLM_PROMPT_CHARS / 4) * LLM_PRICE.inPerM + LLM_MAX_OUTPUT_TOKENS * LLM_PRICE.outPerM) / 1e6;
-/** Pessimistic bound at 3 chars/token (dense numbers/URLs): about $0.0062. The reservation uses this, x1.25 (~$0.0078). */
+/** Pessimistic bound at 3 chars/token (dense numbers/URLs): about $0.0080. The reservation uses this, x1.25 (~$0.0100). */
 export const LLM_MAX_COST_PESSIMISTIC_USD = ((LLM_PROMPT_CHARS / 3) * LLM_PRICE.inPerM + LLM_MAX_OUTPUT_TOKENS * LLM_PRICE.outPerM) / 1e6;
 export const LLM_RESERVE_USD = LLM_MAX_COST_PESSIMISTIC_USD * 1.25;
 
@@ -104,7 +105,8 @@ export function kvSpendHook(store: PremiumStore | null, env: Env = process.env, 
 }
 
 /** Odin 10/19 (1) + Counsel X4: job-keyed cache of the VERIFIED selection only (url + verbatim quote); never prompts or raw output. */
-export const LLM_CACHE_TTL_S = 24 * 3600;
+/** Counsel R1 (10/19): 1 hour, matching the public "deletes it within one hour" line. A later redeem just re-runs the selection. */
+export const LLM_CACHE_TTL_S = 3600;
 export const llmCacheKey = (jobKey: string) => `llm:sel:${createHash("sha256").update(`hp-llm-v1\n${jobKey}`).digest("hex").slice(0, 32)}`;
 type Selection = { v: 1; answer: { url: string; quote: string }[]; claims: { url: string; quote: string }[][] };
 
@@ -170,14 +172,26 @@ export function cleanQuote(t: string): string {
 }
 const VERBISH = /\b(is|are|was|were|be|been|being|has|have|had|do|does|did|can|could|will|would|may|might|must|should|costs?|takes?|charges?|allows?|enables?|lets|uses?|means|settles?|runs?|pays?|sends?|launch(?:es)?|confirms?|opens?|offers?|provides?|requires?|supports?|became|becomes|began|begins|went|goes|came|comes|made|makes|\w{3,}ed)\b/i;
 /** Odin 10/19 (a3): list / table fragments are never answer lines (pipes, bullets, glued "label:value", short cells, no verb). */
-export function isFragment(t: string): boolean {
+/** Odin 10/19 replay #2: glued words such as "isOptimism" (a function word run into a capitalised word; brand names like TechCrunch/PayPal are not hit). */
+const GLUED = /\b(?:is|are|was|were|at|on|in|of|to|and|or|the|for|by|from|with|than|as|its)[A-Z][a-z]/;
+/** Structural list / table fragment (applies to claims AND answers): pipes, 2+ bullets/middots, glued "label:value", short cells, glued words. */
+export function isListFragment(t: string): boolean {
   if (/\|/.test(t)) return true;
   if ((t.match(/[•·▪]/g) ?? []).length >= 2) return true;
   if (/[A-Za-z)\]]:[A-Za-z$]/.test(t)) return true; // "estimate):Arbitrum"
+  if (GLUED.test(t)) return true;
   const cells = t.split(/\s{2,}|\t|;|·/).map((c) => c.trim()).filter(Boolean);
-  if (cells.length >= 3 && cells.filter((c) => c.split(/\s+/).length <= 3).length >= 3) return true;
-  return !VERBISH.test(t);
+  return cells.length >= 3 && cells.filter((c) => c.split(/\s+/).length <= 3).length >= 3;
 }
+/** Odin 10/19 (a3): answer lines additionally need a verb. */
+export function isFragment(t: string): boolean {
+  return isListFragment(t) || !VERBISH.test(t);
+}
+/** Subject terms of a question: proper nouns / acronyms / alphanumerics after the first word ("Base", "USDC", "x402"). */
+export function subjectTerms(q: string): string[] {
+  return q.split(/\s+/).slice(1).map((w) => w.replace(/[^A-Za-z0-9]/g, "")).filter((w) => w.length > 1 && (/^[A-Z]/.test(w) || /\d/.test(w)) && !STOP.has(w.toLowerCase()));
+}
+const hasTerm = (t: string, term: string) => new RegExp(`(^|[^A-Za-z0-9])${term.replace(/[^A-Za-z0-9]/g, "")}([^A-Za-z0-9]|$)`, "i").test(t);
 /** Explicit calendar date (full day, or month + year), not "Wednesday" / "July 14" without a year. */
 export const hasExplicitDate = (t: string) => [...factValues(t)].some((f) => /^d:\d{4}-\d{2}/.test(f));
 
@@ -296,7 +310,7 @@ export async function synthesizeBrief<T extends Record<string, any>>(q: string, 
       const ok = (v: { url: string; quote: string }) => !!pageText.get(v.url)?.includes(norm(v.quote.replace(/ …$/, ""))) && okClaim(v.quote);
       const claimsC = sel.claims.map((qs) => qs.filter(ok)).filter((qs) => qs.length);
       const answerC = sel.answer.filter(ok);
-      if (claimsC.length || answerC.length) return { ...assemble(code, q, kind, answerC, claimsC, 0), synthesis: "llm_selected_verified_cached" };
+      if (claimsC.length || answerC.length) return { ...assemble(code, q, kind, answerC, claimsC, 0, extracted), synthesis: "llm_selected_verified_cached" };
     }
   }
   const budget = Math.min(LLM_TIMEOUT_MS, deadline - (deps?.now ?? Date.now)());
@@ -338,15 +352,39 @@ export async function synthesizeBrief<T extends Record<string, any>>(q: string, 
     const sel: Selection = { v: 1, answer: answerV, claims: claimsV };
     await store.set(ckey, JSON.stringify(sel), LLM_CACHE_TTL_S).catch(() => undefined); // verified quotes only
   }
-  return { ...assemble(code, q, kind, answerV, claimsV, rejected.quotes), synthesis: "llm_selected_verified" };
+  return { ...assemble(code, q, kind, answerV, claimsV, rejected.quotes, extracted), synthesis: "llm_selected_verified" };
 }
 
 /** Build the brief from verified quotes only; confirmation by shared normalised fact across publishers. */
-function assemble<T extends Record<string, any>>(code: T, q: string, kind: ReturnType<typeof questionKind>, answerIn: Verified[], claimsIn: Verified[][], rejectedQuotes: number): T {
+/** The code-only answer block is reused only if every line passes the same fragment / subject-term rules. */
+function codeAnswerOk(a: any, subj: string[]): boolean {
+  if (!a || !Array.isArray(a.lines) || !a.lines.length) return !!a;
+  return a.lines.every((l: any) => typeof l?.text === "string" && !isFragment(l.text) && subj.every((t) => hasTerm(l.text, t)));
+}
+function assemble<T extends Record<string, any>>(code: T, q: string, kind: ReturnType<typeof questionKind>, answerIn: Verified[], claimsIn: Verified[][], rejectedQuotes: number, extracted: ParallelResult[] = []): T {
   const pub = (u: string) => publisherOf(domainOf(u) ?? u);
   // (a1) backing quote must come from a DIFFERENT publisher and state the same fact (shared fact value or >= 3 shared terms).
   const sameFact = (a: Verified, b: Verified) => [...factValues(a.quote)].some((f) => factValues(b.quote).has(f)) || [...terms(b.quote)].filter((w) => terms(a.quote).has(w)).length >= 3;
-  let claimsV = claimsIn.map((qs) => [qs[0], ...qs.slice(1).filter((b) => pub(b.url) !== pub(qs[0].url) && sameFact(qs[0], b))]);
+  // Odin replay #2 (2): list/table fragments and glued words are dropped from claims too.
+  let claimsV = claimsIn
+    .map((qs) => qs.filter((v) => !isListFragment(v.quote)))
+    .filter((qs) => qs.length)
+    .map((qs) => [qs[0], ...qs.slice(1).filter((b) => pub(b.url) !== pub(qs[0].url) && sameFact(qs[0], b))]);
+  // Odin replay #2 (3): deterministic code-side backing. For a claim with no valid model backing, look in OTHER publishers'
+  // stripped extract sentences for one with the same normalised fact value plus >= 1 shared non-question keyword that
+  // passes every filter. Verbatim by construction (taken from the page text). Contradiction rules still apply below.
+  const qTerms = terms(q);
+  const pool: Verified[] = extracted.flatMap((r) => sentences(r.excerpts.join("\n")).map((t) => ({ url: r.url, quote: capWords(cleanQuote(t)) })))
+    .filter((v) => v.quote.length >= 12 && okClaim(v.quote) && !isListFragment(v.quote));
+  claimsV = claimsV.map((qs) => {
+    if (qs.length > 1) return qs;
+    const main = qs[0];
+    const fm = factValues(main.quote);
+    if (!fm.size) return qs;
+    const keys = [...terms(main.quote)].filter((w) => !qTerms.has(w));
+    const hit = pool.find((c) => pub(c.url) !== pub(main.url) && [...factValues(c.quote)].some((f) => fm.has(f)) && keys.some((k) => terms(c.quote).has(k)));
+    return hit ? [main, hit] : qs;
+  });
   // (a4) when-questions: claims with an explicit date first (stable).
   if (kind === "when") claimsV = [...claimsV].sort((x, y) => Number(hasExplicitDate(y[0].quote)) - Number(hasExplicitDate(x[0].quote)));
   // (a5) at most 2 claims per publisher (by the main quote).
@@ -357,7 +395,9 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
     return perPub.get(p)! <= 2;
   });
   // (a3) no list/table fragments as answer lines; (a4) explicit dates first for when-questions.
-  let answerV = answerIn.filter((a) => !isFragment(a.quote));
+  // Odin replay #2 (2): an answer line must name every subject term of the question (e.g. "Base", "USDC"), or none is shown.
+  const subj = subjectTerms(q);
+  let answerV = answerIn.filter((a) => !isFragment(a.quote) && subj.every((t) => hasTerm(a.quote, t)));
   if (kind === "when") answerV = [...answerV].sort((x, y) => Number(hasExplicitDate(y.quote)) - Number(hasExplicitDate(x.quote)));
   // (a6) contradicted quotes: dropped from answer lines; claims kept but flagged contradicted:true (never confirmed).
   const everything = [...claimsV.flat(), ...answerV];
@@ -411,7 +451,9 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
     ...code,
     answer: answerLines.length
       ? { lines: answerLines, note: answerLines.some((a) => a.confirmed) ? "Quoted from the sources below; confirmed where marked." : "Quoted from one source; not confirmed on a second publisher." }
-      : (code as any).answer,
+      : codeAnswerOk((code as any).answer, subj)
+        ? (code as any).answer
+        : { lines: [], note: "No quoted sentence answers the question directly; see the claims below." },
     sources,
     snippets,
     claims,

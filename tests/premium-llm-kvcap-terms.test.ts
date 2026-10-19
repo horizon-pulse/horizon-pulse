@@ -99,7 +99,7 @@ describe("KV global daily spend cap (fails closed)", () => {
 });
 
 describe("job-keyed synthesis cache (verified quotes only)", () => {
-  it("second run with the same job key: no model call, no spend; stores only url+quote, TTL 24h, hashed key", async () => {
+  it("second run with the same job key: no model call, no spend; stores only url+quote, TTL 1h, hashed key", async () => {
     const c = { n: 0, users: [] as string[] };
     const { s } = load("prem4");
     setSynthesisForTests({ env: ON, model: pickModel("prem4", s.question, c), now: () => T0 });
@@ -146,12 +146,12 @@ describe("job-keyed synthesis cache (verified quotes only)", () => {
 });
 
 describe("input cap (Odin: max cost per brief ~ $0.01)", () => {
-  it("max model cost ~$0.0052 (4 chars/token), <= $0.0063 pessimistic; brief with Parallel $0.005 ~ $0.0102", () => {
+  it("max model cost ~$0.0069 (4 chars/token), <= $0.0080 pessimistic; brief with Parallel $0.005 ~ $0.0119 (1,500 output tokens, Odin replay #2)", () => {
     expect(LLM_MAX_INPUT_CHARS).toBe(7000);
-    expect(LLM_MAX_OUTPUT_TOKENS).toBe(800);
-    expect(LLM_MAX_COST_USD).toBeLessThanOrEqual(0.0053);
-    expect(0.005 + LLM_MAX_COST_USD).toBeLessThanOrEqual(0.0103);
-    expect(LLM_MAX_COST_PESSIMISTIC_USD).toBeLessThanOrEqual(0.0063);
+    expect(LLM_MAX_OUTPUT_TOKENS).toBe(1500);
+    expect(LLM_MAX_COST_USD).toBeLessThanOrEqual(0.0070);
+    expect(0.005 + LLM_MAX_COST_USD).toBeLessThanOrEqual(0.0120);
+    expect(LLM_MAX_COST_PESSIMISTIC_USD).toBeLessThanOrEqual(0.0080);
     expect(LLM_RESERVE_USD).toBeCloseTo(LLM_MAX_COST_PESSIMISTIC_USD * 1.25, 12);
   });
   it("prompt page text stays within the cap on all 3 real fixtures", async () => {
@@ -179,15 +179,16 @@ describe("input cap (Odin: max cost per brief ~ $0.01)", () => {
 
 describe("/premium-terms splice (Counsel X1, X6 line, X7)", () => {
   it("X1 verbatim; names only 'an AI model provider'; no wallet/payment data", () => {
-    expect(AI_PROVIDER_PRIVACY).toBe("For premium briefs we send your question and the text we extracted from the cited public web pages to an AI model provider, which processes it on our behalf only to select and order quotes, does not use it to train its models, and does not keep it after returning the result. We do not send your wallet address or payment details.");
+    expect(AI_PROVIDER_PRIVACY).toBe("For premium briefs we send your question and the text we extracted from the cited public web pages to an AI model provider, which processes it on our behalf only to select and order quotes, does not use it to train its models, and deletes it within one hour of returning the result. We do not send your wallet address or payment details.");
     expect(AI_SELECTION_TERM).toMatch(/selected and ordered with the help of an AI model provider/);
     expect(AI_PROVIDER_TERMS).toEqual([AI_PROVIDER_PRIVACY, AI_SELECTION_TERM]);
   });
   it("X7 flow-down in buyer terms: provider AUP, no training, not human-written", () => {
     expect(BUYER_TERMS).toContain(BUYER_FLOWDOWN);
-    expect(BUYER_FLOWDOWN).toMatch(/acceptable use polic/);
-    expect(BUYER_FLOWDOWN).toMatch(/train or improve AI models/);
-    expect(BUYER_FLOWDOWN).toMatch(/as written by a human/);
+    expect(BUYER_FLOWDOWN).toBe("You must not use premium results for any unlawful purpose, to harass, track or profile any private person or otherwise violate anyone's privacy, or as the basis for decisions about a person's eligibility for credit, employment, housing or insurance. You must not use premium results to train or improve AI models, and you must not represent that the selection or ordering of quotes was done by a human.");
+  });
+  it("Counsel R1: synthesis cache TTL is 1 hour (no selection data kept past the public one-hour line)", () => {
+    expect(LLM_CACHE_TTL_S).toBe(3600);
   });
   it("public copy never names a vendor", () => {
     const all = [...BUYER_TERMS, ...AI_PROVIDER_TERMS].join(" ");

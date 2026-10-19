@@ -88,9 +88,9 @@ describe("real extract replay: LLM synthesis with recorded (mocked) model", () =
     expect(out.answer.lines[0].text).toMatch(/^Introduced by Coinbase in February 2023/);
     expect(out.claims.filter((c: any) => c.confirmed_by)).toEqual([]);
   });
-  it("howmuch: the Base $0.0008 table row is kept as a claim but never as an answer line (Odin 10/19 a3)", async () => {
+  it("howmuch: the Base $0.0008 table row is neither a claim nor an answer line (Odin replay #2: fragments dropped from claims too)", async () => {
     const out = await viaLlm("howmuch");
-    expect(out.claims.some((c: any) => /Base \$0\.0008/.test(c.claim))).toBe(true);
+    expect(out.claims.some((c: any) => /·/.test(c.claim))).toBe(false);
     for (const l of out.answer.lines ?? []) expect(l.text).not.toMatch(/·|\):[A-Z]/);
   });
   it("x402: general question -> no answer lines from the model, falls back to the code answer block; pronoun claim dropped", async () => {
