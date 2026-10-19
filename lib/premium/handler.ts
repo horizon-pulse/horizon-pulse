@@ -48,7 +48,7 @@ import {
   windowError,
   type Decoded,
 } from "./payment";
-import { parallelKeyPresent } from "./parallel";
+import { ParallelError, parallelKeyPresent } from "./parallel";
 import { newReconcileId, recordReconcile, type ReconcileOutcome } from "./reconcile";
 import { runResearch } from "./research";
 import { premiumStore, type PremiumStore } from "./store";
@@ -114,6 +114,26 @@ const unconfirmedBody = (rc: string, charged?: boolean, redeem?: string) => ({
     "Payment settlement could not be confirmed (or the result could not be produced after payment). Do not sign a new payment for this request. You can retry this exact request with the same payment plus a payer proof (see /premium-terms), or contact us with the reconcile_id for a refund.",
   ...legalBlock(),
 });
+/** Settle confirmed, result not produced: status says so (not settle_unconfirmed); same redeem fields + refund path. */
+const deliveryFailedBody = (rc: string, tx: string | null, why: string, redeem: string) => ({
+  status: "charged_not_delivered",
+  error: "result_not_produced",
+  reason: why,
+  settled: true,
+  tx,
+  reconcile_id: rc,
+  redeem_message: redeem,
+  redeem_header: PAYER_PROOF_HEADER,
+  charged: true,
+  message:
+    "Your payment settled, but the result could not be produced. Do not sign a new payment for this request. You can retry this exact request with the same payment plus a payer proof (see /premium-terms) at no extra charge, or contact us with the reconcile_id for a refund.",
+  ...legalBlock(),
+});
+/** Non-secret failure code only: ParallelError messages are fixed codes; anything else becomes its class name. */
+export function researchFailureCode(e: unknown): string {
+  if (e instanceof ParallelError && /^[a-z0-9_]{1,40}$/.test(e.message)) return e.message;
+  return e instanceof Error ? (/^[A-Za-z]{1,40}$/.test(e.name) ? e.name : "error") : "error";
+}
 const inProgress = () => jsonError(503, { error: "payment_in_progress", charged: false, message: "This payment authorization is already being processed." }, { "Retry-After": "5" });
 
 function okResponse(x: Tier, result: unknown, tx: string | null, header: string | null) {
@@ -273,11 +293,19 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     try {
       const result = await runResearch(x, v.input, t0 + SYNC_HARD_LIMIT_S * 1000);
       return okResponse(x, result, s.tx, s.header);
-    } catch {
+    } catch (e) {
+      // The settle SUCCEEDED; the work after it failed. Say so (settled + tx + PAYMENT-RESPONSE) instead of reading as an
+      // unconfirmed settle, and log a non-secret failure code (ParallelError codes like upstream_401 / not_configured).
+      const why = researchFailureCode(e);
+      console.error(`[premium] research failed after confirmed settle: ${why} (tier ${x.id})`);
       const line = reconcile("charged_not_delivered", x, d, rq, s.tx);
       // settled for certain: mark redeemable (job:"settled" tells redeem the settle is confirmed)
       await moveClaim(store, held, { s: "unconfirmed", rc: line.reconcile_id, job: "settled" }).catch(() => null);
-      return jsonError(502, unconfirmedBody(line.reconcile_id, true, redeemMessage(line.reconcile_id, rq, d.to!, d.value!)));
+      return jsonError(
+        502,
+        { ...deliveryFailedBody(line.reconcile_id, s.tx, why, redeemMessage(line.reconcile_id, rq, d.to!, d.value!)) },
+        { "PAYMENT-RESPONSE": s.header, "Access-Control-Expose-Headers": "PAYMENT-RESPONSE" },
+      );
     }
   } catch {
     return jsonError(503, { error: "store_unavailable", charged: false }, { "Retry-After": "2" });

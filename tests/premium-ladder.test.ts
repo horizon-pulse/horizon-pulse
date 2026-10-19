@@ -426,7 +426,13 @@ describe("paid sync path", () => {
     expect(r.status).toBe(502);
     const j = await r.json();
     expect(j.charged).toBe(true);
-    expect(j.status).toBe("settle_unconfirmed");
+    // regression (Odin $1 test 10/19, rc_c6c8…): a CONFIRMED settle followed by a work failure must not read as settle_unconfirmed
+    expect(j.status).toBe("charged_not_delivered");
+    expect(j.settled).toBe(true);
+    expect(typeof j.tx).toBe("string");
+    expect(j.reason).toBe("upstream_500");
+    expect(j.redeem_header).toBe("x-hp-payer-proof");
+    expect(r.headers.get("payment-response")).toBeTruthy();
     expect(fac.map((c) => c.op)).toEqual(["verify", "settle"]);
     expect(reconciles.map((l) => l.outcome)).toEqual(["charged_not_delivered"]);
   });
