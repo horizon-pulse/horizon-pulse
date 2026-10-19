@@ -85,10 +85,45 @@ export function isSyndicated(a: ParallelResult, b: ParallelResult): boolean {
   return ea.size >= 12 && eb.size >= 12 && jaccard(ea, eb) >= 0.7;
 }
 /** Registrable-ish domain for independence counting (help.coinbase.com and coinbase.com are one publisher). */
-export function publisherOf(domain: string): string {
+function registrable(domain: string): string {
   const p = domain.split(".");
   const twoLevelTld = /^(co|com|org|net|gov|ac|edu)$/.test(p[p.length - 2] ?? "") && (p[p.length - 1] ?? "").length === 2;
   return p.slice(twoLevelTld ? -3 : -2).join(".");
+}
+/** Odin 10/19: domains with one owner count as ONE publisher unless independence is verified. Keep small and explicit. */
+export const SAME_OWNER: Record<string, string> = { "usdc.org": "circle.com", "usdc.com": "circle.com", "circle.com": "circle.com" };
+export function publisherOf(domain: string): string {
+  const r = registrable(domain);
+  return SAME_OWNER[r] ?? r;
+}
+/** Key facts: numbers (with $/%), ISO / month-name dates, months+years, and capitalised entities not at sentence start. */
+const MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december";
+export function keyFacts(s: string, exclude: Set<string> = new Set()): Set<string> {
+  const out = new Set<string>();
+  for (const d of s.match(DATE_RE) ?? []) out.add(`d:${d.toLowerCase()}`);
+  for (const m of s.toLowerCase().match(new RegExp(`\\b(?:${MONTHS})\\s+(?:19|20)\\d{2}\\b`, "g")) ?? []) out.add(`d:${m}`);
+  for (const n of numbers(s)) if (/\d/.test(n)) out.add(`n:${n.replace(/,/g, "")}`);
+  const words = s.split(/\s+/);
+  for (let i = 1; i < words.length; i++) {
+    const w = words[i].replace(/[^A-Za-z0-9&.-]/g, "").replace(/\.$/, "");
+    if (/^[A-Z][A-Za-z0-9&.-]{1,}$/.test(w) && !new RegExp(`^(?:${MONTHS})$`, "i").test(w) && !exclude.has(w.toLowerCase()) && !STOP.has(w.toLowerCase()))
+      out.add(`e:${w.toLowerCase()}`);
+  }
+  return out;
+}
+/** Same key fact AND the same subject: >=2 shared subject keywords beyond the fact tokens and the question's own words. */
+export function sameFact(a: string, b: string, qTerms: Set<string> = new Set()): boolean {
+  const fa = keyFacts(a, qTerms);
+  const fb = keyFacts(b, qTerms);
+  const shared = [...fa].filter((f) => fb.has(f));
+  if (!shared.length) return false;
+  const factWords = new Set(shared.map((f) => f.slice(2)).flatMap((f) => f.split(/\s+/)));
+  const stem = (w: string) => w.replace(/(?:ies|es|s)$/, (m) => (m === "ies" ? "y" : "")).replace(/\.$/, "");
+  const subj = (t: string) => new Set([...terms(t)].filter((w) => !qTerms.has(w) && !factWords.has(w) && !/^\$?\d/.test(w)).map(stem));
+  const sa = subj(a);
+  let overlap = 0;
+  for (const w of subj(b)) if (sa.has(w)) overlap++;
+  return overlap >= 2;
 }
 export const MIN_INDEPENDENT_DOMAINS = 3;
 const PER_DOMAIN_CAP: Record<string, number> = { brief: 2, standard: 5, extended: 8 };
@@ -107,6 +142,7 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
   const kept: ParallelResult[] = [];
   const perSource = new Map<number, Snippet[]>();
   let sid = 0;
+  const dropped = { opinion: 0, pronoun: 0 }; // debug counts only; no text is kept or logged
   for (const r of byUrl.values()) {
     const domain = domainOf(r.url);
     if (!domain) continue;
@@ -127,7 +163,14 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
     const list: Snippet[] = [];
     for (const s of r.excerpts.flatMap(sentences)) {
       if (list.length >= SNIPPETS_PER_SOURCE) break;
-      if (isOpinion(s) || !isSelfContained(s)) continue;
+      if (isOpinion(s)) {
+        dropped.opinion++;
+        continue;
+      }
+      if (!isSelfContained(s)) {
+        dropped.pronoun++;
+        continue;
+      }
       const t = capWords(s);
       if (seen.has(t)) continue;
       seen.add(t);
@@ -137,6 +180,7 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
   }
   // Round-robin across publishers so claims spread over distinct domains; per-publisher cap per tier.
   const domCap = PER_DOMAIN_CAP[x.id] ?? 12;
+  const allCandidates = [...perSource.values()].flat();
   const byPub = new Map<string, Snippet[]>();
   for (const [n, list] of perSource) {
     const pub = publisherOf(sources[n - 1].domain);
@@ -174,23 +218,45 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
     } else claims.push({ claim: s.text, snippets: [s.id], sources: [s.source], domains: [dom] });
   }
 
-  const quotedPubs = [...new Set(used.map((s) => publisherOf(sources[s.source - 1].domain)))];
-  const independent = new Set([...perSource.keys()].map((n) => publisherOf(sources[n - 1].domain))).size;
-  const unconfirmed = claims.filter((c) => new Set(c.domains.map(publisherOf)).size < 2).map((c) => c.claim).slice(0, 20);
+  const pubOfSrc = (n: number) => publisherOf(sources[n - 1].domain);
+  // Odin 10/19 (2): confirmed = two independent publishers share a key fact (number / date / named entity) about the same subject.
+  const qTerms = terms(q);
+  for (const c of claims) {
+    if (new Set(c.domains.map(publisherOf)).size >= 2) continue;
+    const head = used.find((u) => u.id === c.snippets[0])!;
+    const by = new Set<string>();
+    for (const o of allCandidates) if (pubOfSrc(o.source) !== pubOfSrc(head.source) && sameFact(head.text, o.text, qTerms)) by.add(pubOfSrc(o.source));
+    if (by.size) (c as { confirmed_by?: string[] }).confirmed_by = [...by];
+  }
+  const pubsOf = (c: (typeof claims)[number]) => new Set([...c.domains.map(publisherOf), ...((c as { confirmed_by?: string[] }).confirmed_by ?? [])]);
+  const quotedPubs = [...new Set(used.map((s) => pubOfSrc(s.source)))];
+  const foundPubs = new Set([...perSource.keys()].map(pubOfSrc));
+  const independent = foundPubs.size;
+  const merged = [...foundPubs]
+    .map((pub) => ({ pub, doms: [...new Set([...perSource.keys()].map((n) => registrable(sources[n - 1].domain)).filter((d) => SAME_OWNER[d] === pub))] }))
+    .filter((m) => m.doms.length >= 2);
+  const mergedNote = merged.length ? ` Same-owner domains counted as one publisher: ${merged.map((m) => `${m.doms.join(" + ")} (${m.pub})`).join("; ")}.` : "";
+  const unconfirmed = claims.filter((c) => pubsOf(c).size < 2).map((c) => c.claim).slice(0, 20);
   const base = {
     tier: x.id,
     question: q,
     sources,
     snippets: used,
-    claims: claims.map((c) => ({ claim: c.claim, snippets: c.snippets, sources: c.sources })),
-    independent_domains: { found: independent, quoted: quotedPubs.length, minimum: MIN_INDEPENDENT_DOMAINS, domains: quotedPubs },
-    ...(independent < MIN_INDEPENDENT_DOMAINS
-      ? { coverage_note: `Only ${independent} independent domain${independent === 1 ? "" : "s"} found for this question (minimum ${MIN_INDEPENDENT_DOMAINS}). Treat these claims as thinly sourced.` }
+    claims: claims.map((c) => {
+      const cb = (c as { confirmed_by?: string[] }).confirmed_by;
+      return { claim: c.claim, snippets: c.snippets, sources: c.sources, ...(cb ? { confirmed_by: cb } : {}) };
+    }),
+    independent_domains: { found: independent, quoted: quotedPubs.length, minimum: MIN_INDEPENDENT_DOMAINS, domains: quotedPubs, counted_as: "publishers" },
+    ...(independent < MIN_INDEPENDENT_DOMAINS || mergedNote
+      ? {
+          coverage_note: `${independent < MIN_INDEPENDENT_DOMAINS ? `Only ${independent} independent publisher${independent === 1 ? "" : "s"} found for this question (minimum ${MIN_INDEPENDENT_DOMAINS}). Treat these claims as thinly sourced.` : `${independent} independent publishers found.`}${mergedNote}`,
+        }
       : {}),
     could_not_confirm: unconfirmed,
     could_not_confirm_note: unconfirmed.length
-      ? "These claims appear on only one independent domain; we could not confirm them elsewhere."
+      ? "These claims appear on only one independent publisher; we could not confirm them elsewhere."
       : UNCONFIRMED_EMPTY_NOTE,
+    dropped,
   };
   if (x.id === "brief") return base;
   const multi = claims.filter((c) => c.domains.length >= 2);
