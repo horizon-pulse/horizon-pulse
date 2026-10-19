@@ -3772,7 +3772,7 @@
             "name": "servings",
             "in": "query",
             "required": false,
-            "description": "Servings the recipe makes (1-100). Give with targetServings to scale, or neither.",
+            "description": "Servings the recipe makes, integer 1-100 as digits. Give with targetServings to scale, or neither.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -3784,7 +3784,7 @@
             "name": "targetServings",
             "in": "query",
             "required": false,
-            "description": "Servings wanted (1-100).",
+            "description": "Servings wanted, integer 1-100 as digits.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -5082,6 +5082,305 @@
           },
           "502": {
             "description": "No public RPC answered (not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/batch": {
+      "get": {
+        "operationId": "getBatch",
+        "tags": [
+          "Agent utilities"
+        ],
+        "summary": "Up to 10 chain checks (balance, gas, tx status, token, chain head, names) for one payment",
+        "description": "Batch chain checks API: up to 10 checks for one payment. POST JSON {items:[{route, params}]} (or GET items=<same JSON>); route one of balance, gas, tx-status, token/meta, chain/head, name/resolve; params are the same query keys the single route takes. Returns JSON: results [{index, route, status, ok, body}] in request order, count, okCount. Each item runs the single route's handler. Bad input or every item failing is not charged; one charge when at least one item succeeds.\n\nPrice: $0.01 USDC per call (10000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.\n\nValue: one payment and one round trip for up to 10 reads. At 10 items that is $0.001 per item vs the $0.002 single-call floor; 5 items cost the same as 5 singles ($0.01); below 5 items the singles are cheaper (4 x $0.002 = $0.008). Substitutes: the same single routes at $0.002 each, or public RPCs and block explorers queried directly (free).",
+        "x-payment-info": {
+          "protocol": "x402",
+          "x402Version": 2,
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "assetSymbol": "USDC",
+          "decimals": 6,
+          "priceUsd": "$0.01",
+          "amount": "10000",
+          "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+          "maxTimeoutSeconds": 300,
+          "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
+          "discovery": "https://horizonpulse.dev/.well-known/x402"
+        },
+        "parameters": [
+          {
+            "name": "items",
+            "in": "query",
+            "required": true,
+            "description": "JSON array of 1-10 {route, params} objects (same shape as the POST body's items).",
+            "schema": {
+              "type": "string",
+              "maxLength": 8000
+            },
+            "example": "[{\"route\":\"chain/head\",\"params\":{\"network\":\"base\"}},{\"route\":\"gas\",\"params\":{}}]"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
+            "headers": {
+              "PAYMENT-RESPONSE": {
+                "$ref": "#/components/headers/PaymentResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                },
+                "example": {
+                  "illustrative": true,
+                  "source": "batch",
+                  "count": 2,
+                  "okCount": 2,
+                  "results": [
+                    {
+                      "index": 0,
+                      "route": "chain/head",
+                      "status": 200,
+                      "ok": true,
+                      "body": {
+                        "source": "chain-head",
+                        "networks": [
+                          {
+                            "network": "base",
+                            "height": 0
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "index": 1,
+                      "route": "gas",
+                      "status": 200,
+                      "ok": true,
+                      "body": {
+                        "ok": true,
+                        "source": "rpc",
+                        "networks": [
+                          {
+                            "network": "base",
+                            "baseFeeGwei": 0
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad input: items missing or empty, more than 10 items, unknown route, a param the route does not take, or a value over 256 chars (not charged; no item runs). Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "ok": false,
+                  "error": "items must be a non-empty array.",
+                  "code": "invalid_input",
+                  "charged": false
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "$ref": "#/components/headers/PaymentRequired"
+              }
+            }
+          },
+          "502": {
+            "description": "Every item failed (all_items_failed; not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "postBatch",
+        "tags": [
+          "Agent utilities"
+        ],
+        "summary": "Up to 10 chain checks (balance, gas, tx status, token, chain head, names) for one payment",
+        "description": "Batch chain checks API: up to 10 checks for one payment. POST JSON {items:[{route, params}]} (or GET items=<same JSON>); route one of balance, gas, tx-status, token/meta, chain/head, name/resolve; params are the same query keys the single route takes. Returns JSON: results [{index, route, status, ok, body}] in request order, count, okCount. Each item runs the single route's handler. Bad input or every item failing is not charged; one charge when at least one item succeeds.\n\nPrice: $0.01 USDC per call (10000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.\n\nValue: one payment and one round trip for up to 10 reads. At 10 items that is $0.001 per item vs the $0.002 single-call floor; 5 items cost the same as 5 singles ($0.01); below 5 items the singles are cheaper (4 x $0.002 = $0.008). Substitutes: the same single routes at $0.002 each, or public RPCs and block explorers queried directly (free).",
+        "x-payment-info": {
+          "protocol": "x402",
+          "x402Version": 2,
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "assetSymbol": "USDC",
+          "decimals": 6,
+          "priceUsd": "$0.01",
+          "amount": "10000",
+          "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+          "maxTimeoutSeconds": 300,
+          "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
+          "discovery": "https://horizonpulse.dev/.well-known/x402"
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "route": {
+                          "type": "string",
+                          "enum": [
+                            "balance",
+                            "gas",
+                            "tx-status",
+                            "token/meta",
+                            "chain/head",
+                            "name/resolve"
+                          ]
+                        },
+                        "params": {
+                          "type": "object",
+                          "description": "The query keys the single route takes, string values."
+                        }
+                      },
+                      "required": [
+                        "route"
+                      ]
+                    },
+                    "description": "1-10 checks. One price per call."
+                  }
+                }
+              },
+              "example": {
+                "items": [
+                  {
+                    "route": "chain/head",
+                    "params": {
+                      "network": "base"
+                    }
+                  },
+                  {
+                    "route": "gas",
+                    "params": {}
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
+            "headers": {
+              "PAYMENT-RESPONSE": {
+                "$ref": "#/components/headers/PaymentResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchResponse"
+                },
+                "example": {
+                  "illustrative": true,
+                  "source": "batch",
+                  "count": 2,
+                  "okCount": 2,
+                  "results": [
+                    {
+                      "index": 0,
+                      "route": "chain/head",
+                      "status": 200,
+                      "ok": true,
+                      "body": {
+                        "source": "chain-head",
+                        "networks": [
+                          {
+                            "network": "base",
+                            "height": 0
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "index": 1,
+                      "route": "gas",
+                      "status": 200,
+                      "ok": true,
+                      "body": {
+                        "ok": true,
+                        "source": "rpc",
+                        "networks": [
+                          {
+                            "network": "base",
+                            "baseFeeGwei": 0
+                          }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad input: items missing or empty, more than 10 items, unknown route, a param the route does not take, or a value over 256 chars (not charged; no item runs). Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "ok": false,
+                  "error": "items must be a non-empty array.",
+                  "code": "invalid_input",
+                  "charged": false
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "$ref": "#/components/headers/PaymentRequired"
+              }
+            }
+          },
+          "502": {
+            "description": "Every item failed (all_items_failed; not charged)",
             "content": {
               "application/json": {
                 "schema": {
@@ -9100,6 +9399,72 @@
           }
         },
         "description": "Inferred from a real response recorded from GET /api/demo/name-resolve at 2026-10-16T15:31Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
+      },
+      "BatchResponse": {
+        "type": "object",
+        "properties": {
+          "illustrative": {
+            "type": "boolean"
+          },
+          "source": {
+            "type": "string"
+          },
+          "count": {
+            "type": "number"
+          },
+          "okCount": {
+            "type": "number"
+          },
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "number"
+                },
+                "route": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "number"
+                },
+                "ok": {
+                  "type": "boolean"
+                },
+                "body": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "networks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "network": {
+                            "type": "string"
+                          },
+                          "height": {
+                            "type": "number"
+                          },
+                          "baseFeeGwei": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "description": "Inferred from an illustrative format sample (illustrative: true), not a recorded real response. Fields may be added; clients should ignore unknown fields."
       },
       "DiscourseSplitResponse": {
         "type": "object",

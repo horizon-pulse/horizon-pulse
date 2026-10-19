@@ -64,6 +64,8 @@ import {
   HTTP_PRICE_ATOMIC,
   EXTRACT_PRICE_USD,
   EXTRACT_PRICE_ATOMIC,
+  BATCH_PRICE_USD,
+  BATCH_PRICE_ATOMIC,
 } from "./config";
 
 export type LiveRoute = {
@@ -316,6 +318,18 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     category: "agent",
     blurb: "Resolve an ENS name or Basename, or find an address's primary name",
   },
+  {
+    // Listed 2026-10-19 after the HP_BATCH_ENABLED flip (Odin GO 9:24 AM AST, Michael yes 9:17 AM AST).
+    // $0.001 per item is allowed only inside a batch; the single-call floor stays $0.002.
+    path: "/api/batch",
+    method: "GET|POST",
+    priceUsd: BATCH_PRICE_USD,
+    priceAtomic: BATCH_PRICE_ATOMIC,
+    summary:
+      "Up to 10 chain checks for one payment ($0.01 per call): balance, gas, tx-status, token/meta, chain/head, name/resolve; same inputs as the single routes; charged once if at least one item succeeds",
+    category: "agent",
+    blurb: "Up to 10 chain checks (balance, gas, tx status, token, chain head, names) for one payment",
+  },
 
   {
     path: "/api/discourse/split?q=…",
@@ -369,7 +383,7 @@ export const FIRST_SETTLE = {
 } as const;
 
 export const CATALOG_NOTE =
-  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock status check on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 changed-since-last-check for a public page or endpoint, short diff), /api/balance ($0.002 can-I-pay-now check per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks), /api/grocery/normalize ($0.002 recipe ingredient lines to a normalized shopping list, deterministic, no prices), /api/grocery/ingredient ($0.005 nutrition per 100 g from USDA FoodData Central and Open Food Facts, untested price), /api/chain/head ($0.002 chain tip on Base, Polygon, Ethereum, Solana and XRPL), /api/token/meta ($0.002 token metadata from chain state, no price), /api/name/resolve ($0.002 ENS and Basenames, on-chain only)." as const;
+  "Six crypto routes frozen after first settlement (prices unchanged). Non-crypto LIVE: /api/fetch ($0.02 clean-text), /api/http ($0.01 universal proxy), /api/extract ($0.015 structured HTML), /api/x402-check ($0.01 x402 endpoint audit), /api/bazaar-check ($0.01 CDP Bazaar index check), /api/market/search ($0.005 marketplace search, untested price), /api/market/quote ($0.005 pre-pay quote, untested price), /api/screenshot ($0.02 headless render), /api/search ($0.03 search then fetch), /api/pdf ($0.02 PDF to text), /api/discourse/split ($0.03 online discourse sample, NOT a poll, untested price), /api/tx-status ($0.002 transaction status and finality on Base, Polygon, Solana and XRPL), /api/tokenized-stock ($0.002 tokenized-stock status check on Base, on-chain token state, no price, not investment advice), /api/watch ($0.002 changed-since-last-check for a public page or endpoint, short diff), /api/balance ($0.002 can-I-pay-now check per rail), /api/tx-guard ($0.002 mechanical pre-transfer recipient checks), /api/grocery/normalize ($0.002 recipe ingredient lines to a normalized shopping list, deterministic, no prices), /api/grocery/ingredient ($0.005 nutrition per 100 g from USDA FoodData Central and Open Food Facts, untested price), /api/chain/head ($0.002 chain tip on Base, Polygon, Ethereum, Solana and XRPL), /api/token/meta ($0.002 token metadata from chain state, no price), /api/name/resolve ($0.002 ENS and Basenames, on-chain only), /api/batch ($0.01 for up to 10 of balance, gas, tx-status, token/meta, chain/head and name/resolve in one call)." as const;
 
 export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
   crypto: "Crypto market data",

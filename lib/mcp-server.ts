@@ -50,6 +50,8 @@ import * as groceryIngredientRoute from "@/app/api/grocery/ingredient/handler";
 import * as chainHeadRoute from "@/app/api/chain/head/handler";
 import * as tokenMetaRoute from "@/app/api/token/meta/handler";
 import * as nameResolveRoute from "@/app/api/name/resolve/handler";
+import * as batchRoute from "@/app/api/batch/handler";
+import { BATCH_VALUE_NOTE, batchEnabled } from "./batch";
 import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
@@ -326,6 +328,29 @@ export const TOOLS: ToolDef[] = [
     },
     call: (a) => runHandler((req) => nameResolveRoute.nameResolveHandler(req), makeRequest("/api/name/resolve", { name: s(a.name), address: s(a.address) })),
   },
+  {
+    // Listed 10/19. The MCP path never goes through app/api/batch/route.ts, so the
+    // HP_BATCH_ENABLED kill switch is checked here at call time: flag off -> isError
+    // (the payment wrapper skips settlement on isError, so nothing is charged).
+    name: "batch",
+    opts: batchRoute.paymentOpts,
+    schema: {
+      items: z
+        .array(
+          z.object({
+            route: z.string().describe("balance, gas, tx-status, token/meta, chain/head or name/resolve"),
+            params: z.record(z.string(), z.string()).optional().describe("The query params that route takes (same as its own tool), string values up to 256 chars"),
+          }),
+        )
+        .describe("1-10 checks; one $0.01 charge for the whole call if at least one item succeeds"),
+    },
+    call: async (a) => {
+      if (!batchEnabled()) {
+        return { content: [{ type: "text" as const, text: JSON.stringify({ ok: false, error: "batch is not available right now.", code: "unavailable", charged: false }) }], isError: true };
+      }
+      return runHandler((req) => batchRoute.batchHandler(req), makeRequest("/api/batch", {}, { items: a.items }));
+    },
+  },
 
   {
     name: "market_quote",
@@ -392,7 +417,8 @@ export function mcpToolDescription(name: string, opts: PaymentOpts): string {
   const usd = Number(opts.maxAmountRequired) / 1e6;
   const n = POLL_INTERVAL_SECONDS[MCP_ROUTE[name] ?? ""];
   const cadence = n ? ` Data changes about every ${n >= 3600 ? `${n / 3600} h` : n >= 60 ? `${n / 60} min` : `${n} s`}; calling more often returns the same values.` : "";
-  return `${opts.description.replace(/\.$/, "")}. Price $${usd} per call via x402, USDC on Base (MCP payments are Base only).${cadence}`;
+  const value = name === "batch" ? ` ${BATCH_VALUE_NOTE}` : ""; // batch only (Odin Class A 10/19); other tools unchanged
+  return `${opts.description.replace(/\.$/, "")}. Price $${usd} per call via x402, USDC on Base (MCP payments are Base only).${cadence}${value}`;
 }
 
 /**

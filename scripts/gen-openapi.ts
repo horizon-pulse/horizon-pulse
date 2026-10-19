@@ -13,6 +13,7 @@ import { LIVE_PAID_ROUTES, CATEGORY_LABELS, routeName } from "../lib/live-catalo
 import { USDC_BASE, CDP_FACILITATOR_URL, PUBLIC_BASE_URL, CONTACT_EMAIL, SERVICE_DESCRIPTION, DEFAULT_PAY_TO } from "../lib/config";
 import { exampleRecordedAt } from "../lib/route-examples";
 import * as M from "../lib/money-market-rates";
+import { BATCH_VALUE_NOTE } from "../lib/batch";
 import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "../lib/solana-config";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -41,6 +42,7 @@ const BAD_REQUEST: Record<string, Json> = {
   "/api/chain/head": { ok: false, error: "network must be a comma list of base, polygon, ethereum, solana or xrpl (or eip155:8453, eip155:137, eip155:1, xrpl:0, the Solana mainnet CAIP-2 id)", code: "invalid_network", charged: false },
   "/api/token/meta": { ok: false, error: "Query param token is required (0x contract address, Solana mint, or XRPL CURRENCY.rIssuer)", code: "missing_token", charged: false },
   "/api/name/resolve": { ok: false, error: "Give name (e.g. vitalik.eth, jesse.base.eth) or address (0x…)", code: "missing_input", charged: false },
+  "/api/batch": { ok: false, error: "items must be a non-empty array.", code: "invalid_input", charged: false },
   "/api/grocery/normalize": { ok: false, error: "Send ingredients (array of lines) or text (one ingredient per line)", code: "missing_ingredients", charged: false },
   "/api/tx-guard": { ok: false, error: "chain must be one of base, polygon, solana, xrpl", code: "invalid_chain", charged: false },
   "/api/balance": { ok: false, error: "Give at least one of evm (0x… for Base and Polygon), solana, xrpl (r…)", code: "missing_address", charged: false },
@@ -146,7 +148,7 @@ for (const r of LIVE_PAID_ROUTES) {
       operationId: opId,
       tags: [CATEGORY_LABELS[r.category]],
       summary: r.docBlurb ?? r.blurb,
-      description: `${cfg.description}\n\nPrice: ${acc.price} USDC per call (${amount} atomic), paid with x402 v2 \`exact\` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.`,
+      description: `${cfg.description}\n\nPrice: ${acc.price} USDC per call (${amount} atomic), paid with x402 v2 \`exact\` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.${p === "/api/batch" ? `\n\n${BATCH_VALUE_NOTE}` : ""}`,
       "x-payment-info": {
         protocol: "x402",
         x402Version: 2,
@@ -205,7 +207,14 @@ for (const r of LIVE_PAID_ROUTES) {
     const respName = `${pascal(name)}Response`;
     const example = baz?.info?.output?.example;
     if (example && !schemas[respName]) {
-      schemas[respName] = { ...widen(infer(example)), description: `Inferred from a real response recorded from GET /api/demo/${name} at ${exampleRecordedAt(p)} UTC (trimmed). Fields may be added; clients should ignore unknown fields.` };
+      // /api/batch declares an illustrative format sample (illustrative: true), not a recorded response; say so.
+      const illustrative = (example as { illustrative?: unknown }).illustrative === true;
+      schemas[respName] = {
+        ...widen(infer(example)),
+        description: illustrative
+          ? "Inferred from an illustrative format sample (illustrative: true), not a recorded real response. Fields may be added; clients should ignore unknown fields."
+          : `Inferred from a real response recorded from GET /api/demo/${name} at ${exampleRecordedAt(p)} UTC (trimmed). Fields may be added; clients should ignore unknown fields.`,
+      };
       // Closed value set (lib/indicators.ts DirectionLabel); not inferable from one example.
       const dir = name === "pulse" ? schemas[respName]?.properties?.overall?.properties?.direction : undefined;
       if (dir) dir.enum = ["up", "down", "flat"];
