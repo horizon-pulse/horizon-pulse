@@ -79,6 +79,7 @@
  *     allowance alert go through setSolanaAlertHook (default: one
  *     console.error line tagged "[solana-rail][ALERT]").
  */
+import { persistAlert } from "@/lib/alert-persist";
 import type { NextRequest } from "next/server";
 import { RAIL_REJECT, reasonFromRailResponse, settleFailReason, type OnReject, type RejectMeta } from "./rail-reject";
 import { NextRequest as NextRequestCtor, NextResponse } from "next/server";
@@ -421,6 +422,8 @@ function emitAlert(alert: SolanaAlert): void {
   } catch {
     /* an alert sink must never break a request */
   }
+  // Odin 9:09 AM AST 10/19: ALSO persist (best-effort, fire-and-forget, never throws) to hp:alerts:solana.
+  persistAlert("solana", alert);
 }
 
 let warnTimes: number[] = [];
