@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { txGuard, parseTxGuardInput, expectedMatch, sdnCheck, overall, SDN_SNAPSHOT, SDN_NO_MATCH, SCAM_LIST_SOURCE, SCAM_LIST_COMMIT, SDN_FAIL_AFTER_DAYS, sdnAgeDays, allSourcesFailed, UNTRUSTED, TX_GUARD_METHODOLOGY, NOTE, type Check } from "@/lib/tx-guard";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
-import SDN from "@/lib/data/ofac-sdn-crypto-2026-10-14.json";
+import SDN from "@/lib/data/ofac-sdn-crypto-2026-10-19.json";
 import { createHash } from "node:crypto";
 import { NextRequest } from "next/server";
 import { txGuardHandler } from "@/app/api/tx-guard/handler";
@@ -79,7 +79,7 @@ describe("expected_match", () => {
 describe("ofac_sdn", () => {
   it("snapshot carries source URL, pull date and publisher date", () => {
     expect(SDN_SNAPSHOT.sourceUrl).toBe("https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV");
-    expect(SDN_SNAPSHOT.pulledAt).toMatch(/^2026-10-14T/);
+    expect(SDN_SNAPSHOT.pulledAt).toMatch(/^2026-10-19T/);
     expect(SDN_SNAPSHOT.publisherLastModified).toMatch(/^2026-/);
     expect(SDN_SNAPSHOT.addresses).toBe(SDN.entries.length);
   });
@@ -93,7 +93,7 @@ describe("ofac_sdn", () => {
     expect(clean.result).not.toBe("allow");
   });
   it("bundled snapshot is deterministic (sha pinned; rebuild with scripts/pull-sdn.mjs) and not older than 30 days (fails the suite and the build)", () => {
-    expect(createHash("sha256").update(readFileSync("lib/data/ofac-sdn-crypto-2026-10-14.json")).digest("hex")).toBe("d9fe51565a80d9e0d3ed6db8987be51ead77d92a805a0b5d5a0d994f6b6feba9");
+    expect(createHash("sha256").update(readFileSync("lib/data/ofac-sdn-crypto-2026-10-19.json")).digest("hex")).toBe("1b07427771f960862b4a3e359d1829dd92352fccac54707e9199fc6faa1a5beb");
     expect(SDN_FAIL_AFTER_DAYS).toBe(30);
     expect(sdnAgeDays(Date.now())).toBeLessThanOrEqual(SDN_FAIL_AFTER_DAYS);
     expect(readFileSync("package.json", "utf8")).toContain('"prebuild": "node scripts/check-sdn-age.mjs"');

@@ -1,9 +1,9 @@
 {
  "source": "U.S. Treasury OFAC Specially Designated Nationals (SDN) list, CSV export; 'Digital Currency Address' entries from the remarks field",
  "sourceUrl": "https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV",
- "publisherLastModified": "2026-10-14T14:02:30Z",
- "pulledAt": "2026-10-14T15:32:47Z",
- "sourceSha256": "1022b462f33c607007d671c59f6cbd692d7dd1479b736c243e9f747695bf01cb",
+ "publisherLastModified": "2026-10-15T16:34:34Z",
+ "pulledAt": "2026-10-19T11:26:00Z",
+ "sourceSha256": "0dee0d2de5e5a240e3e545741ee2903cfa3508666d2f2841d5d1ff2d59f0ce71",
  "count": 512,
  "entries": [
   {
