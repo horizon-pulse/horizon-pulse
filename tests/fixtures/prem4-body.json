@@ -1,0 +1,56 @@
+{
+ "question": "When did Coinbase launch the Base network",
+ "sources": [
+  {
+   "n": 1,
+   "url": "https://www.coinbase.com/en-in/blog/introducing-base",
+   "title": "Introducing Base - Coinbase"
+  },
+  {
+   "n": 2,
+   "url": "https://news.bitcoin.com/crypto-exchange-coinbase-launches-ethereum-l2-scaling-network-called-base",
+   "title": "Crypto Exchange Coinbase Launches Ethereum L2 Scaling Network Called Base \u2013 Bitcoin News"
+  },
+  {
+   "n": 3,
+   "url": "https://techcrunch.com/2023/02/23/coinbase-launches-blockchain-base-to-help-developers-build-dapps-on-chain/",
+   "title": "Coinbase launches blockchain Base to help developers build dApps on-chain | TechCrunch"
+  },
+  {
+   "n": 4,
+   "url": "https://finance.yahoo.com/news/coinbase-launches-bridge-layer-2-092003819.html",
+   "title": "Coinbase launches bridge for layer-2 blockchain Base, sets mainet launch date"
+  },
+  {
+   "n": 5,
+   "url": "https://www.coindesk.com/tech/2023/08/09/coinbase-officially-launches-base-blockchain-milestone-for-a-public-company",
+   "title": "Coinbase Officially Launches Base Blockchain in Milestone for a Public Company "
+  }
+ ],
+ "snippets": [
+  {
+   "source": 1,
+   "text": "Today, we\u2019re excited to announce the testnet launch of Base, an [Ethereum](https://www.coinbase.com/en-in/price/ethereum?country=US&currency=USD&mobile=false&japan_bespoke_content=false&logged_in=false&null=) Layer 2 (L2) network offering a secure, low-cost, developer-friendly way for anyone, anywhere, to build decentralized apps or \u201cdapps\u201d onchain."
+  },
+  {
+   "source": 2,
+   "text": "**The cryptocurrency exchange Coinbase has announced the deployment of Base, an Ethereum layer two (L2) scaling network, after developers launched the Base testnet on Thursday."
+  },
+  {
+   "source": 3,
+   "text": "[Coinbase](https://techcrunch.com/2023/02/21/coinbase-shares-rise-q4-2022/) , the second largest crypto exchange by trading volume, has launched [Base](http://base.org) , an Ethereum-focused layer-2 (L2) blockchain, Jesse Pollak, lead for Base and head of protocols at Coinbase, told TechCrunch."
+  },
+  {
+   "source": 4,
+   "text": "* [Introduced](https://www.coinbase.com/blog/introducing-base) by Coinbase in February 2023, Base is an Ethereum layer-2 blockchain built in collaboration with blockchain developer Optimism, which aims to provide a safe and low-cost platform for blockchain application developers."
+  },
+  {
+   "source": 5,
+   "text": "EDT Published Aug 9, 2023, 12:00 p.m."
+  }
+ ],
+ "answer_lines": [
+  "* [Introduced](https://www.coinbase.com/blog/introducing-base) by Coinbase in February 2023, Base is an Ethereum layer-2 blockchain built in collaboration with blockchain developer Optimism, which aims to provide a safe and low-cost platform for blockchain application developers.",
+  "EDT Published Aug 9, 2023, 12:00 p.m."
+ ]
+}

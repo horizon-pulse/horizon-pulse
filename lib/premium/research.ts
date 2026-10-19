@@ -23,10 +23,34 @@ export function domainOf(u: string): string | null {
   }
 }
 
+/** Odin 10/19 (A): markdown out before sentence splitting (links -> text, images/bare URLs out, emphasis/bullets/headings/code/tables out). */
+export function stripMarkdown(md: string): string {
+  return md
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\[([^\]]*)\]\[[^\]]*\]/g, "$1")
+    .replace(/<\/?[a-z][^>]*>/gi, " ")
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/`{1,3}([^`]*)`{1,3}/g, "$1")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}>\s?/gm, "")
+    .replace(/^\s*(?:[*+-]|\d+[.)])\s+/gm, "")
+    .replace(/^\s*\|.*\|\s*$/gm, " ")
+    .replace(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/gm, " ")
+    .replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "$2")
+    .replace(/(^|[\s(])[*_](?=\S)([^*_\n]*?\S)[*_](?=[\s).,;:!?]|$)/g, "$1$2")
+    .replace(/\*\*|__/g, "")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ");
+}
+/** Odin 10/19 (A): Published / Updated / Posted + a date anywhere in the line is a dateline, not a claim. */
+export function isDateline(s: string): boolean {
+  return new RegExp(`\\b(published|updated|posted|last updated|modified)\\b[^.\\n]{0,25}?(?:\\b(?:19|20)\\d{2}-\\d{2}-\\d{2}\\b|\\b${MON}\\s+\\d{1,2}|\\b\\d{1,2}\\s+${MON}|\\b\\d{1,2}/\\d{1,2}/\\d{2,4}\\b|\\b(?:today|yesterday|\\d+\\s+(?:hours?|days?|minutes?)\\s+ago)\\b)`, "i").test(s);
+}
 function sentences(text: string): string[] {
-  return text
+  return stripMarkdown(text)
     .replace(/Section Title:[^\n]*\n?|Content:\n?|\.\.\. \(content truncated\)/g, " ")
-    .split(/(?<=[.!?])(?<!\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|Mr|Ms|Mrs|Dr|Inc|Corp|Co|Ltd|St|vs|No|U\.S)\.)\s+|\n+/)
+    .split(/(?<=[.!?])(?<!\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|Mr|Ms|Mrs|Dr|Inc|Corp|Co|Ltd|St|vs|No|U\.S|a\.m|p\.m)\.)\s+|\n+/)
     .map((s) => s.trim())
     .filter((s) => s.split(/\s+/).length >= 6);
 }
@@ -140,7 +164,7 @@ const VERB_RE = /\b(is|are|was|were|be|been|has|have|had|will|would|can|could|di
 export function isHeadlineLike(s: string, title: string | null = null): boolean {
   const t = s.trim();
   if (/^by\s+[A-Z]/i.test(t)) return true;
-  if (/^(updated|published|posted)\b/i.test(t)) return true;
+  if (/^(updated|published|posted)\b/i.test(t) || isDateline(t)) return true;
   if (t.replace(DATE_RE, "").replace(/[^A-Za-z]/g, "").length < 4) return true; // date-only
   if (!/[.!?]["')\]]?$/.test(t)) return true; // real sentences end in punctuation; headlines / nav lines do not
   const words = t.split(/\s+/).filter((w) => /^[A-Za-z]/.test(w) && w.length > 3 && !new RegExp(`^${MON}$`, "i").test(w.replace(/[^A-Za-z.]/g, "")));

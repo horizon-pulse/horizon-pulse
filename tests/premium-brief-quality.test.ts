@@ -148,3 +148,38 @@ describe("brief from page content (Odin 10/19, real prem3-body.json + synthetic 
     expect(new Set(urls.map((u) => new URL(u).hostname)).size).toBe(BRIEF_EXTRACT_N);
   });
 });
+
+import prem4 from "./fixtures/prem4-body.json";
+import { isDateline, stripMarkdown } from "@/lib/premium/research";
+
+describe("markdown strip + datelines (Odin 10/19 A, real prem4-body.json)", () => {
+  const md = prem4.snippets.map((s: any) => s.text);
+  it("stripMarkdown removes links, URLs, bold and bullets from the real prem4 quotes and keeps the words", () => {
+    for (const t of md) {
+      const out = stripMarkdown(t);
+      expect(out).not.toMatch(/\]\(|https?:\/\/|\*\*|^\s*\* /);
+    }
+    expect(stripMarkdown(md[3]).trim()).toMatch(/^Introduced by Coinbase in February 2023, Base is an Ethereum layer-2 blockchain/);
+    expect(stripMarkdown(md[2]).trim()).toMatch(/^Coinbase, the second largest crypto exchange by trading volume, has launched Base, an Ethereum-focused/);
+    expect(stripMarkdown(md[0])).toContain("an Ethereum Layer 2 (L2) network");
+  });
+  it("datelines are dropped, including mid-line ('EDT Published Aug 9, 2023, 12:00 p.m.')", () => {
+    expect(isDateline(prem4.answer_lines[1])).toBe(true);
+    expect(isDateline("Updated Oct 3, 2024 at 4:00 PM ET")).toBe(true);
+    expect(isDateline("By Jane Doe, Posted 2023-08-09 10:00")).toBe(true);
+    expect(isDateline("Coinbase published its Base roadmap in a blog post with partners.")).toBe(false);
+    expect(isDateline("Coinbase announced Base on February 23, 2023.")).toBe(false);
+    expect(isHeadlineLike(prem4.answer_lines[1], null)).toBe(true);
+  });
+  it("compile over the real prem4 quotes (as page text): no markdown in any claim, no dateline answer line", () => {
+    const pages = prem4.sources.map((s: any) => ({ url: s.url, title: s.title, publish_date: null, excerpts: prem4.snippets.filter((x: any) => x.source === s.n).map((x: any) => x.text) }));
+    const out: any = compile(brief, prem4.question, pages.map((p: any) => ({ ...p, excerpts: [] })), "2026-10-19T21:45:00.000Z", pages);
+    expect(out.claims.length).toBeGreaterThan(0);
+    for (const c of out.claims) {
+      expect(c.claim).not.toMatch(/\]\(|https?:\/\/|\*\*|^\* /);
+      expect(isDateline(c.claim)).toBe(false);
+    }
+    for (const l of out.answer.lines) expect(l.text).not.toMatch(/Published/);
+    expect(out.answer.lines.map((l: any) => l.text).join(" ")).toMatch(/^Introduced by Coinbase in February 2023/);
+  });
+});
