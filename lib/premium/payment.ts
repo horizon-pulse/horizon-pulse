@@ -18,6 +18,7 @@
  */
 import { createFacilitatorConfig } from "@coinbase/x402";
 import { FacilitatorTimeoutError, getFacilitatorResponseError, HTTPFacilitatorClient } from "@x402/core/server";
+import { VerifyError } from "@x402/core/types";
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from "@x402/core/http";
 import { NextRequest, NextResponse } from "next/server";
 import { BASE_CAIP2, DEFAULT_PAY_TO, PUBLIC_BASE_URL, USDC_BASE } from "@/lib/config";
@@ -54,9 +55,10 @@ export function requirementFor(x: Tier) {
   };
 }
 
-export function paymentRequired(x: Tier, description: string, error?: string, message?: string) {
+export function paymentRequired(x: Tier, description: string, error?: string, message?: string, charged?: false) {
   return {
     x402Version: 2 as const,
+    ...(charged === false ? { charged: false as const } : {}),
     ...(error ? { error } : {}),
     ...(message ? { message } : {}),
     resource: { url: `${PUBLIC_BASE_URL}${tierPath(x)}`, description, mimeType: "application/json", terms: BUYER_TERMS_URL },
@@ -64,8 +66,8 @@ export function paymentRequired(x: Tier, description: string, error?: string, me
   };
 }
 
-export function challenge(x: Tier, description: string, error?: string, status = 402, message?: string): NextResponse {
-  const body = paymentRequired(x, description, error, message);
+export function challenge(x: Tier, description: string, error?: string, status = 402, message?: string, charged?: false): NextResponse {
+  const body = paymentRequired(x, description, error, message, charged);
   return NextResponse.json(body, { status, headers: { ...PREMIUM_CORS, "PAYMENT-REQUIRED": encodePaymentRequiredHeader(body as never) } });
 }
 
@@ -202,6 +204,13 @@ export function facilitatorErrorSummary(op: "verify" | "settle", e: unknown): st
   return `[premium][facilitator] ${op} error ${status ? `http_${status}` : kind}${status === "401" || status === "403" ? " (CDP credentials rejected: check CDP_API_KEY_ID / CDP_API_KEY_SECRET for this environment)" : ""}`;
 }
 
+/** VerifyError (thrown by HTTPFacilitatorClient.verify on a non-2xx with a verify body) that carries an invalidReason. Duck-typed by name too, in case of dual ESM/CJS copies. */
+export function isVerifyRejection(e: unknown): e is { invalidReason: string } {
+  if (!(e instanceof VerifyError) && !(e instanceof Error && e.name === "VerifyError")) return false;
+  const r = (e as { invalidReason?: unknown }).invalidReason;
+  return typeof r === "string" && r.length > 0;
+}
+
 export type VerifyResult = { ok: true; payer: string | null } | { ok: false; kind: "invalid"; reason: string } | { ok: false; kind: "error" };
 export async function verifyPayment(d: Decoded, x: Tier): Promise<VerifyResult> {
   try {
@@ -209,6 +218,8 @@ export async function verifyPayment(d: Decoded, x: Tier): Promise<VerifyResult> 
     if (r?.isValid === true) return { ok: true, payer: typeof r.payer === "string" ? r.payer : d.from };
     return { ok: false, kind: "invalid", reason: reasonCode(r?.invalidReason) };
   } catch (e) {
+    // A facilitator rejection of the payment itself (non-2xx with invalidReason) is a payer-side invalid, not an outage.
+    if (isVerifyRejection(e)) return { ok: false, kind: "invalid", reason: reasonCode(e.invalidReason) };
     console.error(facilitatorErrorSummary("verify", e));
     return { ok: false, kind: "error" };
   }

@@ -1,3 +1,4 @@
+import { VerifyError } from "@x402/core/types";
 /**
  * Premium ladder v3.2 (spec to-odin/2026-10-19-pulse-premium-spec-v3.md incl. v3.1 / v3.2). All upstreams mocked:
  * facilitator (helpers/facilitator-mock), Base RPC (setPremiumRpcForTests), Parallel (setParallelForTests).
@@ -450,6 +451,33 @@ describe("paid sync path", () => {
     fac = installFacilitatorMock({ verify: () => { throw new Error("boom"); } });
     expect((await call("brief", input("brief"), { "payment-signature": await payment() })).status).toBe(503);
     expect(fac.some((c) => c.op === "settle")).toBe(false);
+  });
+  it("verify throws VerifyError with invalidReason (CDP non-2xx rejection) -> 402 invalid reason, charged:false, no settle", async () => {
+    on();
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fac = installFacilitatorMock({ verify: () => { throw new VerifyError(400, { isValid: false, invalidReason: "invalid_payload", invalidMessage: "contract call failed: execution reverted" }); } });
+    const r = await call("brief", input("brief"), { "payment-signature": await payment() });
+    expect(r.status).toBe(402);
+    const b: any = await r.json();
+    expect(b.error).toBe("invalid_payload");
+    expect(b.charged).toBe(false);
+    expect(b.accepts[0].amount).toBe("1000000");
+    expect(JSON.stringify(b)).not.toContain("execution reverted");
+    expect(r.headers.get("payment-required")).toBeTruthy();
+    expect(fac.some((c) => c.op === "settle")).toBe(false);
+    expect(errSpy.mock.calls.some((c) => String(c[0]).includes("[premium][facilitator]"))).toBe(false);
+  });
+  it("verify throws VerifyError without invalidReason, or a non-VerifyError -> 503 facilitator_unavailable, charged:false, no settle", async () => {
+    on();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    for (const thrower of [() => { throw new VerifyError(500, { isValid: false }); }, () => { throw new Error("Facilitator verify failed (500): oops"); }]) {
+      resetPremiumFacilitatorForTests();
+      fac = installFacilitatorMock({ verify: thrower });
+      const r = await call("brief", input("brief"), { "payment-signature": await payment() });
+      expect(r.status).toBe(503);
+      expect(await r.json()).toMatchObject({ error: "facilitator_unavailable", charged: false });
+      expect(fac.some((c) => c.op === "settle")).toBe(false);
+    }
   });
   it("no CDP keys -> 503 settlement_unavailable before any facilitator call", async () => {
     on();

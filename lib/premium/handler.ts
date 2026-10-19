@@ -224,7 +224,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     const ver = await verifyPayment(d, x);
     if (!ver.ok) {
       await releaseClaim(store, held);
-      return ver.kind === "invalid" ? challenge(x, description(x), ver.reason) : jsonError(503, { error: "facilitator_unavailable", charged: false }, { "Retry-After": "1" });
+      return ver.kind === "invalid" ? challenge(x, description(x), ver.reason, 402, undefined, false) : jsonError(503, { error: "facilitator_unavailable", charged: false }, { "Retry-After": "1" });
     }
 
     if (x.mode === "async") {
