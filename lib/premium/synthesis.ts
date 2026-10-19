@@ -83,9 +83,12 @@ export type SpendHook = { reserve(usd: number): Promise<boolean>; reconcile(rese
 /** Odin 10/19 (1): global daily cap in the premium KV store; FAILS CLOSED (no store / KV error / cap reached -> no call). */
 export const LLM_DAILY_CAP_USD_DEFAULT = 2;
 export const LLM_SPEND_TTL_S = 2 * 86_400;
+/** Daily spend key uses the UTC day ON PURPOSE (matches the provider's billing day and is DST-proof); do not switch to ET. */
 export const llmSpendKey = (now: number) => `llm:spend:${new Date(now).toISOString().slice(0, 10)}`;
 export function kvSpendHook(store: PremiumStore | null, env: Env = process.env, now: () => number = Date.now): SpendHook {
   const cap = Number(env.PREMIUM_LLM_DAILY_CAP_USD) > 0 ? Number(env.PREMIUM_LLM_DAILY_CAP_USD) : LLM_DAILY_CAP_USD_DEFAULT;
+  // One hook per synthesizeBrief call (created per request, below). The day key is captured at reserve() and reused by
+  // reconcile(), so a brief that reserves at 23:59:59 UTC and reconciles after midnight adjusts the day it reserved on.
   let key = "";
   return {
     async reserve(usd) {
@@ -170,13 +173,13 @@ export function cleanQuote(t: string): string {
   // A trailing ellipsis becomes a plain full stop (still a verbatim substring of the page after normalisation).
   return t.replace(/^[\s•·▪◦‣*-]+/, "").replace(/\s*(?:…|\.{3,})+\s*$/, ".").replace(/^\.$/, "").trim();
 }
-const VERBISH = /\b(is|are|was|were|be|been|being|has|have|had|do|does|did|can|could|will|would|may|might|must|should|costs?|takes?|charges?|allows?|enables?|lets|uses?|means|settles?|runs?|pays?|sends?|launch(?:es)?|confirms?|opens?|offers?|provides?|requires?|supports?|became|becomes|began|begins|went|goes|came|comes|made|makes|\w{3,}ed)\b/i;
+const VERBISH = /\b(is|are|was|were|be|been|being|has|have|had|do|does|did|can|could|will|would|may|might|must|should|costs?|takes?|charges?|allows?|enables?|lets|uses?|means|settles?|runs?|pays?|sends?|launch(?:es)?|confirms?|opens?|offers?|provides?|requires?|supports?|became|becomes|began|begins|went|goes|came|comes|made|makes|took|takes|rose|fell|grew|held|set|gave|got|said|says|kept|left|won|\w{3,}ed)\b/i;
 /** Odin 10/19 (a3): list / table fragments are never answer lines (pipes, bullets, glued "label:value", short cells, no verb). */
 /** Odin 10/19 replay #2: glued words such as "isOptimism" (a function word run into a capitalised word; brand names like TechCrunch/PayPal are not hit). */
 const GLUED = /\b(?:is|are|was|were|at|on|in|of|to|and|or|the|for|by|from|with|than|as|its)[A-Z][a-z]/;
 /** Structural list / table fragment (applies to claims AND answers): pipes, 2+ bullets/middots, glued "label:value", short cells, glued words. */
 export function isListFragment(t: string): boolean {
-  if (/\|/.test(t)) return true;
+  if (/\||→|=>/.test(t)) return true;
   if ((t.match(/[•·▪]/g) ?? []).length >= 2) return true;
   if (/[A-Za-z)\]]:[A-Za-z$]/.test(t)) return true; // "estimate):Arbitrum"
   if (GLUED.test(t)) return true;
@@ -185,13 +188,34 @@ export function isListFragment(t: string): boolean {
 }
 /** Odin 10/19 (a3): answer lines additionally need a verb. */
 export function isFragment(t: string): boolean {
-  return isListFragment(t) || !VERBISH.test(t);
+  return isListFragment(t) || /^[A-Z][A-Za-z ]{1,24}:\s/.test(t) || !VERBISH.test(t);
 }
 /** Subject terms of a question: proper nouns / acronyms / alphanumerics after the first word ("Base", "USDC", "x402"). */
 export function subjectTerms(q: string): string[] {
   return q.split(/\s+/).slice(1).map((w) => w.replace(/[^A-Za-z0-9]/g, "")).filter((w) => w.length > 1 && (/^[A-Z]/.test(w) || /\d/.test(w)) && !STOP.has(w.toLowerCase()));
 }
-const hasTerm = (t: string, term: string) => new RegExp(`(^|[^A-Za-z0-9])${term.replace(/[^A-Za-z0-9]/g, "")}([^A-Za-z0-9]|$)`, "i").test(t);
+const SUBJ_SYN: Record<string, string[]> = { etf: ["etp", "exchange-traded"], etfs: ["etps", "exchange-traded"], etp: ["etf"], etps: ["etfs"], eu: ["European"] };
+/** Replay #3: subject term match is plural-tolerant, accepts a small synonym map (ETF~ETP) and acronym expansions ("SEC" ~ "Securities and Exchange Commission"). */
+const hasTerm = (t: string, term: string) => {
+  const w = term.replace(/[^A-Za-z0-9]/g, "");
+  const forms = [w, w.replace(/s$/i, ""), ...(SUBJ_SYN[w.toLowerCase()] ?? [])].filter((f) => f.length > 1);
+  // Capitalised proper nouns match case-sensitively ("Base" is not "base layer"); letter/digit boundaries may carry a hyphen ("EIP4844" ~ "EIP-4844").
+  const pat = (f: string) => f.replace(/[^A-Za-z0-9-]/g, "").replace(/([A-Za-z])(\d)/g, "$1-?$2").replace(/(\d)([A-Za-z])/g, "$1-?$2");
+  const proper = /^[A-Z][a-z]/.test(w);
+  if (forms.some((f) => new RegExp(`(^|[^A-Za-z0-9])${pat(f)}s?([^A-Za-z0-9]|$)`, proper ? "" : "i").test(t) || (proper && new RegExp(`(^|[^A-Za-z0-9])${pat(f).toUpperCase()}([^A-Za-z0-9]|$)`).test(t)))) return true;
+  if (/^[A-Z]{2,6}$/.test(w.replace(/s$/, ""))) {
+    const ac = w.replace(/s$/, "");
+    const caps = t.split(/[^A-Za-z]+/).filter((x) => /^[A-Z]/.test(x) && !/^(and|of|the|for)$/i.test(x)).map((x) => x[0]).join("");
+    if (caps.includes(ac)) return true;
+  }
+  return false;
+};
+/** Replay #3: an answer names the question's subject when it carries every subject term (fuzzy: plural, synonym, acronym, hyphen). */
+const SCOPE_QUALIFIERS = new Set(["eu", "us", "usa", "uk", "u.s"]);
+export const namesSubject = (t: string, subj: string[]) => {
+  const core = subj.filter((x) => !SCOPE_QUALIFIERS.has(x.toLowerCase()));
+  return (core.length ? core : subj).every((x) => hasTerm(t, x)); // jurisdiction words ("EU") scope the question; they are not its subject
+};
 /** Explicit calendar date (full day, or month + year), not "Wednesday" / "July 14" without a year. */
 export const hasExplicitDate = (t: string) => [...factValues(t)].some((f) => /^d:\d{4}-\d{2}/.test(f));
 
@@ -272,6 +296,7 @@ const SYSTEM = [
   "Return JSON only. Each quote must copy one listed sentence exactly, with its id and url.",
   "answer: up to 2 sentences that directly answer the question (for when-questions a sentence with the date; for how-much questions a sentence with the amount). Empty if none does.",
   "claims: up to 5 distinct factual statements relevant to the question, at most 2 from the same publisher. For EACH claim, quotes[0] is the main quote and quotes[1] MUST be a backing quote stating the same fact (same date, amount or definition) from a DIFFERENT publisher whenever any listed sentence does. No opinions, no headlines, no bylines.",
+  "Answer sentences must name the question's subject (e.g. the product, law, network or organisation asked about) explicitly, not only 'it' or 'the company'. If the pages state the subject's value on more than one publisher, prefer the answer sentence whose fact also appears on another publisher.",
   "Never pick table rows, bullet lists or fragments without a verb as answer lines. For when-questions prefer sentences with an explicit calendar date over relative words like 'Wednesday'.",
 ].join("\n");
 
@@ -359,7 +384,7 @@ export async function synthesizeBrief<T extends Record<string, any>>(q: string, 
 /** The code-only answer block is reused only if every line passes the same fragment / subject-term rules. */
 function codeAnswerOk(a: any, subj: string[]): boolean {
   if (!a || !Array.isArray(a.lines) || !a.lines.length) return !!a;
-  return a.lines.every((l: any) => typeof l?.text === "string" && !isFragment(l.text) && subj.every((t) => hasTerm(l.text, t)));
+  return a.lines.every((l: any) => typeof l?.text === "string" && !isFragment(l.text) && namesSubject(l.text, subj));
 }
 function assemble<T extends Record<string, any>>(code: T, q: string, kind: ReturnType<typeof questionKind>, answerIn: Verified[], claimsIn: Verified[][], rejectedQuotes: number, extracted: ParallelResult[] = []): T {
   const pub = (u: string) => publisherOf(domainOf(u) ?? u);
@@ -397,7 +422,13 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
   // (a3) no list/table fragments as answer lines; (a4) explicit dates first for when-questions.
   // Odin replay #2 (2): an answer line must name every subject term of the question (e.g. "Base", "USDC"), or none is shown.
   const subj = subjectTerms(q);
-  let answerV = answerIn.filter((a) => !isFragment(a.quote) && subj.every((t) => hasTerm(a.quote, t)));
+  const answerOk = (a: Verified) => !isFragment(a.quote) && namesSubject(a.quote, subj) && (kind !== "when" || hasExplicitDate(a.quote)) && (kind !== "number" || [...factValues(a.quote)].some((f) => f.startsWith("n:")));
+  let answerV = answerIn.filter(answerOk);
+  // Replay #3: no usable model answer line -> promote the best verified claim that passes the same rules (backed claims first).
+  if (!answerV.length) {
+    const cand = [...claimsV].sort((x, y) => y.length - x.length).map((qs) => qs[0]).find(answerOk);
+    if (cand) answerV = [cand];
+  }
   if (kind === "when") answerV = [...answerV].sort((x, y) => Number(hasExplicitDate(y.quote)) - Number(hasExplicitDate(x.quote)));
   // (a6) contradicted quotes: dropped from answer lines; claims kept but flagged contradicted:true (never confirmed).
   const everything = [...claimsV.flat(), ...answerV];
@@ -445,7 +476,10 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
   const unconfirmed = claims.filter((c: any) => pubsOf(c).size < 2).map((c: any) => c.claim);
   const answerLines = answerV.map((v) => {
     const cf = confirmFor([v]);
-    return { text: v.quote, snippets: [snip(v)], sources: [srcN(v.url)], confirmed: !!(cf as any).confirmed_by };
+    // Replay #3: an answer line that IS a claim's main quote inherits that claim's verified backing (never if contradicted).
+    const twin = claims.find((c: any) => c.claim === v.quote && !c.contradicted && c.confirmed_by?.length);
+    const by = [...new Set([...((cf as any).confirmed_by ?? []), ...(twin?.confirmed_by ?? [])])];
+    return { text: v.quote, snippets: [snip(v)], sources: [srcN(v.url)], confirmed: by.length > 0, ...(by.length ? { confirmed_by: by } : {}) };
   });
   return {
     ...code,

@@ -1,0 +1,55 @@
+{
+ "question": "What is the current federal funds rate target range",
+ "search_id": "search_7e67950f4cdc71226dad1b724d0b7666",
+ "results": [
+  {
+   "url": "https://fred.stlouisfed.org/graph/?g=1DIsX",
+   "title": "Federal Funds Effective Rate | FRED | St. Louis Fed",
+   "publish_date": "2026-10-14",
+   "excerpts": [
+    "the Interest on Reserve Balances rate to steer the federal funds rate toward the target range.(2)\nThe Federal Open Market Committee (FOMC) meets eight times a year to determine the federal funds target range.\n(3) Whether the Federal Reserve raises or lowers the target range for the federal funds rate depends on the state of the economy.\nIf the FOMC believes the economy is growing too fast and inflation pressures are inconsistent with the dual mandate of the Federal Reserve, the Committee may temper economic activity by raising the target range for federal funds rate, and increasing the IORB rate to steer the federal funds rate into the target range.\nIn the opposing scenario, the FOMC may spur greater economic activity by lowering the target range for federal funds rate, and decreasing the IORB rate to steer the federal funds rate into the target range."
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/graph/?id=FF",
+   "title": "Federal Funds Effective Rate | FRED | St. Louis Fed",
+   "publish_date": "2026-10-15",
+   "excerpts": [
+    "Federal Funds Effective Rate (FF)\nObservations\n2026-10-14: 3.88\nUpdated: Oct 15, 2026 3:16 PM CDT\nNext Release Date: Oct 19, 2026\n* 2026-10-14: | 3.88 |\n* 2026-10-07: | 3.88 |\n* 2026-09-30: | 3.88 |\n* 2026-09-23: | 3.88 |\n* 2026-09-16: | 3.63 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nWeekly,\nEnding Wednesday\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 3772 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 1954-07-07 2:00:00 to 2026-10-14 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Effective Rate\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nthe Interest on Reserve Balances rate to steer the federal funds rate toward the target range.(2)\nThe Federal Open Market Committee (FOMC) meets eight times a year to determine the federal funds target range.\n(3) Whether the Federal Reserve raises or lowers the target range for the federal funds rate depends on the state of the economy.\nIf the FOMC believes the economy is growing too fast and inflation pressures are inconsistent with the dual mandate of the Federal Reserve, the Committee may temper economic activity by raising the target range for federal funds rate, and increasing the IORB rate to steer the federal funds rate into the target range.\nIn the opposing scenario, the FOMC may spur greater economic activity by lowering the target range for federal funds rate, and decreasing the IORB rate to steer the federal funds rate into the target range."
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/graph/?s%5B1%5D%5Bid%5D=DFF",
+   "title": "Federal Funds Effective Rate | FRED | St. Louis Fed",
+   "publish_date": "2026-10-16",
+   "excerpts": [
+    "Federal Funds Effective Rate (DFF)\nObservations\n2026-10-15: 3.88\nUpdated: Oct 16, 2026 3:16 PM CDT\nNext Release Date: Oct 19, 2026\n* 2026-10-15: | 3.88 |\n* 2026-10-14: | 3.88 |\n* 2026-10-13: | 3.88 |\n* 2026-10-12: | 3.88 |\n* 2026-10-11: | 3.88 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\nFullscreen\nData in this graph are copyrighted. Please review the copyright information in the series notes before sharing.\nShare Graph\n* Custom Graph Link\nthe Interest on Reserve Balances rate to steer the federal funds rate toward the target range.(2)\nThe Federal Open Market Committee (FOMC) meets eight times a year to determine the federal funds target range.\n(3) Whether the Federal Reserve raises or lowers the target range for the federal funds rate depends on the state of the economy.\nIf the FOMC believes the economy is growing too fast and inflation pressures are inconsistent with the dual mandate of the Federal Reserve, the Committee may temper economic activity by raising the target range for federal funds rate, and increasing the IORB rate to steer the federal funds rate into the target range.\nIn the opposing scenario, the FOMC may spur greater economic activity by lowering the target range for federal funds rate, and decreasing the IORB rate to steer the federal funds rate into the target range."
+   ]
+  },
+  {
+   "url": "http://federalreserve.gov/monetarypolicy/files/monetary20260729a1.pdf",
+   "title": "",
+   "publish_date": null,
+   "excerpts": [
+    "EDT July 29, 2026 The Federal Open Market Committee approved the following statement for release by a 9 – 3 vote: The Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent, in support of the Federal Reserve's dual mandate."
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260916a.htm",
+   "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+   "publish_date": null,
+   "excerpts": [
+    "The Federal Open Market Committee approved the following statement for release by a 12 – 0 vote: The Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve's dual mandate. The Committee is continuing its policy of maintaining ample reserves in the banking system. Economic activity is expanding at a solid pace. While uncertainty remains elevated owing, in part, to geopolitical developments, domestic spending has been resilient. Productivity growth is strong, and capital investment is robust. Job gains have kept pace with the workforce, and the unemployment rate has changed little. Inflation remains elevated. Today's policy action will support a timelier return to the Committee's 2 percent goal."
+   ]
+  }
+ ],
+ "warnings": null,
+ "usage": [
+  {
+   "name": "sku_search",
+   "count": 1
+  }
+ ],
+ "metadata": null,
+ "session_id": "session_7e67950f4cdc71226dad1b724d0b7666"
+}

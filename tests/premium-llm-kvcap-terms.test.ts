@@ -84,6 +84,18 @@ describe("KV global daily spend cap (fails closed)", () => {
     await h.reconcile(0.01, 0);
     expect(Number(await store.get(llmSpendKey(T0)))).toBeCloseTo(0, 12);
   });
+  it("reserve before UTC midnight, reconcile after: adjusts the reserve day, not the new day (per-request hook)", async () => {
+    let t = Date.UTC(2026, 9, 19, 23, 59, 59, 500);
+    const h = kvSpendHook(store, ON, () => t);
+    const d1 = llmSpendKey(t);
+    expect(await h.reserve(0.01)).toBe(true);
+    t += 2_000; // now 2026-10-20 UTC
+    const d2 = llmSpendKey(t);
+    expect(d2).not.toBe(d1);
+    await h.reconcile(0.01, 0.004);
+    expect(Number(await store.get(d1))).toBeCloseTo(0.004, 12);
+    expect(await store.get(d2)).toBeFalsy();
+  });
   it("model error after the call: charges the reserved worst case (no usage reported)", async () => {
     const { s } = load("prem4");
     setSynthesisForTests({ env: ON, model: async () => { throw new Error("boom"); }, now: () => T0 });
