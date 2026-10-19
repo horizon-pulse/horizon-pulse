@@ -13,6 +13,7 @@ import { LIVE_PAID_ROUTES, CATEGORY_LABELS, routeName } from "../lib/live-catalo
 import { USDC_BASE, CDP_FACILITATOR_URL, PUBLIC_BASE_URL, CONTACT_EMAIL, SERVICE_DESCRIPTION, DEFAULT_PAY_TO } from "../lib/config";
 import { exampleRecordedAt } from "../lib/route-examples";
 import * as M from "../lib/money-market-rates";
+import { BATCH_VALUE_NOTE } from "../lib/batch";
 import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "../lib/solana-config";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -147,7 +148,7 @@ for (const r of LIVE_PAID_ROUTES) {
       operationId: opId,
       tags: [CATEGORY_LABELS[r.category]],
       summary: r.docBlurb ?? r.blurb,
-      description: `${cfg.description}\n\nPrice: ${acc.price} USDC per call (${amount} atomic), paid with x402 v2 \`exact\` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.`,
+      description: `${cfg.description}\n\nPrice: ${acc.price} USDC per call (${amount} atomic), paid with x402 v2 \`exact\` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.${p === "/api/batch" ? `\n\n${BATCH_VALUE_NOTE}` : ""}`,
       "x-payment-info": {
         protocol: "x402",
         x402Version: 2,

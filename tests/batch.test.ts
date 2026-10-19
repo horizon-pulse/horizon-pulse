@@ -171,3 +171,42 @@ describe("/api/batch discovery listing (10/19)", () => {
     for (const [p, rel] of Object.entries(RELATED)) if (p !== "/api/batch") expect(rel, p).not.toContain("/api/batch");
   });
 });
+
+describe("/api/batch Class A delta (Odin 10/19): value statement + no 404 sample link", () => {
+  const info = (resource: string) => ({ resource, description: "d", priceUsd: "$0.01" });
+  const paid402 = () => new Response("{}", { status: 402, headers: { "content-type": "application/json" } });
+  it("browser 402: batch has no /api/demo link; other routes keep it", async () => {
+    const { browser402, NO_DEMO_ROUTES } = await import("@/lib/browser-402");
+    expect([...NO_DEMO_ROUTES]).toEqual(["batch"]);
+    const b = await browser402(paid402(), info("/api/batch")).text();
+    expect(b).not.toContain("/api/demo/");
+    expect(b).not.toContain("free fixed-input sample");
+    expect(b).toContain('<a href="/llms.txt">Agent docs (llms.txt)</a>');
+    for (const r of ["/api/pulse", "/api/gas", "/api/name/resolve"]) {
+      const h = await browser402(paid402(), info(r)).text();
+      expect(h).toContain(`<p><a href="/api/demo/${r.slice(5)}">See a free fixed-input sample</a> · <a href="/llms.txt">`);
+    }
+  });
+  it("value statement: in openapi, llms.txt, skill.md and the MCP batch description only", async () => {
+    const { BATCH_VALUE_NOTE } = await import("@/lib/batch");
+    expect(BATCH_VALUE_NOTE).toContain("$0.001 per item vs the $0.002 single-call floor");
+    expect(BATCH_VALUE_NOTE).toContain("4 x $0.002 = $0.008");
+    const fs = await import("node:fs");
+    const spec = JSON.parse(fs.readFileSync("public/openapi.json", "utf8"));
+    for (const m of ["get", "post"]) expect(spec.paths["/api/batch"][m].description).toContain(BATCH_VALUE_NOTE);
+    expect(fs.readFileSync("public/llms.txt", "utf8")).toContain(BATCH_VALUE_NOTE);
+    expect(fs.readFileSync("public/llms.txt", "utf8")).toContain("no free sample for `/api/batch`");
+    const { buildSkillMarkdown } = await import("@/lib/agent-skill");
+    expect(buildSkillMarkdown()).toContain(BATCH_VALUE_NOTE);
+    const { TOOLS, mcpToolDescription } = await import("@/lib/mcp-server");
+    for (const t of TOOLS) {
+      const d = mcpToolDescription(t.name, t.opts);
+      if (t.name === "batch") expect(d).toContain(BATCH_VALUE_NOTE);
+      else expect(d).not.toContain("Value: one payment");
+    }
+    // 402 / Bazaar description (ROUTE_METADATA) is unchanged and stays <= 500 chars.
+    const { ROUTE_METADATA } = await import("@/lib/route-metadata");
+    expect(ROUTE_METADATA["/api/batch"].description).not.toContain("Value:");
+    expect(ROUTE_METADATA["/api/batch"].description.length).toBeLessThanOrEqual(500);
+  });
+});

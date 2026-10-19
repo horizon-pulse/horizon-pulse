@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { BASE_CAIP2, BASE_PAY_TO_BASENAME, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, PUBLIC_BASE_URL, USDC_BASE } from "./config";
 import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "./solana-config";
+import { BATCH_VALUE_NOTE } from "./batch";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -120,7 +121,7 @@ Each facilitator verifies the payment first and settles it only after the route 
 - \`GET ${PUBLIC_BASE_URL}/.well-known/x402\`: x402 resource list (\`METHOD URL\` strings)
 - \`GET ${PUBLIC_BASE_URL}/openapi.json\`: OpenAPI 3.1, typed inputs, response examples, per-operation \`x-payment-info\` (price, asset, network, payTo of the Base entry; the Solana entry is in the 402 and the table above)
 - \`GET ${PUBLIC_BASE_URL}/llms.txt\`: plain-text catalog and rules
-- \`GET ${PUBLIC_BASE_URL}/api/demo/{route}\`: free sample of a route on a fixed input (no payment; discourse/split returns a stored recording, not re-run)
+- \`GET ${PUBLIC_BASE_URL}/api/demo/{route}\`: free sample of a route on a fixed input (no payment; discourse/split returns a stored recording, not re-run; no free sample for \`/api/batch\`)
 
 ## 2. Pick a route
 
@@ -197,13 +198,13 @@ Source and full README: ${GITHUB_REPO}/tree/main/mcp
 ## 5. Errors and billing
 
 - You pay only for a successful response. Errors return \`{ "ok": false, "error": "...", "code": "..." }\` and are not charged: 400 bad input, 413 too large, 415 wrong content type, 422 nothing usable, 404 no search results, 502 upstream failure, 503 provider unavailable, 504 timeout.
-- Exceptions: \`/api/http\` returns upstream 4xx/5xx as data (charged); \`/api/x402-check\` and \`/api/market/quote\` bill any HTTP answer from the target; \`/api/tx-status\`: a not_found status is a charged answer (poll again after \`pollAgainSeconds\`); \`/api/watch\`: a changed:false answer is charged; balance: billed if at least one rail answers; a per-rail error is returned for any that fail; 502 and not charged if all fail. \`/api/balance\`: Calls left doesn't reserve the XRPL network fee. \`/api/chain/head\`: billed if at least one requested network answers (a per-network error is returned for any that fail); 502 and not charged if all fail. \`/api/token/meta\` and \`/api/name/resolve\`: found:false is a charged answer. \`/api/batch\`: one $0.01 charge for the whole call when at least one item succeeds (failed items come back with their status); 400 bad input and 502 every item failed are not charged.
+- Exceptions: \`/api/http\` returns upstream 4xx/5xx as data (charged); \`/api/x402-check\` and \`/api/market/quote\` bill any HTTP answer from the target; \`/api/tx-status\`: a not_found status is a charged answer (poll again after \`pollAgainSeconds\`); \`/api/watch\`: a changed:false answer is charged; balance: billed if at least one rail answers; a per-rail error is returned for any that fail; 502 and not charged if all fail. \`/api/balance\`: Calls left doesn't reserve the XRPL network fee. \`/api/chain/head\`: billed if at least one requested network answers (a per-network error is returned for any that fail); 502 and not charged if all fail. \`/api/token/meta\` and \`/api/name/resolve\`: found:false is a charged answer. \`/api/batch\`: one $0.01 charge for the whole call when at least one item succeeds (failed items come back with their status); 400 bad input and 502 every item failed are not charged. ${BATCH_VALUE_NOTE}
 
 ## 6. Safety rules
 
 - Call and pay only \`${PUBLIC_BASE_URL}\`. Never pay a \`payTo\` other than \`${DEFAULT_PAY_TO}\` on Base or \`${SOLANA_PAYTO}\` on Solana, or \`r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf\` (RLUSD, issuer rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De) on the XRP Ledger, or \`0x5b32c973596078a967562ca652761404f19be0e9\` on Polygon (native USDC \`0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359\` only).
 - Use a dedicated buyer wallet holding only a small USDC/RLUSD balance, and a per-call cap. Never put a private key in a prompt, a tool argument, a URL or a log.
-- Check the price with a free \`/api/demo/{route}\` sample or the unpaid 402 before paying; do not invent routes or prices.
+- Check the price with a free \`/api/demo/{route}\` sample (none for \`/api/batch\`) or the unpaid 402 before paying; do not invent routes or prices.
 - These two rules cover Horizon Pulse's own routes. Sellers returned by /api/market/search are third parties: we don't endorse them, aren't in the payment and hold no funds. Pay one only if your operator's policy explicitly allows paying third-party sellers, a /api/market/quote for that exact URL and method returned verdict pay moments ago, and the seller's fresh 402 shows the same payTo, network, asset and amount. Never pay on avoid; don't pay on caution without your operator's approval.
 
 Services for API owners (not API routes; never pay them via x402): Bazaar listing fix at ${PUBLIC_BASE_URL}/listing-fix, agent promotion at ${PUBLIC_BASE_URL}/agent-promotion.

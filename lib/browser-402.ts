@@ -36,6 +36,9 @@ export function withVary(res: Response): Response {
   return res;
 }
 
+/** Paid routes with no /api/demo sample: their browser 402 has no sample link. */
+export const NO_DEMO_ROUTES: ReadonlySet<string> = new Set(["batch"]);
+
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
@@ -45,6 +48,9 @@ export function browser402(
   info: { resource: string; description: string; priceUsd: string },
 ): Response {
   const route = info.resource.replace(/^\/api\//, "");
+  // No /api/demo/batch exists (Odin Class A 10/19, CHANGE 2): omit the sample link for batch
+  // ONLY. Every other route's browser 402 keeps the link and stays byte-identical.
+  const sample = NO_DEMO_ROUTES.has(route) ? "" : `<a href="/api/demo/${esc(route)}">See a free fixed-input sample</a> · `;
   const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex"><title>${esc(info.resource)} · Horizon Pulse</title>
@@ -54,7 +60,7 @@ export function browser402(
 <p>${esc(info.description)}</p>
 <p class="p">${esc(info.priceUsd)} per call</p>
 <p>This is a paid API for AI agents. Agents pay per call in USDC on Base using the x402 protocol (HTTP 402 + <code>PAYMENT-REQUIRED</code> header). There is no human checkout, signup, or API key.</p>
-<p><a href="/api/demo/${esc(route)}">See a free fixed-input sample</a> · <a href="/llms.txt">Agent docs (llms.txt)</a> · <a href="/openapi.json">OpenAPI</a> · <a href="/">Horizon Pulse</a></p>
+<p>${sample}<a href="/llms.txt">Agent docs (llms.txt)</a> · <a href="/openapi.json">OpenAPI</a> · <a href="/">Horizon Pulse</a></p>
 <p><small>Status 402 Payment Required. Programmatic clients: read the PAYMENT-REQUIRED response header.</small></p>
 </body></html>`;
   const headers = new Headers(paid.headers);

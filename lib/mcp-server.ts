@@ -51,7 +51,7 @@ import * as chainHeadRoute from "@/app/api/chain/head/handler";
 import * as tokenMetaRoute from "@/app/api/token/meta/handler";
 import * as nameResolveRoute from "@/app/api/name/resolve/handler";
 import * as batchRoute from "@/app/api/batch/handler";
-import { batchEnabled } from "./batch";
+import { BATCH_VALUE_NOTE, batchEnabled } from "./batch";
 import * as marketQuote from "@/app/api/market/quote/handler";
 import * as screenshot from "@/app/api/screenshot/handler";
 import * as search from "@/app/api/search/handler";
@@ -417,7 +417,8 @@ export function mcpToolDescription(name: string, opts: PaymentOpts): string {
   const usd = Number(opts.maxAmountRequired) / 1e6;
   const n = POLL_INTERVAL_SECONDS[MCP_ROUTE[name] ?? ""];
   const cadence = n ? ` Data changes about every ${n >= 3600 ? `${n / 3600} h` : n >= 60 ? `${n / 60} min` : `${n} s`}; calling more often returns the same values.` : "";
-  return `${opts.description.replace(/\.$/, "")}. Price $${usd} per call via x402, USDC on Base (MCP payments are Base only).${cadence}`;
+  const value = name === "batch" ? ` ${BATCH_VALUE_NOTE}` : ""; // batch only (Odin Class A 10/19); other tools unchanged
+  return `${opts.description.replace(/\.$/, "")}. Price $${usd} per call via x402, USDC on Base (MCP payments are Base only).${cadence}${value}`;
 }
 
 /**

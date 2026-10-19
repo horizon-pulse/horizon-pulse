@@ -22,6 +22,14 @@
  */
 import { BATCH_MAX_ITEMS } from "./config";
 
+/**
+ * Value statement (Odin Class A 10/19, CHANGE 1): factual, no comparison beyond the
+ * arithmetic. Shown in openapi, MCP, llms.txt and skill.md; NOT in the 402 / Bazaar
+ * description (ROUTE_METADATA, 500-char limit), so batch's 402 bytes are unchanged.
+ */
+export const BATCH_VALUE_NOTE =
+  "Value: one payment and one round trip for up to 10 reads. At 10 items that is $0.001 per item vs the $0.002 single-call floor; 5 items cost the same as 5 singles ($0.01); below 5 items the singles are cheaper (4 x $0.002 = $0.008). Substitutes: the same single routes at $0.002 each, or public RPCs and block explorers queried directly (free).";
+
 export const BATCH_ROUTES: Readonly<Record<string, readonly string[]>> = {
   balance: ["evm", "solana", "xrpl"],
   gas: [],
