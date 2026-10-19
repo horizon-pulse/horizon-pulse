@@ -3772,7 +3772,7 @@
             "name": "servings",
             "in": "query",
             "required": false,
-            "description": "Servings the recipe makes (1-100). Give with targetServings to scale, or neither.",
+            "description": "Servings the recipe makes, integer 1-100 as digits. Give with targetServings to scale, or neither.",
             "schema": {
               "type": "integer",
               "minimum": 1,
@@ -3784,7 +3784,7 @@
             "name": "targetServings",
             "in": "query",
             "required": false,
-            "description": "Servings wanted (1-100).",
+            "description": "Servings wanted, integer 1-100 as digits.",
             "schema": {
               "type": "integer",
               "minimum": 1,
