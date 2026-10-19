@@ -566,6 +566,58 @@ describe("Sentinel SP-RACE-2 / MEDIUM-1 / LOW-1 / item 4, Odin C1 / C4", () => {
     expect(((await ok.json()) as any).redeemed.reconcile_id).toBe(rc);
     expect((await call("brief", "q=redeem%20me", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof })).status).toBe(409); // once only
   });
+  describe("redeem window (Odin 10/19)", () => {
+    async function failedFirst(q: string) {
+      setParallelForTests({ fetch: (async () => new Response("x", { status: 422 })) as never });
+      const h = await payment();
+      const first = (await (await call("brief", q, { "payment-signature": h })).json()) as any;
+      expect(first.status).toBe("charged_not_delivered");
+      setParallelForTests({ fetch: (async () => new Response(JSON.stringify({ results: [{ url: "https://a.example/", excerpts: ["e"] }] }))) as never });
+      return { h, first };
+    }
+    it("(1) expired window + valid payer proof on a charged_not_delivered claim -> redeem succeeds (200)", async () => {
+      on();
+      const { h, first } = await failedFirst("q=late%20redeem");
+      now += 2 * 3600_000; // auth validBefore (now+1800 s) long gone
+      const proof = await ACCOUNT.signMessage({ message: first.redeem_message });
+      const ok = await call("brief", "q=late%20redeem", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof });
+      expect(ok.status).toBe(200);
+      expect(((await ok.json()) as any).redeemed.reconcile_id).toBe(first.reconcile_id);
+    });
+    it("(1b) expired window + proof on an unconfirmed (settle timeout) claim reaches redeem (landing checked)", async () => {
+      on();
+      settleBehaviour = () => new Promise((_r, rej) => rej(Object.assign(new Error("timed out"), { name: "TimeoutError" })));
+      const h = await payment();
+      const first = (await (await call("brief", "q=late%20timeout", { "payment-signature": h })).json()) as any;
+      now += 2 * 3600_000;
+      const proof = await ACCOUNT.signMessage({ message: first.redeem_message });
+      rpcAnswer = "used";
+      logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
+      expect((await call("brief", "q=late%20timeout", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof })).status).toBe(200);
+    });
+    it("(2) expired window, no proof -> 402 authorization_window_too_short", async () => {
+      on();
+      const { h } = await failedFirst("q=late%20noproof");
+      now += 2 * 3600_000;
+      const r = await call("brief", "q=late%20noproof", { "payment-signature": h });
+      expect(r.status).toBe(402);
+      expect(JSON.stringify(await r.json())).toContain("authorization_window_too_short");
+    });
+    it("(3) proof present but no redeemable claim (fresh nonce, or claim already redeemed) -> normal window check 402", async () => {
+      on();
+      const exp = await payment({ validBefore: String(Math.floor(now / 1000) + 30) });
+      const r = await call("brief", "q=fresh", { "payment-signature": exp, [PAYER_PROOF_HEADER]: "0x" + "11".repeat(65) });
+      expect(r.status).toBe(402);
+      expect(JSON.stringify(await r.json())).toContain("authorization_window_too_short");
+      const { h, first } = await failedFirst("q=late%20twice");
+      const proof = await ACCOUNT.signMessage({ message: first.redeem_message });
+      now += 2 * 3600_000;
+      expect((await call("brief", "q=late%20twice", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof })).status).toBe(200);
+      const again = await call("brief", "q=late%20twice", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof });
+      expect(again.status).toBe(402); // claim is "redeemed" now -> window check applies
+      expect(JSON.stringify(await again.json())).toContain("authorization_window_too_short");
+    });
+  });
   it("INFO-3: reconcile console line carries a truncated payer", async () => {
     on();
     const lines: string[] = [];

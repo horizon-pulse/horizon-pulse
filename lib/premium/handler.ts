@@ -22,7 +22,7 @@ import { asyncBreakerOpen, settleAtAccept, currentBlock, newJobId, releaseOpen, 
 import { after, NextRequest, NextResponse } from "next/server";
 import { hasCdpCredentials } from "@/lib/config";
 import { requestFingerprint } from "@/lib/request-fingerprint";
-import { claimKey, tryClaim, moveClaim, newOwner, releaseClaim, type Claim, type Held } from "./claim";
+import { claimKey, parseClaim, tryClaim, moveClaim, newOwner, releaseClaim, type Claim, type Held } from "./claim";
 import { legalBlock, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
 import { createJob, runJob, settleLanded } from "./jobs";
 import {
@@ -134,6 +134,14 @@ export function researchFailureCode(e: unknown): string {
   if (e instanceof ParallelError && /^[a-z0-9_]{1,40}$/.test(e.message)) return e.message;
   return e instanceof Error ? (/^[A-Za-z]{1,40}$/.test(e.name) ? e.name : "error") : "error";
 }
+/** Payer-proof header present + sync tier + the stored claim for this (from, nonce) is in the redeemable state. Fail-closed. */
+async function redeemableWithProof(req: NextRequest, x: Tier, d: Decoded): Promise<boolean> {
+  if (x.mode !== "sync" || !req.headers.get(PAYER_PROOF_HEADER) || !d.from || !d.nonce) return false;
+  const store = premiumStore();
+  if (!store) return false;
+  const c = parseClaim(await store.get(claimKey(d.from, d.nonce)).catch(() => null));
+  return c?.s === "unconfirmed" && typeof c.rc === "string" && c.rc.length > 0;
+}
 const inProgress = () => jsonError(503, { error: "payment_in_progress", charged: false, message: "This payment authorization is already being processed." }, { "Retry-After": "5" });
 
 function okResponse(x: Tier, result: unknown, tx: string | null, header: string | null) {
@@ -196,7 +204,10 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
   const bind = priceBindingError(d, x);
   if (bind) return challenge(x, description(x), bind);
   const win = windowError(d, Math.floor(clock() / 1000), x.mode === "async" ? ASYNC_MIN_REMAINING_S : SYNC_MIN_REMAINING_S);
-  if (win) return challenge(x, description(x), win);
+  // Odin 10/19: a redeem of an unconfirmed / charged_not_delivered claim happens after the original authorization's window
+  // has (nearly) run out. With a payer proof and a redeemable stored claim, skip the window check: redeem() itself checks
+  // the fingerprint, the proof and the on-chain landing, and never settles again. Every other case keeps the check.
+  if (win && !(await redeemableWithProof(req, x, d))) return challenge(x, description(x), win);
   if (isSmartWalletSignature(d)) return challenge(x, description(x), SMART_WALLET_REASON, 402, SMART_WALLET_MESSAGE);
   if (!(await signatureValid(d))) return challenge(x, description(x), "invalid_signature");
   if (!hasCdpCredentials()) return jsonError(503, { error: "settlement_unavailable", charged: false });
