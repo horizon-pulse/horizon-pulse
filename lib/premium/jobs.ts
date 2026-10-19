@@ -11,6 +11,7 @@
  *   Q6 the $75 test passes at day 0 + 3 daily records; the watch keeps running, pro rata applies.
  * Storage keys are all job-scoped and carry a TTL (store.ts). Parallel output lives only inside its job's keys.
  */
+import { persistAlert } from "@/lib/alert-persist";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { BASE_CAIP2, DEFAULT_PAY_TO, USDC_BASE } from "@/lib/config";
 import { defaultRpcDeps, rpcCall, type RpcDeps } from "@/lib/chain-rpc";
@@ -379,8 +380,21 @@ export async function settleAtAccept(store: PremiumStore, job: Job, x: Tier): Pr
     job.purge_at = clock() + RETENTION_MS;
     // Odin bfd52f1: hold the payer+nonce claim as unconfirmed (30 d), like the normal settle-failure path, so it cannot
     // expire at the 20-min job TTL while the authorization (validBefore <= 1 h) is still live.
-    const h = await moveClaim(store, heldOf(job), { s: "unconfirmed", rc: line.reconcile_id, job: job.id }).catch(() => null);
+    // Sentinel INFO: if holding the claim fails too, do not swallow it: HIGH alert (the claim may lapse at 20 min).
+    let h: Held | null = null;
+    let why: string | null = null;
+    try {
+      h = await moveClaim(store, heldOf(job), { s: "unconfirmed", rc: line.reconcile_id, job: job.id });
+      if (!h) why = "cas_lost";
+    } catch {
+      why = "store_error";
+    }
     if (h) job.claim = { key: h.key, raw: h.raw };
+    if (why) {
+      const alert = { kind: "premium_claim_hold_failed", severity: "high", route: `${x.route === "research" ? "/api/research/report" : "/api/seller-watch"}/${x.id}`, job_id: job.id, reconcile_id: line.reconcile_id, reason: why };
+      console.error(`[premium][ALERT][HIGH] ${JSON.stringify(alert)}`);
+      persistAlert("premium", { ...alert, payer: job.payer }, { exemptFromCap: true });
+    }
     await saveJob(store, job).catch(() => undefined);
     await store.zadd(K.active, clock(), job.id, INDEX_TTL_S).catch(() => undefined);
   }

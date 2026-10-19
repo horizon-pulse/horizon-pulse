@@ -1024,3 +1024,45 @@ describe("delta 5: Odin bfd52f1 follow-ups", () => {
     expect(TECHNICAL_NOTES[0]).toBe("Wallets: at launch, premium accepts payments signed by a regular wallet key (an EOA) only. Smart-wallet signatures (ERC-1271 or ERC-6492) are not supported and are refused before anything is charged; depending on the signature, the error is smart_wallet_unsupported or invalid_signature.");
   });
 });
+
+/* ======================= delta 6: Sentinel INFO (claim hold failure alerts) ======================= */
+describe("delta 6: settle-at-verify claim-hold failure", () => {
+  it("if moving the claim to unconfirmed also fails, a HIGH premium_claim_hold_failed alert fires (not swallowed)", async () => {
+    on();
+    const errs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void errs.push(a.map(String).join(" ")));
+    for (let i = 0; i < 3; i++) await store.zadd("settlefail:global", now + DAY_MS, `job_${String(i).padStart(24, "0")}`, 86_400);
+    const realSet = store.set.bind(store);
+    let thrown = 0;
+    store.set = async (k: string, v: string, ttl: number) => {
+      if (k.startsWith("job:") && v.includes('"status":"settling"') && thrown++ === 0) throw new Error("store down mid-settle");
+      return realSet(k, v, ttl);
+    };
+    const realCas = store.cas.bind(store);
+    store.cas = async (k: string, e: string, n: string, t: number) => {
+      if (k.startsWith("claim:") && n.includes('"s":"unconfirmed"')) throw new Error("store down");
+      return realCas(k, e, n, t);
+    };
+    const { j } = await acceptReport("q=hold%20fails");
+    expect(j.status).toBe("settle_unconfirmed");
+    const hi = errs.filter((l) => l.includes("[ALERT][HIGH]") && l.includes("premium_claim_hold_failed"));
+    expect(hi).toHaveLength(1);
+    expect(hi[0]).toContain(j.job_id);
+    expect(hi[0]).toContain('"reason":"store_error"');
+    expect(hi[0].toLowerCase()).not.toContain(FROM.toLowerCase());
+  });
+  it("no alert when the claim hold succeeds", async () => {
+    on();
+    const errs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void errs.push(a.map(String).join(" ")));
+    for (let i = 0; i < 3; i++) await store.zadd("settlefail:global", now + DAY_MS, `job_${String(i).padStart(24, "0")}`, 86_400);
+    const realSet = store.set.bind(store);
+    let thrown = 0;
+    store.set = async (k: string, v: string, ttl: number) => {
+      if (k.startsWith("job:") && v.includes('"status":"settling"') && thrown++ === 0) throw new Error("x");
+      return realSet(k, v, ttl);
+    };
+    await acceptReport("q=hold%20ok");
+    expect(errs.some((l) => l.includes("premium_claim_hold_failed"))).toBe(false);
+  });
+});
