@@ -377,6 +377,10 @@ export async function settleAtAccept(store: PremiumStore, job: Job, x: Tier): Pr
     job.http_equivalent = 502;
     job.reconcile_id = line.reconcile_id;
     job.purge_at = clock() + RETENTION_MS;
+    // Odin bfd52f1: hold the payer+nonce claim as unconfirmed (30 d), like the normal settle-failure path, so it cannot
+    // expire at the 20-min job TTL while the authorization (validBefore <= 1 h) is still live.
+    const h = await moveClaim(store, heldOf(job), { s: "unconfirmed", rc: line.reconcile_id, job: job.id }).catch(() => null);
+    if (h) job.claim = { key: h.key, raw: h.raw };
     await saveJob(store, job).catch(() => undefined);
     await store.zadd(K.active, clock(), job.id, INDEX_TTL_S).catch(() => undefined);
   }

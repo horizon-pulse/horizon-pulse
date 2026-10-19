@@ -983,3 +983,44 @@ describe("delta 4: Sentinel delta-3 LOW-1 / LOW-2", () => {
     expect(fac.filter((c) => c.op === "settle").length).toBe(0); // the throw happened before the facilitator call; landed on-chain resolution, no second settle
   });
 });
+
+/* ======================= delta 5: Odin PASS on bfd52f1 ======================= */
+describe("delta 5: Odin bfd52f1 follow-ups", () => {
+  it("settle-at-verify throw moves the claim to unconfirmed; resubmitting the same authorization after the 20-min job-claim TTL cannot deliver twice", async () => {
+    on({ CRON_SECRET: "c".repeat(32) });
+    for (let i = 0; i < 3; i++) await store.zadd("settlefail:global", now + DAY_MS, `job_${String(i).padStart(24, "0")}`, 86_400);
+    const realSet = store.set.bind(store);
+    let thrown = 0;
+    store.set = async (k: string, v: string, ttl: number) => {
+      if (k.startsWith("job:") && v.includes('"status":"settling"') && thrown++ === 0) throw new Error("store down mid-settle");
+      return realSet(k, v, ttl);
+    };
+    const n = nonce();
+    const header = await payment({ amount: price("report"), nonce: n, validBefore: String(Math.floor(now / 1000) + 3600) });
+    const first = await call("report", "q=double%20delivery", { "payment-signature": header });
+    const j = (await first.json()) as any;
+    expect(j.status).toBe("settle_unconfirmed");
+    afters.length = 0;
+    const claimEntry = [...store.kv.entries()].find(([k]) => k.startsWith("claim:"))!;
+    expect(JSON.parse(claimEntry[1].v).s).toBe("unconfirmed");
+    expect(claimEntry[1].exp - now).toBeGreaterThan(20 * 60_000);
+    // payment landed; cron delivers the job once
+    rpcAnswer = "used";
+    logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
+    await cron(`Bearer ${"c".repeat(32)}`);
+    await cron(`Bearer ${"c".repeat(32)}`);
+    expect((await loadJob(store, j.job_id))!.status).toBe("delivered");
+    // 25 min later (past the 20-min job claim TTL, authorization still valid): resubmit -> 409, no new job, no work
+    now += 25 * 60_000;
+    resetPremiumNoncesForTests();
+    const pc = parallelCalls.length;
+    const jobsBefore = [...store.kv.keys()].filter((k) => k.startsWith("job:")).length;
+    const again = await call("report", "q=double%20delivery", { "payment-signature": header });
+    expect(again.status).toBe(409);
+    expect([...store.kv.keys()].filter((k) => k.startsWith("job:")).length).toBe(jobsBefore);
+    expect(parallelCalls.length).toBe(pc);
+  });
+  it("/premium-terms EOA paragraph: exact text", () => {
+    expect(TECHNICAL_NOTES[0]).toBe("Wallets: at launch, premium accepts payments signed by a regular wallet key (an EOA) only. Smart-wallet signatures (ERC-1271 or ERC-6492) are not supported and are refused before anything is charged; depending on the signature, the error is smart_wallet_unsupported or invalid_signature.");
+  });
+});
