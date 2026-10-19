@@ -26,11 +26,11 @@ import {
   resetPremiumNoncesForTests, setPremiumRpcForTests, TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_BASE_DOMAIN,
 } from "@/lib/premium/payment";
 import { setParallelForTests } from "@/lib/premium/parallel";
-import { RECONCILE_RETENTION_S, PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT } from "@/lib/premium/copy";
-import { flushReconcileForTests, setReconcileForTests, storedFingerprint, type ReconcileLine } from "@/lib/premium/reconcile";
+import { TECHNICAL_NOTES, RECONCILE_RETENTION_S, PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT } from "@/lib/premium/copy";
+import { CAP_EXEMPT_OUTCOMES, recordReconcile, RECONCILE_WRITE_CAP_PER_DAY, reconcileWriteStats, flushReconcileForTests, setReconcileForTests, storedFingerprint, type ReconcileLine } from "@/lib/premium/reconcile";
 import { MemoryPremiumStore, premiumPrefix, setPremiumStoreForTests, UpstashPremiumStore, type PremiumStore } from "@/lib/premium/store";
 import { setPremiumClockForTests } from "@/lib/premium/handler";
-import { AUTH_USED_TOPIC, FIRST_DELIVERABLE_BUDGET_MS, JOB_KEYS, loadJob, runJob, setJobClockForTests, setJobRpcForTests, stopWatch, cronSweep } from "@/lib/premium/jobs";
+import { ASYNC_BREAKER_REASON, settleLanded, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S, AUTH_USED_TOPIC, FIRST_DELIVERABLE_BUDGET_MS, JOB_KEYS, loadJob, runJob, setJobClockForTests, setJobRpcForTests, stopWatch, cronSweep } from "@/lib/premium/jobs";
 import { ARCHIVE_CONTEXT_CHARS, ARCHIVE_TEXT_CAP_BYTES, matchSnippet, noArchive, robotsAllows, setArchiveFetchForTests } from "@/lib/premium/archive";
 import { DAY_MS, dayWindow, resembles, setWatchDepsForTests, watchRefundAtomic } from "@/lib/premium/watch";
 import { alertWriteStats, PREMIUM_ALERT_WRITE_CAP_PER_DAY, ALERT_WRITE_CAP_PER_DAY, persistAlert, setAlertPersistForTests } from "@/lib/alert-persist";
@@ -73,6 +73,7 @@ let store: MemoryPremiumStore;
 let fac: ReturnType<typeof installFacilitatorMock>;
 let rpcAnswer: "used" | "unused" | "down";
 let logsAnswer: unknown[];
+let logQueries: any[];
 let parallelCalls: string[];
 let reconciles: ReconcileLine[];
 let settleBehaviour: () => unknown;
@@ -105,6 +106,7 @@ beforeEach(() => {
   resetPremiumNoncesForTests();
   rpcAnswer = "unused";
   logsAnswer = [];
+  logQueries = [];
   parallelCalls = [];
   reconciles = [];
   settleBehaviour = () => ({ success: true, transaction: "0x" + "cd".repeat(32), network: "eip155:8453", payer: FROM });
@@ -113,6 +115,7 @@ beforeEach(() => {
     const body = JSON.parse(String(init.body));
     if (rpcAnswer === "down") throw new Error("down");
     if (body.method === "eth_blockNumber") return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x100" }));
+    if (body.method === "eth_getLogs") logQueries.push(body.params[0]);
     if (body.method === "eth_getLogs") return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: logsAnswer }));
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x" + (rpcAnswer === "used" ? "1" : "0").padStart(64, "0") }));
   }) as never;
@@ -631,5 +634,147 @@ describe("Upstash premium store", () => {
     const flat = JSON.stringify(sent);
     expect(flat).toContain('"SET","hp:premium:pv:claim:a:b","v","NX","PX",120000');
     expect(flat).toContain("EVAL");
+  });
+});
+
+/* ======================= delta 2: Odin rulings 10/19 ======================= */
+describe("delta 2: per-payer failed-settle cap (Sentinel MEDIUM-2 async) + EOA-only", () => {
+  it("2 failed settles -> payer blocked 24 h: 429 payer_settle_failures before verify, TTL 24 h; other payers unaffected; expires after 24 h", async () => {
+    on();
+    settleBehaviour = () => ({ success: false, errorReason: "unexpected" });
+    for (let i = 0; i < 2; i++) {
+      const { r } = await acceptReport(`q=fail%20${i}%20x`);
+      expect(r.status).toBe(202);
+      await drainAfters();
+    }
+    expect(fac.filter((c) => c.op === "settle").length).toBe(2);
+    const block = store.writes.find((w) => w.key.startsWith("settleblock:"));
+    expect(block?.ttlMs).toBe(SETTLE_BLOCK_S * 1000);
+    const verifies = fac.filter((c) => c.op === "verify").length;
+    const third = await acceptReport("q=third%20try");
+    expect(third.r.status).toBe(429);
+    expect(third.j.error).toBe(SETTLE_BLOCK_REASON);
+    expect(third.j.charged).toBe(false);
+    expect(fac.filter((c) => c.op === "verify").length).toBe(verifies);
+    now += SETTLE_BLOCK_S * 1000 + 1000;
+    // open slots have expired too; block gone
+    expect((await acceptReport("q=after%20block")).r.status).toBe(202);
+  });
+  it("1 failed settle does not block", async () => {
+    on();
+    settleBehaviour = () => ({ success: false, errorReason: "unexpected" });
+    await acceptReport("q=one%20fail");
+    await drainAfters();
+    settleBehaviour = () => ({ success: true, transaction: "0x" + "cd".repeat(32), network: "eip155:8453", payer: FROM });
+    expect((await acceptReport("q=second%20ok")).r.status).toBe(202);
+  });
+  it("smart-wallet signature -> 402 smart_wallet_unsupported + plain line, before any call or write", async () => {
+    on();
+    const h = await payment();
+    const obj = JSON.parse(Buffer.from(h, "base64").toString());
+    obj.payload.signature = "0x" + "ab".repeat(200);
+    const r = await call("brief", "q=smart%20wallet", { "payment-signature": Buffer.from(JSON.stringify(obj)).toString("base64") });
+    expect(r.status).toBe(402);
+    const j = (await r.json()) as any;
+    expect(j.error).toBe("smart_wallet_unsupported");
+    expect(j.message).toMatch(/EOA/);
+    expect(fac.length + store.writes.length).toBe(0);
+  });
+  it("/premium-terms copy states EOA-only and the failed-settle pause", () => {
+    expect(TECHNICAL_NOTES.join(" ")).toMatch(/EOA/);
+    expect(TECHNICAL_NOTES.join(" ")).toMatch(/fail to settle within 24 hours/);
+  });
+});
+
+/* ======================= delta 2: Odin Class A on 99d52bf (P1–P5) ======================= */
+describe("delta 2: Odin P1–P5", () => {
+  const prodEnv = { VERCEL_ENV: "production", KV_REST_API_URL: "https://kv.test", KV_REST_API_TOKEN: "t", UPSTASH_REDIS_REST_URL: "https://kv.test", UPSTASH_REDIS_REST_TOKEN: "t" };
+  it("P1: sync records the block before settle; the redeem log search starts there (never 'earliest')", async () => {
+    on();
+    settleBehaviour = () => new Promise((_r, rej) => rej(Object.assign(new Error("timed out"), { name: "TimeoutError" })));
+    const h = await payment();
+    const first = (await (await call("brief", "q=p1%20redeem", { "payment-signature": h })).json()) as any;
+    const claim = JSON.parse([...store.kv.entries()].find(([k]) => k.startsWith("claim:"))![1].v);
+    expect(claim.blk).toBe(0x100);
+    rpcAnswer = "used";
+    logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
+    const proof = await ACCOUNT.signMessage({ message: first.redeem_message });
+    expect((await call("brief", "q=p1%20redeem", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof })).status).toBe(200);
+    expect(logQueries.length).toBe(1);
+    expect(logQueries[0].fromBlock).toBe(`0x${(0x100 - 10).toString(16)}`);
+    expect(logQueries.some((q) => q.fromBlock === "earliest")).toBe(false);
+  });
+  it("P1: no recorded block -> 'unknown' (no full-chain scan, no getLogs call)", async () => {
+    rpcAnswer = "used";
+    expect(await settleLanded({ payer: FROM, nonce: nonce(), block_at_accept: null } as never)).toBe("unknown");
+    expect(logQueries).toHaveLength(0);
+  });
+  it("P2 global breaker: 3 failed settles in 24 h (any payers) -> async accepts 503 async_settle_breaker_open before verify; sync unaffected", async () => {
+    on();
+    for (let i = 0; i < 3; i++) await store.zadd("settlefail:global", now + DAY_MS, `job_${String(i).padStart(24, "0")}`, 86_400);
+    const v0 = fac.length;
+    const r = await acceptReport("q=breaker%20test");
+    expect(r.r.status).toBe(503);
+    expect(r.j.error).toBe(ASYNC_BREAKER_REASON);
+    expect(fac.length).toBe(v0);
+    expect((await call("brief", "q=sync%20still%20ok", { "payment-signature": await payment() })).status).toBe(200);
+    now += DAY_MS + 1000;
+    expect((await acceptReport("q=after%20breaker")).r.status).toBe(202);
+  });
+  it("P2: settle_never_landed counts as a failed settle (feeds the payer cap and the breaker)", async () => {
+    on();
+    settleBehaviour = () => ({ success: false, errorReason: "unexpected" });
+    const r0 = await call("report", "q=never%20lands", { "payment-signature": await payment({ amount: price("report"), validBefore: String(Math.floor(now / 1000) + 3600) }) });
+    const j = (await r0.json()) as any;
+    await drainAfters();
+    expect(await store.zcardAfterPrune("settlefail:global", now)).toBe(1);
+    now += 3700_000;
+    rpcAnswer = "unused";
+    await runJob(store, j.job_id, now + 50_000);
+    expect((await loadJob(store, j.job_id))!.failure).toBe("settle_never_landed");
+    expect(await store.zcardAfterPrune("settlefail:global", now)).toBe(1); // same job counted once
+  });
+  it("P3: charged_not_delivered / refund_owed are never dropped by the 50/day reconcile cap or the premium alert cap", async () => {
+    const bodies: string[] = [];
+    const f = (async (_u: string, i: RequestInit) => (bodies.push(String(i.body)), new Response("[]"))) as never;
+    setReconcileForTests({ sink: () => {}, fetch: f, env: prodEnv });
+    setAlertPersistForTests({ fetch: f, env: prodEnv });
+    const base = { route: "/api/research/report/brief", tier: "brief", payer: FROM, nonce: nonce(), amount: "1000000", payTo: PAYTO, tx: null, fingerprint: "a".repeat(64) } as const;
+    for (let i = 0; i < RECONCILE_WRITE_CAP_PER_DAY + 5; i++) recordReconcile({ ...base, reconcile_id: `rc_${i}`, outcome: "settle_timeout" });
+    expect(reconcileWriteStats().dropped).toBe(5);
+    const premiumBefore = (alertWriteStats() as any).premiumWritten;
+    for (const o of CAP_EXEMPT_OUTCOMES) recordReconcile({ ...base, reconcile_id: `rc_${o}`, outcome: o as never });
+    expect(reconcileWriteStats().dropped).toBe(5);
+    expect((alertWriteStats() as any).premiumWritten).toBe(premiumBefore + 2);
+    await flushReconcileForTests();
+    expect(bodies.filter((b) => b.includes("rc_charged_not_delivered")).length).toBeGreaterThanOrEqual(1);
+    expect(bodies.filter((b) => b.includes("rc_refund_owed")).length).toBeGreaterThanOrEqual(1);
+  });
+  it("P4: copy says $1, $5 and $10 (never $3)", () => {
+    const all = TECHNICAL_NOTES.join(" ");
+    expect(all).toContain("$1, $5 and $10");
+    expect(all).not.toContain("$3");
+  });
+  it("P5: concurrent accepts from one payer cannot exceed 2 open jobs (atomic reserve)", async () => {
+    on();
+    const rs = await Promise.all([0, 1, 2, 3].map((i) => acceptReport(`q=concurrent%20${i}`)));
+    const st = rs.map((x) => x.r.status).sort();
+    expect(st.filter((x) => x === 202)).toHaveLength(2);
+    expect(st.filter((x) => x === 429)).toHaveLength(2);
+    expect(await store.zcardAfterPrune(JOB_KEYS.openPayer(FROM), now)).toBe(2);
+  });
+  it("P5: a refused accept (verify invalid) releases its reservation", async () => {
+    on();
+    fac = installFacilitatorMock({ verify: () => ({ isValid: false, invalidReason: "insufficient_funds" }) });
+    expect((await acceptReport("q=refused%20one")).r.status).toBe(402);
+    expect(await store.zcardAfterPrune(JOB_KEYS.openPayer(FROM), now)).toBe(0);
+  });
+  it("P5: Upstash reserve is one EVAL over both keys", async () => {
+    const sent: string[] = [];
+    const s = new UpstashPremiumStore("https://kv.test", "t", "hp:premium:pv:", (async (_u: string, i: RequestInit) => (sent.push(String(i.body)), new Response(JSON.stringify([{ result: 1 }])))) as never);
+    expect(await s.reserve(["open:payer:x", "open:global"], [2, 10], "job_1", 5, 1, 1200)).toBe(true);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain('"EVAL"');
+    expect(sent[0]).toContain('"hp:premium:pv:open:payer:x","hp:premium:pv:open:global"');
   });
 });

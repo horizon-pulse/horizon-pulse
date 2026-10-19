@@ -76,6 +76,9 @@ const K = {
   purge: "jobs:purge",
   openGlobal: "open:global",
   openPayer: (p: string) => `open:payer:${p.toLowerCase()}`,
+  settleFail: (p: string) => `settlefail:${p.toLowerCase()}`,
+  settleBlock: (p: string) => `settleblock:${p.toLowerCase()}`,
+  settleFailGlobal: "settlefail:global",
 };
 export const JOB_KEYS = K;
 
@@ -119,6 +122,49 @@ export function tokenMatches(job: { token_sha256: string }, token: string | null
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** Odin ruling 10/19 (closes Sentinel MEDIUM-2 on async): 2 failed settles in 24 h -> payer blocked 24 h, refused before verify. */
+export const SETTLE_FAIL_LIMIT = 2;
+export const SETTLE_BLOCK_S = 86_400;
+export const SETTLE_BLOCK_REASON = "payer_settle_failures";
+export async function settleBlocked(store: PremiumStore, payer: string): Promise<boolean> {
+  return (await store.get(K.settleBlock(payer))) !== null;
+}
+/** Odin P2 global breaker: >= 3 failed settles (any payer) in 24 h -> every async accept 503 until they age out. */
+export const GLOBAL_SETTLE_FAIL_LIMIT = 3;
+export const ASYNC_BREAKER_REASON = "async_settle_breaker_open";
+export async function asyncBreakerOpen(store: PremiumStore): Promise<boolean> {
+  return (await store.zcardAfterPrune(K.settleFailGlobal, clock())) >= GLOBAL_SETTLE_FAIL_LIMIT;
+}
+/** Counts settle_timeout / settle_ambiguous / settle_never_landed (one entry per job). */
+async function noteSettleFailure(store: PremiumStore, job: Job) {
+  const now = clock();
+  const exp = now + SETTLE_BLOCK_S * 1000;
+  await store.zadd(K.settleFail(job.payer), exp, job.id, SETTLE_BLOCK_S);
+  await store.zadd(K.settleFailGlobal, exp, job.id, SETTLE_BLOCK_S);
+  if ((await store.zcardAfterPrune(K.settleFail(job.payer), now)) >= SETTLE_FAIL_LIMIT) await store.set(K.settleBlock(job.payer), String(now), SETTLE_BLOCK_S);
+}
+
+export const newJobId = () => `job_${randomBytes(12).toString("hex")}`;
+/** Odin P5: atomic Q5 reservation (2 per payer, 10 global) in one Lua call; released if the accept does not complete. */
+export async function reserveOpen(store: PremiumStore, payer: string, id: string): Promise<boolean> {
+  const now = clock();
+  return store.reserve([K.openPayer(payer), K.openGlobal], [OPEN_PER_PAYER, OPEN_GLOBAL], id, now + CLAIM_TTL_MS.job, now, S(CLAIM_TTL_MS.job));
+}
+export async function releaseOpen(store: PremiumStore, payer: string, id: string) {
+  await store.zrem(K.openPayer(payer), id);
+  await store.zrem(K.openGlobal, id);
+}
+/** Odin P1: current Base block (null if unknown), recorded before settle so a later log search is bounded. */
+export async function currentBlock(): Promise<number | null> {
+  try {
+    const deps = rpcDeps ?? defaultRpcDeps();
+    const b = await rpcCall(deps, "base", "eth_blockNumber", [], deps.now() + 2_000);
+    return typeof b === "string" ? Number(BigInt(b)) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Q5: open unsettled jobs (pruned by their 20-min expiry). */
 export async function openCounts(store: PremiumStore, payer: string) {
   const now = clock();
@@ -130,18 +176,10 @@ async function closeOpen(store: PremiumStore, job: Job) {
 }
 
 /** Accept: called only after Base gate, binding, window, signature, rate limit, claim (state job), nonce and verify. */
-export async function createJob(store: PremiumStore, x: Tier, d: Decoded, rq: string, input: string, held: Held): Promise<{ job: Job; token: string }> {
+export async function createJob(store: PremiumStore, x: Tier, d: Decoded, rq: string, input: string, held: Held, id: string = newJobId()): Promise<{ job: Job; token: string }> {
   const now = clock();
-  const id = `job_${randomBytes(12).toString("hex")}`;
   const token = randomBytes(32).toString("base64url");
-  let block: number | null = null;
-  try {
-    const deps = rpcDeps ?? defaultRpcDeps();
-    const b = await rpcCall(deps, "base", "eth_blockNumber", [], deps.now() + 2_000);
-    block = typeof b === "string" ? Number(BigInt(b)) : null;
-  } catch {
-    block = null;
-  }
+  const block = await currentBlock();
   const job: Job = {
     id,
     tier: x.id,
@@ -168,10 +206,7 @@ export async function createJob(store: PremiumStore, x: Tier, d: Decoded, rq: st
   };
   await store.set(K.auth(id), JSON.stringify(d.raw), S(CLAIM_TTL_MS.job));
   await saveJob(store, job);
-  await store.zadd(K.active, now, id, INDEX_TTL_S);
-  const exp = now + CLAIM_TTL_MS.job;
-  await store.zadd(K.openPayer(job.payer), exp, id, S(CLAIM_TTL_MS.job));
-  await store.zadd(K.openGlobal, exp, id, S(CLAIM_TTL_MS.job));
+  await store.zadd(K.active, now, id, INDEX_TTL_S); // open:payer / open:global already reserved atomically (reserveOpen)
   return { job, token };
 }
 
@@ -202,7 +237,9 @@ export async function settleLanded(job: Job): Promise<"landed" | "not_landed" | 
   if (state === "unused") return "not_landed";
   try {
     const deps = rpcDeps ?? defaultRpcDeps();
-    const from = job.block_at_accept !== null ? `0x${Math.max(0, job.block_at_accept - 10).toString(16)}` : "earliest";
+    // Odin P1: never a full-chain scan; without a recorded block the answer is "unknown" (refund via reconcile_id)
+    if (job.block_at_accept === null || job.block_at_accept === undefined) return "unknown";
+    const from = `0x${Math.max(0, job.block_at_accept - 10).toString(16)}`;
     const logs = await rpcCall(deps, "base", "eth_getLogs", [{ address: USDC_BASE, fromBlock: from, toBlock: "latest", topics: [AUTHORIZATION_USED_TOPIC, `0x${job.payer.toLowerCase().replace(/^0x/, "").padStart(64, "0")}`, job.nonce.toLowerCase()] }], deps.now() + 5_000);
     if (!Array.isArray(logs)) return "unknown";
     // used but no AuthorizationUsed log = cancelAuthorization (never charged)
@@ -317,6 +354,7 @@ async function settleJob(store: PremiumStore, job: Job, x: Tier) {
   const d = { raw: payload, from: job.payer, nonce: job.nonce } as Decoded;
   const s = await settlePayment(d, x);
   if (s.ok) return deliver(store, job, s.tx);
+  await noteSettleFailure(store, job).catch(() => undefined);
   const outcome = s.kind === "timeout" ? "settle_timeout" : "settle_ambiguous";
   const line = recordReconcile({ reconcile_id: newReconcileId(), route: `${x.route === "research" ? "/api/research/report" : "/api/seller-watch"}/${x.id}`, tier: x.id, payer: job.payer, nonce: job.nonce, amount: job.amount, payTo: DEFAULT_PAY_TO, tx: s.tx, fingerprint: job.rq, outcome, job_id: job.id });
   job.status = "settle_unconfirmed";
@@ -426,6 +464,7 @@ export async function runJob(store: PremiumStore, id: string, deadline: number, 
       } else if (landed === "not_landed" && clock() / 1000 > job.valid_before) {
         job.status = "failed_uncharged";
         job.failure = "settle_never_landed";
+        await noteSettleFailure(store, job).catch(() => undefined);
         job.charged = false;
         await store.del(K.auth(job.id));
         await closeOpen(store, job);

@@ -15,7 +15,7 @@ import { randomBytes } from "node:crypto";
 import type { PremiumStore } from "./store";
 
 export type ClaimState = "inflight" | "job" | "settled" | "unconfirmed" | "conflict" | "redeemed";
-export type Claim = { s: ClaimState; o: string; rq: string; at: number; rc?: string; job?: string; tier?: string };
+export type Claim = { s: ClaimState; o: string; rq: string; at: number; rc?: string; job?: string; tier?: string; blk?: number | null };
 
 export const CLAIM_TTL_MS: Record<ClaimState, number> = {
   inflight: 120_000,

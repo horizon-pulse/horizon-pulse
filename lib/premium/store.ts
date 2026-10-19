@@ -26,12 +26,17 @@ export interface PremiumStore {
   zcardAfterPrune(key: string, pruneMax: number): Promise<number>;
   /** Atomic compare-and-set: replace only if the current value is exactly `expected` (one Lua script). */
   cas(key: string, expected: string, next: string, ttlMs: number): Promise<boolean>;
+  /** Odin P5: atomically prune (score <= pruneMax) each zset, and add member to all only if every one is under its limit. */
+  reserve(keys: string[], limits: number[], member: string, score: number, pruneMax: number, ttlS: number): Promise<boolean>;
   /** Atomic compare-and-delete against exactly `expected`. */
   casDel(key: string, expected: string): Promise<boolean>;
 }
 
 export const CAS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 else return 0 end";
 export const CASDEL_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) return 1 else return 0 end";
+
+export const RESERVE_LUA =
+  "local n = #KEYS for i = 1, n do redis.call('ZREMRANGEBYSCORE', KEYS[i], '-inf', ARGV[3]) if redis.call('ZCARD', KEYS[i]) >= tonumber(ARGV[4 + i]) then return 0 end end for i = 1, n do redis.call('ZADD', KEYS[i], ARGV[2], ARGV[1]) redis.call('EXPIRE', KEYS[i], ARGV[4]) end return 1";
 
 export type Env = Record<string, string | undefined>;
 export const premiumPrefix = (env: Env = process.env) => (env.VERCEL_ENV === "production" ? "hp:premium:" : "hp:premium:pv:");
@@ -109,6 +114,11 @@ export class UpstashPremiumStore implements PremiumStore {
     const [r] = await this.pipe([["EVAL", CASDEL_LUA, 1, this.k(key), expected]]);
     return Number(r) === 1;
   }
+  async reserve(keys: string[], limits: number[], member: string, score: number, pruneMax: number, ttlS: number) {
+    const [r] = await this.pipe([["EVAL", RESERVE_LUA, keys.length, ...keys.map(this.k), member, score, pruneMax, Math.max(1, Math.ceil(ttlS)), ...limits]]);
+    return Number(r) === 1;
+  }
+
 }
 
 /** Test backend. Records every write with its TTL so tests can assert "no write without a TTL". */
@@ -161,6 +171,21 @@ export class MemoryPremiumStore implements PremiumStore {
     this.writes.push({ op: "cas", key, ttlMs });
     if (this.alive(key)?.v !== expected) return false;
     this.kv.set(key, { v: next, exp: this.now() + ttlMs });
+    return true;
+  }
+  async reserve(keys: string[], limits: number[], member: string, score: number, pruneMax: number, ttlS: number) {
+    // synchronous body = atomic (mirrors the single Lua call)
+    for (let i = 0; i < keys.length; i++) {
+      const m = this.z.get(keys[i]);
+      if (m) for (const [k, sc] of m) if (sc <= pruneMax) m.delete(k);
+      if ((m?.size ?? 0) >= limits[i]) return false;
+    }
+    for (const key of keys) {
+      this.writes.push({ op: "zadd", key, ttlMs: ttlS * 1000 });
+      const m = this.z.get(key) ?? new Map<string, number>();
+      m.set(member, score);
+      this.z.set(key, m);
+    }
     return true;
   }
   async casDel(key: string, expected: string) {

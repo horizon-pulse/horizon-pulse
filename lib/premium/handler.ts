@@ -16,12 +16,13 @@
  *        settle timeout -> 504 / ambiguous -> 502, settle_unconfirmed + reconcile + HIGH, never a 402
  *   ASYNC (Odin Q1): verify at accept -> 202 + status link + job token; settle after the first deliverable (jobs.ts).
  */
+import { ASYNC_BREAKER_REASON, asyncBreakerOpen, currentBlock, newJobId, releaseOpen, reserveOpen, settleBlocked, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S } from "./jobs";
 import { after, NextRequest, NextResponse } from "next/server";
 import { hasCdpCredentials } from "@/lib/config";
 import { requestFingerprint } from "@/lib/request-fingerprint";
 import { claimKey, tryClaim, moveClaim, newOwner, releaseClaim, type Claim, type Held } from "./claim";
 import { legalBlock, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
-import { createJob, openCounts, OPEN_GLOBAL, OPEN_PER_PAYER, runJob, settleLanded } from "./jobs";
+import { createJob, runJob, settleLanded } from "./jobs";
 import {
   ASYNC_MIN_REMAINING_S,
   challenge,
@@ -31,6 +32,9 @@ import {
   markNonceSettled,
   nonceUsed,
   PAYER_PROOF_HEADER,
+  isSmartWalletSignature,
+  SMART_WALLET_MESSAGE,
+  SMART_WALLET_REASON,
   payerProofValid,
   paymentHeader,
   priceBindingError,
@@ -124,7 +128,7 @@ async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded
   if (!(await payerProofValid(d.from!, proof, redeemMessage(c.rc, rq, d.to!, d.value!))))
     return jsonError(409, { ...conflictBody(c.rc), error: "payer_proof_required", message: `Send ${PAYER_PROOF_HEADER}: an EIP-191 signature by the paying address over the redeem message for this reconcile_id.` });
   const held: Held = { key: claimKey(d.from!, d.nonce!), raw, claim: c };
-  const landed = c.job === "settled" ? "landed" : await settleLanded({ payer: d.from!, nonce: d.nonce!, block_at_accept: null } as never);
+  const landed = c.job === "settled" ? "landed" : await settleLanded({ payer: d.from!, nonce: d.nonce!, block_at_accept: c.blk ?? null } as never);
   if (landed !== "landed") return jsonError(503, { error: "settle_not_confirmed_yet", reconcile_id: c.rc, charged: "unknown" }, { "Retry-After": "30" });
   const mine = await moveClaim(store, held, { s: "redeemed" });
   if (!mine) return inProgress();
@@ -163,16 +167,25 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
   if (bind) return challenge(x, description(x), bind);
   const win = windowError(d, Math.floor(clock() / 1000), x.mode === "async" ? ASYNC_MIN_REMAINING_S : SYNC_MIN_REMAINING_S);
   if (win) return challenge(x, description(x), win);
+  if (isSmartWalletSignature(d)) return challenge(x, description(x), SMART_WALLET_REASON, 402, SMART_WALLET_MESSAGE);
   if (!(await signatureValid(d))) return challenge(x, description(x), "invalid_signature");
   if (!hasCdpCredentials()) return jsonError(503, { error: "settlement_unavailable", charged: false });
   const store = premiumStore();
   if (!store) return jsonError(503, { error: "store_unavailable", charged: false });
 
+  let jobId: string | null = null;
+  let accepted = false;
   try {
     const rq = await requestFingerprint(req);
     if (x.mode === "async") {
-      const open = await openCounts(store, d.from!);
-      if (open.payer >= OPEN_PER_PAYER || open.global >= OPEN_GLOBAL) return jsonError(429, { error: "too_many_open_jobs", charged: false }, { "Retry-After": "300" });
+      if (await settleBlocked(store, d.from!))
+        return jsonError(429, { error: SETTLE_BLOCK_REASON, charged: false, message: "Two payments from this address failed to settle in the last 24 hours. New report and watch jobs from it are paused for 24 hours; nothing was charged." }, { "Retry-After": String(SETTLE_BLOCK_S) });
+      if (await asyncBreakerOpen(store)) return jsonError(503, { error: ASYNC_BREAKER_REASON, charged: false, message: "Report and watch purchases are paused for now; nothing was charged." }, { "Retry-After": "3600" });
+      jobId = newJobId();
+      if (!(await reserveOpen(store, d.from!, jobId))) {
+        jobId = null;
+        return jsonError(429, { error: "too_many_open_jobs", charged: false }, { "Retry-After": "300" });
+      }
     }
     const claim: Claim = { s: x.mode === "async" ? "job" : "inflight", o: newOwner(), rq, at: clock(), tier: x.id };
     const got = await tryClaim(store, d.from!, d.nonce!, claim);
@@ -203,7 +216,8 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     }
 
     if (x.mode === "async") {
-      const { job, token } = await createJob(store, x, d, rq, v.input, held);
+      const { job, token } = await createJob(store, x, d, rq, v.input, held, jobId!);
+      accepted = true;
       after(() => runJob(store, job.id, clock() + (SYNC_HARD_LIMIT_S - 5) * 1000 - (clock() - t0)).then(() => undefined, () => undefined));
       return NextResponse.json(
         { job_id: job.id, status: "accepted", status_url: `/api/premium/job/${job.id}`, job_token: token, charged: false, message: "Accepted. Poll status_url with header Authorization: Bearer <job_token>. You are charged only after the first deliverable is built; the token is shown once.", ...legalBlock() },
@@ -217,10 +231,11 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
       await releaseClaim(store, held);
       return jsonError(503, { error: "time_budget_exceeded", charged: false }, { "Retry-After": "5" });
     }
+    const blk = await currentBlock(); // Odin P1: bounds the redeem's AuthorizationUsed log search
     const s = await settlePayment(d, x);
     if (!s.ok) {
       const line = reconcile(s.kind === "timeout" ? "settle_timeout" : "settle_ambiguous", x, d, rq, s.tx);
-      await moveClaim(store, held, { s: "unconfirmed", rc: line.reconcile_id }).catch(() => null);
+      await moveClaim(store, held, { s: "unconfirmed", rc: line.reconcile_id, blk }).catch(() => null);
       return jsonError(s.kind === "timeout" ? 504 : 502, unconfirmedBody(line.reconcile_id, false, redeemMessage(line.reconcile_id, rq, d.to!, d.value!)));
     }
     markNonceSettled(d.from!, d.nonce!);
@@ -236,6 +251,8 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     }
   } catch {
     return jsonError(503, { error: "store_unavailable", charged: false }, { "Retry-After": "2" });
+  } finally {
+    if (jobId && !accepted) await releaseOpen(store, d.from!, jobId).catch(() => undefined);
   }
 }
 

@@ -123,7 +123,7 @@ export function alertEntry(alert: unknown, now: Date = new Date()): PersistedAle
 }
 
 /** Fire-and-forget. Never throws, never returns a promise the caller must await. */
-export function persistAlert(rail: AlertRail, alert: unknown): void {
+export function persistAlert(rail: AlertRail, alert: unknown, opts: { exemptFromCap?: boolean } = {}): void {
   try {
     const kind = alert && typeof alert === "object" ? (alert as { kind?: unknown }).kind : undefined;
     const c = creds();
@@ -136,7 +136,8 @@ export function persistAlert(rail: AlertRail, alert: unknown): void {
       return;
     }
     if (rail === "premium") {
-      if ((st.premiumWritten ?? 0) >= PREMIUM_ALERT_WRITE_CAP_PER_DAY) {
+      // Odin P3: charged_not_delivered / refund_owed alerts are never capped
+      if (!opts.exemptFromCap && (st.premiumWritten ?? 0) >= PREMIUM_ALERT_WRITE_CAP_PER_DAY) {
         st.overCap.premium++;
         return;
       }

@@ -54,17 +54,18 @@ export function requirementFor(x: Tier) {
   };
 }
 
-export function paymentRequired(x: Tier, description: string, error?: string) {
+export function paymentRequired(x: Tier, description: string, error?: string, message?: string) {
   return {
     x402Version: 2 as const,
     ...(error ? { error } : {}),
+    ...(message ? { message } : {}),
     resource: { url: `${PUBLIC_BASE_URL}${tierPath(x)}`, description, mimeType: "application/json", terms: BUYER_TERMS_URL },
     accepts: [requirementFor(x)],
   };
 }
 
-export function challenge(x: Tier, description: string, error?: string, status = 402): NextResponse {
-  const body = paymentRequired(x, description, error);
+export function challenge(x: Tier, description: string, error?: string, status = 402, message?: string): NextResponse {
+  const body = paymentRequired(x, description, error, message);
   return NextResponse.json(body, { status, headers: { ...PREMIUM_CORS, "PAYMENT-REQUIRED": encodePaymentRequiredHeader(body as never) } });
 }
 
@@ -251,6 +252,12 @@ export const USDC_BASE_DOMAIN = { name: "USD Coin", version: "2", chainId: 8453,
  * EOA signatures only: ERC-1271 / ERC-6492 smart-wallet signatures do not recover locally and are refused here
  * (402 invalid_signature) before any write. Documented limitation for Odin.
  */
+export const SMART_WALLET_REASON = "smart_wallet_unsupported";
+export const SMART_WALLET_MESSAGE = "Premium accepts payments signed by a regular wallet key (EOA) only at launch. Smart-wallet signatures (ERC-1271 / ERC-6492) are not supported yet; nothing was charged.";
+/** EOA signatures are exactly 65 bytes; any other well-formed hex signature is a smart-wallet (ERC-1271 / ERC-6492) signature. */
+export function isSmartWalletSignature(d: Decoded): boolean {
+  return typeof d.signature === "string" && /^0x(?:[0-9a-fA-F]{2})+$/.test(d.signature) && d.signature.length > 132;
+}
 export async function signatureValid(d: Decoded): Promise<boolean> {
   if (!d.signature || !/^0x[0-9a-fA-F]{130}$/.test(d.signature) || !d.from || !d.to || !d.value || !d.nonce || !d.validAfter || !d.validBefore) return false;
   try {

@@ -19,7 +19,7 @@ export const FCRA_CLAUSE =
   "Not a consumer report. Horizon Pulse is not a consumer reporting agency, and these results are not consumer reports under the Fair Credit Reporting Act. You may not use them, in whole or in part, as a factor in deciding anyone's eligibility for credit, insurance, employment, housing or any other purpose covered by the FCRA or similar laws.";
 
 export const WATCH_TERMS =
-  "Watch: one check report at the start, then one check record per day for 30 days, available at your receipt URL for 30 days after the watch ends. If the first report is not delivered, you get a full refund. If we miss 3 or more daily checks, or end the watch early for any reason, you get a refund for the undelivered days (price × undelivered days ÷ 30). The watched service going down, changing or delisting is a reported event, not a failure. Webhooks are best effort. We may refuse or stop a watch that breaks our terms; in that case unused days are refunded unless the watch was stopped for abuse. No auto-renewal.";
+  "Watch: one check report at the start, then one check record per day for 30 days, available at your status link for 30 days after the watch ends. You are charged only once the first report is built; if it cannot be built, you are not charged. If we miss 3 or more daily checks, or end the watch early for any reason, you get a refund for the undelivered days (price × undelivered days ÷ 30). The watched service going down, changing or delisting is a reported event, not a failure. There are no webhooks; check the status link. We may refuse or stop a watch that breaks our terms; in that case unused days are refunded unless the watch was stopped for abuse. No auto-renewal: a watch ends after 30 days and is never charged again.";
 
 export const REFUND_LINE =
   `Refunds: Delivered results are final. If you were charged and we did not deliver (for example a payment settle error, or a job or watch we failed to complete), send the receipt ID or transaction hash to ${PREMIUM_CONTACT} within 30 days. We confirm the payment on-chain and refund the amount owed in USDC on Base to the paying address, usually within 7 days. Undelivered watch days are refunded pro rata. Other refund requests are at our discretion.`;
@@ -27,7 +27,7 @@ export const REFUND_LINE =
 export const PRIVACY_PREMIUM_REPLACEMENT =
   "We do not store user agents or headers, and we store request content only for premium jobs, as described below.";
 export const PRIVACY_PREMIUM_ADDITION =
-  "For premium report and watch jobs we also store the question or target URL you submit, the tier, the job's results and copies of the public web pages they cite, so the paying caller can retrieve them; these are deleted 30 days after the job's last delivery. If a payment needs to be reconciled, we keep the payment record (route, tier, payer wallet, amount, transaction details and outcome) until it is resolved and for at most 12 months.";
+  "For premium report and watch jobs we also store the question or target URL you submit, the tier, the job's results and copies of the public web pages they cite, so the paying caller can retrieve them; these are deleted 30 days after the job is delivered, fails or, for a watch, ends. If a payment needs to be reconciled, we keep the payment record (route, tier, payer wallet, amount, transaction details and outcome) until it is resolved and for at most 12 months.";
 
 /** Reconcile-line retention: must match PRIVACY_PREMIUM_ADDITION (at most 12 months). */
 export const RECONCILE_RETENTION_S = 365 * 86_400;
@@ -45,7 +45,7 @@ export const BUYER_TERMS: readonly string[] = [
   "Checks: we may check that use of results follows these terms, and we may refuse or stop service that breaks them.",
   WATCH_TERMS,
   REFUND_LINE,
-  "Payment: paid once per call in USDC on Base. We hold no balance or stored value for you. You are charged only when the call is accepted (HTTP 200 or 202); a 4xx answer never settles.",
+  "Payment: paid once per call in USDC on Base. We hold no balance or stored value for you. A 4xx answer is never charged. The $1, $5 and $10 tiers are settled before the result is built; report and watch purchases (HTTP 202) are settled only after the first deliverable is built. If you are charged and we do not deliver, the refund terms below apply.",
   `${PRIVACY_PREMIUM_REPLACEMENT} ${PRIVACY_PREMIUM_ADDITION}`,
   DISCLAIMER,
   `Contact for refunds, corrections and takedowns: ${PREMIUM_CONTACT}.`,
@@ -62,11 +62,13 @@ export function legalBlock() {
 }
 
 /**
- * Technical notes on /premium-terms (status link, redeem). NOT Counsel-approved yet: listed for Counsel in
- * to-odin/2026-10-19-pulse-premium-async-build.md (Counsel section). Factual only; no promise beyond BUYER_TERMS.
+ * Technical notes on /premium-terms. Paragraphs 3-5 = Counsel F1-F3 (async re-read 10/19); paragraphs 1-2 (EOA-only,
+ * failed-settle pause, Odin rulings 10/19) are NOT Counsel-reviewed yet: listed in the async build report, delta 2.
  */
 export const TECHNICAL_NOTES: string[] = [
-  "Report and watch purchases return a job ID, a status link and a job token. The token is shown once. Send it as Authorization: Bearer <token> when you open the status link. A link opened without the right token returns Not found.",
-  "You are charged only after the first deliverable is built. If we cannot build it within 10 minutes, the job ends as failed_uncharged and the payment authorization is never submitted.",
-  "If a payment could not be confirmed (settle_unconfirmed), do not sign a new payment. For the $1, $3 and $10 tiers you can retry the exact same request with the same payment and an x-hp-payer-proof header: an EIP-191 signature by the paying address over the redeem_message returned with the settle_unconfirmed response. The content is delivered once, only after the payment is confirmed on Base. Otherwise contact us with the reconcile_id.",
+  "Wallets: at launch, premium accepts payments signed by a regular wallet key (an EOA) only. Smart-wallet signatures (ERC-1271 or ERC-6492) are refused before anything is charged.",
+  "If two payments from one address fail to settle within 24 hours, new report and watch jobs from that address are refused for 24 hours. Nothing is charged for a refused request.",
+  "Report and watch purchases return a job ID, a status link and a job token. The token is shown once and cannot be recovered; anyone who has it can open the job, so keep it secret. Send it as Authorization: Bearer <token> (never in the URL). Without the right token the link returns Not found. Results stay available for 30 days after a report is delivered or a watch ends; after that the link returns Gone.",
+  "Report and watch purchases are charged only after the first deliverable is built. If we cannot build it within 10 minutes, the job ends as failed_uncharged and the payment authorization is never submitted. The $1, $5 and $10 tiers are settled before the report is built; if we then cannot deliver, the response says charged: true and you can redeem as below or ask for a refund.",
+  "If a response says settle_unconfirmed, do not sign a new payment. For the $1, $5 and $10 tiers you can retry the exact same request with the same payment and an x-hp-payer-proof header: an EIP-191 signature by the paying address over the redeem_message returned with that response. Only standard wallets (EOAs) can sign this proof; smart-contract wallets are not supported. The content is delivered once, only after the payment is confirmed on Base. Otherwise contact us with the reconcile_id.",
 ];

@@ -37,6 +37,8 @@ export type ReconcileLine = {
 
 /** Per-instance daily cap on reconcile writes (Sentinel MEDIUM-1); past it only console + an in-memory count. */
 export const RECONCILE_WRITE_CAP_PER_DAY = 50;
+/** Odin P3: money-owed records are never dropped by the daily cap (their volume is bounded by P2 + the open-job caps). */
+export const CAP_EXEMPT_OUTCOMES: ReadonlySet<ReconcileOutcome> = new Set(["charged_not_delivered", "refund_owed"]);
 let capDay = "";
 let capWritten = 0;
 let capDropped = 0;
@@ -105,12 +107,13 @@ export function recordReconcile(line: Omit<ReconcileLine, "ts">): ReconcileLine 
     console.error(
       `[premium][ALERT][HIGH] ${JSON.stringify({ kind: `premium_${full.outcome}`, severity: "high", route: full.route, tier: full.tier, reconcile_id: full.reconcile_id })}`,
     );
-    persistAlert("premium", { kind: `premium_${full.outcome}`, severity: "high", route: full.route, payer: full.payer });
+    persistAlert("premium", { kind: `premium_${full.outcome}`, severity: "high", route: full.route, payer: full.payer }, { exemptFromCap: CAP_EXEMPT_OUTCOMES.has(full.outcome) });
     sinkOverride?.(full);
     const day = full.ts.slice(0, 10);
     if (capDay !== day) [capDay, capWritten, capDropped] = [day, 0, 0];
     const c = creds();
-    if (c && capWritten >= RECONCILE_WRITE_CAP_PER_DAY) capDropped++;
+    const exempt = CAP_EXEMPT_OUTCOMES.has(full.outcome);
+    if (c && !exempt && capWritten >= RECONCILE_WRITE_CAP_PER_DAY) capDropped++;
     else if (c) {
       capWritten++;
       const key = `hp:premium:reconcile:${full.ts.slice(0, 7)}`;
