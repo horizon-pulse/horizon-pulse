@@ -430,7 +430,10 @@ export function consistentValues(extracted: ParallelResult[], pool: { url: strin
   const pageDate = new Map(extracted.map((r) => [r.url, r.publish_date?.slice(0, 10) ?? null]));
   const vals: LiveVal[] = [];
   for (const v of pool) {
-    const date = dateOfText(v.quote) ?? pageDate.get(v.url) ?? null;
+    // A sentence that names its own period ("in the second quarter", "end of June", "2025") is dated by that period, not by
+    // the page: it only counts with an explicit in-window day date.
+    const ownPeriod = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b|\bq[1-4]\b|\bquarter\b|\b(19|20)\d{2}\b|\b(last|this|previous) (week|month|year)\b/i.test(v.quote);
+    const date = dateOfText(v.quote) ?? (ownPeriod ? null : pageDate.get(v.url) ?? null);
     if (!date) continue; // a page with no date can't be consistent
     const t = Date.parse(`${date}T12:00:00Z`);
     if (!Number.isFinite(t) || Math.abs(now - t) > CONSISTENT_WINDOW_MS) continue;

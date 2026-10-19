@@ -69,12 +69,16 @@ async function post(path: string, body: unknown, deadline: number): Promise<any>
 
 /** POST /v1/search body. v1 rejects unknown top-level fields (additionalProperties:false -> 422): max_results lives under
  * advanced_settings (a top-level max_results was only accepted by v1beta). */
-export function searchBody(objective: string, queries: string[], maxResults: number) {
-  return { objective, search_queries: queries.slice(0, 5), mode: "fast" as const, advanced_settings: { max_results: maxResults } };
+export type SearchOpts = { afterDate?: string };
+/** afterDate (YYYY-MM-DD) maps to advanced_settings.source_policy.after_date (Parallel v1): content published on/after it. */
+export function searchBody(objective: string, queries: string[], maxResults: number, opts: SearchOpts = {}) {
+  const advanced_settings: Record<string, unknown> = { max_results: maxResults };
+  if (opts.afterDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.afterDate)) advanced_settings.source_policy = { after_date: opts.afterDate };
+  return { objective, search_queries: queries.slice(0, 5), mode: "fast" as const, advanced_settings };
 }
 
-export async function parallelSearch(objective: string, queries: string[], maxResults: number, deadline: number): Promise<ParallelResult[]> {
-  const j = await post("/v1/search", searchBody(objective, queries, maxResults), deadline);
+export async function parallelSearch(objective: string, queries: string[], maxResults: number, deadline: number, opts: SearchOpts = {}): Promise<ParallelResult[]> {
+  const j = await post("/v1/search", searchBody(objective, queries, maxResults, opts), deadline);
   return clean(j?.results);
 }
 

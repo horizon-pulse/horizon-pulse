@@ -40,3 +40,11 @@ describe("tightened backing rules (x402 stability fix)", () => {
     expect(personNames("Circle co-founder Jeremy Allaire saw his fortune surge.", "Who founded Circle")).toEqual(["jeremy allaire"]);
   });
 });
+
+describe("consistent: value date vs page date", () => {
+  it("a sentence naming its own period ('second quarter') is not dated by a fresh page", () => {
+    const ex = [page("https://kucoin.com/a", "2026-10-17"), page("https://bitunix.com/b", "2026-10-19")];
+    const pool = [{ url: "https://kucoin.com/a", quote: "The total supply stands at $72.5 billion." }, { url: "https://bitunix.com/b", quote: "Circle reported that USDC circulation reached roughly $73 billion in the second quarter." }];
+    expect(consistentValues(ex, pool, pub, NOW)).toHaveLength(0);
+  });
+});

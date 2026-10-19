@@ -40,3 +40,26 @@ describe("confirmation and contradiction rules (replay #3)", () => {
     expect(contradicts(a, [a, c], pub)).toBe(true);
   });
 });
+
+import { searchBody } from "@/lib/premium/parallel";
+import { isFresh, withSearchDates } from "@/lib/premium/research";
+describe("live-value recency (Odin ruling A, product side)", () => {
+  const NOW = Date.UTC(2026, 9, 19, 22);
+  it("searchBody maps afterDate to advanced_settings.source_policy.after_date; omitted otherwise", () => {
+    expect(searchBody("o", ["q"], 10, { afterDate: "2026-10-16" }).advanced_settings).toEqual({ max_results: 10, source_policy: { after_date: "2026-10-16" } });
+    expect(searchBody("o", ["q"], 10).advanced_settings).toEqual({ max_results: 10 });
+  });
+  it("fresh = publish_date within 72 h; live questions rank fresh dated pages first", () => {
+    expect(isFresh({ url: "u", title: null, publish_date: "2026-10-18", excerpts: [] }, NOW)).toBe(true);
+    expect(isFresh({ url: "u", title: null, publish_date: "2026-10-10", excerpts: [] }, NOW)).toBe(false);
+    const found = [
+      { url: "https://old.com/a", title: null, publish_date: "2025-08-05", excerpts: ["Ethereum gas is 0.3 gwei."] },
+      { url: "https://new.com/b", title: null, publish_date: "2026-10-19", excerpts: ["Ethereum gas is 0.2 gwei."] },
+    ];
+    expect(rankExtractCandidates(found, "What is the current Ethereum gas fee on mainnet", NOW)[0].url).toBe("https://new.com/b");
+  });
+  it("extract results inherit publish_date from the search result for the same URL", () => {
+    const out = withSearchDates([{ url: "https://a.com", title: null, publish_date: null, excerpts: [] }], [{ url: "https://a.com", title: null, publish_date: "2026-10-19", excerpts: [] }]);
+    expect(out[0].publish_date).toBe("2026-10-19");
+  });
+});

@@ -6,7 +6,7 @@
  */
 import { parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
 import type { Tier } from "./tiers";
-import { subjectCoverage, subjectTerms as questionSubjectTerms, synthesizeBrief } from "./synthesis";
+import { CONSISTENT_WINDOW_MS, isLiveValueQuestion, subjectCoverage, subjectTerms as questionSubjectTerms, synthesizeBrief } from "./synthesis";
 
 export const SNIPPET_MAX_WORDS = 50;
 export const SNIPPETS_PER_SOURCE = 5;
@@ -403,12 +403,17 @@ export function isOfficialDomain(domain: string, subj: string[] = []): boolean {
   return subj.some((t) => t.length >= 3 && label === t.toLowerCase().replace(/[^a-z0-9]/g, ""));
 }
 /** Rerank extract candidates: subject-term coverage of title + excerpts first, official publishers next, search order last. */
-export function rankExtractCandidates(found: ParallelResult[], q: string): ParallelResult[] {
+/** Live-value questions: fresh = publish_date within the 72 h consistency window of now. */
+export const isFresh = (r: ParallelResult, now: number) => !!r.publish_date && Number.isFinite(Date.parse(`${r.publish_date.slice(0, 10)}T12:00:00Z`)) && Math.abs(now - Date.parse(`${r.publish_date.slice(0, 10)}T12:00:00Z`)) <= CONSISTENT_WINDOW_MS;
+export function rankExtractCandidates(found: ParallelResult[], q: string, now: number = Date.now()): ParallelResult[] {
   const subj = questionSubjectTerms(q);
+  const live = isLiveValueQuestion(q);
   const score = (r: ParallelResult, i: number) => {
     const text = `${r.title ?? ""} ${r.excerpts.join(" ")}`;
     const d = domainOf(r.url) ?? "";
-    return subjectCoverage(text, subj) * 10 + (isOfficialDomain(d, subj) ? 3 : 0) - i * 0.01;
+    // Live values: dated, fresh pages first (they are the only ones that can be shown as 'consistent').
+    const fresh = live ? (isFresh(r, now) ? 4 : r.publish_date ? 1 : 0) : 0;
+    return subjectCoverage(text, subj) * 10 + (isOfficialDomain(d, subj) ? 3 : 0) + fresh - i * 0.01;
   };
   const ranked = found.map((r, i) => ({ r, s: score(r, i) })).sort((a, b) => b.s - a.s).map((x) => x.r);
   // Comparison questions: first take the best page for EACH compared item (official first), then the rest by score.
@@ -421,11 +426,28 @@ export function rankExtractCandidates(found: ParallelResult[], q: string): Paral
   }
   return [...head, ...ranked.filter((r) => !head.includes(r))];
 }
-export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N, q?: string): string[] {
+/** Extract results often lack publish_date; carry it over from the search result for the same URL. */
+export function withSearchDates(read: ParallelResult[], found: ParallelResult[]): ParallelResult[] {
+  const d = new Map(found.filter((f) => f.publish_date).map((f) => [f.url, f.publish_date]));
+  return read.map((r) => (r.publish_date || !d.has(r.url) ? r : { ...r, publish_date: d.get(r.url)! }));
+}
+/**
+ * Brief search: one call with the question + entity query; live-value questions add a second call restricted to pages
+ * published within the 72 h window (Parallel source_policy.after_date), so fresh dated pages can pair as 'consistent'.
+ */
+export async function briefSearch(q: string, queries: string[], perSearch: number, deadline: number, now: number = Date.now()): Promise<ParallelResult[]> {
+  const out = await parallelSearch(q, queries.slice(0, 5), Math.min(20, perSearch * Math.min(5, queries.length)), deadline);
+  if (!isLiveValueQuestion(q)) return out;
+  const afterDate = new Date(now - CONSISTENT_WINDOW_MS).toISOString().slice(0, 10);
+  const fresh = await parallelSearch(q, queries.slice(0, 5), 10, deadline, { afterDate }).catch(() => [] as ParallelResult[]);
+  const seen = new Set(out.map((r) => r.url));
+  return [...out, ...fresh.filter((r) => !seen.has(r.url))];
+}
+export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N, q?: string, now: number = Date.now()): string[] {
   const pubs = new Set<string>();
   const out: string[] = [];
   const seen: ParallelResult[] = [];
-  for (const r of q ? rankExtractCandidates(found, q) : found) {
+  for (const r of q ? rankExtractCandidates(found, q, now) : found) {
     const d = domainOf(r.url);
     if (!d || /\.pdf(\?|$)/i.test(r.url)) continue;
     if (seen.some((k) => domainOf(k.url) !== d && isSyndicated(k, r))) continue;
@@ -449,13 +471,14 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
   const perSearch = x.id === "brief" ? 6 : Math.max(3, Math.ceil(x.reads / Math.max(1, queries.length)));
   const found: ParallelResult[] = [];
   // One Parallel search call carries up to 5 queries; a tier's search units cap the number of queries sent.
-  for (let i = 0; i < queries.length; i += 5) {
+  if (x.id === "brief") found.push(...(await briefSearch(q, queries, perSearch, deadline)));
+  else for (let i = 0; i < queries.length; i += 5) {
     found.push(...(await parallelSearch(q, queries.slice(i, i + 5), Math.min(20, perSearch * Math.min(5, queries.length - i)), deadline)));
   }
   if (x.id === "brief") {
     // Odin 10/19 (1): extract page content for the top BRIEF_EXTRACT_N distinct publishers (search order), within the budget.
     const urls = briefExtractUrls(found, BRIEF_EXTRACT_N, q);
-    const read = urls.length ? await parallelExtract(q, urls, deadline).catch(() => [] as ParallelResult[]) : [];
+    const read = withSearchDates(urls.length ? await parallelExtract(q, urls, deadline).catch(() => [] as ParallelResult[]) : [], found);
     if (capture) capture.data = { search: found, extract: read };
     const code = compile(x, q, found, undefined, read);
     return await synthesizeBrief(q, code, read, deadline, jobKey);
