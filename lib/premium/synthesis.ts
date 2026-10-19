@@ -212,6 +212,12 @@ const hasTerm = (t: string, term: string) => {
 };
 /** Replay #3: an answer names the question's subject when it carries every subject term (fuzzy: plural, synonym, acronym, hyphen). */
 const SCOPE_QUALIFIERS = new Set(["eu", "us", "usa", "uk", "u.s"]);
+/** Fraction of subject terms a text names (same fuzzy rules as namesSubject; jurisdiction qualifiers ignored). */
+export const subjectCoverage = (t: string, subj: string[]) => {
+  const core = subj.filter((x) => !SCOPE_QUALIFIERS.has(x.toLowerCase()));
+  const use = core.length ? core : subj;
+  return use.length ? use.filter((x) => hasTerm(t, x)).length / use.length : 1;
+};
 export const namesSubject = (t: string, subj: string[]) => {
   const core = subj.filter((x) => !SCOPE_QUALIFIERS.has(x.toLowerCase()));
   return (core.length ? core : subj).every((x) => hasTerm(t, x)); // jurisdiction words ("EU") scope the question; they are not its subject
@@ -236,9 +242,13 @@ export function contradicts(a: { url: string; quote: string }, all: { url: strin
   const va = usdValues(a.quote);
   if (!va.length) return false;
   if (va.some((v) => v.inconsistent)) return true;
+  // Replay #3: a sentence that contrasts two things ("$1.31 on mainnet but free on Base") does not tie its amount to one
+  // subject, so it neither contradicts nor is contradicted on amounts.
+  const CONTRAST = /\b(but|while|whereas|compared|versus|vs\.?|against|than|instead|unlike)\b/i;
+  if (CONTRAST.test(a.quote)) return false;
   const ta = terms(a.quote);
   for (const b of all) {
-    if (pub(b.url) === pub(a.url)) continue;
+    if (pub(b.url) === pub(a.url) || CONTRAST.test(b.quote)) continue;
     const vb = usdValues(b.quote);
     if (!vb.length || vb.some((v) => v.inconsistent)) continue;
     const shared = [...terms(b.quote)].filter((w) => ta.has(w)).length;
@@ -297,6 +307,7 @@ const SYSTEM = [
   "answer: up to 2 sentences that directly answer the question (for when-questions a sentence with the date; for how-much questions a sentence with the amount). Empty if none does.",
   "claims: up to 5 distinct factual statements relevant to the question, at most 2 from the same publisher. For EACH claim, quotes[0] is the main quote and quotes[1] MUST be a backing quote stating the same fact (same date, amount or definition) from a DIFFERENT publisher whenever any listed sentence does. No opinions, no headlines, no bylines.",
   "Answer sentences must name the question's subject (e.g. the product, law, network or organisation asked about) explicitly, not only 'it' or 'the company'. If the pages state the subject's value on more than one publisher, prefer the answer sentence whose fact also appears on another publisher.",
+  "For comparison questions, answer with one sentence about each compared item (e.g. one on Solana's finality and one on Base's finality); claims may cover each item separately. Return an empty answer only if the pages say nothing about an item.",
   "Never pick table rows, bullet lists or fragments without a verb as answer lines. For when-questions prefer sentences with an explicit calendar date over relative words like 'Wednesday'.",
 ].join("\n");
 
@@ -380,6 +391,14 @@ export async function synthesizeBrief<T extends Record<string, any>>(q: string, 
   return { ...assemble(code, q, kind, answerV, claimsV, rejected.quotes, extracted), synthesis: "llm_selected_verified" };
 }
 
+/** Same normalised fact value; a day-level date also matches the same month stated alone ("March 13, 2024" ~ "March 2024"). */
+export function sharedFact(a: Set<string>, b: Set<string>): boolean {
+  for (const x of a) for (const y of b) {
+    if (x === y) return true;
+    if (x.startsWith("d:") && y.startsWith("d:") && (x.length === 9 || y.length === 9) && (x.startsWith(y) || y.startsWith(x))) return true;
+  }
+  return false;
+}
 /** Build the brief from verified quotes only; confirmation by shared normalised fact across publishers. */
 /** The code-only answer block is reused only if every line passes the same fragment / subject-term rules. */
 function codeAnswerOk(a: any, subj: string[]): boolean {
@@ -389,7 +408,13 @@ function codeAnswerOk(a: any, subj: string[]): boolean {
 function assemble<T extends Record<string, any>>(code: T, q: string, kind: ReturnType<typeof questionKind>, answerIn: Verified[], claimsIn: Verified[][], rejectedQuotes: number, extracted: ParallelResult[] = []): T {
   const pub = (u: string) => publisherOf(domainOf(u) ?? u);
   // (a1) backing quote must come from a DIFFERENT publisher and state the same fact (shared fact value or >= 3 shared terms).
-  const sameFact = (a: Verified, b: Verified) => [...factValues(a.quote)].some((f) => factValues(b.quote).has(f)) || [...terms(b.quote)].filter((w) => terms(a.quote).has(w)).length >= 3;
+  // Replay #3: when the main quote carries a fact value (date/number), the backing must carry the SAME value; the
+  // >= 3 shared-terms rule applies only to value-free statements (definitions), so "0.15 gwei" never backs "0.20 gwei".
+  const sameFact = (a: Verified, b: Verified) => {
+    const fa = factValues(a.quote);
+    if (fa.size) return sharedFact(fa, factValues(b.quote));
+    return [...terms(b.quote)].filter((w) => terms(a.quote).has(w)).length >= 3;
+  };
   // Odin replay #2 (2): list/table fragments and glued words are dropped from claims too.
   let claimsV = claimsIn
     .map((qs) => qs.filter((v) => !isListFragment(v.quote)))
@@ -419,11 +444,30 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
     perPub.set(p, (perPub.get(p) ?? 0) + 1);
     return perPub.get(p)! <= 2;
   });
+  // Replay #3: if no claim has a cross-publisher backing, add ONE code-picked claim: a pair of verbatim page sentences from
+  // two different publishers that share a normalised fact value, both naming a subject term, at least one carrying a
+  // question keyword. Deterministic; same filters as every other quote.
+  if (!claimsV.some((qs) => qs.length > 1)) {
+    const subjQ = subjectTerms(q);
+    const rel = pool.filter((v) => subjectCoverage(v.quote, subjQ) > 0);
+    let pair: Verified[] | null = null;
+    for (const a of rel) {
+      const fa = factValues(a.quote);
+      if (!fa.size) continue;
+      const b = rel.find((c) => pub(c.url) !== pub(a.url) && sharedFact(fa, factValues(c.quote)) && [a, c].some((v) => [...terms(v.quote)].some((w) => qTerms.has(w) && !subjQ.some((t) => t.toLowerCase() === w))));
+      if (b) { pair = [a, b]; break; }
+    }
+    if (pair) claimsV = [...claimsV.slice(0, 4), pair];
+  }
   // (a3) no list/table fragments as answer lines; (a4) explicit dates first for when-questions.
   // Odin replay #2 (2): an answer line must name every subject term of the question (e.g. "Base", "USDC"), or none is shown.
   const subj = subjectTerms(q);
   const answerOk = (a: Verified) => !isFragment(a.quote) && namesSubject(a.quote, subj) && (kind !== "when" || hasExplicitDate(a.quote)) && (kind !== "number" || [...factValues(a.quote)].some((f) => f.startsWith("n:")));
-  let answerV = answerIn.filter(answerOk);
+  const comparison = /\b(compare|compared|comparison|versus|vs\.?|difference|differ)\b/i.test(q);
+  const answerOkCmp = (a: Verified) => !isFragment(a.quote) && subjectCoverage(a.quote, subj) > 0;
+  let answerV = answerIn.filter(comparison ? answerOkCmp : answerOk);
+  // Comparison questions: each line names at least one compared item; together the lines must name all of them.
+  if (comparison && answerV.length && !namesSubject(answerV.map((a) => a.quote).join(" "), subj)) answerV = [];
   // Replay #3: no usable model answer line -> promote the best verified claim that passes the same rules (backed claims first).
   if (!answerV.length) {
     const cand = [...claimsV].sort((x, y) => y.length - x.length).map((qs) => qs[0]).find(answerOk);

@@ -6,7 +6,7 @@
  */
 import { parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
 import type { Tier } from "./tiers";
-import { synthesizeBrief } from "./synthesis";
+import { subjectCoverage, subjectTerms as questionSubjectTerms, synthesizeBrief } from "./synthesis";
 
 export const SNIPPET_MAX_WORDS = 50;
 export const SNIPPETS_PER_SOURCE = 5;
@@ -387,11 +387,45 @@ export async function researchSearches(x: Tier, q: string, deadline: number): Pr
 
 export const BRIEF_EXTRACT_N = 4;
 /** Top distinct publishers in search order, skipping syndicated copies and PDFs. */
-export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N): string[] {
+const Q_STOP = new Set("it its this that what when who whom whose which how why where does did do is are was were the a an of to in on for by with and or vs versus compare compared current currently much many cost costs".split(" "));
+const REGULATORY = /\b(act|bill|law|rule|rules|regulation|regulations|regulatory|sec|cftc|fdic|fed|mica|esma|directive|statute|approve|approved|ban|license|licence)\b/i;
+/** Brief search queries (product fix, replay #3): the question itself plus a key-entity query that asks for official sources. */
+export function briefQueries(q: string): string[] {
+  const words = q.replace(/[?]/g, "").split(/\s+/).map((w) => w.replace(/[^A-Za-z0-9.\-]/g, "")).filter((w) => w.length > 1 && !Q_STOP.has(w.toLowerCase()));
+  const ent = [...new Set([...questionSubjectTerms(q), ...words])].join(" ");
+  const second = REGULATORY.test(q) ? `${ent} official text summary` : `${ent} official`;
+  return second.trim() && second.toLowerCase() !== q.toLowerCase() ? [q, second] : [q];
+}
+/** Official / primary publisher: government, EU institutions, or a domain that carries a subject term (circle.com for Circle). */
+export function isOfficialDomain(domain: string, subj: string[] = []): boolean {
+  if (/(^|\.)(gov|mil)(\.[a-z]{2})?$|(^|\.)europa\.eu$|(^|\.)federalreserve\.gov$|stlouisfed\.org$|(^|\.)ethereum\.org$/i.test(domain)) return true;
+  const label = domain.toLowerCase().split(".").slice(-2, -1)[0] ?? "";
+  return subj.some((t) => t.length >= 3 && label === t.toLowerCase().replace(/[^a-z0-9]/g, ""));
+}
+/** Rerank extract candidates: subject-term coverage of title + excerpts first, official publishers next, search order last. */
+export function rankExtractCandidates(found: ParallelResult[], q: string): ParallelResult[] {
+  const subj = questionSubjectTerms(q);
+  const score = (r: ParallelResult, i: number) => {
+    const text = `${r.title ?? ""} ${r.excerpts.join(" ")}`;
+    const d = domainOf(r.url) ?? "";
+    return subjectCoverage(text, subj) * 10 + (isOfficialDomain(d, subj) ? 3 : 0) - i * 0.01;
+  };
+  const ranked = found.map((r, i) => ({ r, s: score(r, i) })).sort((a, b) => b.s - a.s).map((x) => x.r);
+  // Comparison questions: first take the best page for EACH compared item (official first), then the rest by score.
+  if (!/\b(compare|compared|comparison|versus|vs\.?|difference|differ)\b/i.test(q) || subj.length < 2) return ranked;
+  const head: ParallelResult[] = [];
+  for (const t of subj) {
+    const per = (r: ParallelResult) => subjectCoverage(`${r.title ?? ""} ${r.excerpts.join(" ")}`, [t]) * 10 + (isOfficialDomain(domainOf(r.url) ?? "", [t]) ? 3 : 0);
+    const best = ranked.filter((r) => !head.includes(r) && per(r) >= 10).sort((a, b) => per(b) - per(a))[0];
+    if (best) head.push(best);
+  }
+  return [...head, ...ranked.filter((r) => !head.includes(r))];
+}
+export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N, q?: string): string[] {
   const pubs = new Set<string>();
   const out: string[] = [];
   const seen: ParallelResult[] = [];
-  for (const r of found) {
+  for (const r of q ? rankExtractCandidates(found, q) : found) {
     const d = domainOf(r.url);
     if (!d || /\.pdf(\?|$)/i.test(r.url)) continue;
     if (seen.some((k) => domainOf(k.url) !== d && isSyndicated(k, r))) continue;
@@ -409,9 +443,10 @@ export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N): 
 /** C1: optional sink for the cleaned search + extract results (Preview debug capture only; see capture.ts). */
 export type CaptureSink = { data?: { search: ParallelResult[]; extract: ParallelResult[] } };
 export async function runResearch(x: Tier, q: string, deadline: number, capture?: CaptureSink, jobKey?: string) {
-  const subs = x.id === "brief" ? [q] : subQuestionList(q);
+  const subs = x.id === "brief" ? briefQueries(q) : subQuestionList(q);
   const queries = [q, ...subs.filter((s) => s !== q)].slice(0, Math.max(1, x.searches));
-  const perSearch = Math.max(3, Math.ceil(x.reads / Math.max(1, queries.length)));
+  // Brief: wider candidate pool (one search call either way) so the reranker can find pages that name the subject.
+  const perSearch = x.id === "brief" ? 6 : Math.max(3, Math.ceil(x.reads / Math.max(1, queries.length)));
   const found: ParallelResult[] = [];
   // One Parallel search call carries up to 5 queries; a tier's search units cap the number of queries sent.
   for (let i = 0; i < queries.length; i += 5) {
@@ -419,7 +454,7 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
   }
   if (x.id === "brief") {
     // Odin 10/19 (1): extract page content for the top BRIEF_EXTRACT_N distinct publishers (search order), within the budget.
-    const urls = briefExtractUrls(found);
+    const urls = briefExtractUrls(found, BRIEF_EXTRACT_N, q);
     const read = urls.length ? await parallelExtract(q, urls, deadline).catch(() => [] as ParallelResult[]) : [];
     if (capture) capture.data = { search: found, extract: read };
     const code = compile(x, q, found, undefined, read);

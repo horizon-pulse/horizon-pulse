@@ -1,0 +1,115 @@
+{
+ "question": "What is the current Ethereum gas fee on mainnet",
+ "search_id": "search_4445ef7d24bc25e100bf73c5f9b81f8b",
+ "results": [
+  {
+   "url": "https://defistar.io/gas-fee-intelligence.php",
+   "title": "Gas Fee Intelligence: Live Ethereum and L2 Gas Fees | DeFiStar.io",
+   "publish_date": "2024-01-01",
+   "excerpts": [
+    "As of 19 October 2026, 16:02 UTC , a token swap costs about $0.1034 on Ethereum mainnet at 0.20 gwei, against $0.00005765 on Scroll, the cheapest Layer 2 (99.9% lower). 10 of 10 networks responded at this snapshot.\n10\nNetworks tracked\n0.20 gwei\nEthereum gas price\nScroll\nLowest L2 swap cost\n$0.00005765\nScroll swap cost\n99.9%\nCheaper vs Ethereum\nLowest Swap Cost (live snapshot)\nScroll\n99.9% lower token-swap cost than Ethereum mainnet at this snapshot\n$0.00005765\nScroll Swap\n$0.1034\nEthereum Swap\nThis page provides live gas fee data pulled directly from blockchain RPC endpoints across 10 networks.\nLayer 2 networks typically record 90 to 99 per cent lower transaction costs than Ethereum mainnet, a gap produced by the cost-sharing effect of batching many transactions into a single Ethereum data submission. The introduction of EIP-4844 blob transactions in March 2024 reduced Layer 2 data-posting costs further.\nLive gas fees by network\nFee tiers in gwei and estimated USD costs per transaction type. Data refreshed hourly from RPC endpoints.\nLayer 2 Networks\nScroll\nL2\nCurrent Gas Price\n0.0001\ngwei\nSlow\n0.0501\nAverage\n0.0001\nFast\n0.0001\nStable 99.9% vs ETH\nSimple Transfer $0.00000605\nToken Swap $0.00005765\nNFT Mint $0.00002883\nOptimism\nL1\nCurrent Gas Price\n4.94\ngwei\nSlow\n5.04\nAverage\n5.92\nFast\n7.89\nStable\nSimple Transfer $0.001189\nToken Swap $0.008493\nNFT Mint $0.004812\nEthereum\nL1\nCurrent Gas Price\n0.20\ngwei\nSlow\n0.29\nAverage\n0.29\nFast\n0.42\nStable\nSimple Transfer $0.0145\nToken Swap $0.1034\nNFT Mint $0.0586\n03 - Analytics\nFee visual analytics\n* Network | Type | Gas (gwei) | Transfer | Swap | NFT Mint | vs Ethereum\n* Scroll | L2 | 0.0001 | $0.00000605 | $0.00005765 | $0.00002883 | 99.9% lower\n* Gnosis | L1 | 0.0000 | $0.000021 | $0.000150 | $0.000085 | 99.9% lower\n* Optimism | L2 | 0.0010 | $0.0000504 | $0.000432 | $0.000228 | 99.6% lower\nLayer 2 networks process transactions off Ethereum mainnet and post compressed batches of data back as proofs. By amortising Ethereum security costs across many transactions, the per-transaction cost falls dramatically.\nGas fee mechanics, data methodology, and how to interpret the numbers on this page.\nWhich blockchain has the lowest gas fees right now?\nAs of 19 October 2026, 16:02 UTC, among the 10 networks online, Scroll has the lowest token swap cost at $0.00005765 per swap, against $0.1034 on Ethereum mainnet.\nLayer 2 networks typically record 90 to 99 per cent lower fees than Ethereum mainnet. These figures change block by block.\nHow much does an Ethereum transaction cost right now?\nAs of 19 October 2026, 16:02 UTC, the Ethereum mainnet gas price is 0.20 gwei (base fee 0.19 gwei).\nAt the average fee tier a simple ETH transfer costs about $0.0145, a token swap about $0.1034 and an NFT mint about $0.0586, using an ETH price of $2,400.\nHow are gas fee estimates calculated?\nEstimates are derived from Ethereum's eth_feeHistory RPC call, which returns base fee and priority fee data from the previous 20 blocks."
+   ]
+  },
+  {
+   "url": "https://etherscan.io/gastracker",
+   "title": "\n\t0.197 Gwei | Ethereum Gas Tracker | Etherscan\n",
+   "publish_date": null,
+   "excerpts": [
+    "ETH Price: $2,399.71 (+1.12%)\nGas: 0.197 Gwei\nAd ###### Etherscan API - Build with AI via MCP, CLI, and Skills Sponsored Ad\nTrending Tokens Trending Addresses Pages\nTRENDING TOKENS 🔥\n* Ethereum Mainnet\n* Sepolia Testnet\n* Hoodi Testnet\n* Gas Guzzlers\n* Gas Spenders\n* Historical Gas Oracle Prices\n* Cost of Transaction Actions\nTop 50 Gas Guzzlers (Contracts / Accounts that consume a lot of Gas)\nLast updated at Block 26228025\n* Rank | Address | Fees Last 3hrs | % Used 3hrs | Fees Last 24hrs | % Used 24hrs | Analytics\nTop 50 Gas Spenders (Sending Accounts that pay a lot of Gas)\n* Rank | Address | Fees Last 3hrs | % Spent 3hrs | Fees Last 24hrs | % Spent 24hrs | Analytics\n* 🥇 1 | 0x5B43453F CE04b92E190f391a83136bf BeCEDEFd1 | $5,882.12 (2.45 Eth) | 1.38% | $18,346.27 (7.65 Eth) | 1.34% |\nGas refers to the fee required to successfully conduct a transaction on the Ethereum blockchain. Gas fees are paid in Ether (ETH) and denominated in Gwei. Learn more about Gas in our Knowledge Base .\n×"
+   ]
+  },
+  {
+   "url": "https://dev.ethereum.org/gas",
+   "title": "Ethereum fees: what is gas and how to pay less? | ⁦ethereum.org⁩",
+   "publish_date": null,
+   "excerpts": [
+    "1. ethereum.org\n2. /\n3. Gas fees\nNetwork fees\nNetwork fees on Ethereum are called gas. Gas is the fuel that powers Ethereum.\nWhat is gas?\nSummary\n* Every transaction on Ethereum requires a small form of payment to process\n* These fees are known as ‘gas’ fee\n* Gas fees are not set, they change based on network congestion\nThink of Ethereum as a large computer network where people can do tasks like sending messages or running programs. Just like in the real world, these tasks require energy to get done.\nIn Ethereum, each computational action has a set \"gas\" price. Your gas fees are the total cost of the actions in your transaction .\nLayer-2 chains are built atop Ethereum, offering lower fees and handling more transactions. They're a good choice to save on fees for transactions that don't need to happen on the main Ethereum network.\nTry layer 2\nWhat causes high gas fees?\nWhenever the amount of computation (gas) on Ethereum exceeds a certain threshold, gas fees begin to rise. The more the gas exceeds this threshold, the quicker gas fees increase.\nHigher fees could be caused by things like popular or NFTs, periodically increased trading on , or an overwhelming number of user activity at peak times.\n* Base fee: a fee set by the network that has to be paid for a transaction\n* Priority fee: an optional tip to incentivise node operators to include your transaction\n* Units of gas used * : remember we said gas represented computation?\nDo I need to pay gas in ETH?\nMore\nYes. All gas fees on Ethereum must be paid in the native ETH currency.\nMore on ETH\nWhat is gwei?\nLayer-2 chains are built atop Ethereum, offering lower fees and handling more transactions. They're a good choice to save on fees for transactions that don't need to happen on the main Ethereum network.\nUse layer 2\nTry some dapps\nWhat is gwei?\nDapps are applications built on Ethereum. Dapps are disrupting current business models and inventing new ones.\nExplore dapps\nTest your Ethereum knowledge\nSee contributors\nWas this page helpful?\nYes No"
+   ]
+  },
+  {
+   "url": "https://ethereum.org/latest/building-on-ethereum-in-2026/",
+   "title": "Building on Ethereum in 2026: what has changed | ethereum.org",
+   "publish_date": null,
+   "excerpts": [
+    "gas fees\naccount abstraction\nprotocol upgrades\nPhilip Krause\nEF Builder Growth\nMay 7, 2026\n9minute read\nCopy .md Copy .md\nOn this page\nIf your mental model of Ethereum was formed in 2021 to 2023, it is out of date.\nThe 2021 to 2023 fee regime is no longer a safe default assumption.\nAs of May 5, 2026, Etherscan's gas tracker shows standard gas around 0.15 gwei, with daily averages near 0.5 gwei through April. A basic ETH transfer costs under a cent at that level, with typical recent days landing in the low single-digit cents.\nThe trend has been falling across each of the recent upgrades, and the next one, Glamsterdam , is set to push fees lower still. That makes \"Ethereum mainnet is too expensive for most apps\" a stale starting point.\nIf you want a simple rule of thumb, use gas math instead of old folklore.\nGwei readings can swing widely inside a normal month while the dollar cost barely moves, because rollups now carry about 95 percent of Ethereum's transactions and L1 typically runs well below its block target. Mainnet fees are now low enough that many apps can sensibly run on mainnet.\nEIP-7691 raised blob throughput from 3 target / 6 max blobs per block to 6 target / 9 max, which expanded the cheap data lane rollups use and pushed L2 fees lower.\nFusaka activated on December 3, 2025.\nEIP-7825 caps any single transaction at ~16.78M gas, which most apps will never notice but very large deployments and monolithic multicalls now have to fit inside. EIP-7951 also added native secp256r1 (P-256) verification on mainnet, which makes passkey and WebAuthn signatures far cheaper to verify in account flows.\nEthereum's next named upgrade is Glamsterdam, with Block-level Access Lists (BALs) and enshrined proposer-builder separation (ePBS) as headline items. Together those make it safe to raise the block gas limit from 60 million today toward roughly 200 million, leaving more L1 capacity for builders to work with.\nStart by re-checking old fee assumptions. If your deployment playbook still treats Ethereum mainnet as a 10 to 30 gwei environment by default, it is probably routing too much work away from L1.\nMainnet is worth considering first when your app depends on shared liquidity, composability with existing protocols, neutrality, or high-value state that should live where Ethereum's security and social consensus are strongest.\nStop treating Ethereum mainnet as the expensive settlement layer you only touch at the end, and stop treating user accounts as static ECDSA keys that must hold ETH before they can do anything. Ethereum in 2026 is moving toward cheaper L1 execution and programmable accounts. Build for that world.\n* Pectra Mainnet Announcement (opens in a new tab)\n* Fusaka Mainnet Announcement (opens in a new tab)\n* Protocol Priorities Update for 2026 (opens in a new tab)\n* Checkpoint #9 (Apr 2026) (opens in a new tab)\n* Pectra 7702 guidelines on ethereum.org (opens in a new tab)\n* EIP-7702 Set Code for EOAs (opens in a new tab)"
+   ]
+  },
+  {
+   "url": "https://changenow.io/blog/ethereum-gas-fees",
+   "title": "Ethereum Gas Costs 2026: What Changed on Mainnet",
+   "publish_date": null,
+   "excerpts": [
+    "If you used Ethereum during DeFi Summer or the NFT boom, paying $20, $50 or more in gas fees for a swap was not unusual. In 2026, the same kind of transaction can cost cents.\nAt 0.5 gwei and ETH at $2,350, Ethereum gas fees for a basic ETH transfer come to about $0.025. A swap using around 180,000 gas costs about $0.21.\nRollups now handle much of the activity that once competed for mainnet blockspace. Ethereum has also added blobs for rollup data and raised the L1 gas limit from around 30 million to 60 million. In May 2026, the Ethereum Foundation estimated that rollups handled roughly 95% of Ethereum transaction activity.\n* Ethereum mainnet can now be cheap enough for transactions that users once assumed belonged on Layer 2.\n* Rollups and higher L1 capacity have reduced competition for mainnet blockspace.\n* Transaction complexity still matters: a swap can consume several times more gas than a simple ETH transfer.\nDuring DeFi Summer and the NFT boom, swaps, NFT mints, liquidations and bots competed directly for Ethereum mainnet blockspace. Layer 2 networks carried far less activity, so busy periods pushed Ethereum gas fees higher.\nEIP-1559 changed the fee market in August 2021.\nLayer 2 Took Pressure Off Mainnet\nEthereum Mainnet vs Layer 2 Fees\nChangeNOW's Blockchain Integration Team uses the current network gas price in its fee calculation:\n“We don't use a separate Ethereum congestion metric. As a sender, the gas price already gives us the signal we need. We sync it from the network automatically and use it in the fee calculation.”\nUpdate frequency differs across EVM networks:\n“It differs by EVM network. Arbitrum gas can be pretty volatile: the network gets busy, then quiet again. Ethereum mainnet is usually steadier.” – ChangeNOW's Blockchain Integration Team\nChangeNOW Verdict: ChangeNOW does not use a fixed Ethereum network fee. The estimate moves with the gas price pulled from the network.\nBefore sending a new transaction, the Datawallet Ethereum Gas Price Tracker can show the current base fee and gas conditions before you sign.\nUsers would need to compete for blockspace and keep paying up instead of waiting. It can still happen, but Ethereum has more capacity now and a lot of activity has moved to L2.”\nEthereum now has a 60 million mainnet gas limit, while rollups handle most Ethereum transaction activity.\nA return to $10 to $50 swap fees therefore requires much stronger pressure on L1 than an ordinary 2026 block.\nFee Verdict: $10 to $50 swaps can still happen when demand for Ethereum blockspace rises sharply.\nEthereum mainnet is cheap enough in 2026 that moving a single transaction to Layer 2 does not automatically produce a cheaper route. Check the current gas price, the transaction type and where your funds already sit before choosing a network.\nFor repeated swaps and contract calls, Layer 2 can still cut costs further.\nFor a simple transfer during a quiet mainnet period, Ethereum gas fees may already be measured in cents.\nSwap ETH"
+   ]
+  },
+  {
+   "url": "https://dev.ethereum.org/developers/docs/gas",
+   "title": "Ethereum gas and fees: technical overview | ethereum.org",
+   "publish_date": null,
+   "excerpts": [
+    "Gas refers to the unit that measures the amount of computational effort required to execute specific operations on the Ethereum network.\nSince each Ethereum transaction requires computational resources to execute, those resources have to be paid for to ensure Ethereum is not vulnerable to spam and cannot get stuck in infinite computational loops.\nPayment for computation is made in the form of a gas fee.\nThe gas fee is the amount of gas used to do some operation, multiplied by the cost per unit gas . The fee is paid regardless of whether a transaction succeeds or fails.\nA diagram showing where gas is needed in EVM operations Diagram adapted from Ethereum EVM illustrated (opens in a new tab)\nGas fees have to be paid in Ethereum's native currency, ether (ETH). Gas prices are usually quoted in gwei, which is a denomination of ETH. Each gwei is equal to one-billionth of an ETH (0.000000001 ETH or 10 -9 ETH).\nFor example, instead of saying that your gas costs 0.000000001 ether, you can say your gas costs 1 gwei.\n* Block Number | Included Gas | Fee Increase | Current Base Fee\n* 1 | 18M | 0% | 100 gwei\n* 2 | 36M | 0% | 100 gwei\n* 3 | 36M | 12.5% | 112.5 gwei\n* 4 | 36M | 12.5% | 126.6 gwei\n* 5 | 36M | 12.5% | 142.4 gwei\n* 6 | 36M | 12.5% | 160.2 gwei\n* 7 | 36M | 12.5% | 180.2 gwei\n* 8 | 36M | 12.5% | 202.7 gwei\nIn the table above, an example is demonstrated using 36 million as the gas limit. Following this example, to create a transaction on block number 9, a wallet will let the user know with certainty that the maximum base fee to be added to the next block is current base fee * 112.5% or 202.7 gwei * 112.5% = 228.1 gwei .\nIt's also important to note it is unlikely we will see extended spikes of full blocks because of the speed at which the base fee increases preceding a full block.\n* Block Number | Included Gas | Fee Increase | Current Base Fee\n* 30 | 36M | 12.5% | 2705.6 gwei\n* ... | ... | 12.5% | ...\n* 50 | 36M | 12.5% | 28531.3 gwei\n* ... | ... | 12.5% | ...\nIn short, gas fees help keep the Ethereum network secure. By requiring a fee for every computation executed on the network, we prevent bad actors from spamming the network.\nAlthough a transaction includes a limit, any gas not used in a transaction is returned to the user (e.g., max fee - (base fee + tip) is returned).\nDiagram showing how unused gas is refunded Diagram adapted from Ethereum EVM illustrated (opens in a new tab)\n* Blocknative ETH Gas Estimator (opens in a new tab) Gas estimating Chrome extension supporting both Type 0 legacy transactions and Type 2 EIP-1559 transactions.\n* Cryptoneur Gas Fees Calculator (opens in a new tab) Calculate gas fees in your local currency for different transaction types on Mainnet, Arbitrum, and Polygon."
+   ]
+  },
+  {
+   "url": "https://bitcoinfoundation.org/news/ethereum/top-ethereum-gas-fee-solutions-in-2026-how-cheap-is-eth-now/",
+   "title": "Top Ethereum Gas Fee Solutions in 2026: How Cheap Is ETH Now? - Bitcoin Foundation",
+   "publish_date": "2026-05-13",
+   "excerpts": [
+    "* 🔸 Ethereum Gas Fees in 2026 — Current Cost Structure Explained\n* 🟠 How Cheap Is Ethereum Now Compared to Previous Cycles\n* 🥇 Top Ethereum Gas Fee Solutions in 2026\n* 🥇 Best Tools to Track Ethereum Gas Fees in Real Time\n* 📌 Cheapest Ways to Transact on Ethereum in 2026\n* 👥 Hidden Costs of Ethereum Transactions Users Often Miss\nEthereum Gas Fees in 2026 — Current Cost Structure Explained\nAverage ETH Gas Fees in 2026 Across L1 and L2\nETH ▲ $2,518.27 gas fees are not falling continuously despite scaling solutions for the same reasons as above. Trading memecoins and issuing new tokens can quickly drive the gas prices of both mainnet and rollups in periods of increased DeFi activity.\nEthereum still has a multi-layer fee model.\nReal-time demand for blockspace remains the largest driver of Ethereum network fees. However, trading volatility, NFT drops, liquidations, and high-frequency DeFi applications can still drive gas prices higher even with scaling.\nRead Also: Ethereum Whale Accumulation 2026: Top Holders Moving the Market Right Now\nHow Cheap Is Ethereum Now Compared to Previous Cycles\nHow Cheap Is Ethereum Now Compared to Previous Cycles\nEthereum Gas Fees in 2021 vs 2024 vs 2026\nAs of 2026, ETH gas fees are close to multi-year lows with high throughput, leading many users to ask: Is Ethereum cheap now compared to previous market cycles?\nA common price to transfer ETH on the Ethereum mainnet is $0.10 to $0.25, and many Layer 2 transactions cost a fraction of a cent.\n* Period | Ethereum Mainnet Fees | Layer 2 Fees | Market Context\n* 2021 | $50–$100+ during peaks | Limited adoption | NFT and DeFi boom\n* 2024 | ~$1–$10 typical activity | Often below $0.10 | Dencun + EIP-4844 rollout\n* 2026 | ~$0.10–$0.25 transfers | Fractions of a cent | Mature rollup ecosystem\nWhat Changed After EIP-4844 and Proto-Danksharding\nAs a result, users became trained to compare networks, rather than just rely on Ethereum mainnet. Questions like “how much are Ethereum gas fees” become dependent on the selected Layer 2 network, the bridging fees, and the Ethereum ecosystem liquidity.\nTop Ethereum Gas Fee Solutions in 2026\nLayer 2 Rollups (Arbitrum, Optimism, Base) and Their Fee Reductions\nSome smart wallets use paymasters to sponsor gas costs or route through Layer 2 networks, so users can avoid Ethereum gas fees in times of high mainnet traffic.\nEthereum transaction fees are often assumed to only include on-chain transaction costs, but additional fees may be incurred when transferring assets from Ethereum mainnet or Layer 2. In addition to gas fees, bridges may have liquidity provider fees, routing fees, and withdrawal fees, depending on the bridge protocol and asset transfer routing.\nFor users wondering why are Ethereum gas fees so high during certain periods, the answer usually comes down to sudden spikes in blockspace demand caused by trading activity, NFT launches, and memecoin speculation. ### Are Layer 2 networks as secure as Ethereum mainnet?"
+   ]
+  },
+  {
+   "url": "https://ethereum.org/developers/docs/gas",
+   "title": "Ethereum gas and fees: technical overview",
+   "publish_date": null,
+   "excerpts": [
+    "Ethereum gas and fees: technical overview\nGas prices are usually quoted in gwei, which is a denomination of ETH. Each gwei is equal to one-billionth of an ETH (0.000000001 ETH or 10-9 ETH). October 13,"
+   ]
+  },
+  {
+   "url": "https://blog.ethereum.org/2025/08/05/protocol-update-001",
+   "title": "Protocol Update 001 – Scale L1 | Ethereum Foundation Blog",
+   "publish_date": "2025-08-05",
+   "excerpts": [
+    "* Marius van der Wijden joined Ansgar Dietrichs and Tim Beiko to co-lead Scale L1\n* Mainnet’s gas limit increased to 45M post- Berlinterop , a first step on the road to 100M gas and beyond\n* All major execution layer clients shipped Pre-Merge History Expiry , significantly reducing node disk usage\nTowards a 100M Mainnet Gas Limit\nOur immediate goal is safely scaling Ethereum’s mainnet gas limit to 100M per block. Parithosh Jayanthi , closely supported by Nethermind's PerfNet team, is leading our work getting through each incremental increase .\nThese improvements collectively enhance Ethereum’s capacity to reliably handle higher gas limits and faster block processing.\nAn ongoing challenge in scaling Ethereum is aligning the gas costs of EVM operations with their computational overhead. The performance of worst-case edge cases currently limits network throughput.\nBy improving benchmarking infrastructure and repricing operations that can't be optimized by clients, we can make block execution times more consistent.\nThis involves testing node performance under conditions with state sizes double the current mainnet and gas limits reaching 100–150M, to directly inform both repricings and client optimizations.\nBoth of these efforts will inform Glamsterdam EIP proposals to homogenize resource costs across operations, enabling further L1 scaling."
+   ]
+  },
+  {
+   "url": "https://www.spydra.app/blog/ethereum-gas",
+   "title": "Ethereum Gas Fees Explained The Complete 2026 Guide",
+   "publish_date": null,
+   "excerpts": [
+    "Ethereum Gas Fees Explained The Complete 2026 Guide\n• Gas used: 21,000 (the standard for a simple ETHtransfer — this is fixed). • Base fee: 0.4 gwei (typical mainnet base fee inlate May 2026)."
+   ]
+  },
+  {
+   "url": "https://chaingate.dev/gas-tracker/ethereum",
+   "title": "Ethereum Gas Fees Today: 0.08 Gwei (~$0.004) ⛽ ETH ...",
+   "publish_date": null,
+   "excerpts": [
+    "Ethereum Gas Fees Today: 0.08 Gwei (~$0.004) ⛽ ETH ...\nEthereum gas fees today, October 15, 2026: 0.08 Gwei at Normal priority, ~$0.004 for a standard ETH transfer and ~$0.03 for a token swap. Network congestion is"
+   ]
+  },
+  {
+   "url": "https://bitcoinfoundation.org/news/altcoins/ethereum-updates-2026-upcoming-changes-that-could-transform-the-network",
+   "title": "Ethereum Main Updates 2026: Upcoming Changes That ...",
+   "publish_date": null,
+   "excerpts": [
+    "Ethereum Main Updates 2026: Upcoming Changes That ...\nEthereum updates in 2026 explained: roadmap, scaling, gas fees, Layer 2 growth, and how Ethereum will evolve in the future."
+   ]
+  }
+ ],
+ "warnings": null,
+ "usage": [
+  {
+   "name": "sku_search",
+   "count": 1
+  },
+  {
+   "name": "sku_extract_excerpts",
+   "count": 2
+  }
+ ],
+ "metadata": null,
+ "session_id": "session_4445ef7d24bc25e100bf73c5f9b81f8b"
+}
