@@ -70,7 +70,7 @@ describe("a different PAY_TO refuses to serve 402s", () => {
   it("every paid route module fails to load (startup error), so no 402 handler exists", async () => {
     vi.stubEnv("PAY_TO", OTHER);
     noCdp();
-    expect(PAID_ROUTES).toHaveLength(27); // + discourse/split (2026-10-13) + tx-status + tokenized-stock + watch + balance + tx-guard + grocery/normalize (2026-10-14) + grocery/ingredient (2026-10-16) + chain/head + token/meta + name/resolve (wave 1, 2026-10-16)
+    expect(PAID_ROUTES).toHaveLength(28); // + x402-check/deep (2026-10-19); + discourse/split (2026-10-13) + tx-status + tokenized-stock + watch + balance + tx-guard + grocery/normalize (2026-10-14) + grocery/ingredient (2026-10-16) + chain/head + token/meta + name/resolve (wave 1, 2026-10-16)
     for (const route of PAID_ROUTES) {
       vi.resetModules();
       await expect(loadRoute(route), route).rejects.toThrow(/pinned Base payTo/);

@@ -68,7 +68,7 @@ function assertBaseFirstSolanaSecond(all: { cdp: Record<string, Captured>; local
       n++;
     }
   }
-  expect(n).toBe(170); // 88 on main + 12 market-mvp + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient + 18 wave-1 (chain/head, token/meta, name/resolve x 6)
+  expect(n).toBe(176); // + 6 x402-check/deep (2026-10-19) + 88 on main + 12 market-mvp + 6 discourse-split + 6 tx-status + 6 tokenized-stock + 6 watch + 6 balance + 6 tx-guard + 8 grocery/normalize (GET json/browser, POST json, OPTIONS) + 8 grocery/ingredient + 18 wave-1 (chain/head, token/meta, name/resolve x 6)
 }
 
 let now = 1_800_000_000_000;

@@ -69,6 +69,11 @@ export const ROUTE_METADATA = {
       "x402 endpoint checker: decodes an x402 endpoint's 402 payment terms without paying. GET url (optional method GET/POST, JSON body for POST). Sends one unpaid request; never pays or signs. Returns JSON: httpStatus, isX402, x402Version, decoded accepts (network, asset, USD amount, payTo, EOA or contract), discovery metadata presence, and pass/warn/fail checks. Any HTTP answer from the target, even 4xx/5xx, is billed; bad input, blocked hosts, connection failures and timeouts are not.",
     tags: ["developer-tools", "x402", "audit", "payment-check", "discovery"],
   },
+  "/api/x402-check/deep": {
+    description:
+      "x402 endpoint deep check, never pays or signs: the full /api/x402-check report plus live checks. GET url (optional method, body). Adds TLS, security headers, CORS, payTo vs the payee's own published addresses (/.well-known/x402, openapi.json, llms.txt), lookalike payTo detection, and drift between the live 402 and well-known, openapi and CDP Bazaar listings. Any HTTP answer from the target is billed; bad input, blocked hosts and timeouts are not.",
+    tags: ["developer-tools", "x402", "security-check", "payto-verification", "discovery-drift"],
+  },
   "/api/bazaar-check": {
     description:
       "x402 Bazaar listing checker: is an x402 seller listed in Coinbase CDP Bazaar, on which networks, and if not, why. GET url (host or https URL). Reads CDP discovery and the host's /.well-known/x402, then sends one unpaid request per route; never pays. Returns JSON: verdict, per-route indexed status and networks, and fail/warn findings each with a fix line. https only; private targets blocked. Errors are not charged.",

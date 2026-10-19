@@ -1926,6 +1926,419 @@
         }
       }
     },
+    "/api/x402-check/deep": {
+      "get": {
+        "operationId": "getX402CheckDeep",
+        "tags": [
+          "Agent utilities"
+        ],
+        "summary": "Live deep check of an x402 endpoint and its payTo",
+        "description": "x402 endpoint deep check, never pays or signs: the full /api/x402-check report plus live checks. GET url (optional method, body). Adds TLS, security headers, CORS, payTo vs the payee's own published addresses (/.well-known/x402, openapi.json, llms.txt), lookalike payTo detection, and drift between the live 402 and well-known, openapi and CDP Bazaar listings. Any HTTP answer from the target is billed; bad input, blocked hosts and timeouts are not.\n\nPrice: $0.03 USDC per call (30000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "x-payment-info": {
+          "protocol": "x402",
+          "x402Version": 2,
+          "scheme": "exact",
+          "network": "eip155:8453",
+          "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+          "assetSymbol": "USDC",
+          "decimals": 6,
+          "priceUsd": "$0.03",
+          "amount": "30000",
+          "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+          "maxTimeoutSeconds": 300,
+          "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
+          "discovery": "https://horizonpulse.dev/.well-known/x402"
+        },
+        "parameters": [
+          {
+            "name": "url",
+            "in": "query",
+            "required": true,
+            "description": "Absolute http(s) URL of the x402 endpoint to check (required). Private/localhost blocked.",
+            "schema": {
+              "type": "string",
+              "format": "uri"
+            },
+            "example": "https://horizonpulse.dev/api/pulse"
+          },
+          {
+            "name": "method",
+            "in": "query",
+            "required": false,
+            "description": "HTTP method for the unpaid probe: GET (default; one POST retry on 405) or POST.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST"
+              ],
+              "default": "GET"
+            },
+            "example": "GET"
+          },
+          {
+            "name": "body",
+            "in": "query",
+            "required": false,
+            "description": "Optional JSON body (<=8KB, URL-encoded) sent with a POST probe. Implies POST.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
+            "headers": {
+              "PAYMENT-RESPONSE": {
+                "$ref": "#/components/headers/PaymentResponse"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/X402CheckDeepResponse"
+                },
+                "example": {
+                  "source": "x402-check-deep",
+                  "priced": {
+                    "amountUsd": "$0.03",
+                    "amountAtomic": "30000",
+                    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+                    "network": "base",
+                    "payTo": "0x5b32c973596078a967562ca652761404f19be0e9"
+                  },
+                  "asOf": "2026-10-19T19:46:19.614Z",
+                  "ok": true,
+                  "target": "https://horizonpulse.dev/api/pulse",
+                  "finalUrl": "https://horizonpulse.dev/api/pulse",
+                  "method": "GET",
+                  "httpStatus": 402,
+                  "isX402": true,
+                  "x402Version": 2,
+                  "challengeSource": "header",
+                  "resource": {
+                    "url": "https://horizonpulse.dev/api/pulse",
+                    "description": "Crypto price API: BTC, ETH and SOL spot prices in USD in one GET, no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat), avgChange24hPct and asOf. Prices from Coinbase Exchange with CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
+                    "mimeType": "application/json"
+                  },
+                  "accepts": [
+                    {
+                      "scheme": "exact",
+                      "network": "eip155:8453",
+                      "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+                      "assetLabel": "USDC (Base)",
+                      "amountAtomic": "2000",
+                      "amountUsd": "$0.002",
+                      "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+                      "payToType": "eoa_7702",
+                      "payToDelegate": "0x7702cb554e6bfb442cb743a7df23154544a7176c",
+                      "maxTimeoutSeconds": 300
+                    },
+                    {
+                      "scheme": "exact",
+                      "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+                      "asset": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+                      "assetLabel": "USDC (Solana)",
+                      "amountAtomic": "2000",
+                      "amountUsd": "$0.002",
+                      "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+                      "payToType": null,
+                      "payToDelegate": null,
+                      "maxTimeoutSeconds": 300
+                    },
+                    {
+                      "scheme": "exact",
+                      "network": "xrpl:0",
+                      "asset": "524C555344000000000000000000000000000000",
+                      "assetLabel": "RLUSD (XRP Ledger)",
+                      "amountAtomic": "0.002",
+                      "amountUsd": "$0.002",
+                      "payTo": "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
+                      "payToType": null,
+                      "payToDelegate": null,
+                      "maxTimeoutSeconds": 300
+                    },
+                    {
+                      "scheme": "exact",
+                      "network": "eip155:137",
+                      "asset": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+                      "assetLabel": "USDC (Polygon)",
+                      "amountAtomic": "2000",
+                      "amountUsd": "$0.002",
+                      "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+                      "payToType": null,
+                      "payToDelegate": null,
+                      "maxTimeoutSeconds": 300
+                    }
+                  ],
+                  "discovery": {
+                    "present": true,
+                    "method": "GET",
+                    "hasInputSchema": true,
+                    "hasOutputExample": true
+                  },
+                  "tier": "deep",
+                  "baseChecks": [
+                    {
+                      "id": "status_402",
+                      "level": "pass",
+                      "message": "Unpaid request returned HTTP 402."
+                    },
+                    {
+                      "id": "challenge",
+                      "level": "pass",
+                      "message": "x402 challenge parsed from PAYMENT-REQUIRED header."
+                    },
+                    {
+                      "id": "version",
+                      "level": "pass",
+                      "message": "x402 v2."
+                    },
+                    {
+                      "id": "payto_type",
+                      "level": "info",
+                      "message": "payTo 0x5b32c973596078a967562ca652761404f19be0e9 is an EOA with an EIP-7702 delegation to 0x7702cb554e6bfb442cb743a7df23154544a7176c: the account's private key still controls funds, and the delegate contract's code also runs for this account (e.g. a smart-wallet upgrade) (accepts[0])."
+                    },
+                    {
+                      "id": "discovery",
+                      "level": "pass",
+                      "message": "Discovery metadata present (method GET)."
+                    }
+                  ],
+                  "tls": {
+                    "ok": true,
+                    "protocol": "TLSv1.3",
+                    "authorized": true,
+                    "authorizationError": null,
+                    "validFrom": "Sep 19 17:49:24 2026 GMT",
+                    "validTo": "Dec 18 17:49:23 2026 GMT",
+                    "daysLeft": 59,
+                    "issuer": "Let's Encrypt / YR2",
+                    "subject": "horizonpulse.dev",
+                    "san": [
+                      "horizonpulse.dev"
+                    ],
+                    "checked": true
+                  },
+                  "securityHeaders": {
+                    "status": 402,
+                    "hsts": "max-age=63072000",
+                    "contentTypeOptions": "nosniff",
+                    "frameOptions": null,
+                    "csp": null,
+                    "referrerPolicy": null,
+                    "error": null
+                  },
+                  "cors": {
+                    "allowOrigin": null,
+                    "exposeHeaders": null,
+                    "allowCredentials": null,
+                    "paymentRequiredExposed": false
+                  },
+                  "publishedSources": [
+                    {
+                      "name": "well-known",
+                      "url": "https://horizonpulse.dev/.well-known/x402",
+                      "status": 200,
+                      "addresses": [],
+                      "error": null
+                    },
+                    {
+                      "name": "openapi",
+                      "url": "https://horizonpulse.dev/openapi.json",
+                      "status": 200,
+                      "addresses": [
+                        "0x5b32c973596078a967562ca652761404f19be0e9",
+                        "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+                        "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf"
+                      ],
+                      "error": null
+                    },
+                    {
+                      "name": "llms",
+                      "url": "https://horizonpulse.dev/llms.txt",
+                      "status": 200,
+                      "addresses": [
+                        "0x5b32c973596078a967562ca652761404f19be0e9"
+                      ],
+                      "error": null
+                    }
+                  ],
+                  "payToReports": [
+                    {
+                      "network": "eip155:8453",
+                      "payTo": "0x5b32c973596078a967562ca652761404f19be0e9",
+                      "payToType": "eoa_7702",
+                      "published": "match",
+                      "publishedIn": [
+                        "openapi",
+                        "llms",
+                        "well-known"
+                      ],
+                      "lookalikes": []
+                    },
+                    {
+                      "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+                      "payTo": "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz",
+                      "payToType": null,
+                      "published": "match",
+                      "publishedIn": [
+                        "openapi",
+                        "well-known",
+                        "llms"
+                      ],
+                      "lookalikes": []
+                    },
+                    {
+                      "network": "xrpl:0",
+                      "payTo": "r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf",
+                      "payToType": null,
+                      "published": "match",
+                      "publishedIn": [
+                        "openapi",
+                        "well-known",
+                        "llms"
+                      ],
+                      "lookalikes": []
+                    }
+                  ],
+                  "drift": {
+                    "wellKnown": "listed",
+                    "openapi": {
+                      "status": "consistent",
+                      "detail": null
+                    },
+                    "bazaar": {
+                      "status": "consistent",
+                      "networks": [
+                        "base",
+                        "solana",
+                        "xrpl",
+                        "polygon"
+                      ],
+                      "detail": null
+                    }
+                  },
+                  "checks": [
+                    {
+                      "id": "tls",
+                      "level": "pass",
+                      "message": "TLS TLSv1.3 trusted, 59 days to expiry."
+                    },
+                    {
+                      "id": "hsts",
+                      "level": "pass",
+                      "message": "HSTS present (max-age >= 180 days)."
+                    },
+                    {
+                      "id": "nosniff",
+                      "level": "pass",
+                      "message": "X-Content-Type-Options: nosniff."
+                    },
+                    {
+                      "id": "frame_policy",
+                      "level": "info",
+                      "message": "No frame policy (X-Frame-Options or CSP frame-ancestors); low impact for a JSON API."
+                    },
+                    {
+                      "id": "referrer_policy",
+                      "level": "info",
+                      "message": "No Referrer-Policy header."
+                    },
+                    {
+                      "id": "cors",
+                      "level": "info",
+                      "message": "No Access-Control-Allow-Origin on the unpaid response (passive read, no Origin sent): browser-based agents on other origins cannot read the challenge; server-side agents are unaffected."
+                    },
+                    {
+                      "id": "payto_published",
+                      "level": "pass",
+                      "message": "payTo 0x5b32c973596078a967562ca652761404f19be0e9 (EIP-7702-delegated EOA) matches the address the payee publishes in openapi, llms, well-known."
+                    },
+                    {
+                      "id": "payto_published",
+                      "level": "pass",
+                      "message": "payTo BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz matches the address the payee publishes in openapi, well-known, llms."
+                    },
+                    {
+                      "id": "payto_published",
+                      "level": "pass",
+                      "message": "payTo r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf matches the address the payee publishes in openapi, well-known, llms."
+                    },
+                    {
+                      "id": "drift_well_known",
+                      "level": "pass",
+                      "message": "URL is listed in the origin's /.well-known/x402."
+                    },
+                    {
+                      "id": "drift_openapi",
+                      "level": "pass",
+                      "message": "openapi.json operation is consistent with the live 402."
+                    },
+                    {
+                      "id": "drift_bazaar",
+                      "level": "pass",
+                      "message": "CDP Bazaar entry matches the live 402 (base, solana, xrpl, polygon)."
+                    }
+                  ],
+                  "summary": {
+                    "pass": 13,
+                    "warn": 0,
+                    "fail": 0
+                  },
+                  "elapsedMs": 765
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing, bad, or blocked URL / method (not charged). Not charged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                },
+                "example": {
+                  "ok": false,
+                  "error": "Query param url is required (absolute http/https URL)",
+                  "code": "missing_url",
+                  "charged": false
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required (x402 v2). Not charged. The challenge is in the PAYMENT-REQUIRED header; the body is empty JSON {}.",
+            "headers": {
+              "PAYMENT-REQUIRED": {
+                "$ref": "#/components/headers/PaymentRequired"
+              }
+            }
+          },
+          "502": {
+            "description": "Target unreachable or too many redirects (not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Target timeout (not charged)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/bazaar-check": {
       "get": {
         "operationId": "getBazaarCheck",
@@ -7303,6 +7716,375 @@
           }
         },
         "description": "Inferred from a real response recorded from GET /api/demo/x402-check at 2026-10-16T16:40Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
+      },
+      "X402CheckDeepResponse": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "priced": {
+            "type": "object",
+            "properties": {
+              "amountUsd": {
+                "type": "string"
+              },
+              "amountAtomic": {
+                "type": "string"
+              },
+              "asset": {
+                "type": "string"
+              },
+              "network": {
+                "type": "string"
+              },
+              "payTo": {
+                "type": "string"
+              }
+            }
+          },
+          "asOf": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "finalUrl": {
+            "type": "string"
+          },
+          "method": {
+            "type": "string"
+          },
+          "httpStatus": {
+            "type": "number"
+          },
+          "isX402": {
+            "type": "boolean"
+          },
+          "x402Version": {
+            "type": "number"
+          },
+          "challengeSource": {
+            "type": "string"
+          },
+          "resource": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string"
+              }
+            }
+          },
+          "accepts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "scheme": {
+                  "type": "string"
+                },
+                "network": {
+                  "type": "string"
+                },
+                "asset": {
+                  "type": "string"
+                },
+                "assetLabel": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "amountAtomic": {
+                  "type": "string"
+                },
+                "amountUsd": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "payTo": {
+                  "type": "string"
+                },
+                "payToType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "payToDelegate": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "maxTimeoutSeconds": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "discovery": {
+            "type": "object",
+            "properties": {
+              "present": {
+                "type": "boolean"
+              },
+              "method": {
+                "type": "string"
+              },
+              "hasInputSchema": {
+                "type": "boolean"
+              },
+              "hasOutputExample": {
+                "type": "boolean"
+              }
+            }
+          },
+          "tier": {
+            "type": "string"
+          },
+          "baseChecks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "tls": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean"
+              },
+              "protocol": {
+                "type": "string"
+              },
+              "authorized": {
+                "type": "boolean"
+              },
+              "authorizationError": {
+                "description": "Null in the recorded example; may hold a value."
+              },
+              "validFrom": {
+                "type": "string"
+              },
+              "validTo": {
+                "type": "string"
+              },
+              "daysLeft": {
+                "type": "number"
+              },
+              "issuer": {
+                "type": "string"
+              },
+              "subject": {
+                "type": "string"
+              },
+              "san": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "checked": {
+                "type": "boolean"
+              }
+            }
+          },
+          "securityHeaders": {
+            "type": "object",
+            "properties": {
+              "status": {
+                "type": "number"
+              },
+              "hsts": {
+                "type": "string"
+              },
+              "contentTypeOptions": {
+                "type": "string"
+              },
+              "frameOptions": {
+                "description": "Null in the recorded example; may hold a value."
+              },
+              "csp": {
+                "description": "Null in the recorded example; may hold a value."
+              },
+              "referrerPolicy": {
+                "description": "Null in the recorded example; may hold a value."
+              },
+              "error": {
+                "description": "Null in the recorded example; may hold a value."
+              }
+            }
+          },
+          "cors": {
+            "type": "object",
+            "properties": {
+              "allowOrigin": {
+                "description": "Null in the recorded example; may hold a value."
+              },
+              "exposeHeaders": {
+                "description": "Null in the recorded example; may hold a value."
+              },
+              "allowCredentials": {
+                "description": "Null in the recorded example; may hold a value."
+              },
+              "paymentRequiredExposed": {
+                "type": "boolean"
+              }
+            }
+          },
+          "publishedSources": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "number"
+                },
+                "addresses": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "error": {
+                  "description": "Null in the recorded example; may hold a value."
+                }
+              }
+            }
+          },
+          "payToReports": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "network": {
+                  "type": "string"
+                },
+                "payTo": {
+                  "type": "string"
+                },
+                "payToType": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "published": {
+                  "type": "string"
+                },
+                "publishedIn": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "lookalikes": {
+                  "type": "array"
+                }
+              }
+            }
+          },
+          "drift": {
+            "type": "object",
+            "properties": {
+              "wellKnown": {
+                "type": "string"
+              },
+              "openapi": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "detail": {
+                    "description": "Null in the recorded example; may hold a value."
+                  }
+                }
+              },
+              "bazaar": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string"
+                  },
+                  "networks": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "detail": {
+                    "description": "Null in the recorded example; may hold a value."
+                  }
+                }
+              }
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "level": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "summary": {
+            "type": "object",
+            "properties": {
+              "pass": {
+                "type": "number"
+              },
+              "warn": {
+                "type": "number"
+              },
+              "fail": {
+                "type": "number"
+              }
+            }
+          },
+          "elapsedMs": {
+            "type": "number"
+          }
+        },
+        "description": "Inferred from a real response recorded from GET /api/demo/x402-check-deep at 2026-10-19T19:46Z UTC (trimmed). Fields may be added; clients should ignore unknown fields."
       },
       "BazaarCheckResponse": {
         "type": "object",

@@ -9,6 +9,7 @@ async function rpc(method, params) {
   return { status: r.status, json: await r.json() };
 }
 function restPath(route) {
+  if (route === "x402_check_deep") return "x402-check/deep"; // tier nested under its parent route
   // Nested REST namespaces keep a slash (market/*, discourse/*, grocery/*, chain/*, token/*, name/*).
   // Flat tool names map underscores to hyphens (bazaar-check, tx-guard, ...).
   if (/^(market|discourse|grocery|chain|token|name)_/.test(route)) return route.replace("_", "/");
@@ -26,6 +27,7 @@ const ARGS = {
   http: { url: "https://example.com" },
   extract: { url: "https://example.com" },
   x402_check: { url: "https://horizonpulse.dev/api/pulse" },
+  x402_check_deep: { url: "https://horizonpulse.dev/api/pulse" },
   bazaar_check: { url: "horizonpulse.dev" },
   market_search: { q: "weather forecast" },
   market_quote: { url: "https://horizonpulse.dev/api/pulse" },
@@ -45,7 +47,7 @@ const ARGS = {
   tx_guard: { chain: "base", to: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045" },
   tx_status: { network: "base", tx: "0xe6e6ebd93db6735aad12a86a1084d5e1d6759e31fbedf7b741946f2bf410644f" },
 };
-const Q = { batch: "?items=%5B%7B%22route%22%3A%22gas%22%7D%5D", chain_head: "?network=base", token_meta: "?network=base&token=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", name_resolve: "?name=vitalik.eth", grocery_ingredient: "?q=egg", grocery_normalize: "?ingredients=2%20cups%20flour", portfolio: "?address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", fetch: "?url=https://example.com", http: "?url=https://example.com", extract: "?url=https://example.com", x402_check: "?url=https://horizonpulse.dev/api/pulse", bazaar_check: "?url=horizonpulse.dev", market_search: "?q=weather%20forecast", market_quote: "?url=https://horizonpulse.dev/api/pulse", screenshot: "?url=https://example.com", search: "?q=x402", pdf: "?url=https://horizonpulse.dev/sample.pdf", discourse_split: "?q=tabs%20or%20spaces" , tokenized_stock: "?symbol=AAPL", watch: "?url=https://example.com", balance: "?evm=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", tx_guard: "?chain=base&to=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", tx_status: "?network=base&tx=0xe6e6ebd93db6735aad12a86a1084d5e1d6759e31fbedf7b741946f2bf410644f" };
+const Q = { batch: "?items=%5B%7B%22route%22%3A%22gas%22%7D%5D", chain_head: "?network=base", token_meta: "?network=base&token=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", name_resolve: "?name=vitalik.eth", grocery_ingredient: "?q=egg", grocery_normalize: "?ingredients=2%20cups%20flour", portfolio: "?address=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", fetch: "?url=https://example.com", http: "?url=https://example.com", extract: "?url=https://example.com", x402_check: "?url=https://horizonpulse.dev/api/pulse", x402_check_deep: "?url=https://horizonpulse.dev/api/pulse", bazaar_check: "?url=horizonpulse.dev", market_search: "?q=weather%20forecast", market_quote: "?url=https://horizonpulse.dev/api/pulse", screenshot: "?url=https://example.com", search: "?q=x402", pdf: "?url=https://horizonpulse.dev/sample.pdf", discourse_split: "?q=tabs%20or%20spaces" , tokenized_stock: "?symbol=AAPL", watch: "?url=https://example.com", balance: "?evm=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", tx_guard: "?chain=base&to=0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045", tx_status: "?network=base&tx=0xe6e6ebd93db6735aad12a86a1084d5e1d6759e31fbedf7b741946f2bf410644f" };
 let fail = 0;
 const ok = (c, msg) => { console.log(`${c ? "PASS" : "FAIL"} ${msg}`); if (!c) fail++; };
 
@@ -53,7 +55,7 @@ const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabiliti
 ok(init.status === 200 && init.json.result?.serverInfo?.name === "horizon-pulse", "initialize is free");
 const list = await rpc("tools/list", {});
 const names = (list.json.result?.tools || []).map((t) => t.name).sort();
-const EXPECTED = ["balance","batch","bazaar_check","chain_head","discourse_split","extract","fetch","funding","gas","grocery_ingredient","grocery_normalize","http","market_quote","market_search","name_resolve","pdf","portfolio","pulse","screenshot","search","signals","token_meta","tokenized_stock","tx_guard","tx_status","watch","x402_check","yield"];
+const EXPECTED = ["balance","batch","bazaar_check","chain_head","discourse_split","extract","fetch","funding","gas","grocery_ingredient","grocery_normalize","http","market_quote","market_search","name_resolve","pdf","portfolio","pulse","screenshot","search","signals","token_meta","tokenized_stock","tx_guard","tx_status","watch","x402_check","x402_check_deep","yield"];
 // FREE tools (no x402 wrapper): listed, never challenged; not part of the paid count.
 const FREE = ["money_market_rates"];
 EXPECTED.push(...FREE);

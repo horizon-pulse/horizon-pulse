@@ -144,7 +144,7 @@ describe("pricedBlock helper", () => {
   });
 });
 
-describe("all 27 paid handlers build `priced` with the rail-aware helper", () => {
+describe("all 28 paid handlers build `priced` with the rail-aware helper", () => {
   it("no handler hard-codes the Base network / USDC / payTo in its priced block", () => {
     // market-mvp: nested route dirs (app/api/market/{search,quote}) count as routes; a dir with handler.ts is a route.
     const api = path.join(ROOT, "app", "api");
@@ -152,7 +152,8 @@ describe("all 27 paid handlers build `priced` with the rail-aware helper", () =>
       .filter((d) => d.isDirectory() && d.name !== "demo")
       .flatMap((d) =>
         existsSync(path.join(api, d.name, "handler.ts"))
-          ? [d.name]
+          ? // x402-check/deep (10/19): a tier nested under a route dir that has its own handler.ts.
+            [d.name, ...readdirSync(path.join(api, d.name), { withFileTypes: true }).filter((c) => c.isDirectory() && existsSync(path.join(api, d.name, c.name, "handler.ts"))).map((c) => `${d.name}/${c.name}`)]
           : readdirSync(path.join(api, d.name), { withFileTypes: true }).filter((c) => c.isDirectory()).map((c) => `${d.name}/${c.name}`),
       )
       .sort();
@@ -162,7 +163,7 @@ describe("all 27 paid handlers build `priced` with the rail-aware helper", () =>
     // not in the live catalog / goldens; held to the same priced rule.
     const INERT_ROUTES = ["audit/security", "batch", "injection/scan", "package/check"];
     expect(dirs).toEqual([...PAID_ROUTES, ...INERT_ROUTES].sort());
-    expect(dirs).toHaveLength(27 + INERT_ROUTES.length);
+    expect(dirs).toHaveLength(28 + INERT_ROUTES.length);
     for (const d of dirs) {
       const src = readFileSync(path.join(ROOT, "app", "api", d, "handler.ts"), "utf8");
       expect(src.match(/priced: pricedBlock\(\w+_PRICE_USD, \w+_PRICE_ATOMIC\)/g), d).toHaveLength(1);
