@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "./fixtures/prem2-brief-results.json";
-import { compile, keyFacts, publisherOf, sameFact, isOpinion, isSelfContained, isSyndicated, MIN_INDEPENDENT_DOMAINS, UNCONFIRMED_EMPTY_NOTE } from "@/lib/premium/research";
+import { compile, factValues, publisherOf, sameFactValue, isOpinion, isSelfContained, isSyndicated, MIN_INDEPENDENT_DOMAINS, UNCONFIRMED_EMPTY_NOTE } from "@/lib/premium/research";
 import { tierFor } from "@/lib/premium/tiers";
 
 const brief = tierFor("research" as never, "brief")!;
@@ -46,7 +46,7 @@ describe("brief quality (Odin 10/19, fixture from prem2-redeem.json)", () => {
     expect(isSelfContained("Base launched in August 2023 as an Ethereum L2.")).toBe(true);
   });
   it("unconfirmed section is always present, with an explicit note when empty", () => {
-    const out: any = compile(brief, "q", [r("https://a.example/1", "A one", ["Base fees are under one cent per transfer on average."]), r("https://b.example/2", "B two", ["Base fees are under one cent per transfer on average."]), r("https://c.example/3", "C three", ["Base fees are under one cent per transfer on average today."])]);
+    const out: any = compile(brief, "q", [r("https://a.example/1", "A one", ["Base fees averaged $0.002 per transfer in September."]), r("https://b.example/2", "B two", ["Average Base transfer fees were $0.002 in September."]), r("https://c.example/3", "C three", ["September transfer fees on Base averaged $0.002 each."])]);
     expect(out.could_not_confirm).toEqual([]);
     expect(out.could_not_confirm_note).toBe(UNCONFIRMED_EMPTY_NOTE);
     const empty: any = compile(brief, "q", []);
@@ -82,13 +82,12 @@ describe("brief quality (Odin 10/19, fixture from prem2-redeem.json)", () => {
       expect(out.coverage_note).toMatch(/Only 1 independent publisher/);
       expect(out.coverage_note).toMatch(/usdc\.org \+ usdc\.com/);
     });
-    it("(2) confirmation: same number + same subject on two publishers confirms; same number, different subject does not", () => {
-      expect(sameFact("Transaction fees on Base are typically under $0.01 per transfer.", "Coinbase says network fees for transfers on Base average $0.01.", new Set(["base"]))).toBe(true);
-      expect(sameFact("Transaction fees on Base are typically under $0.01 per transfer.", "Solana validators earn $0.01 in rewards per vote cast.", new Set(["base"]))).toBe(false);
-      expect(sameFact("Base launched in August 2023 as an Ethereum layer 2 network.", "The Ethereum layer 2 network Base went live in August 2023.", new Set())).toBe(true);
-      expect(sameFact("Modern Treasury added USDC payments for business customers.", "Modern Treasury raised a funding round from investors.", new Set(["usdc"]))).toBe(false);
-      expect(sameFact("Fees fell sharply after the upgrade for users.", "Fees fell sharply after the upgrade for users.", new Set())).toBe(false); // no key fact
-      expect([...keyFacts("Circle issued 5,000,000 USDC on 2026-06-04 with Modern Treasury.")]).toEqual(expect.arrayContaining(["n:5000000", "d:2026-06-04", "e:modern"]));
+    it("(2) confirmation needs the same normalised date/number + same subject on another publisher; keyword-only never confirms", () => {
+      expect(sameFactValue("Transaction fees on Base are typically under $0.01 per transfer.", "Coinbase says network fees for transfers on Base average $0.01.", new Set(["base"]))).toBe("n:$0.01");
+      expect(sameFactValue("Transaction fees on Base are typically under $0.01 per transfer.", "Solana validators earn $0.01 in rewards per vote cast.", new Set(["base"]))).toBeNull();
+      expect(sameFactValue("Modern Treasury added USDC payments for business customers.", "Modern Treasury added USDC payments for business customers today.", new Set())).toBeNull(); // no fact value
+      expect([...factValues("Circle issued 5,000,000 USDC on 2026-06-04, up 12% since August 2023.")]).toEqual(expect.arrayContaining(["n:5000000", "d:2026-06-04", "n:12%", "d:2023-08"]));
+      expect([...factValues("Mainnet opened on August 9, 2023 and on 9 Aug 2023 per filings.")]).toEqual(["d:2023-08-09"]);
       const out: any = compile(brief, "USDC on Base", [
         r("https://usdc.org/a", "A", ["Transaction fees on Base are typically under $0.01 per transfer."]),
         r("https://help.coinbase.com/b", "B", ["Coinbase says network fees for transfers on Base average $0.01."]),
@@ -96,19 +95,56 @@ describe("brief quality (Odin 10/19, fixture from prem2-redeem.json)", () => {
       ]);
       const fee = out.claims.find((c: any) => c.claim.startsWith("Transaction fees"));
       expect(fee.confirmed_by).toEqual(["coinbase.com"]);
-      expect(out.could_not_confirm).not.toContain(fee.claim);
+      expect(fee.confirmed_values).toEqual(["$0.01"]);
       const sol = out.claims.find((c: any) => c.claim.startsWith("Solana"));
       expect(sol.confirmed_by).toBeUndefined();
       expect(out.could_not_confirm).toContain(sol.claim);
     });
     it("(3) dropped sentences are counted only (no text)", () => {
       const out: any = compile(brief, "USDC on Base overview", clone());
-      expect(out.dropped).toEqual({ opinion: expect.any(Number), pronoun: expect.any(Number) });
+      expect(out.dropped).toEqual({ opinion: expect.any(Number), pronoun: expect.any(Number), headline: expect.any(Number) });
       expect(out.dropped.opinion).toBeGreaterThanOrEqual(3); // best default, pitch/simple, most popular (opinion checked first)
       const p: any = compile(brief, "q", [r("https://a.example/", "A", ["They settle in about two seconds on most days.", "Base blocks are produced every two seconds."])]);
-      expect(p.dropped).toEqual({ opinion: 0, pronoun: 1 });
+      expect(p.dropped).toEqual({ opinion: 0, pronoun: 1, headline: 0 });
       expect(JSON.stringify(out)).not.toContain("best default");
       expect(JSON.stringify(out)).not.toContain("ideal for payments");
     });
+  });
+});
+
+import prem3 from "./fixtures/prem3-search.json";
+import prem3Extract from "./fixtures/prem3-extract-synthetic.json";
+import { BRIEF_EXTRACT_N, briefExtractUrls, isHeadlineLike, questionKind } from "@/lib/premium/research";
+
+describe("brief from page content (Odin 10/19, real prem3-body.json + synthetic extract)", () => {
+  const run = () => compile(brief, prem3.question, JSON.parse(JSON.stringify(prem3.search)), "2026-10-19T21:35:00.000Z", JSON.parse(JSON.stringify(prem3Extract))) as any;
+  it("the real prem3 claims are all headline/byline-shaped", () => {
+    for (const c of prem3.real_body_claims) expect(isHeadlineLike(c, null)).toBe(true);
+    expect(isHeadlineLike("Coinbase announced Base on February 23, 2023.", "Introducing Base - Coinbase")).toBe(false);
+  });
+  it("search-only (extract failed): no headline or byline claims; no padding", () => {
+    const out: any = compile(brief, prem3.question, JSON.parse(JSON.stringify(prem3.search)));
+    expect(out.claims).toEqual([]);
+    expect(out.answer.lines).toEqual([]);
+  });
+  it("extract content: answer line first, Feb 23 2023 and Aug 9 2023 both confirmed across 2 publishers, no headline/byline claims", () => {
+    const out = run();
+    expect(questionKind(prem3.question)).toBe("when");
+    expect(Object.keys(out).indexOf("answer")).toBeLessThan(Object.keys(out).indexOf("claims"));
+    const ans = out.answer.lines.map((l: any) => l.text).join(" ");
+    expect(ans).toMatch(/February 23, 2023|Feb\. 23, 2023/);
+    expect(out.answer.lines.every((l: any) => l.confirmed)).toBe(true);
+    const vals = out.claims.flatMap((c: any) => c.confirmed_values ?? []);
+    expect(vals).toEqual(expect.arrayContaining(["2023-02-23", "2023-08-09"]));
+    for (const c of out.claims) {
+      expect(isHeadlineLike(c.claim, null)).toBe(false);
+      expect(c.claim).not.toMatch(/^By\s/);
+      expect(prem3.real_body_claims).not.toContain(c.claim);
+    }
+  });
+  it("extract picks top distinct publishers, N within budget", () => {
+    const urls = briefExtractUrls(prem3.search as never);
+    expect(urls.length).toBe(BRIEF_EXTRACT_N);
+    expect(new Set(urls.map((u) => new URL(u).hostname)).size).toBe(BRIEF_EXTRACT_N);
   });
 });

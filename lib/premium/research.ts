@@ -26,7 +26,7 @@ export function domainOf(u: string): string | null {
 function sentences(text: string): string[] {
   return text
     .replace(/Section Title:[^\n]*\n?|Content:\n?|\.\.\. \(content truncated\)/g, " ")
-    .split(/(?<=[.!?])\s+|\n+/)
+    .split(/(?<=[.!?])(?<!\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|Mr|Ms|Mrs|Dr|Inc|Corp|Co|Ltd|St|vs|No|U\.S)\.)\s+|\n+/)
     .map((s) => s.trim())
     .filter((s) => s.split(/\s+/).length >= 6);
 }
@@ -96,40 +96,77 @@ export function publisherOf(domain: string): string {
   const r = registrable(domain);
   return SAME_OWNER[r] ?? r;
 }
-/** Key facts: numbers (with $/%), ISO / month-name dates, months+years, and capitalised entities not at sentence start. */
-const MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december";
-export function keyFacts(s: string, exclude: Set<string> = new Set()): Set<string> {
+const MONTH_IDX: Record<string, string> = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
+const MON = "(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\.?";
+const pad = (d: string) => d.padStart(2, "0");
+/** Normalised fact values: dates as YYYY-MM-DD (or YYYY-MM for "August 2023"), numbers with a unit or >= 2 digits (bare years excluded). */
+export function factValues(s: string): Set<string> {
   const out = new Set<string>();
-  for (const d of s.match(DATE_RE) ?? []) out.add(`d:${d.toLowerCase()}`);
-  for (const m of s.toLowerCase().match(new RegExp(`\\b(?:${MONTHS})\\s+(?:19|20)\\d{2}\\b`, "g")) ?? []) out.add(`d:${m}`);
-  for (const n of numbers(s)) if (/\d/.test(n)) out.add(`n:${n.replace(/,/g, "")}`);
-  const words = s.split(/\s+/);
-  for (let i = 1; i < words.length; i++) {
-    const w = words[i].replace(/[^A-Za-z0-9&.-]/g, "").replace(/\.$/, "");
-    if (/^[A-Z][A-Za-z0-9&.-]{1,}$/.test(w) && !new RegExp(`^(?:${MONTHS})$`, "i").test(w) && !exclude.has(w.toLowerCase()) && !STOP.has(w.toLowerCase()))
-      out.add(`e:${w.toLowerCase()}`);
+  let rest = s.toLowerCase();
+  const take = (re: RegExp, f: (m: RegExpExecArray) => string) => {
+    for (const m of [...rest.matchAll(re)]) {
+      out.add(f(m as RegExpExecArray));
+      rest = rest.replace(m[0], " ");
+    }
+  };
+  take(/\b((?:19|20)\d{2})-(\d{2})-(\d{2})\b/g, (m) => `d:${m[1]}-${m[2]}-${m[3]}`);
+  take(new RegExp(`\\b${MON}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+((?:19|20)\\d{2})\\b`, "g"), (m) => `d:${m[3]}-${MONTH_IDX[m[1]]}-${pad(m[2])}`);
+  take(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MON}\\s+((?:19|20)\\d{2})\\b`, "g"), (m) => `d:${m[3]}-${MONTH_IDX[m[2]]}-${pad(m[1])}`);
+  take(new RegExp(`\\b${MON}\\s+((?:19|20)\\d{2})\\b`, "g"), (m) => `d:${m[2]}-${MONTH_IDX[m[1]]}`);
+  for (const m of rest.matchAll(/(\$)?(\d[\d,]*(?:\.\d+)?)\s*(%|percent|million|billion|m\b|bn\b|b\b)?/g)) {
+    const num = m[2].replace(/,/g, "").replace(/\.$/, "");
+    if (!m[1] && !m[3] && (num.length < 2 || /^(19|20)\d{2}$/.test(num))) continue;
+    out.add(`n:${m[1] ?? ""}${num}${m[3] ? m[3].replace("percent", "%").replace(/^m$/, "million").replace(/^(bn|b)$/, "billion") : ""}`);
   }
   return out;
 }
-/** Same key fact AND the same subject: >=2 shared subject keywords beyond the fact tokens and the question's own words. */
-export function sameFact(a: string, b: string, qTerms: Set<string> = new Set()): boolean {
-  const fa = keyFacts(a, qTerms);
-  const fb = keyFacts(b, qTerms);
-  const shared = [...fa].filter((f) => fb.has(f));
-  if (!shared.length) return false;
-  const factWords = new Set(shared.map((f) => f.slice(2)).flatMap((f) => f.split(/\s+/)));
-  const stem = (w: string) => w.replace(/(?:ies|es|s)$/, (m) => (m === "ies" ? "y" : "")).replace(/\.$/, "");
-  const subj = (t: string) => new Set([...terms(t)].filter((w) => !qTerms.has(w) && !factWords.has(w) && !/^\$?\d/.test(w)).map(stem));
-  const sa = subj(a);
-  let overlap = 0;
-  for (const w of subj(b)) if (sa.has(w)) overlap++;
-  return overlap >= 2;
+/** Dates in a sentence (normalised), for answer lines. */
+export const dateValues = (s: string) => [...factValues(s)].filter((f) => f.startsWith("d:"));
+const stem = (w: string) => w.replace(/(?:ing|ed|es|s)$/, "").replace(/\.$/, "");
+/** Subject keywords: content terms minus the question's own words and digits, crude-stemmed. */
+const SUBJ_STOP = new Set("per under over about than more less also which its into onto via after before since until while when where what who how all any each most some such only just very can will would could should may might said says new".split(" "));
+const subjectTerms = (t: string, qTerms: Set<string>) => new Set([...terms(t)].filter((w) => !qTerms.has(w) && !SUBJ_STOP.has(w) && !/\d/.test(w)).map(stem).filter((w) => w.length > 2));
+/** Odin 10/19 (3): confirmed only by the same normalised date / number on another publisher's page, about the same subject (>=1 shared subject keyword beyond the question's words). */
+export function sameFactValue(a: string, b: string, qTerms: Set<string> = new Set()): string | null {
+  const fb = factValues(b);
+  const shared = [...factValues(a)].find((f) => fb.has(f));
+  if (!shared) return null;
+  const sa = subjectTerms(a, qTerms);
+  for (const w of subjectTerms(b, qTerms)) if (sa.has(w)) return shared;
+  return null;
+}
+/** Odin 10/19 (2): headline / title / byline-shaped lines are not claims. */
+const VERB_RE = /\b(is|are|was|were|be|been|has|have|had|will|would|can|could|did|does|do|said|says|announced|launched|became|went|began|started|released|introduced|opened|added|raised|reached|reported|plans|allows|lets|uses|runs|offers|includes|provides|supports|charges|costs)\b|\b\w+(ed|es)\b/i;
+export function isHeadlineLike(s: string, title: string | null = null): boolean {
+  const t = s.trim();
+  if (/^by\s+[A-Z]/i.test(t)) return true;
+  if (/^(updated|published|posted)\b/i.test(t)) return true;
+  if (t.replace(DATE_RE, "").replace(/[^A-Za-z]/g, "").length < 4) return true; // date-only
+  if (!/[.!?]["')\]]?$/.test(t)) return true; // real sentences end in punctuation; headlines / nav lines do not
+  const words = t.split(/\s+/).filter((w) => /^[A-Za-z]/.test(w) && w.length > 3 && !new RegExp(`^${MON}$`, "i").test(w.replace(/[^A-Za-z.]/g, "")));
+  if (words.length >= 5 && words.filter((w) => /^[A-Z]/.test(w)).length / words.length >= 0.7) return true; // Title Case
+  if (title) {
+    const tt = terms(coreTitle(title));
+    if (tt.size >= 3 && jaccard(tt, terms(t)) >= 0.6) return true;
+  }
+  return t.split(/\s+/).length <= 8 && !VERB_RE.test(t); // short and verb-less: a label, not a statement
+}
+/** Question kind for the direct answer line (deterministic). */
+export function questionKind(q: string): "when" | "number" | null {
+  if (/^\s*(when|what (year|date|day|month)|which (year|date))\b/i.test(q)) return "when";
+  if (/^\s*(how (much|many|long|big|fast)|what (is|was|are) the (price|cost|fee|number|size|amount|supply))\b/i.test(q)) return "number";
+  return null;
 }
 export const MIN_INDEPENDENT_DOMAINS = 3;
 const PER_DOMAIN_CAP: Record<string, number> = { brief: 2, standard: 5, extended: 8 };
 export const UNCONFIRMED_EMPTY_NOTE = "Every claim above was found on at least two independent domains.";
 
-export function compile(x: Tier, q: string, results: ParallelResult[], retrievedAt: string = new Date().toISOString()) {
+export function compile(x: Tier, q: string, results: ParallelResult[], retrievedAt: string = new Date().toISOString(), extracted: ParallelResult[] = []) {
+  const urlKey = (u: string) => u.replace(/#.*$/, "").replace(/\/$/, "");
+  const pageText = new Map<string, string[]>();
+  for (const e of extracted) pageText.set(urlKey(e.url), [...(pageText.get(urlKey(e.url)) ?? []), ...e.excerpts]);
+  const qTerms = terms(q);
+  const kind = questionKind(q);
   const rich = x.id === "extended" || x.id === "report" || x.id === "monitor";
   const byUrl = new Map<string, ParallelResult>();
   for (const r of results) {
@@ -142,7 +179,7 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
   const kept: ParallelResult[] = [];
   const perSource = new Map<number, Snippet[]>();
   let sid = 0;
-  const dropped = { opinion: 0, pronoun: 0 }; // debug counts only; no text is kept or logged
+  const dropped = { opinion: 0, pronoun: 0, headline: 0 }; // debug counts only; no text is kept or logged
   for (const r of byUrl.values()) {
     const domain = domainOf(r.url);
     if (!domain) continue;
@@ -161,7 +198,13 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
     sources.push(src);
     const seen = new Set<string>();
     const list: Snippet[] = [];
-    for (const s of r.excerpts.flatMap(sentences)) {
+    // Odin 10/19 (1): claims come from page content (extract) when we have it; search excerpts are the fallback.
+    const page = pageText.get(urlKey(r.url));
+    const cands = (page && page.length ? page : r.excerpts).flatMap(sentences);
+    // brief: rank sentences that carry what the question asks for (dates for when-questions) and its terms first
+    const score = (t: string) => (kind === "when" && dateValues(t).length ? 2 : 0) + (kind === "number" && [...factValues(t)].some((f) => f.startsWith("n:")) ? 2 : 0) + Math.min(2, [...terms(t)].filter((w) => qTerms.has(w)).length * 0.5);
+    const ranked = x.id === "brief" ? cands.map((t, i) => ({ t, i, sc: score(t) })).sort((p, q2) => q2.sc - p.sc || p.i - q2.i).map((o) => o.t) : cands;
+    for (const s of ranked) {
       if (list.length >= SNIPPETS_PER_SOURCE) break;
       if (isOpinion(s)) {
         dropped.opinion++;
@@ -169,6 +212,10 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
       }
       if (!isSelfContained(s)) {
         dropped.pronoun++;
+        continue;
+      }
+      if (isHeadlineLike(s, r.title)) {
+        dropped.headline++;
         continue;
       }
       const t = capWords(s);
@@ -219,16 +266,22 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
   }
 
   const pubOfSrc = (n: number) => publisherOf(sources[n - 1].domain);
-  // Odin 10/19 (2): confirmed = two independent publishers share a key fact (number / date / named entity) about the same subject.
-  const qTerms = terms(q);
+  // Odin 10/19 (3): confirmed only by the same normalised date / number on another publisher's page about the same subject.
   for (const c of claims) {
-    if (new Set(c.domains.map(publisherOf)).size >= 2) continue;
     const head = used.find((u) => u.id === c.snippets[0])!;
     const by = new Set<string>();
-    for (const o of allCandidates) if (pubOfSrc(o.source) !== pubOfSrc(head.source) && sameFact(head.text, o.text, qTerms)) by.add(pubOfSrc(o.source));
-    if (by.size) (c as { confirmed_by?: string[] }).confirmed_by = [...by];
+    const facts = new Set<string>();
+    for (const o of allCandidates) {
+      if (pubOfSrc(o.source) === pubOfSrc(head.source)) continue;
+      const f = sameFactValue(head.text, o.text, qTerms);
+      if (f) {
+        by.add(pubOfSrc(o.source));
+        facts.add(f.slice(2));
+      }
+    }
+    if (by.size) Object.assign(c, { confirmed_by: [...by], confirmed_values: [...facts] });
   }
-  const pubsOf = (c: (typeof claims)[number]) => new Set([...c.domains.map(publisherOf), ...((c as { confirmed_by?: string[] }).confirmed_by ?? [])]);
+  const pubsOf = (c: (typeof claims)[number]) => new Set([pubOfSrc(c.sources[0]), ...((c as { confirmed_by?: string[] }).confirmed_by ?? [])]);
   const quotedPubs = [...new Set(used.map((s) => pubOfSrc(s.source)))];
   const foundPubs = new Set([...perSource.keys()].map(pubOfSrc));
   const independent = foundPubs.size;
@@ -237,14 +290,32 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
     .filter((m) => m.doms.length >= 2);
   const mergedNote = merged.length ? ` Same-owner domains counted as one publisher: ${merged.map((m) => `${m.doms.join(" + ")} (${m.pub})`).join("; ")}.` : "";
   const unconfirmed = claims.filter((c) => pubsOf(c).size < 2).map((c) => c.claim).slice(0, 20);
+  // Odin 10/19 (4): direct answer line, deterministic: when -> date-bearing claims (confirmed first, earliest date first); number -> number-bearing.
+  const answerPick = (() => {
+    if (!kind) return null;
+    const has = (t: string) => (kind === "when" ? dateValues(t).length > 0 : [...factValues(t)].some((f) => f.startsWith("n:")));
+    const ok = claims.filter((c) => has(c.claim));
+    if (!ok.length) return null;
+    const conf = (c: (typeof claims)[number]) => ((c as { confirmed_by?: string[] }).confirmed_by?.length ?? 0);
+    const firstDate = (c: (typeof claims)[number]) => dateValues(c.claim).sort()[0] ?? "9999";
+    ok.sort((p, r) => conf(r) - conf(p) || (kind === "when" ? firstDate(p).localeCompare(firstDate(r)) : 0));
+    const best = ok.filter((c) => conf(c) > 0);
+    const pool = best.length ? best : ok;
+    const usedDates = new Set<string>();
+    const pick = kind === "when" ? pool.filter((c) => !usedDates.has(firstDate(c)) && !!usedDates.add(firstDate(c))).slice(0, 2) : pool.slice(0, 1);
+    return pick.map((c) => ({ text: c.claim, snippets: c.snippets, sources: c.sources, confirmed: conf(c) > 0 }));
+  })();
   const base = {
     tier: x.id,
     question: q,
+    answer: answerPick
+      ? { lines: answerPick, note: answerPick.some((a) => a.confirmed) ? "Quoted from the sources below; confirmed where marked." : "Quoted from one source; not confirmed on a second publisher." }
+      : { lines: [], note: kind ? "No quoted sentence answers the question directly." : "Not a date or number question; see the claims below." },
     sources,
     snippets: used,
     claims: claims.map((c) => {
-      const cb = (c as { confirmed_by?: string[] }).confirmed_by;
-      return { claim: c.claim, snippets: c.snippets, sources: c.sources, ...(cb ? { confirmed_by: cb } : {}) };
+      const cc = c as { confirmed_by?: string[]; confirmed_values?: string[] };
+      return { claim: c.claim, snippets: c.snippets, sources: c.sources, ...(cc.confirmed_by ? { confirmed_by: cc.confirmed_by, confirmed_values: cc.confirmed_values } : {}) };
     }),
     independent_domains: { found: independent, quoted: quotedPubs.length, minimum: MIN_INDEPENDENT_DOMAINS, domains: quotedPubs, counted_as: "publishers" },
     ...(independent < MIN_INDEPENDENT_DOMAINS || mergedNote
@@ -288,6 +359,26 @@ export async function researchSearches(x: Tier, q: string, deadline: number): Pr
   return found;
 }
 
+export const BRIEF_EXTRACT_N = 4;
+/** Top distinct publishers in search order, skipping syndicated copies and PDFs. */
+export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N): string[] {
+  const pubs = new Set<string>();
+  const out: string[] = [];
+  const seen: ParallelResult[] = [];
+  for (const r of found) {
+    const d = domainOf(r.url);
+    if (!d || /\.pdf(\?|$)/i.test(r.url)) continue;
+    if (seen.some((k) => domainOf(k.url) !== d && isSyndicated(k, r))) continue;
+    seen.push(r);
+    const p = publisherOf(d);
+    if (pubs.has(p)) continue;
+    pubs.add(p);
+    out.push(r.url);
+    if (out.length >= n) break;
+  }
+  return out;
+}
+
 /** Run the upstream calls for one sync tier within the deadline. Units come from the tier table only. */
 export async function runResearch(x: Tier, q: string, deadline: number) {
   const subs = x.id === "brief" ? [q] : subQuestionList(q);
@@ -298,7 +389,13 @@ export async function runResearch(x: Tier, q: string, deadline: number) {
   for (let i = 0; i < queries.length; i += 5) {
     found.push(...(await parallelSearch(q, queries.slice(i, i + 5), Math.min(20, perSearch * Math.min(5, queries.length - i)), deadline)));
   }
+  if (x.id === "brief") {
+    // Odin 10/19 (1): extract page content for the top BRIEF_EXTRACT_N distinct publishers (search order), within the budget.
+    const urls = briefExtractUrls(found);
+    const read = urls.length ? await parallelExtract(q, urls, deadline).catch(() => [] as ParallelResult[]) : [];
+    return compile(x, q, found, undefined, read);
+  }
   const urls = [...new Set(found.map((r) => r.url))].slice(0, x.reads);
-  const read = x.id === "brief" ? [] : await parallelExtract(q, urls, deadline);
+  const read = await parallelExtract(q, urls, deadline);
   return compile(x, q, [...found, ...read]);
 }
