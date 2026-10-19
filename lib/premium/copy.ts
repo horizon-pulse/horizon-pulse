@@ -60,3 +60,13 @@ export const R2_DESCRIPTION =
 export function legalBlock() {
   return { disclaimer: DISCLAIMER, terms: BUYER_TERMS_URL, contact: PREMIUM_CONTACT };
 }
+
+/**
+ * Technical notes on /premium-terms (status link, redeem). NOT Counsel-approved yet: listed for Counsel in
+ * to-odin/2026-10-19-pulse-premium-async-build.md (Counsel section). Factual only; no promise beyond BUYER_TERMS.
+ */
+export const TECHNICAL_NOTES: string[] = [
+  "Report and watch purchases return a job ID, a status link and a job token. The token is shown once. Send it as Authorization: Bearer <token> when you open the status link. A link opened without the right token returns Not found.",
+  "You are charged only after the first deliverable is built. If we cannot build it within 10 minutes, the job ends as failed_uncharged and the payment authorization is never submitted.",
+  "If a payment could not be confirmed (settle_unconfirmed), do not sign a new payment. For the $1, $3 and $10 tiers you can retry the exact same request with the same payment and an x-hp-payer-proof header: an EIP-191 signature by the paying address over the redeem_message returned with the settle_unconfirmed response. The content is delivered once, only after the payment is confirmed on Base. Otherwise contact us with the reconcile_id.",
+];

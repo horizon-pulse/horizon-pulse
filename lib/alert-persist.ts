@@ -100,7 +100,9 @@ export function stripQuery(route: string): string {
 export const NEVER_PERSIST = new Set(["warn_rate"]);
 /** Hard per-instance cap on alert writes per UTC day (both rails together). */
 export const ALERT_WRITE_CAP_PER_DAY = 50;
-type WriteStats = { day: string; written: number; overCap: Record<AlertRail, number>; skippedKind: number };
+/** Odin C5: premium alerts have their OWN per-instance daily cap, so a premium burst can never crowd out xrpl/solana. */
+export const PREMIUM_ALERT_WRITE_CAP_PER_DAY = 50;
+type WriteStats = { day: string; written: number; premiumWritten?: number; overCap: Record<AlertRail, number>; skippedKind: number };
 let stats: WriteStats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0, premium: 0 }, skippedKind: 0 };
 function statsFor(day: string): WriteStats {
   if (stats.day !== day) stats = { day, written: 0, overCap: { xrpl: 0, solana: 0, premium: 0 }, skippedKind: 0 };
@@ -133,11 +135,19 @@ export function persistAlert(rail: AlertRail, alert: unknown): void {
       st.skippedKind++;
       return;
     }
-    if (st.written >= ALERT_WRITE_CAP_PER_DAY) {
-      st.overCap[rail]++; // in-memory only past the cap
-      return;
+    if (rail === "premium") {
+      if ((st.premiumWritten ?? 0) >= PREMIUM_ALERT_WRITE_CAP_PER_DAY) {
+        st.overCap.premium++;
+        return;
+      }
+      st.premiumWritten = (st.premiumWritten ?? 0) + 1;
+    } else {
+      if (st.written >= ALERT_WRITE_CAP_PER_DAY) {
+        st.overCap[rail]++; // in-memory only past the cap
+        return;
+      }
+      st.written++;
     }
-    st.written++;
     const entry = alertEntry(alert, now);
     const ck = countKey(rail, day);
     const p = pipeline(

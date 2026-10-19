@@ -4,6 +4,7 @@ export const ROUTE_LOG_PRIVACY_LINE =
 
 // ---------- free tier (Counsel ruling B, 10/18): ships only with the free-tier flag ----------
 import { freeTierMode, payerMarkTtlDays, payerMarkWriting } from "./free-tier-mode";
+import { PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT } from "./premium/copy";
 
 /** The sentence Counsel's ruling B replaces. */
 export const NO_IP_SENTENCE = "We do not store IP addresses, user agents, headers or request content.";
@@ -48,6 +49,21 @@ export function combinedPrivacyLine(markDays: number): string {
  * NO_IP_SENTENCE. Read at build time (the page is static; env changes need a redeploy, like the tier).
  */
 export function privacyLine(env: Record<string, string | undefined> = process.env): string {
-  if (freeTierMode(env) !== "optin" && !payerMarkWriting(env)) return ROUTE_LOG_PRIVACY_LINE;
-  return ROUTE_LOG_PRIVACY_LINE.replace(NO_IP_SENTENCE, freeTierPrivacySentences(payerMarkTtlDays(env)));
+  const free = freeTierMode(env) === "optin" || payerMarkWriting(env);
+  const line = free ? ROUTE_LOG_PRIVACY_LINE.replace(NO_IP_SENTENCE, freeTierPrivacySentences(payerMarkTtlDays(env))) : ROUTE_LOG_PRIVACY_LINE;
+  return env.HP_PREMIUM_ENABLED === "true" ? withPremiumPrivacy(line, free) : line;
+}
+
+/** Free-tier variant of the request-content sentence (inside freeTierPrivacySentences). */
+export const FREE_NO_CONTENT_SENTENCE = "We do not store IP addresses in readable form, and we do not store user agents, headers or request content.";
+const FREE_LAST_SENTENCE = "These hashes are not linked to wallet addresses, transaction hashes or receipt IDs.";
+
+/**
+ * Counsel C1 (premium build re-read, 10/19): premium on -> Counsel's replacement sentence swaps in for the
+ * request-content sentence, and the premium sentence follows (after the free-tier sentences when present); the
+ * rest of the line is unchanged. Premium off -> the line is byte-identical to before.
+ */
+export function withPremiumPrivacy(line: string, free: boolean): string {
+  if (!free) return line.replace(NO_IP_SENTENCE, `${PRIVACY_PREMIUM_REPLACEMENT} ${PRIVACY_PREMIUM_ADDITION}`);
+  return line.replace(FREE_NO_CONTENT_SENTENCE, PRIVACY_PREMIUM_REPLACEMENT).replace(FREE_LAST_SENTENCE, `${FREE_LAST_SENTENCE} ${PRIVACY_PREMIUM_ADDITION}`);
 }

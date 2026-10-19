@@ -1,48 +1,67 @@
 /**
- * Premium request handler (both R1 /api/research/report/{tier} and R2 /api/seller-watch/{tier}).
- * Every check that can refuse a request runs BEFORE any 402 is issued or any payment is verified/settled.
- *
- *   flag off                                   -> 404 (every verb, every premium URL, incl. bare paths)
- *   bare path / unknown tier / any `tier` query -> 400, no 402 (N2, T3a.3)
- *   non-GET                                    -> 405
- *   missing/invalid q or target                -> 400
- *   PARALLEL_API_KEY absent (R1)               -> 503 uncharged, no 402
- *   async tier, async flag off                 -> 503 uncharged, no 402
- *   $10 projected > 50 s                       -> 503 uncharged, no 402 (v3.1)
- *   no payment                                 -> Base-only 402 for price(tier)
- *   paid: see lib/premium/payment.ts order; async tier (flag on) -> 503 uncharged after price binding, before
- *         verify (the async job path is a separate Class A and is not built)
+ * Premium request handler (R1 /api/research/report/{tier}, R2 /api/seller-watch/{tier}).
+ * Refusals that need no payment run first (all uncharged, no 402):
+ *   flag off -> 404 · tier query / unknown tier / bare -> 400 · non-GET -> 405 · bad q/target -> 400 ·
+ *   no PARALLEL_API_KEY (R1) -> 503 · tier not live -> 503 · $10 projection > 50 s -> 503 · no payment -> Base-only 402
+ * Paid request, in order (nothing below a failing step runs):
+ *   decode -> Base USDC exact -> price/payTo binding -> local validAfter/validBefore (Sentinel LOW-1) ->
+ *   local EIP-3009 signature (Sentinel MEDIUM-1: before ANY 409 / alert / write) -> CDP keys + store present ->
+ *   [async: open-job limits, 429] -> shared atomic claim SET NX (Sentinel ITEM-5 / Odin C2):
+ *       held inflight/job -> 503 payment_in_progress (no alert) · settled/conflict/redeemed -> 409 (no alert, no write)
+ *       unconfirmed -> payer-proof redeem from the same request fingerprint (Sentinel item 4), else 409
+ *   -> on-chain authorizationState (used -> 409 + ONE reconcile + HIGH, claim -> conflict) -> verify (8 s client)
+ *   SYNC (Sentinel item 3): settle BEFORE Parallel. Settle may start only if t0 + elapsed + settle reserve +
+ *        projected work fits in 55 s (Odin C1: clock anchored at request start); else release, uncharged 503.
+ *        settle ok -> work -> 200 · work fails after settle -> 502 charged:true + reconcile + HIGH (redeemable)
+ *        settle timeout -> 504 / ambiguous -> 502, settle_unconfirmed + reconcile + HIGH, never a 402
+ *   ASYNC (Odin Q1): verify at accept -> 202 + status link + job token; settle after the first deliverable (jobs.ts).
  */
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { hasCdpCredentials } from "@/lib/config";
+import { requestFingerprint } from "@/lib/request-fingerprint";
+import { claimKey, tryClaim, moveClaim, newOwner, releaseClaim, type Claim, type Held } from "./claim";
 import { legalBlock, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
+import { createJob, openCounts, OPEN_GLOBAL, OPEN_PER_PAYER, runJob, settleLanded } from "./jobs";
 import {
+  ASYNC_MIN_REMAINING_S,
   challenge,
   decodePayment,
   isBaseUsdcExact,
   jsonError,
   markNonceSettled,
   nonceUsed,
+  PAYER_PROOF_HEADER,
+  payerProofValid,
   paymentHeader,
   priceBindingError,
+  redeemMessage,
   settlePayment,
+  signatureValid,
+  SYNC_MIN_REMAINING_S,
   verifyPayment,
+  windowError,
   type Decoded,
 } from "./payment";
-import { parallelKeyPresent, ParallelError } from "./parallel";
-import { newReconcileId, recordReconcile, requestFingerprint, type ReconcileOutcome } from "./reconcile";
+import { parallelKeyPresent } from "./parallel";
+import { newReconcileId, recordReconcile, type ReconcileOutcome } from "./reconcile";
 import { runResearch } from "./research";
-import { premiumAsyncEnabled, premiumEnabled, projectedSeconds, ROUTE_BASE, SETTLE_RESERVE_S, tierFor, WORK_BUDGET_S, type PremiumRoute, type Tier } from "./tiers";
+import { premiumStore, type PremiumStore } from "./store";
+import { asyncTierLive, premiumAsyncEnabled, premiumEnabled, projectedSeconds, ROUTE_BASE, SETTLE_RESERVE_S, tierFor, WORK_BUDGET_S, type PremiumRoute, type Tier } from "./tiers";
 
 export const Q_MAX_CHARS = 500;
+/** Odin C1: whole sync request must finish inside maxDuration 60 s. */
+export const SYNC_HARD_LIMIT_S = 55;
 const notFound = () => NextResponse.json({ error: "Not found" }, { status: 404 });
+
+let clock: () => number = () => Date.now();
+/** Tests only. */
+export function setPremiumClockForTests(f: (() => number) | null) {
+  clock = f ?? (() => Date.now());
+}
 
 export function bareRouteResponse(route: PremiumRoute): NextResponse {
   if (!premiumEnabled()) return notFound();
-  return jsonError(400, {
-    error: "tier_required",
-    message: `Use a tier path: ${ROUTE_BASE[route]}/{tier}. There is no ?tier= parameter.`,
-  });
+  return jsonError(400, { error: "tier_required", message: `Use a tier path: ${ROUTE_BASE[route]}/{tier}. There is no ?tier= parameter.` });
 }
 
 function description(x: Tier) {
@@ -67,27 +86,59 @@ function validateInput(route: PremiumRoute, url: URL): { ok: true; input: string
   return { ok: true, input: target };
 }
 
-function reconcileResponse(status: 409 | 502 | 504, outcome: ReconcileOutcome, x: Tier, req: NextRequest, d: Decoded, tx: string | null): NextResponse {
-  const line = recordReconcile({
-    reconcile_id: newReconcileId(),
-    route: `${ROUTE_BASE[x.route]}/${x.id}`,
-    tier: x.id,
-    payer: d.from,
-    nonce: d.nonce,
-    amount: d.value,
-    payTo: d.to,
-    tx,
-    fingerprint: requestFingerprint(req.method, new URL(req.url)),
-    outcome,
-  });
-  const body =
-    status === 409
-      ? { status: "authorization_already_used", error: "authorization_already_used", reconcile_id: line.reconcile_id, message: "This payment authorization was already used. Nothing is delivered against it. If you were charged and not delivered, contact us with the reconcile_id.", ...legalBlock() }
-      : { status: "settle_unconfirmed", reconcile_id: line.reconcile_id, message: "Payment settlement could not be confirmed. Do not retry with the same authorization. If you were charged, contact us with the reconcile_id for a refund.", ...legalBlock() };
-  return jsonError(status, body);
+const routePath = (x: Tier) => `${ROUTE_BASE[x.route]}/${x.id}`;
+
+function reconcile(outcome: ReconcileOutcome, x: Tier, d: Decoded, rq: string, tx: string | null) {
+  return recordReconcile({ reconcile_id: newReconcileId(), route: routePath(x), tier: x.id, payer: d.from, nonce: d.nonce, amount: d.value, payTo: d.to, tx, fingerprint: rq, outcome });
+}
+
+const conflictBody = (rc: string | null) => ({
+  status: "authorization_already_used",
+  error: "authorization_already_used",
+  ...(rc ? { reconcile_id: rc } : {}),
+  message: "This payment authorization was already used. Nothing is delivered against it. If you were charged and not delivered, contact us with the reconcile_id.",
+  ...legalBlock(),
+});
+const unconfirmedBody = (rc: string, charged?: boolean, redeem?: string) => ({
+  status: "settle_unconfirmed",
+  reconcile_id: rc,
+  ...(redeem ? { redeem_message: redeem, redeem_header: PAYER_PROOF_HEADER } : {}),
+  ...(charged ? { charged: true } : {}),
+  message:
+    "Payment settlement could not be confirmed (or the result could not be produced after payment). Do not sign a new payment for this request. You can retry this exact request with the same payment plus a payer proof (see /premium-terms), or contact us with the reconcile_id for a refund.",
+  ...legalBlock(),
+});
+const inProgress = () => jsonError(503, { error: "payment_in_progress", charged: false, message: "This payment authorization is already being processed." }, { "Retry-After": "5" });
+
+function okResponse(x: Tier, result: unknown, tx: string | null, header: string | null) {
+  return NextResponse.json(
+    { ...(result as object), paid: { tier: x.id, amount: x.amount, network: "eip155:8453", tx }, ...legalBlock() },
+    { status: 200, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "PAYMENT-RESPONSE", "Cache-Control": "no-store", ...(header ? { "PAYMENT-RESPONSE": header } : {}) } },
+  );
+}
+
+/** Sentinel item 4: one redeem of a settle_unconfirmed claim, same fingerprint, payer proof, settle confirmed on-chain. */
+async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded, input: string, rq: string, raw: string, c: Claim, t0: number): Promise<NextResponse> {
+  if (c.rq !== rq || !c.rc) return jsonError(409, conflictBody(c.rc ?? null));
+  const proof = req.headers.get(PAYER_PROOF_HEADER);
+  if (!(await payerProofValid(d.from!, proof, redeemMessage(c.rc, rq, d.to!, d.value!))))
+    return jsonError(409, { ...conflictBody(c.rc), error: "payer_proof_required", message: `Send ${PAYER_PROOF_HEADER}: an EIP-191 signature by the paying address over the redeem message for this reconcile_id.` });
+  const held: Held = { key: claimKey(d.from!, d.nonce!), raw, claim: c };
+  const landed = c.job === "settled" ? "landed" : await settleLanded({ payer: d.from!, nonce: d.nonce!, block_at_accept: null } as never);
+  if (landed !== "landed") return jsonError(503, { error: "settle_not_confirmed_yet", reconcile_id: c.rc, charged: "unknown" }, { "Retry-After": "30" });
+  const mine = await moveClaim(store, held, { s: "redeemed" });
+  if (!mine) return inProgress();
+  try {
+    const result = await runResearch(x, input, t0 + SYNC_HARD_LIMIT_S * 1000);
+    return okResponse(x, { ...(result as object), redeemed: { reconcile_id: c.rc } }, null, null);
+  } catch {
+    await moveClaim(store, mine, { s: "unconfirmed" }).catch(() => null);
+    return jsonError(502, unconfirmedBody(c.rc, true));
+  }
 }
 
 export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg: string | undefined): Promise<NextResponse> {
+  const t0 = clock();
   if (!premiumEnabled()) return notFound();
   const url = new URL(req.url);
   if (url.searchParams.has("tier")) return jsonError(400, { error: "tier_query_not_supported", message: "Tier is a path segment only; remove ?tier=." });
@@ -97,9 +148,8 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
   const v = validateInput(route, url);
   if (!v.ok) return v.res;
 
-  // Refusals that must happen before any 402 / verify / settle (uncharged).
   if (x.route === "research" && !parallelKeyPresent()) return jsonError(503, { error: "premium_provider_unavailable", charged: false });
-  if (x.mode === "async" && !premiumAsyncEnabled()) return jsonError(503, { error: "tier_not_available", charged: false, message: "This tier needs the async job path, which is not live yet." });
+  if (x.mode === "async" && !(premiumAsyncEnabled() && asyncTierLive(x))) return jsonError(503, { error: "tier_not_available", charged: false, message: "This tier is not live yet." });
   if (x.id === "extended" && projectedSeconds(x, v.input) > WORK_BUDGET_S)
     return jsonError(503, { error: "time_budget_exceeded", charged: false, message: "This question projects past the extended tier's time budget. Split it into fewer sub-questions." });
 
@@ -111,39 +161,89 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
   if (!isBaseUsdcExact(d)) return challenge(x, description(x), "rail_unavailable");
   const bind = priceBindingError(d, x);
   if (bind) return challenge(x, description(x), bind);
-  if (x.mode === "async") return jsonError(503, { error: "tier_not_available", charged: false, message: "Async job path not live; nothing was verified or settled." });
+  const win = windowError(d, Math.floor(clock() / 1000), x.mode === "async" ? ASYNC_MIN_REMAINING_S : SYNC_MIN_REMAINING_S);
+  if (win) return challenge(x, description(x), win);
+  if (!(await signatureValid(d))) return challenge(x, description(x), "invalid_signature");
   if (!hasCdpCredentials()) return jsonError(503, { error: "settlement_unavailable", charged: false });
+  const store = premiumStore();
+  if (!store) return jsonError(503, { error: "store_unavailable", charged: false });
 
-  const used = await nonceUsed(d.from!, d.nonce!);
-  if (used === "used") return reconcileResponse(409, "authorization_already_used", x, req, d, null);
-  if (used === "unknown") return jsonError(503, { error: "nonce_check_unavailable", charged: false }, { "Retry-After": "2" });
-
-  const ver = await verifyPayment(d, x);
-  if (!ver.ok) return ver.kind === "invalid" ? challenge(x, description(x), ver.reason) : jsonError(503, { error: "facilitator_unavailable", charged: false }, { "Retry-After": "1" });
-
-  // Work first, charge only on success (charged only on 200).
-  const deadline = Date.now() + (WORK_BUDGET_S - 2) * 1000;
-  let result: unknown;
   try {
-    result = await runResearch(x, v.input, deadline);
-  } catch (e) {
-    return jsonError(502, { error: e instanceof ParallelError ? "upstream_error" : "internal_error", charged: false });
-  }
+    const rq = await requestFingerprint(req);
+    if (x.mode === "async") {
+      const open = await openCounts(store, d.from!);
+      if (open.payer >= OPEN_PER_PAYER || open.global >= OPEN_GLOBAL) return jsonError(429, { error: "too_many_open_jobs", charged: false }, { "Retry-After": "300" });
+    }
+    const claim: Claim = { s: x.mode === "async" ? "job" : "inflight", o: newOwner(), rq, at: clock(), tier: x.id };
+    const got = await tryClaim(store, d.from!, d.nonce!, claim);
+    if (!got.ok) {
+      const c = got.existing;
+      if (!c || c.s === "inflight" || c.s === "job") return inProgress();
+      if (c.s === "unconfirmed" && x.mode === "sync") return redeem(store, req, x, d, v.input, rq, got.raw!, c, t0);
+      if (c.s === "unconfirmed") return jsonError(409, conflictBody(c.rc ?? null));
+      return jsonError(409, conflictBody(c.rc ?? null));
+    }
+    let held = got.held;
 
-  const s = await settlePayment(d, x);
-  if (!s.ok) return reconcileResponse(s.kind === "timeout" ? 504 : 502, s.kind === "timeout" ? "settle_timeout" : "settle_ambiguous", x, req, d, s.tx);
-  markNonceSettled(d.from!, d.nonce!);
-  return NextResponse.json(
-    { ...(result as object), paid: { tier: x.id, amount: x.amount, network: "eip155:8453", tx: s.tx }, ...legalBlock() },
-    { status: 200, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "PAYMENT-RESPONSE", "Cache-Control": "no-store", "PAYMENT-RESPONSE": s.header } },
-  );
+    const used = await nonceUsed(d.from!, d.nonce!);
+    if (used === "used") {
+      const line = reconcile("authorization_already_used", x, d, rq, null);
+      await moveClaim(store, held, { s: "conflict", rc: line.reconcile_id }).catch(() => null);
+      return jsonError(409, conflictBody(line.reconcile_id));
+    }
+    if (used === "unknown") {
+      await releaseClaim(store, held);
+      return jsonError(503, { error: "nonce_check_unavailable", charged: false }, { "Retry-After": "2" });
+    }
+
+    const ver = await verifyPayment(d, x);
+    if (!ver.ok) {
+      await releaseClaim(store, held);
+      return ver.kind === "invalid" ? challenge(x, description(x), ver.reason) : jsonError(503, { error: "facilitator_unavailable", charged: false }, { "Retry-After": "1" });
+    }
+
+    if (x.mode === "async") {
+      const { job, token } = await createJob(store, x, d, rq, v.input, held);
+      after(() => runJob(store, job.id, clock() + (SYNC_HARD_LIMIT_S - 5) * 1000 - (clock() - t0)).then(() => undefined, () => undefined));
+      return NextResponse.json(
+        { job_id: job.id, status: "accepted", status_url: `/api/premium/job/${job.id}`, job_token: token, charged: false, message: "Accepted. Poll status_url with header Authorization: Bearer <job_token>. You are charged only after the first deliverable is built; the token is shown once.", ...legalBlock() },
+        { status: 202, headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } },
+      );
+    }
+
+    // Odin C1 + Sentinel item 3: settle before work, only if settle + projected work still fit the hard limit.
+    const elapsed = (clock() - t0) / 1000;
+    if (elapsed + SETTLE_RESERVE_S + projectedSeconds(x, v.input) > SYNC_HARD_LIMIT_S) {
+      await releaseClaim(store, held);
+      return jsonError(503, { error: "time_budget_exceeded", charged: false }, { "Retry-After": "5" });
+    }
+    const s = await settlePayment(d, x);
+    if (!s.ok) {
+      const line = reconcile(s.kind === "timeout" ? "settle_timeout" : "settle_ambiguous", x, d, rq, s.tx);
+      await moveClaim(store, held, { s: "unconfirmed", rc: line.reconcile_id }).catch(() => null);
+      return jsonError(s.kind === "timeout" ? 504 : 502, unconfirmedBody(line.reconcile_id, false, redeemMessage(line.reconcile_id, rq, d.to!, d.value!)));
+    }
+    markNonceSettled(d.from!, d.nonce!);
+    held = (await moveClaim(store, held, { s: "settled" }).catch(() => null)) ?? held;
+    try {
+      const result = await runResearch(x, v.input, t0 + SYNC_HARD_LIMIT_S * 1000);
+      return okResponse(x, result, s.tx, s.header);
+    } catch {
+      const line = reconcile("charged_not_delivered", x, d, rq, s.tx);
+      // settled for certain: mark redeemable (job:"settled" tells redeem the settle is confirmed)
+      await moveClaim(store, held, { s: "unconfirmed", rc: line.reconcile_id, job: "settled" }).catch(() => null);
+      return jsonError(502, unconfirmedBody(line.reconcile_id, true, redeemMessage(line.reconcile_id, rq, d.to!, d.value!)));
+    }
+  } catch {
+    return jsonError(503, { error: "store_unavailable", charged: false }, { "Retry-After": "2" });
+  }
 }
 
 export function premiumOptions(route: PremiumRoute, seg: string | undefined): NextResponse {
   if (!premiumEnabled()) return notFound();
   const x = tierFor(route, seg);
   if (!x) return jsonError(400, { error: "unknown_tier" });
-  if (x.mode === "async" && !premiumAsyncEnabled()) return jsonError(503, { error: "tier_not_available", charged: false });
+  if (x.mode === "async" && !(premiumAsyncEnabled() && asyncTierLive(x))) return jsonError(503, { error: "tier_not_available", charged: false });
   const res = challenge(x, description(x), undefined, 200);
   res.headers.set("Allow", "GET, OPTIONS");
   return res;

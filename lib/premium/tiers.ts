@@ -70,10 +70,19 @@ export function tierPath(x: Tier): string {
   return `${ROUTE_BASE[x.route]}/${x.id}`;
 }
 
+/**
+ * Async tiers live in this Class A (Michael via Odin, 2026-10-19): $20 report and $75 watch only.
+ * $50 monitor and $100 watch-report keep the 503-before-verify refusal even with HP_PREMIUM_ASYNC_ENABLED on.
+ */
+export const ASYNC_LIVE: ReadonlySet<TierId> = new Set<TierId>(["report", "watch"]);
+export function asyncTierLive(x: Tier): boolean {
+  return x.mode === "sync" || ASYNC_LIVE.has(x.id);
+}
+
 /** Tiers that discovery may list right now (sync tiers when premium is on; async tiers only with the async flag). */
 export function listedTiers(env: Record<string, string | undefined> = process.env): Tier[] {
   if (!premiumEnabled(env)) return [];
-  return PREMIUM_TIERS.filter((x) => x.mode === "sync" || premiumAsyncEnabled(env));
+  return PREMIUM_TIERS.filter((x) => x.mode === "sync" || (premiumAsyncEnabled(env) && ASYNC_LIVE.has(x.id)));
 }
 
 /**

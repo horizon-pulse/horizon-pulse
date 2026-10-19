@@ -8,7 +8,10 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402/core/http";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { installFacilitatorMock } from "./helpers/facilitator-mock";
+import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store";
+import { setPremiumClockForTests } from "@/lib/premium/handler";
 import * as researchTier from "@/app/api/research/report/[tier]/route";
 import * as researchBare from "@/app/api/research/report/route";
 import * as watchTier from "@/app/api/seller-watch/[tier]/route";
@@ -16,7 +19,7 @@ import * as watchBare from "@/app/api/seller-watch/route";
 import * as wellKnown from "@/app/.well-known/x402/route";
 import * as skill from "@/app/skill.md/route";
 import { PREMIUM_TIERS, premiumEnabled, projectedSeconds, tierPath, WORK_BUDGET_S, type TierId } from "@/lib/premium/tiers";
-import { resetPremiumFacilitatorForTests, resetPremiumNoncesForTests, setPremiumRpcForTests, AUTHORIZATION_STATE_SELECTOR } from "@/lib/premium/payment";
+import { resetPremiumFacilitatorForTests, resetPremiumNoncesForTests, setPremiumRpcForTests, AUTHORIZATION_STATE_SELECTOR, TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_BASE_DOMAIN } from "@/lib/premium/payment";
 import { setParallelForTests } from "@/lib/premium/parallel";
 import { setReconcileForTests, type ReconcileLine } from "@/lib/premium/reconcile";
 import { BUYER_TERMS, DISCLAIMER, FCRA_CLAUSE, NO_DOXXING, PREMIUM_CONTACT, R1_DESCRIPTION, R2_DESCRIPTION, REFUND_LINE, WATCH_TERMS } from "@/lib/premium/copy";
@@ -27,7 +30,8 @@ const ROOT = path.resolve(__dirname, "..");
 // approved-addresses.md line 8 (Base payTo), full string.
 const PAYTO = "0x5b32c973596078a967562ca652761404f19be0e9";
 const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-const FROM = "0x1111111111111111111111111111111111111111";
+const ACCOUNT = privateKeyToAccount(generatePrivateKey());
+const FROM = ACCOUNT.address;
 const KEY = "test-parallel-key-not-real";
 const price = (id: TierId) => PREMIUM_TIERS.find((t) => t.id === id)!.amount;
 const routeOf = (id: TierId) => (["watch", "watch-report"].includes(id) ? "seller-watch" : "research");
@@ -35,12 +39,24 @@ const input = (id: TierId) => (routeOf(id) === "research" ? "q=what%20is%20x402"
 let nonceSeq = 0;
 const nonce = () => `0x${(++nonceSeq).toString(16).padStart(64, "0")}`;
 
-function payment(o: { amount?: string; value?: string; network?: string; scheme?: string; asset?: string; payTo?: string; to?: string; nonce?: string } = {}) {
+type PayOpts = { amount?: string; value?: string; network?: string; scheme?: string; asset?: string; payTo?: string; to?: string; nonce?: string; validAfter?: string; validBefore?: string; badSig?: boolean };
+/** Real EIP-3009 signature by a throwaway test key (never a real wallet), so the local signature check passes. */
+async function payment(o: PayOpts = {}) {
   const amount = o.amount ?? price("brief");
+  const auth = { from: FROM, to: o.to ?? o.payTo ?? PAYTO, value: o.value ?? amount, validAfter: o.validAfter ?? "0", validBefore: o.validBefore ?? "9999999999", nonce: o.nonce ?? nonce() };
+  let signature = "0x" + "ab".repeat(65);
+  if (!o.badSig && /^0x[0-9a-fA-F]{40}$/.test(auth.to)) {
+    signature = await ACCOUNT.signTypedData({
+      domain: USDC_BASE_DOMAIN,
+      types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+      primaryType: "TransferWithAuthorization",
+      message: { from: FROM as `0x${string}`, to: auth.to as `0x${string}`, value: BigInt(auth.value), validAfter: BigInt(auth.validAfter), validBefore: BigInt(auth.validBefore), nonce: auth.nonce as `0x${string}` },
+    });
+  }
   return encodePaymentSignatureHeader({
     x402Version: 2,
     accepted: { scheme: o.scheme ?? "exact", network: o.network ?? "eip155:8453", amount, asset: o.asset ?? USDC, payTo: o.payTo ?? PAYTO, maxTimeoutSeconds: 300, extra: { name: "USD Coin", version: "2" } },
-    payload: { signature: "0x" + "ab".repeat(65), authorization: { from: FROM, to: o.to ?? o.payTo ?? PAYTO, value: o.value ?? amount, validAfter: "0", validBefore: "9999999999", nonce: o.nonce ?? nonce() } },
+    payload: { signature, authorization: auth },
   } as never);
 }
 
@@ -74,8 +90,11 @@ const LONG_EXCERPT =
   Array.from({ length: 80 }, (_, i) => `word${i}`).join(" ") + ". Another sentence long enough to count as a snippet for the cap test here. Yet another sentence long enough to count as a snippet too. " +
   "Fifth sentence that is long enough to be a snippet in this test. Sixth sentence that is long enough to be a snippet in this test case. Seventh sentence long enough to be a snippet here.";
 
+let store: MemoryPremiumStore;
 beforeEach(() => {
   vi.unstubAllEnvs();
+  store = new MemoryPremiumStore();
+  setPremiumStoreForTests(store);
   resetPremiumFacilitatorForTests();
   resetPremiumNoncesForTests();
   rpcCalls = [];
@@ -119,6 +138,8 @@ afterEach(() => {
   setPremiumRpcForTests(null);
   setParallelForTests(null);
   setReconcileForTests(null);
+  setPremiumStoreForTests(undefined);
+  setPremiumClockForTests(null);
 });
 
 const ALL: TierId[] = ["brief", "standard", "extended", "report", "monitor", "watch", "watch-report"];
@@ -130,7 +151,7 @@ describe("feature flag HP_PREMIUM_ENABLED (default OFF)", () => {
       vi.stubEnv("PARALLEL_API_KEY", KEY);
       expect(premiumEnabled()).toBe(false);
       for (const id of ALL) {
-        for (const r of [await call(id, input(id)), await call(id, input(id), { "payment-signature": payment() }), await call(id, "", {}, "OPTIONS")]) {
+        for (const r of [await call(id, input(id)), await call(id, input(id), { "payment-signature": await payment() }), await call(id, "", {}, "OPTIONS")]) {
           expect(r.status).toBe(404);
           expect(r.headers.get("payment-required")).toBeNull();
         }
@@ -173,7 +194,7 @@ describe("N2 / T3a.3: path URLs only, 400 before any 402", () => {
     on({ HP_PREMIUM_ASYNC_ENABLED: "true" });
     for (const id of ALL) {
       for (const q of [`${input(id)}&tier=monitor`, `tier=${id}&${input(id)}`, `${input(id)}&tier=`]) {
-        const r = await call(id, q, { "payment-signature": payment({ amount: price(id) }) });
+        const r = await call(id, q, { "payment-signature": await payment({ amount: price(id) }) });
         expect(r.status).toBe(400);
         expect(r.headers.get("payment-required")).toBeNull();
       }
@@ -230,7 +251,7 @@ describe("refusals before payment (uncharged)", () => {
   it("no PARALLEL_API_KEY -> 503 before any 402 / verify / settle", async () => {
     on();
     vi.stubEnv("PARALLEL_API_KEY", "");
-    for (const h of [{} as Record<string, string>, { "payment-signature": payment() }]) {
+    for (const h of [{} as Record<string, string>, { "payment-signature": await payment() }]) {
       const r = await call("brief", input("brief"), h);
       expect(r.status).toBe(503);
       expect(r.headers.get("payment-required")).toBeNull();
@@ -240,7 +261,7 @@ describe("refusals before payment (uncharged)", () => {
   it("async tiers ($20+) with HP_PREMIUM_ASYNC_ENABLED off -> 503, no 402, nothing verified", async () => {
     on();
     for (const id of ["report", "monitor", "watch", "watch-report"] as TierId[]) {
-      for (const h of [{} as Record<string, string>, { "payment-signature": payment({ amount: price(id) }) }]) {
+      for (const h of [{} as Record<string, string>, { "payment-signature": await payment({ amount: price(id) }) }]) {
         const r = await call(id, input(id), h);
         expect(r.status).toBe(503);
         expect(r.headers.get("payment-required")).toBeNull();
@@ -250,10 +271,10 @@ describe("refusals before payment (uncharged)", () => {
     expect(fac.length).toBe(0);
     expect(rpcCalls.length).toBe(0);
   });
-  it("async tiers with the async flag on: correctly priced payment still refused 503 BEFORE verify (async path not built)", async () => {
+  it("async flag on: $50 monitor and $100 watch-report (not live this Class A) still refused 503 BEFORE any 402 / verify", async () => {
     on({ HP_PREMIUM_ASYNC_ENABLED: "true" });
-    for (const id of ["report", "monitor", "watch", "watch-report"] as TierId[]) {
-      const r = await call(id, input(id), { "payment-signature": payment({ amount: price(id) }) });
+    for (const id of ["monitor", "watch-report"] as TierId[]) {
+      const r = await call(id, input(id), { "payment-signature": await payment({ amount: price(id) }) });
       expect(r.status).toBe(503);
     }
     expect(fac.length).toBe(0);
@@ -264,7 +285,7 @@ describe("refusals before payment (uncharged)", () => {
     const long = encodeURIComponent("a1 one?b2 two?c3 three?d4 four?e5 five?f6 six?");
     const ext = PREMIUM_TIERS.find((t) => t.id === "extended")!;
     expect(projectedSeconds(ext, decodeURIComponent(long))).toBeGreaterThan(WORK_BUDGET_S);
-    for (const h of [{} as Record<string, string>, { "payment-signature": payment({ amount: price("extended") }) }]) {
+    for (const h of [{} as Record<string, string>, { "payment-signature": await payment({ amount: price("extended") }) }]) {
       const r = await call("extended", `q=${long}`, h);
       expect(r.status).toBe(503);
       expect(r.headers.get("payment-required")).toBeNull();
@@ -288,7 +309,7 @@ describe("T3.1: non-Base payloads -> rail_unavailable with zero store / facilita
       on({ HP_SOLANA_ENABLED: "true", HP_XRPL_ENABLED: "true", HP_POLYGON_ENABLED: "true" });
       const f = vi.spyOn(globalThis, "fetch");
       for (const id of ["brief", "standard", "extended"] as TierId[]) {
-        const r = await call(id, input(id), { "payment-signature": payment({ ...v, amount: price(id) }) });
+        const r = await call(id, input(id), { "payment-signature": await payment({ ...v, amount: price(id) }) });
         expect(r.status).toBe(402);
         expect((await r.json()).error).toBe("rail_unavailable");
         const pr = decodePaymentRequiredHeader(r.headers.get("payment-required")!) as any;
@@ -310,49 +331,50 @@ describe("T3.1: non-Base payloads -> rail_unavailable with zero store / facilita
   });
   it("X-PAYMENT header classified the same way (by payload, not header type)", async () => {
     on();
-    const r = await call("brief", input("brief"), { "x-payment": payment(variants.polygon) });
+    const r = await call("brief", input("brief"), { "x-payment": await payment(variants.polygon) });
     expect((await r.json()).error).toBe("rail_unavailable");
   });
 });
 
 describe("§3a price binding (T3a.1 / T3a.2)", () => {
-  it("T3a.1: $1 brief payment sent to /monitor -> 402 for $50, no verify/settle, nothing delivered", async () => {
+  it("T3a.1: $1 brief payment sent to /report ($20, async live) -> 402 for $20, no verify/settle, nothing delivered", async () => {
     on({ HP_PREMIUM_ASYNC_ENABLED: "true" });
-    const r = await call("monitor", input("monitor"), { "payment-signature": payment({ amount: price("brief") }) });
+    const r = await call("report", input("report"), { "payment-signature": await payment({ amount: price("brief") }) });
     expect(r.status).toBe(402);
     expect((await r.json()).error).toBe("amount_mismatch");
     const pr = decodePaymentRequiredHeader(r.headers.get("payment-required")!) as any;
-    expect(pr.accepts[0].amount).toBe("50000000");
+    expect(pr.accepts[0].amount).toBe("20000000");
+    expect(pr.accepts[0].maxTimeoutSeconds).toBe(900);
     expect(fac.length + rpcCalls.length + parallelCalls.length).toBe(0);
   });
   it("T3a.1 (sync): $1 payment on /standard and /extended -> 402 for that tier", async () => {
     on();
     for (const id of ["standard", "extended"] as TierId[]) {
-      const r = await call(id, input(id), { "payment-signature": payment({ amount: price("brief") }) });
+      const r = await call(id, input(id), { "payment-signature": await payment({ amount: price("brief") }) });
       expect(r.status).toBe(402);
       expect((decodePaymentRequiredHeader(r.headers.get("payment-required")!) as any).accepts[0].amount).toBe(price(id));
     }
     expect(fac.length + parallelCalls.length).toBe(0);
   });
-  it("T3a.2: $1 or $75 payment on /seller-watch/watch-report ($100) -> 402", async () => {
+  it("T3a.2: $1 or $20 payment on /seller-watch/watch ($75) -> 402 for $75", async () => {
     on({ HP_PREMIUM_ASYNC_ENABLED: "true" });
-    for (const a of [price("brief"), price("watch")]) {
-      const r = await call("watch-report", input("watch-report"), { "payment-signature": payment({ amount: a }) });
+    for (const a of [price("brief"), price("report")]) {
+      const r = await call("watch", input("watch"), { "payment-signature": await payment({ amount: a }) });
       expect(r.status).toBe(402);
-      expect((decodePaymentRequiredHeader(r.headers.get("payment-required")!) as any).accepts[0].amount).toBe("100000000");
+      expect((decodePaymentRequiredHeader(r.headers.get("payment-required")!) as any).accepts[0].amount).toBe("75000000");
     }
     expect(fac.length).toBe(0);
   });
   it("accepted.amount right but signed authorization.value lower -> 402 amount_mismatch", async () => {
     on();
-    const r = await call("standard", input("standard"), { "payment-signature": payment({ amount: price("standard"), value: price("brief") }) });
+    const r = await call("standard", input("standard"), { "payment-signature": await payment({ amount: price("standard"), value: price("brief") }) });
     expect((await r.json()).error).toBe("amount_mismatch");
     expect(fac.length).toBe(0);
   });
   it("payTo or authorization.to not the full line-8 string -> 402 payto_mismatch", async () => {
     on();
     for (const o of [{ payTo: PAYTO.slice(0, -1) + "0" }, { to: "0x2222222222222222222222222222222222222222" }]) {
-      const r = await call("brief", input("brief"), { "payment-signature": payment(o) });
+      const r = await call("brief", input("brief"), { "payment-signature": await payment(o) });
       expect((await r.json()).error).toBe("payto_mismatch");
     }
     expect(fac.length).toBe(0);
@@ -362,7 +384,7 @@ describe("§3a price binding (T3a.1 / T3a.2)", () => {
 describe("paid sync path", () => {
   it("brief: verify -> Parallel -> settle -> 200 with paid tier, disclaimer, terms, contact, PAYMENT-RESPONSE", async () => {
     on();
-    const r = await call("brief", "q=what%20is%20x402", { "payment-signature": payment() });
+    const r = await call("brief", "q=what%20is%20x402", { "payment-signature": await payment() });
     expect(r.status).toBe(200);
     const j = await r.json();
     expect(j.paid).toMatchObject({ tier: "brief", amount: "1000000", network: "eip155:8453" });
@@ -380,7 +402,7 @@ describe("paid sync path", () => {
   });
   it("standard: fan-out, two-domain claims, could_not_confirm; <= 5 snippets per source; PDFs only on extended", async () => {
     on();
-    const j = await (await call("standard", "q=what%20is%20x402%3F%20who%20uses%20it", { "payment-signature": payment({ amount: price("standard") }) })).json();
+    const j = await (await call("standard", "q=what%20is%20x402%3F%20who%20uses%20it", { "payment-signature": await payment({ amount: price("standard") }) })).json();
     expect(j.sub_questions.length).toBe(2);
     expect(j.found_on_two_or_more_domains.length).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(j.could_not_confirm)).toBe(true);
@@ -392,35 +414,48 @@ describe("paid sync path", () => {
   });
   it("extended: timeline, primary/secondary heuristic labels, PDF sources", async () => {
     on();
-    const j = await (await call("extended", "q=what%20is%20x402", { "payment-signature": payment({ amount: price("extended") }) })).json();
+    const j = await (await call("extended", "q=what%20is%20x402", { "payment-signature": await payment({ amount: price("extended") }) })).json();
     expect(j.timeline.length).toBeGreaterThan(0);
     expect(j.sources.find((s: any) => s.pdf).label).toBe("primary_heuristic");
   });
-  it("Parallel failure -> 502 uncharged, settle never called", async () => {
+  it("Sentinel item 3: settle BEFORE Parallel; Parallel failure after settle -> 502 charged:true + charged_not_delivered reconcile + HIGH", async () => {
     on();
     setParallelForTests({ fetch: (async () => new Response("x", { status: 500 })) as never });
-    const r = await call("brief", input("brief"), { "payment-signature": payment() });
+    const r = await call("brief", input("brief"), { "payment-signature": await payment() });
     expect(r.status).toBe(502);
-    expect((await r.json()).charged).toBe(false);
-    expect(fac.map((c) => c.op)).toEqual(["verify"]);
+    const j = await r.json();
+    expect(j.charged).toBe(true);
+    expect(j.status).toBe("settle_unconfirmed");
+    expect(fac.map((c) => c.op)).toEqual(["verify", "settle"]);
+    expect(reconciles.map((l) => l.outcome)).toEqual(["charged_not_delivered"]);
+  });
+  it("Sentinel item 3: settle happens before any Parallel call (order)", async () => {
+    on();
+    const order: string[] = [];
+    fac = installFacilitatorMock({ verify: () => (order.push("verify"), { isValid: true }), settle: () => (order.push("settle"), settleBehaviour()) });
+    const pf = parallelCalls;
+    setParallelForTests({ fetch: (async (u: string) => (order.push("parallel"), new Response(JSON.stringify({ results: [] })))) as never });
+    expect((await call("brief", input("brief"), { "payment-signature": await payment() })).status).toBe(200);
+    expect(order.indexOf("settle")).toBeLessThan(order.indexOf("parallel"));
+    expect(pf.length).toBe(0);
   });
   it("verify invalid -> 402 for the tier; verify error -> 503; neither settles", async () => {
     on();
     fac = installFacilitatorMock({ verify: () => ({ isValid: false, invalidReason: "insufficient_funds" }) });
-    const r = await call("brief", input("brief"), { "payment-signature": payment() });
+    const r = await call("brief", input("brief"), { "payment-signature": await payment() });
     expect(r.status).toBe(402);
     resetPremiumFacilitatorForTests();
     vi.restoreAllMocks();
     vi.spyOn(console, "error").mockImplementation(() => {});
     fac = installFacilitatorMock({ verify: () => { throw new Error("boom"); } });
-    expect((await call("brief", input("brief"), { "payment-signature": payment() })).status).toBe(503);
+    expect((await call("brief", input("brief"), { "payment-signature": await payment() })).status).toBe(503);
     expect(fac.some((c) => c.op === "settle")).toBe(false);
   });
   it("no CDP keys -> 503 settlement_unavailable before any facilitator call", async () => {
     on();
     vi.stubEnv("CDP_API_KEY_ID", "");
     vi.stubEnv("CDP_API_KEY_SECRET", "");
-    expect((await call("brief", input("brief"), { "payment-signature": payment() })).status).toBe(503);
+    expect((await call("brief", input("brief"), { "payment-signature": await payment() })).status).toBe(503);
     expect(fac.length).toBe(0);
   });
 });
@@ -436,7 +471,7 @@ describe("§4 settle timeout / ambiguous / used nonce", () => {
   it("T4.1: settle timeout -> 504 settle_unconfirmed + reconcile + HIGH, never a 402", async () => {
     on();
     settleBehaviour = () => { const e = new Error("The operation was aborted due to timeout"); e.name = "TimeoutError"; throw e; };
-    const r = await call("brief", input("brief"), { "payment-signature": payment() });
+    const r = await call("brief", input("brief"), { "payment-signature": await payment() });
     expect(r.status).toBe(504);
     expect(r.headers.get("payment-required")).toBeNull();
     const j = await r.json();
@@ -450,7 +485,7 @@ describe("§4 settle timeout / ambiguous / used nonce", () => {
       errors = [];
       on();
       settleBehaviour = b as never;
-      const r = await call("brief", input("brief"), { "payment-signature": payment() });
+      const r = await call("brief", input("brief"), { "payment-signature": await payment() });
       expect(r.status).toBe(502);
       expect(r.headers.get("payment-required")).toBeNull();
       expectReconcile("settle_ambiguous");
@@ -459,7 +494,7 @@ describe("§4 settle timeout / ambiguous / used nonce", () => {
   it("T4.2: authorizationState(from, nonce) = used -> 409 + reconcile + HIGH, no verify, never a 402", async () => {
     on();
     rpcAnswer = "used";
-    const r = await call("brief", input("brief"), { "payment-signature": payment() });
+    const r = await call("brief", input("brief"), { "payment-signature": await payment() });
     expect(r.status).toBe(409);
     expect(r.headers.get("payment-required")).toBeNull();
     expect((await r.json()).error).toBe("authorization_already_used");
@@ -470,12 +505,12 @@ describe("§4 settle timeout / ambiguous / used nonce", () => {
   it("nonce RPC down -> uncharged 503, nothing verified", async () => {
     on();
     rpcAnswer = "down";
-    expect((await call("brief", input("brief"), { "payment-signature": payment() })).status).toBe(503);
+    expect((await call("brief", input("brief"), { "payment-signature": await payment() })).status).toBe(503);
     expect(fac.length).toBe(0);
   });
   it("T4.3: settled authorization replayed on the identical and on a different request -> 409, nothing delivered, zero work", async () => {
     on();
-    const header = payment({ nonce: nonce() });
+    const header = await payment({ nonce: nonce() });
     expect((await call("brief", "q=first%20question", { "payment-signature": header })).status).toBe(200);
     const workBefore = parallelCalls.length;
     const facBefore = fac.length;
@@ -490,13 +525,14 @@ describe("§4 settle timeout / ambiguous / used nonce", () => {
     expect(r3.status).toBe(402);
     expect(parallelCalls.length).toBe(workBefore);
     expect(fac.length).toBe(facBefore);
-    expect(reconciles.filter((l) => l.outcome === "authorization_already_used")).toHaveLength(2);
+    // shared claim says settled: 409 with no new reconcile line, alert or store write (Sentinel MEDIUM-1 dedupe)
+    expect(reconciles).toHaveLength(0);
   });
   it("T4.3 (cross-instance): replay seen only on-chain (fresh instance) -> 409", async () => {
     on();
     resetPremiumNoncesForTests();
     rpcAnswer = "used";
-    expect((await call("brief", "q=other", { "payment-signature": payment() })).status).toBe(409);
+    expect((await call("brief", "q=other", { "payment-signature": await payment() })).status).toBe(409);
   });
 });
 
@@ -514,11 +550,11 @@ describe("discovery (T3.2 / T3a.4) and N1 (no MCP)", () => {
     }
     expect(JSON.stringify(doc.premium)).not.toMatch(/solana|xrpl|eip155:137|\?tier=/i);
   });
-  it("async flag on lists all 7 tier URLs, each once", async () => {
+  it("async flag on lists the 3 sync tiers + the 2 live async tiers ($20 report, $75 watch), each once; $50/$100 unlisted", async () => {
     on({ HP_PREMIUM_ASYNC_ENABLED: "true" });
     const doc = await wellKnown.GET().json();
     const prem = doc.resources.filter((u: string) => /research\/report|seller-watch/.test(u));
-    expect(prem).toEqual(PREMIUM_TIERS.map((t) => `https://horizonpulse.dev${tierPath(t)}`));
+    expect(prem).toEqual(PREMIUM_TIERS.filter((t) => !["monitor", "watch-report"].includes(t.id)).map((t) => `https://horizonpulse.dev${tierPath(t)}`));
   });
   it("skill.md premium section: Base only, no ?tier=, prices match", async () => {
     on();

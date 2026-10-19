@@ -39,6 +39,9 @@ export const PREMIUM_SETTLE_TIMEOUT_MS = 10_000;
 export const PREMIUM_VERIFY_TIMEOUT_MS = 8_000;
 export const NONCE_RPC_TIMEOUT_MS = 4_000;
 
+/** Async tiers advertise a 15-minute authorization window (async scope §1, Q1): verify at accept, settle after the first deliverable. */
+export const ASYNC_MAX_TIMEOUT_S = 900;
+
 export function requirementFor(x: Tier) {
   return {
     scheme: "exact",
@@ -46,7 +49,7 @@ export function requirementFor(x: Tier) {
     amount: x.amount,
     asset: USDC_BASE,
     payTo: DEFAULT_PAY_TO,
-    maxTimeoutSeconds: 300,
+    maxTimeoutSeconds: x.mode === "async" ? ASYNC_MAX_TIMEOUT_S : 300,
     extra: { name: "USD Coin", version: "2" },
   };
 }
@@ -80,6 +83,9 @@ export type Decoded = {
   to: string | null;
   value: string | null;
   nonce: string | null;
+  validAfter: string | null;
+  validBefore: string | null;
+  signature: string | null;
 };
 
 export function paymentHeader(req: NextRequest): string | null {
@@ -109,6 +115,9 @@ export function decodePayment(header: string): Decoded | null {
     to: s(auth.to) || null,
     value: s(auth.value) || null,
     nonce: s(auth.nonce) || null,
+    validAfter: s(auth.validAfter) || null,
+    validBefore: s(auth.validBefore) || null,
+    signature: typeof raw.payload?.signature === "string" ? raw.payload.signature : null,
   };
 }
 
@@ -160,24 +169,36 @@ export async function nonceUsed(from: string, nonce: string): Promise<"used" | "
 }
 
 /* ---------- facilitator ---------- */
-let facilitator: HTTPFacilitatorClient | null = null;
-function client(): HTTPFacilitatorClient {
-  facilitator ??= new HTTPFacilitatorClient({
+let settleClient: HTTPFacilitatorClient | null = null;
+let verifyClient: HTTPFacilitatorClient | null = null;
+const mk = (timeoutMs: number) =>
+  new HTTPFacilitatorClient({
     ...createFacilitatorConfig(process.env.CDP_API_KEY_ID?.trim() || undefined, process.env.CDP_API_KEY_SECRET?.trim() || undefined),
-    timeoutMs: PREMIUM_SETTLE_TIMEOUT_MS,
+    timeoutMs,
   });
-  return facilitator;
+/** Odin C1: verify gets its own 8 s client; settle keeps the 10 s reserve. */
+export function premiumVerifyClient(): HTTPFacilitatorClient {
+  return (verifyClient ??= mk(PREMIUM_VERIFY_TIMEOUT_MS));
+}
+function client(): HTTPFacilitatorClient {
+  return (settleClient ??= mk(PREMIUM_SETTLE_TIMEOUT_MS));
 }
 export function resetPremiumFacilitatorForTests() {
-  facilitator = null;
+  settleClient = null;
+  verifyClient = null;
+}
+
+/** Odin C4: only a bare reason code ever reaches the client; any facilitator free text becomes invalid_payment. */
+export function reasonCode(v: unknown): string {
+  return typeof v === "string" && /^[a-z0-9_]{1,64}$/.test(v) ? v : "invalid_payment";
 }
 
 export type VerifyResult = { ok: true; payer: string | null } | { ok: false; kind: "invalid"; reason: string } | { ok: false; kind: "error" };
 export async function verifyPayment(d: Decoded, x: Tier): Promise<VerifyResult> {
   try {
-    const r: any = await client().verify(d.raw, requirementFor(x) as never);
+    const r: any = await premiumVerifyClient().verify(d.raw, requirementFor(x) as never);
     if (r?.isValid === true) return { ok: true, payer: typeof r.payer === "string" ? r.payer : d.from };
-    return { ok: false, kind: "invalid", reason: String(r?.invalidReason ?? "invalid_payment").slice(0, 80) };
+    return { ok: false, kind: "invalid", reason: reasonCode(r?.invalidReason) };
   } catch {
     return { ok: false, kind: "error" };
   }
@@ -196,5 +217,69 @@ export async function settlePayment(d: Decoded, x: Tier): Promise<SettleResult> 
     const t = getFacilitatorResponseError(e);
     const isTimeout = t instanceof FacilitatorTimeoutError || (e instanceof Error && /abort|timeout/i.test(`${e.name} ${e.message}`));
     return { ok: false, kind: isTimeout ? "timeout" : "ambiguous", tx: null };
+  }
+}
+
+/* ---------- Sentinel LOW-1: local authorization window ---------- */
+/** validAfter <= now and validBefore >= now + minRemainingS (sync: the whole request; async: first deliverable + settle). */
+export function windowError(d: Decoded, nowS: number, minRemainingS: number): string | null {
+  const a = d.validAfter !== null && /^\d{1,20}$/.test(d.validAfter) ? Number(d.validAfter) : NaN;
+  const b = d.validBefore !== null && /^\d{1,20}$/.test(d.validBefore) ? Number(d.validBefore) : NaN;
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return "malformed_authorization";
+  if (a > nowS) return "authorization_not_yet_valid";
+  if (b < nowS + minRemainingS) return "authorization_window_too_short";
+  return null;
+}
+export const SYNC_MIN_REMAINING_S = 120;
+export const ASYNC_MIN_REMAINING_S = 11 * 60;
+
+/* ---------- Sentinel MEDIUM-1: local EIP-3009 signature check before any 409 / alert / write ---------- */
+export const TRANSFER_WITH_AUTHORIZATION_TYPES = {
+  TransferWithAuthorization: [
+    { name: "from", type: "address" },
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "validAfter", type: "uint256" },
+    { name: "validBefore", type: "uint256" },
+    { name: "nonce", type: "bytes32" },
+  ],
+} as const;
+export const USDC_BASE_DOMAIN = { name: "USD Coin", version: "2", chainId: 8453, verifyingContract: USDC_BASE } as const;
+
+/**
+ * True only when the signature recovers to authorization.from under the Base USDC EIP-712 domain.
+ * EOA signatures only: ERC-1271 / ERC-6492 smart-wallet signatures do not recover locally and are refused here
+ * (402 invalid_signature) before any write. Documented limitation for Odin.
+ */
+export async function signatureValid(d: Decoded): Promise<boolean> {
+  if (!d.signature || !/^0x[0-9a-fA-F]{130}$/.test(d.signature) || !d.from || !d.to || !d.value || !d.nonce || !d.validAfter || !d.validBefore) return false;
+  try {
+    const { recoverTypedDataAddress } = await import("viem");
+    const who = await recoverTypedDataAddress({
+      domain: USDC_BASE_DOMAIN,
+      types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+      primaryType: "TransferWithAuthorization",
+      message: { from: d.from as `0x${string}`, to: d.to as `0x${string}`, value: BigInt(d.value), validAfter: BigInt(d.validAfter), validBefore: BigInt(d.validBefore), nonce: d.nonce as `0x${string}` },
+      signature: d.signature as `0x${string}`,
+    });
+    return who.toLowerCase() === d.from.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+/* ---------- Sentinel item 4: payer-proof-bound redeem after a 504/502 ---------- */
+export const PAYER_PROOF_HEADER = "x-hp-payer-proof";
+export function redeemMessage(reconcileId: string, fingerprint: string, to: string, value: string): string {
+  return `Horizon Pulse premium redeem\nreconcile_id: ${reconcileId}\nrequest: ${fingerprint}\nto: ${to.toLowerCase()}\nvalue: ${value}`;
+}
+/** EIP-191 personal_sign by authorization.from over redeemMessage (EOA only). */
+export async function payerProofValid(from: string, proof: string | null, msg: string): Promise<boolean> {
+  if (!proof || !/^0x[0-9a-fA-F]{130}$/.test(proof)) return false;
+  try {
+    const { verifyMessage } = await import("viem");
+    return await verifyMessage({ address: from as `0x${string}`, message: msg, signature: proof as `0x${string}` });
+  } catch {
+    return false;
   }
 }

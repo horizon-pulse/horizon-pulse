@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { BUYER_TERMS } from "@/lib/premium/copy";
+import { BUYER_TERMS, TECHNICAL_NOTES } from "@/lib/premium/copy";
 import { premiumEnabled } from "@/lib/premium/tiers";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +12,10 @@ export default function PremiumTermsPage() {
       <h1>Horizon Pulse premium terms</h1>
       {BUYER_TERMS.map((p, i) => (
         <p key={i}>{p}</p>
+      ))}
+      <h2>How the status link and redeem work</h2>
+      {TECHNICAL_NOTES.map((p, i) => (
+        <p key={`t${i}`}>{p}</p>
       ))}
     </main>
   );

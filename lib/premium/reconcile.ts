@@ -13,12 +13,12 @@
  *     the HIGH alert also goes through persistAlert("premium", …) (today's alert-persistence path).
  *     Production only (VERCEL_ENV === "production"), fire-and-forget, never throws.
  */
-import { createHash } from "node:crypto";
-import { persistAlert } from "@/lib/alert-persist";
+import { createHash, createHmac, hkdfSync } from "node:crypto";
+import { persistAlert, truncateAddress } from "@/lib/alert-persist";
 import { resolveSharedReplayStoreEnv } from "@/lib/xrpl-replay-store";
 import { RECONCILE_RETENTION_S } from "./copy";
 
-export type ReconcileOutcome = "settle_timeout" | "settle_ambiguous" | "authorization_already_used";
+export type ReconcileOutcome = "settle_timeout" | "settle_ambiguous" | "authorization_already_used" | "charged_not_delivered" | "refund_owed";
 export type ReconcileLine = {
   reconcile_id: string;
   ts: string;
@@ -31,7 +31,29 @@ export type ReconcileLine = {
   tx: string | null;
   fingerprint: string;
   outcome: ReconcileOutcome;
+  job_id?: string | null;
+  refund_owed?: string | null;
 };
+
+/** Per-instance daily cap on reconcile writes (Sentinel MEDIUM-1); past it only console + an in-memory count. */
+export const RECONCILE_WRITE_CAP_PER_DAY = 50;
+let capDay = "";
+let capWritten = 0;
+let capDropped = 0;
+export function reconcileWriteStats() {
+  return { day: capDay, written: capWritten, dropped: capDropped };
+}
+
+/**
+ * Counsel C2 note: keyed one-way hash of the request fingerprint for the stored line (HKDF of the existing
+ * HP_FREE_IP_HMAC_KEY, info "premium-reconcile-fingerprint"). Without that key the plain request fingerprint is kept.
+ */
+export function storedFingerprint(rq: string, env: Record<string, string | undefined> = process.env): string {
+  const raw = env.HP_FREE_IP_HMAC_KEY ?? "";
+  if (raw.length < 43) return rq;
+  const k = Buffer.from(hkdfSync("sha256", raw, "horizon-pulse/premium/v1", "premium-reconcile-fingerprint", 32));
+  return `k1:${createHmac("sha256", k).update(rq).digest("hex")}`;
+}
 
 type Env = Record<string, string | undefined>;
 let sinkOverride: ((line: ReconcileLine) => void) | null = null;
@@ -42,6 +64,9 @@ const inflight = new Set<Promise<unknown>>();
 /** Tests only. */
 export function setReconcileForTests(o: { sink?: ((l: ReconcileLine) => void) | null; fetch?: typeof fetch | null; env?: Env | null } | null) {
   sinkOverride = o?.sink ?? null;
+  capDay = "";
+  capWritten = 0;
+  capDropped = 0;
   fetchOverride = o?.fetch ?? null;
   envOverride = o?.env ?? null;
 }
@@ -49,7 +74,8 @@ export async function flushReconcileForTests() {
   await Promise.allSettled([...inflight]);
 }
 
-export function requestFingerprint(method: string, url: URL): string {
+/** Legacy URL-only fingerprint (kept for callers without a Request); premium now uses lib/request-fingerprint.ts. */
+export function urlFingerprint(method: string, url: URL): string {
   const q = [...url.searchParams.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return createHash("sha256").update(`${method.toUpperCase()} ${url.pathname}?${new URLSearchParams(q).toString()}`).digest("hex");
 }
@@ -72,23 +98,29 @@ function creds(): { url: string; token: string } | null {
 
 /** Write the reconcile line and raise the HIGH alert. Never throws, never awaited by the response path. */
 export function recordReconcile(line: Omit<ReconcileLine, "ts">): ReconcileLine {
-  const full: ReconcileLine = { ...line, ts: new Date().toISOString() };
+  const full: ReconcileLine = { ...line, fingerprint: storedFingerprint(line.fingerprint, envOverride ?? process.env), ts: new Date().toISOString() };
   try {
-    console.error(`[premium][RECONCILE] ${JSON.stringify(full)}`);
+    // Sentinel INFO-3: payer truncated in log lines (full payer only in the stored payment record).
+    console.error(`[premium][RECONCILE] ${JSON.stringify({ ...full, payer: truncateAddress(full.payer) })}`);
     console.error(
       `[premium][ALERT][HIGH] ${JSON.stringify({ kind: `premium_${full.outcome}`, severity: "high", route: full.route, tier: full.tier, reconcile_id: full.reconcile_id })}`,
     );
     persistAlert("premium", { kind: `premium_${full.outcome}`, severity: "high", route: full.route, payer: full.payer });
     sinkOverride?.(full);
+    const day = full.ts.slice(0, 10);
+    if (capDay !== day) [capDay, capWritten, capDropped] = [day, 0, 0];
     const c = creds();
-    if (c) {
+    if (c && capWritten >= RECONCILE_WRITE_CAP_PER_DAY) capDropped++;
+    else if (c) {
+      capWritten++;
       const key = `hp:premium:reconcile:${full.ts.slice(0, 7)}`;
       const p = (fetchOverride ?? fetch)(`${c.url}/pipeline`, {
         method: "POST",
         headers: { authorization: `Bearer ${c.token}`, "content-type": "application/json" },
         body: JSON.stringify([
           ["RPUSH", key, JSON.stringify(full)],
-          ["EXPIRE", key, RECONCILE_RETENTION_S],
+          // Counsel C2: expiry set on the FIRST write of the monthly key only (NX), so no line outlives 12 months.
+          ["EXPIRE", key, RECONCILE_RETENTION_S, "NX"],
         ]),
         signal: AbortSignal.timeout(1500),
         cache: "no-store",

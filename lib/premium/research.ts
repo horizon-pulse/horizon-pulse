@@ -49,10 +49,14 @@ export function subQuestionList(q: string): string[] {
 
 const DATE_RE = /\b(?:19|20)\d{2}-\d{2}-\d{2}\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.? \d{1,2},? (?:19|20)\d{2}\b/g;
 
-export type Snippet = { id: string; source: number; text: string };
-export type Source = { n: number; url: string; domain: string; title: string | null; date: string | null; pdf: boolean; label?: "primary_heuristic" | "secondary_heuristic" };
+/** Odin C3: every snippet is labelled as the search provider's excerpt; $20+ adds a check against our own fetch (archive.ts). */
+export const EXCERPT_SOURCE = "search_provider_excerpt" as const;
+export type Snippet = { id: string; source: number; text: string; excerpt_source: typeof EXCERPT_SOURCE };
+/** publish_date = the date the search provider reports for the page; retrieved_at = when we received the excerpt. */
+export type Source = { n: number; url: string; domain: string; title: string | null; publish_date: string | null; retrieved_at: string; pdf: boolean; label?: "primary_heuristic" | "secondary_heuristic" };
 
-export function compile(x: Tier, q: string, results: ParallelResult[]) {
+export function compile(x: Tier, q: string, results: ParallelResult[], retrievedAt: string = new Date().toISOString()) {
+  const rich = x.id === "extended" || x.id === "report" || x.id === "monitor";
   const byUrl = new Map<string, ParallelResult>();
   for (const r of results) {
     const key = r.url.replace(/#.*$/, "").replace(/\/$/, "");
@@ -67,18 +71,18 @@ export function compile(x: Tier, q: string, results: ParallelResult[]) {
     if (!domain) continue;
     const n = sources.length + 1;
     const pdf = /\.pdf(\?|$)/i.test(r.url);
-    if (pdf && x.id !== "extended") continue; // PDF sources are an extended-tier feature
-    sources.push({ n, url: r.url, domain, title: r.title, date: r.publish_date, pdf });
+    if (pdf && !rich) continue; // PDF sources are an extended-tier feature
+    sources.push({ n, url: r.url, domain, title: r.title, publish_date: r.publish_date, retrieved_at: retrievedAt, pdf });
     const seen = new Set<string>();
     for (const s of r.excerpts.flatMap(sentences)) {
       if (seen.size >= SNIPPETS_PER_SOURCE) break;
       const t = capWords(s);
       if (seen.has(t)) continue;
       seen.add(t);
-      snippets.push({ id: `s${snippets.length + 1}`, source: n, text: t });
+      snippets.push({ id: `s${snippets.length + 1}`, source: n, text: t, excerpt_source: EXCERPT_SOURCE });
     }
   }
-  const cap = x.id === "brief" ? 5 : x.id === "standard" ? 15 : 30;
+  const cap = x.id === "brief" ? 5 : x.id === "standard" ? 15 : x.id === "extended" ? 30 : 60;
   const used = snippets.slice(0, cap);
 
   // claim -> source table: each snippet is a candidate claim; group near-duplicates (term Jaccard >= 0.5).
@@ -114,14 +118,26 @@ export function compile(x: Tier, q: string, results: ParallelResult[]) {
     could_not_confirm: claims.filter((c) => c.domains.length < 2).map((c) => c.claim).slice(0, 20),
     sub_questions: subQuestionList(q),
   };
-  if (x.id === "extended") {
+  if (rich) {
     const timeline: { date: string; snippet: string }[] = [];
     for (const s of used) for (const d of s.text.match(DATE_RE) ?? []) timeline.push({ date: d, snippet: s.id });
-    for (const src of sources) if (src.date) timeline.push({ date: src.date, snippet: `source:${src.n}` });
+    for (const src of sources) if (src.publish_date) timeline.push({ date: src.publish_date, snippet: `source:${src.n}` });
     out.timeline = timeline.sort((a, b) => (Date.parse(a.date) || 0) - (Date.parse(b.date) || 0));
     out.sources = sources.map((s) => ({ ...s, label: /\.(gov|mil|edu)$/.test(s.domain) || s.pdf ? "primary_heuristic" : "secondary_heuristic" }));
   }
   return out;
+}
+
+/** Searches for one tier (checkpointable step 1 of the async report job). */
+export async function researchSearches(x: Tier, q: string, deadline: number): Promise<ParallelResult[]> {
+  const subs = subQuestionList(q);
+  const queries = [q, ...subs.filter((s) => s !== q)].slice(0, Math.max(1, x.searches));
+  const perSearch = Math.max(3, Math.ceil(x.reads / Math.max(1, queries.length)));
+  const found: ParallelResult[] = [];
+  for (let i = 0; i < queries.length; i += 5) {
+    found.push(...(await parallelSearch(q, queries.slice(i, i + 5), Math.min(20, perSearch * Math.min(5, queries.length - i)), deadline)));
+  }
+  return found;
 }
 
 /** Run the upstream calls for one sync tier within the deadline. Units come from the tier table only. */
