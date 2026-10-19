@@ -41,6 +41,7 @@ const BAD_REQUEST: Record<string, Json> = {
   "/api/chain/head": { ok: false, error: "network must be a comma list of base, polygon, ethereum, solana or xrpl (or eip155:8453, eip155:137, eip155:1, xrpl:0, the Solana mainnet CAIP-2 id)", code: "invalid_network", charged: false },
   "/api/token/meta": { ok: false, error: "Query param token is required (0x contract address, Solana mint, or XRPL CURRENCY.rIssuer)", code: "missing_token", charged: false },
   "/api/name/resolve": { ok: false, error: "Give name (e.g. vitalik.eth, jesse.base.eth) or address (0x…)", code: "missing_input", charged: false },
+  "/api/batch": { ok: false, error: "items must be a non-empty array.", code: "invalid_input", charged: false },
   "/api/grocery/normalize": { ok: false, error: "Send ingredients (array of lines) or text (one ingredient per line)", code: "missing_ingredients", charged: false },
   "/api/tx-guard": { ok: false, error: "chain must be one of base, polygon, solana, xrpl", code: "invalid_chain", charged: false },
   "/api/balance": { ok: false, error: "Give at least one of evm (0x… for Base and Polygon), solana, xrpl (r…)", code: "missing_address", charged: false },
@@ -205,7 +206,14 @@ for (const r of LIVE_PAID_ROUTES) {
     const respName = `${pascal(name)}Response`;
     const example = baz?.info?.output?.example;
     if (example && !schemas[respName]) {
-      schemas[respName] = { ...widen(infer(example)), description: `Inferred from a real response recorded from GET /api/demo/${name} at ${exampleRecordedAt(p)} UTC (trimmed). Fields may be added; clients should ignore unknown fields.` };
+      // /api/batch declares an illustrative format sample (illustrative: true), not a recorded response; say so.
+      const illustrative = (example as { illustrative?: unknown }).illustrative === true;
+      schemas[respName] = {
+        ...widen(infer(example)),
+        description: illustrative
+          ? "Inferred from an illustrative format sample (illustrative: true), not a recorded real response. Fields may be added; clients should ignore unknown fields."
+          : `Inferred from a real response recorded from GET /api/demo/${name} at ${exampleRecordedAt(p)} UTC (trimmed). Fields may be added; clients should ignore unknown fields.`,
+      };
       // Closed value set (lib/indicators.ts DirectionLabel); not inferable from one example.
       const dir = name === "pulse" ? schemas[respName]?.properties?.overall?.properties?.direction : undefined;
       if (dir) dir.enum = ["up", "down", "flat"];

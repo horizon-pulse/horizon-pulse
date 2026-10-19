@@ -30,10 +30,10 @@ describe("openapi + docs + llms", () => {
     expect(op.description).toContain(MMR_DISCLAIMER);
     expect(op.responses["200"].description).toContain(MMR_DISCLAIMER);
   });
-  it("paid counts: 27 paid paths (16 + discourse/split + tx-status + tokenized-stock + watch + balance + tx-guard + grocery/normalize + grocery/ingredient + chain/head + token/meta + name/resolve (wave 1, 2026-10-16)); 1 free path", () => {
+  it("paid counts: 28 paid paths (16 + discourse/split + tx-status + tokenized-stock + watch + balance + tx-guard + grocery/normalize + grocery/ingredient + chain/head + token/meta + name/resolve (wave 1, 2026-10-16) + batch (2026-10-19)); 1 free path", () => {
     const paidPaths = Object.entries<Record<string, Record<string, unknown>>>(spec.paths).filter(([, it]) => Object.values(it).some((o) => o["x-payment-info"]));
     const freePaths = Object.entries<Record<string, Record<string, unknown>>>(spec.paths).filter(([, it]) => Object.values(it).some((o) => o["x-free"]));
-    expect(paidPaths).toHaveLength(27);
+    expect(paidPaths).toHaveLength(28);
     expect(freePaths.map(([p]) => p)).toEqual(["/api/money-market-rates"]);
   });
   it("llms.txt lists it as FREE with the exact disclaimer", () => {
@@ -49,29 +49,29 @@ describe("openapi + docs + llms", () => {
     const { loadSkillRoutes } = await import("@/lib/agent-skill");
     const r = loadSkillRoutes();
     expect(r.some((x) => x.tool.includes("money"))).toBe(false);
-    expect(new Set(r.map((x) => x.tool)).size).toBe(27);
+    expect(new Set(r.map((x) => x.tool)).size).toBe(28);
   });
 });
 
 describe("x402 discovery excludes it", () => {
-  it("/.well-known/x402 resources do not list money-market-rates (27 paid paths stay: 16 + discourse/split + tx-status + tokenized-stock + watch + balance + tx-guard + grocery/normalize + grocery/ingredient + chain/head + token/meta + name/resolve (wave 1, 2026-10-16); plain URLs since hygiene a)", async () => {
+  it("/.well-known/x402 resources do not list money-market-rates (28 paid paths stay: 16 + discourse/split + tx-status + tokenized-stock + watch + balance + tx-guard + grocery/normalize + grocery/ingredient + chain/head + token/meta + name/resolve (wave 1, 2026-10-16); plain URLs since hygiene a)", async () => {
     const { GET } = await import("@/app/.well-known/x402/route");
     const res = await (GET as unknown as () => Promise<Response>)();
     const j = await res.json();
     expect(j.resources.some((x: string) => x.includes("money-market"))).toBe(false);
-    expect(j.resources).toHaveLength(27);
+    expect(j.resources).toHaveLength(28);
   });
 });
 
 describe("hosted MCP", () => {
-  it("28 tools: 27 paid (TOOLS) + 1 free money_market_rates with the disclaimer", async () => {
+  it("29 tools: 28 paid (TOOLS, + batch 2026-10-19) + 1 free money_market_rates with the disclaimer", async () => {
     const { TOOLS, FREE_TOOLS, buildMcpServer } = await import("@/lib/mcp-server");
-    expect(TOOLS).toHaveLength(27);
+    expect(TOOLS).toHaveLength(28);
     expect(TOOLS.some((t) => t.name === "money_market_rates")).toBe(false);
     expect(FREE_TOOLS.map((t) => t.name)).toEqual(["money_market_rates"]);
     expect(FREE_TOOLS[0].description).toContain(MMR_DISCLAIMER);
     const server = buildMcpServer() as unknown as { _registeredTools: Record<string, unknown> };
-    expect(Object.keys(server._registeredTools)).toHaveLength(28);
+    expect(Object.keys(server._registeredTools)).toHaveLength(29);
   });
   it("free tool call returns the route's answer, never an x402 challenge", async () => {
     const { FREE_TOOLS } = await import("@/lib/mcp-server");

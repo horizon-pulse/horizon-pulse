@@ -17,6 +17,7 @@
  */
 import {
   BALANCE_PRICE_USD,
+  BATCH_PRICE_USD,
   BAZAAR_CHECK_PRICE_USD,
   CHAIN_HEAD_PRICE_USD,
   DISCOURSE_SPLIT_PRICE_USD,
@@ -76,6 +77,7 @@ export const ROUTE_INFO: Readonly<Record<string, RouteInfo>> = {
   "/api/chain/head": { price: CHAIN_HEAD_PRICE_USD, what: "block height on 5 chains" },
   "/api/token/meta": { price: TOKEN_META_PRICE_USD, what: "token name, symbol, decimals, supply" },
   "/api/name/resolve": { price: NAME_RESOLVE_PRICE_USD, what: "ENS and Basename lookup" },
+  "/api/batch": { price: BATCH_PRICE_USD, what: "Up to 10 chain checks for one payment" },
 };
 
 /** route -> 2-3 related paid routes (same agent task, next likely step). */
@@ -107,6 +109,9 @@ export const RELATED: Readonly<Record<string, readonly string[]>> = {
   "/api/chain/head": ["/api/tx-status", "/api/gas", "/api/balance"],
   "/api/token/meta": ["/api/balance", "/api/tokenized-stock", "/api/tx-guard"],
   "/api/name/resolve": ["/api/tx-guard", "/api/balance", "/api/token/meta"],
+  // Batch (listed 10/19): complements only (routes batch cannot run). Batch is NOT added to any other
+  // route's list, so existing single-route paid responses are unchanged.
+  "/api/batch": ["/api/tx-guard", "/api/portfolio"],
 };
 
 export const HINT_KEY = "relatedRoutes";

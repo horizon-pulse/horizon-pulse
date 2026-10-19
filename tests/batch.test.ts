@@ -123,7 +123,7 @@ describe("/api/batch handler", () => {
 
 describe("/api/batch is inert by default", () => {
   afterEach(() => vi.unstubAllEnvs());
-  it("404 on every verb unless HP_BATCH_ENABLED is exactly 'true'; never in the live catalog", async () => {
+  it("404 on every verb unless HP_BATCH_ENABLED is exactly 'true'; listed once in the live catalog (10/19) at $0.01", async () => {
     for (const v of [undefined, "1", "TRUE", "yes"]) {
       vi.unstubAllEnvs();
       if (v !== undefined) vi.stubEnv("HP_BATCH_ENABLED", v);
@@ -132,7 +132,9 @@ describe("/api/batch is inert by default", () => {
       expect((await route.GET(new NextRequest("https://horizonpulse.dev/api/batch"))).status).toBe(404);
       expect((await route.OPTIONS()).status).toBe(404);
     }
-    expect(LIVE_PAID_ROUTES.some((r) => r.path.startsWith("/api/batch"))).toBe(false);
+    // Listed statically 10/19 (discovery-listing branch): exactly one entry, $0.01 / 10000.
+    const listed = LIVE_PAID_ROUTES.filter((r) => r.path.startsWith("/api/batch"));
+    expect(listed.map((r) => [r.path, r.priceUsd, r.priceAtomic])).toEqual([["/api/batch", "$0.01", "10000"]]);
   });
   it("when enabled: unpaid POST is a 402 at the proposed price to the pinned payTo; route keys pay every verb", async () => {
     vi.stubEnv("HP_BATCH_ENABLED", "true");
@@ -144,5 +146,28 @@ describe("/api/batch is inert by default", () => {
     expect(pr.accepts[0].payTo).toBe(getPayTo());
     expect(Object.keys(batchRouteConfig())).toEqual(["GET /api/batch", "POST /api/batch", "/api/batch"]);
     void CDP_ENV;
+  });
+});
+
+describe("/api/batch discovery listing (10/19)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it("MCP batch tool: $0.01 opts; flag off -> isError (the wrapper never settles on isError)", async () => {
+    const { TOOLS } = await import("@/lib/mcp-server");
+    const t = TOOLS.find((x) => x.name === "batch");
+    expect(t?.opts.maxAmountRequired).toBe("10000");
+    expect(t?.opts.resource).toBe("/api/batch");
+    for (const v of [undefined, "1", "TRUE"]) {
+      vi.unstubAllEnvs();
+      if (v !== undefined) vi.stubEnv("HP_BATCH_ENABLED", v);
+      const r = await t!.call({ items: [{ route: "gas" }] });
+      expect(r.isError).toBe(true);
+      expect(JSON.parse(r.content[0].text)).toMatchObject({ ok: false, code: "unavailable", charged: false });
+    }
+  });
+  it("related-routes: batch has its own complements; no other route lists batch (single-route paid bodies unchanged)", async () => {
+    const { RELATED, ROUTE_INFO } = await import("@/lib/route-hints");
+    expect(ROUTE_INFO["/api/batch"].price).toBe("$0.01");
+    expect(RELATED["/api/batch"]).toEqual(["/api/tx-guard", "/api/portfolio"]);
+    for (const [p, rel] of Object.entries(RELATED)) if (p !== "/api/batch") expect(rel, p).not.toContain("/api/batch");
   });
 });

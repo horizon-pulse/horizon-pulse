@@ -1,8 +1,13 @@
 /**
  * /api/batch: several $0.002-tier checks for one x402 payment (repeat-caller
  * growth plan, 10/17). INERT unless HP_BATCH_ENABLED=true (exactly): the route
- * answers 404 on every verb and is not in the live catalog, /.well-known/x402,
- * openapi.json or llms.txt. Price is PROPOSED (lib/config.ts BATCH_PRICE_USD).
+ * answers 404 on every verb (and the MCP batch tool returns an error, no
+ * settle). Flag on in Production 10/19 (Michael yes 9:17 AM AST, Odin GO
+ * 9:24); price $0.01 (lib/config.ts BATCH_PRICE_USD). Listed statically
+ * 10/19 in the live catalog (/.well-known/x402), openapi.json, llms.txt,
+ * skill.md, related-routes and MCP: turning the flag off without reverting
+ * the listing leaves batch advertised but answering 404 (revert the listing
+ * first, then the flag).
  *
  * Body (POST): {"items":[{"route":"balance","params":{"evm":"0x..."}}, ...]}
  *   or GET ?items=<the same array as JSON> for GET-only clients.

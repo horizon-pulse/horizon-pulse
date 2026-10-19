@@ -1395,6 +1395,76 @@
           }
         }
       }
+    },
+    "/api/batch": {
+      "get": {
+        "summary": "Up to 10 chain checks for one payment",
+        "description": "$0.01 USDC x402 for up to 10 checks. GET form: items=<JSON array of {route, params}>.",
+        "parameters": [
+          {
+            "name": "items",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 8000
+            },
+            "description": "JSON array of 1-10 {route, params}; route one of balance, gas, tx-status, token/meta, chain/head, name/resolve"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paid success: results in request order (charged once if at least one item succeeded)"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Bad input: items missing or empty, more than 10 items, unknown route, a param the route does not take, or a value over 256 chars (not charged; no item runs)"
+          },
+          "502": {
+            "description": "Every item failed (all_items_failed; not charged)"
+          }
+        }
+      },
+      "post": {
+        "summary": "Up to 10 chain checks for one payment",
+        "description": "$0.01 USDC x402 for up to 10 checks. Same price as GET.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 10
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paid success: results in request order (charged once if at least one item succeeded)"
+          },
+          "402": {
+            "description": "Payment Required (x402 v2)"
+          },
+          "400": {
+            "description": "Bad input: items missing or empty, more than 10 items, unknown route, a param the route does not take, or a value over 256 chars (not charged; no item runs)"
+          },
+          "502": {
+            "description": "Every item failed (all_items_failed; not charged)"
+          }
+        }
+      }
     }
   }
 }
