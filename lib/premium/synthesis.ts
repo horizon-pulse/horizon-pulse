@@ -392,6 +392,62 @@ export async function synthesizeBrief<T extends Record<string, any>>(q: string, 
 }
 
 /** Same normalised fact value; a day-level date also matches the same month stated alone ("March 13, 2024" ~ "March 2024"). */
+/** A sentence that opens by defining the subject: "[The] <subject term> ... is/are/refers to ..." within the first words. */
+/** Two-word capitalised names ("Jeremy Allaire") not present in the question; lower-cased. */
+export function personNames(t: string, q: string): string[] {
+  const out = [...t.matchAll(/\b([A-Z][a-z]+)\s+([A-Z][a-z]+)\b/g)].map((m) => `${m[1]} ${m[2]}`.toLowerCase());
+  return out.filter((n) => !n.split(" ").some((w) => q.toLowerCase().includes(w)));
+}
+export function isDefinitionOf(t: string, subj: string[]): boolean {
+  if (/\?\s*$/.test(t)) return false; // a question is not a definition
+  // "[The] <subject>[ up to 3 words] is/are/refers to/means a|an|the|one ..." ("x402 is an open payments protocol").
+  const m = t.match(/^\s*(?:The\s+)?((?:\S+\s+){0,3}?\S+)\s+(?:is|are|refers to|means)\s+(?:a|an|the|one)\b/);
+  return !!m && subj.some((x) => hasTerm(m[1], x));
+}
+/** Odin ruling A (10/19): live values (gas, supply, rates) may be shown as CONSISTENT, never as confirmed. */
+export const CONSISTENT_NOTE = "Consistent, not confirmed: two independent publishers report live values within about 2% of each other, both dated within 72 hours. Both values, publishers and dates are shown; the true current value may differ.";
+export const CONSISTENT_TOLERANCE = 0.02;
+export const CONSISTENT_WINDOW_MS = 72 * 3600_000;
+export function isLiveValueQuestion(q: string): boolean {
+  return /\b(current|currently|now|today|live|latest)\b|\bin circulation\b|\b(supply|gas|fee|fees|rate|rates|price|yield)\b/i.test(q) && /^\s*(what|how much|how many)\b/i.test(q);
+}
+type LiveVal = { url: string; quote: string; unit: string; n: number; raw: string; date: string };
+/** Unit-tagged amounts: "0.20 gwei", "$75.3 billion", "4.33%", "3-3/4 to 4 percent" -> upper bound 4 percent. */
+export function liveAmounts(t: string): { unit: string; n: number; raw: string }[] {
+  const out: { unit: string; n: number; raw: string }[] = [];
+  for (const m of t.matchAll(/(\$)?\s?(\d[\d,]*(?:\.\d+)?)\s*((?:gwei|billion|bn|million|trillion|percent)\b|%)/gi)) {
+    const u = m[3].toLowerCase().replace("bn", "billion").replace("percent", "%");
+    out.push({ unit: (m[1] ? "$" : "") + u, n: Number(m[2].replace(/,/g, "")), raw: m[0].trim() });
+  }
+  return out;
+}
+const dateOfText = (t: string): string | null => {
+  const d = [...factValues(t)].filter((f) => /^d:\d{4}-\d{2}-\d{2}$/.test(f)).sort().pop();
+  return d ? d.slice(2) : null;
+};
+/** Pairs of live values from two publishers, same unit, within 2%, both dated (sentence date, else page publish_date) within 72 h of now. */
+export function consistentValues(extracted: ParallelResult[], pool: { url: string; quote: string }[], pub: (u: string) => string, now: number): LiveVal[][] {
+  const pageDate = new Map(extracted.map((r) => [r.url, r.publish_date?.slice(0, 10) ?? null]));
+  const vals: LiveVal[] = [];
+  for (const v of pool) {
+    const date = dateOfText(v.quote) ?? pageDate.get(v.url) ?? null;
+    if (!date) continue; // a page with no date can't be consistent
+    const t = Date.parse(`${date}T12:00:00Z`);
+    if (!Number.isFinite(t) || Math.abs(now - t) > CONSISTENT_WINDOW_MS) continue;
+    for (const a of liveAmounts(v.quote)) vals.push({ url: v.url, quote: v.quote, ...a, date });
+  }
+  const out: LiveVal[][] = [];
+  const used = new Set<string>();
+  for (const a of vals) for (const b of vals) {
+    if (pub(a.url) >= pub(b.url) || a.unit !== b.unit || !(a.n > 0 && b.n > 0)) continue;
+    if (Math.abs(a.n - b.n) / Math.max(a.n, b.n) > CONSISTENT_TOLERANCE) continue;
+    const k = [pub(a.url), pub(b.url), a.unit].join("|");
+    if (used.has(k)) continue;
+    used.add(k);
+    out.push(a.n <= b.n ? [a, b] : [b, a]);
+  }
+  return out.slice(0, 2);
+}
 export function sharedFact(a: Set<string>, b: Set<string>): boolean {
   for (const x of a) for (const y of b) {
     if (x === y) return true;
@@ -410,10 +466,22 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
   // (a1) backing quote must come from a DIFFERENT publisher and state the same fact (shared fact value or >= 3 shared terms).
   // Replay #3: when the main quote carries a fact value (date/number), the backing must carry the SAME value; the
   // >= 3 shared-terms rule applies only to value-free statements (definitions), so "0.15 gwei" never backs "0.20 gwei".
+  // Replay #3 (tightened): a valued fact needs the SAME value plus >= 1 shared content word outside the question
+  // ("took full effect" ~ "came into effect" share "effect"; "delisted USDT in December 2024" shares nothing).
+  // A value-free statement is backed only definition-to-definition: both sentences open by defining the subject
+  // ("x402 is an open payments protocol..." ~ "x402 is an internet-native payments protocol...") and share >= 2
+  // content words outside the question. Generic word overlap alone never backs a claim.
+  const subjA = subjectTerms(q);
+  const qWords = terms(q);
+  const MONTHS = /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*$/;
+  const ownTerms = (t: string) => [...terms(t)].filter((w) => !qWords.has(w) && !MONTHS.test(w));
+  const sharedOwn = (a: Verified, b: Verified) => { const tb = new Set(ownTerms(b.quote)); return ownTerms(a.quote).filter((w) => tb.has(w)).length; };
   const sameFact = (a: Verified, b: Verified) => {
     const fa = factValues(a.quote);
-    if (fa.size) return sharedFact(fa, factValues(b.quote));
-    return [...terms(b.quote)].filter((w) => terms(a.quote).has(w)).length >= 3;
+    if (fa.size) return sharedFact(fa, factValues(b.quote)) && sharedOwn(a, b) >= 1;
+    // "who" questions: the same named person (two capitalised words, not in the question) on both publishers.
+    if (/^\s*who\b/i.test(q)) { const na = personNames(a.quote, q); return personNames(b.quote, q).some((n) => na.includes(n)); }
+    return isDefinitionOf(a.quote, subjA) && isDefinitionOf(b.quote, subjA) && sharedOwn(a, b) >= 2;
   };
   // Odin replay #2 (2): list/table fragments and glued words are dropped from claims too.
   let claimsV = claimsIn
@@ -430,7 +498,14 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
     if (qs.length > 1) return qs;
     const main = qs[0];
     const fm = factValues(main.quote);
-    if (!fm.size) return qs;
+    if (!fm.size) {
+      // Value-free statements (definitions): the SAME rule a model backing must meet (>= 3 shared content terms, other
+      // publisher) applied deterministically, and the backing must name a subject term. Removes run-to-run variation when
+      // the model omits quotes[1].
+      const subjQ0 = subjectTerms(q);
+      const hit0 = pool.find((c) => pub(c.url) !== pub(main.url) && c.quote !== main.quote && sameFact(main, c) && subjectCoverage(c.quote, subjQ0) > 0);
+      return hit0 ? [main, hit0] : qs;
+    }
     const keys = [...terms(main.quote)].filter((w) => !qTerms.has(w));
     const hit = pool.find((c) => pub(c.url) !== pub(main.url) && [...factValues(c.quote)].some((f) => fm.has(f)) && keys.some((k) => terms(c.quote).has(k)));
     return hit ? [main, hit] : qs;
@@ -455,6 +530,12 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
       const fa = factValues(a.quote);
       if (!fa.size) continue;
       const b = rel.find((c) => pub(c.url) !== pub(a.url) && sharedFact(fa, factValues(c.quote)) && [a, c].some((v) => [...terms(v.quote)].some((w) => qTerms.has(w) && !subjQ.some((t) => t.toLowerCase() === w))));
+      if (b) { pair = [a, b]; break; }
+    }
+    // Then value-free definitional pairs under the same >= 3 shared-terms rule (both value-free, both name the subject).
+    if (!pair) for (const a of rel) {
+      if (factValues(a.quote).size) continue;
+      const b = rel.find((c) => pub(c.url) !== pub(a.url) && !factValues(c.quote).size && sameFact(a, c));
       if (b) { pair = [a, b]; break; }
     }
     if (pair) claimsV = [...claimsV.slice(0, 4), pair];
@@ -503,7 +584,7 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
     for (const a of qs) {
       const fa = factValues(a.quote);
       for (const b of allVerified) {
-        if (pub(b.url) === pub(a.url)) continue;
+        if (pub(b.url) === pub(a.url) || sharedOwn(a, b) < 1) continue; // same value AND same topic word
         for (const f of factValues(b.quote)) if (fa.has(f)) (by.add(pub(b.url)), vals.add(f.slice(2)));
       }
     }
@@ -525,6 +606,14 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
     const by = [...new Set([...((cf as any).confirmed_by ?? []), ...(twin?.confirmed_by ?? [])])];
     return { text: v.quote, snippets: [snip(v)], sources: [srcN(v.url)], confirmed: by.length > 0, ...(by.length ? { confirmed_by: by } : {}) };
   });
+  const consistent = isLiveValueQuestion(q) ? consistentValues(extracted, pool, pub, (deps?.now ?? Date.now)()).map((c) => ({
+    status: "consistent" as const,
+    values: c.map((v) => v.raw),
+    range: `${c[0].raw} to ${c[1].raw}`,
+    publishers: c.map((v) => pub(v.url)),
+    dates: c.map((v) => v.date),
+    snippets: c.map((v) => snip({ url: v.url, quote: v.quote })),
+  })) : [];
   return {
     ...code,
     answer: answerLines.length
@@ -535,6 +624,7 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
     sources,
     snippets,
     claims,
+    ...(consistent.length ? { consistent, consistent_note: CONSISTENT_NOTE } : {}),
     could_not_confirm: unconfirmed,
     could_not_confirm_note: unconfirmed.length ? "These claims appear on only one independent publisher; we could not confirm them elsewhere." : UNCONFIRMED_EMPTY_NOTE,
     ai_note: AI_SELECTION_NOTE,
