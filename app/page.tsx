@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { BASE_PAY_TO_BASENAME, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE } from "@/lib/config";
 import { SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
+import { USDC_POLYGON } from "@/lib/polygon-config";
+import { XRPL_PAYTO, RLUSD_MAINNET_ISSUER } from "@/lib/xrpl-config";
 import { catalogStats, routeName, routePath, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -48,7 +50,7 @@ export default function HomePage() {
               <span>built for agents.</span>
             </h1>
             <p className="hp-sub">
-              {s.routes} paid services for market data, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
+              {s.routes} paid services for market data, onchain checks, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
               {s.minPrice}–{s.maxPrice} per call in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, and gets JSON back.
             </p>
             <div className="hp-ctas">
@@ -66,7 +68,7 @@ export default function HomePage() {
               <div className="hp-stat">
                 <div className="k">Paid routes</div>
                 <div className="v">{s.routes}</div>
-                <div className="d">{s.byCategory.map((g) => `${g.routes.length} ${g.category}`).join(" · ")}</div>
+                <div className="d">{s.bySiteGroup.map((g) => `${g.short} ${g.routes.length}`).join(" · ")}</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Price per call</div>
@@ -75,13 +77,13 @@ export default function HomePage() {
               </div>
               <div className="hp-stat">
                 <div className="k">Free samples</div>
-                <div className="v">{DEMO_ROUTES.length}</div>
-                <div className="d">a free twin for every route</div>
+                <div className="v">{s.demoTwins}</div>
+                <div className="d">{s.demoTwins} of {s.routes} paid routes have a free demo twin{s.noDemo.length ? ` (none for ${s.noDemo.join(", ")})` : ""}</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Discovery</div>
-                <div className="v">{s.endpoints}</div>
-                <div className="d">endpoints in /.well-known/x402</div>
+                <div className="v">{s.routes}</div>
+                <div className="d">URLs in /.well-known/x402 · {s.postRoutes} also accept POST</div>
               </div>
             </div>
           </div>
@@ -95,7 +97,7 @@ export default function HomePage() {
                 {WORDS[s.routes] ?? s.routes} routes. <span>One protocol.</span>
               </h2>
               <p className="hp-lead">
-                Every route works the same way: request, get a 402, pay in USDC, get JSON. Each one has a free twin at{" "}
+                Every route works the same way: request, get a 402, pay in USDC, get JSON. {s.demoTwins} of {s.routes} have a free twin at{" "}
                 <code>/api/demo/&lt;route&gt;</code> that runs the route on a fixed input (discourse/split: a stored recording, not re-run).
               </p>
             </div>
@@ -128,7 +130,7 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody>
-                {s.byCategory.map((g) => [
+                {s.bySiteGroup.map((g) => [
                   <tr className="grp" key={g.category}>
                     <td colSpan={5}>{g.label}</td>
                   </tr>,
@@ -230,8 +232,16 @@ export default function HomePage() {
                   <code>{SOLANA_PAYTO}</code>
                   <span className="k">Solana asset</span>
                   <span>USDC <code>{USDC_SOLANA_MINT}</code></span>
+                  <span className="k">Polygon: pay to</span>
+                  <code>{DEFAULT_PAY_TO}</code>
+                  <span className="k">Polygon asset</span>
+                  <span>native USDC <code>{USDC_POLYGON}</code> (same address as Base)</span>
+                  <span className="k">XRP Ledger: pay to</span>
+                  <code>{XRPL_PAYTO}</code>
+                  <span className="k">XRP Ledger asset</span>
+                  <span>RLUSD, issuer <code>{RLUSD_MAINNET_ISSUER}</code></span>
                   <span className="k">Settlement</span>
-                  <span>x402 <code>exact</code>, same price on both. Coinbase CDP facilitator on Base, PayAI on Solana</span>
+                  <span>x402 <code>exact</code>, same price on all four. Coinbase CDP facilitator on Base and Polygon, PayAI on Solana; XRP Ledger payments are verified by us on the validated ledger</span>
                   <span className="k">Balance</span>
                   <span>Base payTo live on <Link href="/status">/status</Link></span>
                 </div>

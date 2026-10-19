@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { PUBLIC_BASE_URL, SERVICE_DESCRIPTION } from "@/lib/config";
 
@@ -6,13 +6,15 @@ export const metadata: Metadata = {
   metadataBase: new URL(PUBLIC_BASE_URL),
   title: "Horizon Pulse",
   description: SERVICE_DESCRIPTION,
+  // Brand kit v1 (2026-10-12) §8: favicon set + manifest from favicon/; /icon.png kept for the Bazaar iconUrl.
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
-      { url: "/icon.png", type: "image/png", sizes: "256x256" },
+      { url: "/hp-favicon.svg", type: "image/svg+xml" },
     ],
-    apple: "/icon.png",
+    apple: "/apple-touch-icon.png",
   },
+  manifest: "/site.webmanifest",
   openGraph: {
     title: "Horizon Pulse",
     description: SERVICE_DESCRIPTION,
@@ -21,6 +23,8 @@ export const metadata: Metadata = {
     type: "website",
   },
 };
+
+export const viewport: Viewport = { themeColor: "#08090A" };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

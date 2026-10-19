@@ -157,7 +157,7 @@ These are services for people who run an API. They are not paid with x402; never
 - Hosted MCP: `https://horizonpulse.dev/mcp` (for MCP clients that can pay x402).
 - Pay with a Coinbase wallet (UNTESTED: not yet run against Horizon Pulse; based on Coinbase's docs only). Coinbase Agentic Wallet CLI: `npx awal@latest x402 pay https://horizonpulse.dev/api/pulse --max-amount 2000` (USDC atomic units, so 2000 = $0.002; POST: `-X POST -d '{"url":"https://example.com"}'`); Coinbase lists Base, Polygon and Solana USDC for it. Coinbase Wallet MCP (`https://mcp.base.org`): `initiate_x402_request` with url, method GET or POST and `maxPayment` (e.g. "0.002"), approve in Coinbase Wallet, then `complete_x402_request`; Base USDC only. Set the cap to the route's listed price. The Coinbase for Agents connector (Grok, Perplexity and others) pays only from Coinbase's curated catalog, which does not include Horizon Pulse.
 
-## Honesty
+## Route behavior and billing
 
 - Real upstream data only (Coinbase Exchange, CoinGecko, OKX, DefiLlama, public RPCs). No stubbed prices.
 - `/api/fetch` returns best-effort cleaned text from the requested public URL; private/localhost blocked; size/time capped.

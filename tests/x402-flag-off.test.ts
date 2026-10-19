@@ -153,6 +153,8 @@
  * keys per mode (GET json, GET browser, OPTIONS); all 85 pre-existing keys per mode, including the
  * three /api/x402-check keys, are byte-identical. golden.discovery refreshed (openapi.json,
  * llms.txt, skill.md, /.well-known/x402).
+ * 2026-10-19 (branch site/round6-batch): ONLY golden.discovery["sha256 public/llms.txt"] refreshed
+ * (heading "## Honesty" renamed "## Route behavior and billing"); every 402 / OPTIONS key unchanged (key-by-key compare).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
