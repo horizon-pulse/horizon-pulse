@@ -48,6 +48,20 @@ export const listKey = (rail: AlertRail) => `hp:alerts:${rail}`;
 export const countKey = (rail: AlertRail, day: string) => `hp:alerts:${rail}:count:${day}`;
 const utcDay = (d: Date) => d.toISOString().slice(0, 10);
 
+/**
+ * Sentinel 10/19 18:20 EDT: per-kind XRPL alert COUNTS on /status. Fixed allowlist; any other kind counts as "other".
+ * Stored as hourly counters (internal only, never shown) so /status can show "today (ET)" and "last 24 h" without
+ * exposing per-event timestamps. Key: hp:alerts:xrpl:kind:<kind>:<UTC yyyy-mm-ddThh>, TTL 3 days.
+ */
+export const XRPL_ALERT_KINDS = ["xrpl_check_failing", "xrpl_entry_dropped", "other"] as const;
+export type XrplAlertKind = (typeof XRPL_ALERT_KINDS)[number];
+export const XRPL_KIND_TTL_S = 3 * 86_400;
+export const xrplKindOf = (kind: unknown): XrplAlertKind => (kind === "xrpl_check_failing" || kind === "xrpl_entry_dropped" ? kind : "other");
+const utcHour = (d: Date) => d.toISOString().slice(0, 13);
+export const xrplKindKey = (k: XrplAlertKind, hour: string) => `hp:alerts:xrpl:kind:${k}:${hour}`;
+const etDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+export type XrplKindCounts = Record<XrplAlertKind, number>;
+
 /** First 6 + "…" + last 4; anything too short / not a string → null (never a full address). */
 export function truncateAddress(a: unknown): string | null {
   if (typeof a !== "string") return null;
@@ -151,6 +165,7 @@ export function persistAlert(rail: AlertRail, alert: unknown, opts: { exemptFrom
     }
     const entry = alertEntry(alert, now);
     const ck = countKey(rail, day);
+    const kk = rail === "xrpl" ? xrplKindKey(xrplKindOf(kind), utcHour(now)) : null;
     const p = pipeline(
       c,
       [
@@ -158,6 +173,7 @@ export function persistAlert(rail: AlertRail, alert: unknown, opts: { exemptFrom
         ["LTRIM", listKey(rail), 0, ALERT_LIST_CAP - 1],
         ["INCR", ck],
         ["EXPIRE", ck, ALERT_COUNT_TTL_S],
+        ...(kk ? [["INCR", kk], ["EXPIRE", kk, XRPL_KIND_TTL_S]] : []),
       ],
       ALERT_PERSIST_TIMEOUT_MS,
     )
@@ -172,7 +188,13 @@ export function persistAlert(rail: AlertRail, alert: unknown, opts: { exemptFrom
 
 /** Public /status shape: counts only (Odin 9:16 AM AST CHANGES REQUIRED: no code, timestamp or route in public markup). */
 export type RailAlertSummary = { today: number; last7d: number };
-export type AlertSummary = { status: "ok" | "unavailable" | "not_applicable"; xrpl: RailAlertSummary | null; solana: RailAlertSummary | null };
+export type AlertSummary = {
+  status: "ok" | "unavailable" | "not_applicable";
+  xrpl: RailAlertSummary | null;
+  solana: RailAlertSummary | null;
+  /** Only when status is "ok": allowlisted XRPL kinds, counts only (today in ET, last 24 h). */
+  xrplKinds?: { todayEt: XrplKindCounts; last24h: XrplKindCounts };
+};
 
 /** Uncached server-side read: today + last 7 UTC days per rail (one MGET pipeline, 800 ms bound). Never throws. */
 export async function readAlertSummary(now: Date = new Date()): Promise<AlertSummary> {
@@ -181,13 +203,23 @@ export async function readAlertSummary(now: Date = new Date()): Promise<AlertSum
     if (!c) return { status: "not_applicable", xrpl: null, solana: null };
     const days = Array.from({ length: 7 }, (_, i) => utcDay(new Date(now.getTime() - i * 86_400_000)));
     const rails: AlertRail[] = ["xrpl", "solana"];
-    const out = await pipeline(c, rails.map((r) => ["MGET", ...days.map((d) => countKey(r, d))]), ALERT_STATUS_TIMEOUT_MS);
+    // Last 48 UTC hours (covers "today in ET" at any hour and the last 24 h).
+    const hours = Array.from({ length: 48 }, (_, i) => new Date(now.getTime() - i * 3_600_000));
+    const today = etDay(now);
+    const kindCmds = XRPL_ALERT_KINDS.map((k) => ["MGET", ...hours.map((h) => xrplKindKey(k, utcHour(h)))]);
+    const out = await pipeline(c, [...rails.map((r) => ["MGET", ...days.map((d) => countKey(r, d))]), ...kindCmds], ALERT_STATUS_TIMEOUT_MS);
     if (!out) return { status: "unavailable", xrpl: null, solana: null };
+    const todayEt = {} as XrplKindCounts, last24h = {} as XrplKindCounts;
+    XRPL_ALERT_KINDS.forEach((k, j) => {
+      const v = (Array.isArray(out[2 + j]) ? (out[2 + j] as unknown[]) : []).map((x) => Math.max(0, Math.floor(Number(x ?? 0) || 0)));
+      last24h[k] = v.slice(0, 24).reduce((a, b) => a + b, 0);
+      todayEt[k] = v.reduce((a, b, i) => a + (etDay(hours[i]) === today ? b : 0), 0);
+    });
     const sum = (i: number): RailAlertSummary => {
       const counts = (Array.isArray(out[i]) ? (out[i] as unknown[]) : []).map((v) => Number(v ?? 0) || 0);
       return { today: counts[0] ?? 0, last7d: counts.reduce((a, b) => a + b, 0) };
     };
-    return { status: "ok", xrpl: sum(0), solana: sum(1) };
+    return { status: "ok", xrpl: sum(0), solana: sum(1), xrplKinds: { todayEt, last24h } };
   } catch {
     return { status: "unavailable", xrpl: null, solana: null };
   }
