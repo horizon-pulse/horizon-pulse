@@ -96,6 +96,8 @@ export const SEARCH_S = 1.2;
 export const READ_BATCH = 5;
 export const READ_BATCH_S = 4;
 export const SUBQ_S = 6;
+/** Brief LLM synthesis term (12 s hard timeout; typical 2-6 s). Counted always so the pre-verify check stays honest. */
+export const LLM_S = 8;
 export const MAX_SUBQUESTIONS = 8;
 
 export function subQuestions(q: string): number {
@@ -104,5 +106,5 @@ export function subQuestions(q: string): number {
 }
 
 export function projectedSeconds(x: Tier, q: string): number {
-  return x.searches * SEARCH_S + Math.ceil(x.reads / READ_BATCH) * READ_BATCH_S + (subQuestions(q) - 1) * SUBQ_S;
+  return x.searches * SEARCH_S + Math.ceil(x.reads / READ_BATCH) * READ_BATCH_S + (subQuestions(q) - 1) * SUBQ_S + (x.id === "brief" ? LLM_S : 0);
 }

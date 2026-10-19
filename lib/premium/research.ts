@@ -6,6 +6,7 @@
  */
 import { parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
 import type { Tier } from "./tiers";
+import { synthesizeBrief } from "./synthesis";
 
 export const SNIPPET_MAX_WORDS = 50;
 export const SNIPPETS_PER_SOURCE = 5;
@@ -47,7 +48,7 @@ export function stripMarkdown(md: string): string {
 export function isDateline(s: string): boolean {
   return new RegExp(`\\b(published|updated|posted|last updated|modified)\\b[^.\\n]{0,25}?(?:\\b(?:19|20)\\d{2}-\\d{2}-\\d{2}\\b|\\b${MON}\\s+\\d{1,2}|\\b\\d{1,2}\\s+${MON}|\\b\\d{1,2}/\\d{1,2}/\\d{2,4}\\b|\\b(?:today|yesterday|\\d+\\s+(?:hours?|days?|minutes?)\\s+ago)\\b)`, "i").test(s);
 }
-function sentences(text: string): string[] {
+export function sentences(text: string): string[] {
   return stripMarkdown(text)
     .replace(/Section Title:[^\n]*\n?|Content:\n?|\.\.\. \(content truncated\)/g, " ")
     .split(/(?<=[.!?])(?<!\b(?:Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|Mr|Ms|Mrs|Dr|Inc|Corp|Co|Ltd|St|vs|No|U\.S|a\.m|p\.m)\.)\s+|\n+/)
@@ -137,7 +138,7 @@ export function factValues(s: string): Set<string> {
   take(new RegExp(`\\b${MON}\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+((?:19|20)\\d{2})\\b`, "g"), (m) => `d:${m[3]}-${MONTH_IDX[m[1]]}-${pad(m[2])}`);
   take(new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+${MON}\\s+((?:19|20)\\d{2})\\b`, "g"), (m) => `d:${m[3]}-${MONTH_IDX[m[2]]}-${pad(m[1])}`);
   take(new RegExp(`\\b${MON}\\s+((?:19|20)\\d{2})\\b`, "g"), (m) => `d:${m[2]}-${MONTH_IDX[m[1]]}`);
-  for (const m of rest.matchAll(/(\$)?(\d[\d,]*(?:\.\d+)?)\s*(%|percent|million|billion|m\b|bn\b|b\b)?/g)) {
+  for (const m of rest.matchAll(/(?<![a-z0-9.,-])(\$)?(\d[\d,]*(?:\.\d+)?)(?![a-z0-9])\s*(%|percent|million|billion|m\b|bn\b|b\b)?/g)) {
     const num = m[2].replace(/,/g, "").replace(/\.$/, "");
     if (!m[1] && !m[3] && (num.length < 2 || /^(19|20)\d{2}$/.test(num))) continue;
     out.add(`n:${m[1] ?? ""}${num}${m[3] ? m[3].replace("percent", "%").replace(/^m$/, "million").replace(/^(bn|b)$/, "billion") : ""}`);
@@ -352,6 +353,7 @@ export function compile(x: Tier, q: string, results: ParallelResult[], retrieved
       ? "These claims appear on only one independent publisher; we could not confirm them elsewhere."
       : UNCONFIRMED_EMPTY_NOTE,
     dropped,
+    advice_disclaimer: "Not financial, investment, tax, legal or health advice. Quotes about tokens, securities or other financial products are not a recommendation to buy, sell or hold anything.",
   };
   if (x.id === "brief") return base;
   const multi = claims.filter((c) => c.domains.length >= 2);
@@ -404,7 +406,9 @@ export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N): 
 }
 
 /** Run the upstream calls for one sync tier within the deadline. Units come from the tier table only. */
-export async function runResearch(x: Tier, q: string, deadline: number) {
+/** C1: optional sink for the cleaned search + extract results (Preview debug capture only; see capture.ts). */
+export type CaptureSink = { data?: { search: ParallelResult[]; extract: ParallelResult[] } };
+export async function runResearch(x: Tier, q: string, deadline: number, capture?: CaptureSink) {
   const subs = x.id === "brief" ? [q] : subQuestionList(q);
   const queries = [q, ...subs.filter((s) => s !== q)].slice(0, Math.max(1, x.searches));
   const perSearch = Math.max(3, Math.ceil(x.reads / Math.max(1, queries.length)));
@@ -417,7 +421,9 @@ export async function runResearch(x: Tier, q: string, deadline: number) {
     // Odin 10/19 (1): extract page content for the top BRIEF_EXTRACT_N distinct publishers (search order), within the budget.
     const urls = briefExtractUrls(found);
     const read = urls.length ? await parallelExtract(q, urls, deadline).catch(() => [] as ParallelResult[]) : [];
-    return compile(x, q, found, undefined, read);
+    if (capture) capture.data = { search: found, extract: read };
+    const code = compile(x, q, found, undefined, read);
+    return await synthesizeBrief(q, code, read, deadline);
   }
   const urls = [...new Set(found.map((r) => r.url))].slice(0, x.reads);
   const read = await parallelExtract(q, urls, deadline);

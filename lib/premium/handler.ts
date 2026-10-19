@@ -49,6 +49,9 @@ import {
   type Decoded,
 } from "./payment";
 import { ParallelError, parallelKeyPresent } from "./parallel";
+import { captureAllowed, captureBody } from "./capture";
+import { questionRefusal } from "./synthesis";
+import type { CaptureSink } from "./research";
 import { newReconcileId, recordReconcile, type ReconcileOutcome } from "./reconcile";
 import { runResearch } from "./research";
 import { premiumStore, type PremiumStore } from "./store";
@@ -71,7 +74,7 @@ export function bareRouteResponse(route: PremiumRoute): NextResponse {
 }
 
 function description(x: Tier) {
-  return `${x.route === "research" ? R1_DESCRIPTION : R2_DESCRIPTION} Tier ${x.id} ${x.priceUsd}.`;
+  return `${x.route === "research" ? R1_DESCRIPTION : R2_DESCRIPTION} Tier ${x.id} ${x.priceUsd}.${x.route === "research" ? " Do not include personal data (private names, contact details, health or account information) in q." : ""}`;
 }
 
 function validateInput(route: PremiumRoute, url: URL): { ok: true; input: string } | { ok: false; res: NextResponse } {
@@ -190,6 +193,11 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
   const v = validateInput(route, url);
   if (!v.ok) return v.res;
 
+  if (x.route === "research") {
+    const refused = questionRefusal(v.input);
+    if (refused)
+      return jsonError(400, { error: "question_not_supported", reason: refused, charged: false, message: "We do not compile information about private individuals or health data. Nothing was charged. Do not include personal data in questions." });
+  }
   if (x.route === "research" && !parallelKeyPresent()) return jsonError(503, { error: "premium_provider_unavailable", charged: false });
   if (x.mode === "async" && !(premiumAsyncEnabled() && asyncTierLive(x))) return jsonError(503, { error: "tier_not_available", charged: false, message: "This tier is not live yet." });
   if (x.id === "extended" && projectedSeconds(x, v.input) > WORK_BUDGET_S)
@@ -302,8 +310,10 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     markNonceSettled(d.from!, d.nonce!);
     held = (await moveClaim(store, held, { s: "settled" }).catch(() => null)) ?? held;
     try {
-      const result = await runResearch(x, v.input, t0 + SYNC_HARD_LIMIT_S * 1000);
-      return okResponse(x, result, s.tx, s.header);
+      const sink: CaptureSink = {};
+      const result = await runResearch(x, v.input, t0 + SYNC_HARD_LIMIT_S * 1000, sink);
+      const cap = captureAllowed(req.headers) ? captureBody(sink) : null;
+      return okResponse(x, cap ? { ...(result as object), debug_capture: cap } : result, s.tx, s.header);
     } catch (e) {
       // The settle SUCCEEDED; the work after it failed. Say so (settled + tx + PAYMENT-RESPONSE) instead of reading as an
       // unconfirmed settle, and log a non-secret failure code (ParallelError codes like upstream_401 / not_configured).

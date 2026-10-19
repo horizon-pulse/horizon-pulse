@@ -1,0 +1,55 @@
+{
+ "question": "What is the x402 payment protocol",
+ "search_id": "search_ba77f67b661a83afd63a7875cacad15f",
+ "results": [
+  {
+   "url": "https://x402.org/wp-content/uploads/sites/10/2026/06/x402-whitepaper.pdf",
+   "title": "x402: The Payment Protocol for Agentic Commerce",
+   "publish_date": "2025-08-16",
+   "excerpts": [
+    "x402: An open standard for internet-native payments\nAn HTTP based protocol for agents, context retrieval, APIs, and more\nBy: Erik Reppel Ronnie Caspers Kevin Leffew Danny Organ\nDan Kim Nemil Dalal\nCoinbase Developer Platform / x402\nMay 6, 2025\nx402 Whitepaper Coinbase Developer Platform\nContents\n7.1 Mitigating Fraud, Chargebacks, and Compliance Overhead . . . . . . . . . . . . . . . . . . . 8\n7.2 Future-Proof, Chain- and Token-Agnostic Payments . . . . . . . . . . . . . . . . . . . . . . . 9\n8 The x402 Spec: A Flexible HTTP Standard for Payments 9\n8.1 Middleware Configuration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .\nx402 is an open payment standard that enables AI agents and web services to autonomously pay for API access, data, and digital services.\nBy leveraging the long-reserved HTTP 402 \u201dPayment Required\u201d status code, x402 eliminates the need for API keys, subscriptions, and manual payment processing, allowing real-time, machine-native transactions using stablecoins like USDC.\nBy enabling machine-native payments, x402 enables AI agents to autonomously discover and procure third- party cloud resources, contextual data, and API tools\u2014making it easier for them to achieve their targeted optimization goals without human-in-the-loop intervention.\nx402 bridges the gap, allowing AI agents and API providers to interact seamlessly with real-time, trustless payments\u2014eliminating friction from legacy billing systems and unlocking new pay-per-use revenue models.\nScaling Payments with Blockchain and Digital Assets\nx402 is an open payments protocol developed by Coinbase that enables AI agents to complete transactions autonomously.\nThe x402 protocol utilizes the long-reserved HTTP 402 \u201dPayment Required\u201d status code to require a payment to complete an API request or load a webpage. If an API request lacks payment, x402 responds with an HTTP 402 Payment Required status, prompting the client to pay and retry.\nWith this simple protocol, x402 removes the need for API keys, accounts, and subscriptions. x402 enables any API or content provider to accept pay-per-use payments through a lightweight middleware that integrates seamlessly into existing infrastructures.\n4\nx402 Whitepaper Coinbase Developer Platform\nExample Integration\nBy standardizing payments at the protocol level, x402 paves the way for a more open, efficient, and scalable digital economy\u2014one where AI agents, developers, and service providers can interact natively and autonomously.\nBy standardizing payments at the protocol level, x402 paves the way for a more open, efficient, and scalable digital economy\u2014one where AI agents, developers, and service providers can interact natively and autonomously. Reference Implementation\nThe x402 protocol has a full reference implementation available as an open-source project.\nThis helps ensure they follow the protocol correctly while reducing the amount of work needed to implement it."
+   ]
+  },
+  {
+   "url": "https://docs.x402.org/introduction.md",
+   "title": "Welcome to x402",
+   "publish_date": null,
+   "excerpts": [
+    "This guide will help you understand x402, the open payment standard, and help you get started building or integrating services with x402.\nx402 is the open payment standard that enables services to charge for access to their APIs and content directly over HTTP.\nIt is built around the HTTP 402 Payment Required status code and allows clients to programmatically pay for resources without accounts, sessions, or credential management.\nWith x402, any web service can require payment before serving a response, using crypto-native payments for speed, privacy, and efficiency.\nWant to contribute to our docs?\nWhy Use x402?\nx402 offers:\n* No fees and minimal friction x402 as a standard has 0 fees built in.\n* Native support for machine-to-machine payments, enabling seamless use by AI agents\n* Built-in micropayment support, making it easy to monetize usage-based services (including batch settlement on EVM for high-volume, batched onchain redemption)\nWho is x402 for?\n* Sellers: Service providers who want to monetize their APIs or content. x402 enables direct, programmatic payments from clients with minimal setup.\n* Buyers: Human developers and AI agents seeking to access paid services without accounts or manual payment flows.\nBoth sellers and buyers interact directly through HTTP requests, with payment handled transparently through the protocol.\nWhat Can You Build?\nx402 enables a range of use cases, including:\n* API services paid per request\n* AI agents that autonomously pay for API access\n* Paywalls for digital content\n* Microservices and tooling monetized via microtransactions\n* Proxy services that aggregate and resell API capabilities\nHow Does It Work?\nAt a high level, the flow is simple:\n1. A buyer requests a resource from a server.\n2. If payment is required, the server responds with 402 Payment Required, including payment instructions.\n3. The buyer prepares and submits a payment payload.\n4. The server verifies and settles the payment independently, or by leveraging an x402 facilitator's /verify and /settle endpoints.\n5.\nIf payment is valid, the server provides the requested resource.\nFor more detail, see:"
+   ]
+  },
+  {
+   "url": "https://docs.x402.org/",
+   "title": "Welcome to x402 - x402",
+   "publish_date": null,
+   "excerpts": [
+    "This guide will help you understand x402, the open payment standard, and help you get started building or integrating services with x402.\nx402 is the open payment standard that enables services to charge for access to their APIs and content directly over HTTP.\nIt is built around the HTTP 402 Payment Required status code and allows clients to programmatically pay for resources without accounts, sessions, or credential management. With x402, any web service can require payment before serving a response, using crypto-native payments for speed, privacy, and efficiency. Want to contribute to our docs?\n\u200b\nWhy Use x402?\nx402 addresses key limitations of existing payment systems:\n* High fees and friction with traditional credit cards and fiat payment processors\n* Incompatibility with machine-to-machine payments , such as AI agents\n* Lack of support for micropayments , making it difficult to monetize usage-based services\n\u200b\nWho is x402 for?\n* Sellers: Service providers who want to monetize their APIs or content. x402 enables direct, programmatic payments from clients with minimal setup.\n* Buyers: Human developers and AI agents seeking to access paid services without accounts or manual payment flows.\nBoth sellers and buyers interact directly through HTTP requests, with payment handled transparently through the protocol.\n\u200b\nWhat Can You Build?\nx402 enables a range of use cases, including:\n* API services paid per request\n* AI agents that autonomously pay for API access\n* Paywalls for digital content\n* Microservices and tooling monetized via microtransactions\n* Proxy services that aggregate and resell API capabilities\n\u200b\nHow Does It Work?\nAt a high level, the flow is simple:\n1. A buyer requests a resource from a server.\n2. If payment is required, the server responds with 402 Payment Required , including payment instructions.\n3. The buyer prepares and submits a payment payload.\n4. The server verifies and settles the payment using an x402 facilitator\u2019s /verify and /settle endpoints.\n5.\nIf payment is valid, the server provides the requested resource.\nFor more detail, see:"
+   ]
+  },
+  {
+   "url": "https://docs.x402.org/faq",
+   "title": "FAQ",
+   "publish_date": null,
+   "excerpts": [
+    "x402 is an open\u2011source protocol that turns the dormant HTTP 402 Payment Required status code into a fully\u2011featured, onchain payment layer for APIs, websites, and autonomous agents.\nIs x402 a CDP Product?\nNo.\nWhile Coinbase Developer Platform provides tooling and are the creators of the standard, it is an open protocol (Apache-2.0 license) and a credibly neutral payment standard, and you don't need any Coinbase products to use it."
+   ]
+  },
+  {
+   "url": "https://solana.com/x402",
+   "title": "x402 on Solana | Internet-Native Payments for AI Agents | Solana",
+   "publish_date": null,
+   "excerpts": [
+    "Build with x402 on Solana - the payment protocol enabling AI agents to transact autonomously."
+   ]
+  }
+ ],
+ "warnings": null,
+ "usage": [
+  {
+   "name": "sku_search",
+   "count": 1
+  }
+ ],
+ "metadata": null,
+ "session_id": "session_ba77f67b661a83afd63a7875cacad15f"
+}
