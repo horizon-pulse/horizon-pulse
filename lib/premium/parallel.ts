@@ -67,8 +67,14 @@ async function post(path: string, body: unknown, deadline: number): Promise<any>
   }
 }
 
+/** POST /v1/search body. v1 rejects unknown top-level fields (additionalProperties:false -> 422): max_results lives under
+ * advanced_settings (a top-level max_results was only accepted by v1beta). */
+export function searchBody(objective: string, queries: string[], maxResults: number) {
+  return { objective, search_queries: queries.slice(0, 5), mode: "fast" as const, advanced_settings: { max_results: maxResults } };
+}
+
 export async function parallelSearch(objective: string, queries: string[], maxResults: number, deadline: number): Promise<ParallelResult[]> {
-  const j = await post("/v1/search", { objective, search_queries: queries.slice(0, 5), max_results: maxResults, mode: "fast" }, deadline);
+  const j = await post("/v1/search", searchBody(objective, queries, maxResults), deadline);
   return clean(j?.results);
 }
 
