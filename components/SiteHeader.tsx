@@ -8,7 +8,8 @@ export function SiteHeader() {
       <div className="hp-wrap hp-header-in">
         <Link href="/" className="hp-brand">
           <span className="hp-mark" aria-hidden>
-            <svg viewBox="0 0 24 24" width="18" height="18"><path d="M2 12h4l3-7 4 14 3-7h6" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            {/* Brand kit v1 pulse glyph (svg/hp-pulse-glyph-*.svg), currentColor */}
+            <svg viewBox="40 90 432 300" width="18" height="18"><polyline points="72,272 209.76,272 236,122 268.8,358 295.04,272 400,272" fill="none" stroke="currentColor" strokeWidth="26" strokeLinecap="round" strokeLinejoin="round" /><circle cx="440" cy="272" r="22" fill="currentColor" /></svg>
           </span>
           Horizon Pulse
         </Link>

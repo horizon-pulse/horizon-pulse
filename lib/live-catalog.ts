@@ -9,6 +9,7 @@
  * Catalog paths, prices, and payTo are unchanged by host updates.
  */
 
+import { DEMO_ROUTES } from "./demo-catalog";
 import {
   PULSE_PRICE_USD,
   PULSE_PRICE_ATOMIC,
@@ -403,12 +404,25 @@ export const CATEGORY_LABELS: Record<LiveRoute["category"], string> = {
   agent: "Agent utilities",
 };
 
+/**
+ * Landing-page grouping (review round 6, 10/19): four honest groups for the homepage stats tile
+ * and table. Separate from `category`, which drives OpenAPI tags and stays unchanged.
+ * Every live route must sit in exactly one group (tests/site-round6.test.ts).
+ */
+export const SITE_GROUPS = [
+  { key: "market", label: "Crypto market data", short: "market data", paths: ["/api/pulse", "/api/signals", "/api/yield", "/api/portfolio", "/api/gas", "/api/funding"] },
+  { key: "onchain", label: "Onchain checks", short: "onchain", paths: ["/api/tx-status", "/api/balance", "/api/tx-guard", "/api/chain/head", "/api/token/meta", "/api/name/resolve", "/api/tokenized-stock", "/api/batch"] },
+  { key: "x402", label: "x402 tools", short: "x402 tools", paths: ["/api/x402-check", "/api/x402-check/deep", "/api/bazaar-check", "/api/market/search", "/api/market/quote"] },
+  { key: "web", label: "Web, documents and everyday data", short: "web and everyday", paths: ["/api/fetch", "/api/http", "/api/extract", "/api/screenshot", "/api/search", "/api/pdf", "/api/watch", "/api/grocery/normalize", "/api/grocery/ingredient", "/api/discourse/split"] },
+] as const;
+
 /** Route name used by /api/demo/<name>, derived from the display path. */
 /** Real request path (no query), same string /.well-known/x402 lists. Always display this, never `/api/${routeName(r)}`. */
 export const routePath = (r: LiveRoute) => r.path.replace(/\?.*$/, "");
 /** Demo slug / anchor id: nested paths join with "-" (/api/market/search -> market-search). Not a route path. */
 export const routeName = (r: LiveRoute) => r.path.replace(/^\/api\//, "").replace(/\?.*$/, "").replace(/\//g, "-");
 
+const DEMO_SLUGS = new Set(DEMO_ROUTES.map((d) => d.route));
 const usd = (p: string) => Number(p.replace(/[^0-9.]/g, ""));
 /** Catalog-derived stats (never hardcoded). */
 export function catalogStats() {
@@ -419,6 +433,15 @@ export function catalogStats() {
     endpoints: LIVE_PAID_ROUTES.reduce((n, r) => n + (r.method === "GET|POST" ? 2 : 1), 0),
     minPrice: fmt(Math.min(...prices)),
     maxPrice: fmt(Math.max(...prices)),
+    postRoutes: LIVE_PAID_ROUTES.filter((r) => r.method === "GET|POST").length,
+    demoTwins: LIVE_PAID_ROUTES.filter((r) => DEMO_SLUGS.has(routeName(r))).length,
+    noDemo: LIVE_PAID_ROUTES.filter((r) => !DEMO_SLUGS.has(routeName(r))).map(routePath),
+    bySiteGroup: SITE_GROUPS.map((g) => ({
+      category: g.key,
+      label: g.label,
+      short: g.short,
+      routes: LIVE_PAID_ROUTES.filter((r) => (g.paths as readonly string[]).includes(routePath(r))),
+    })),
     byCategory: (Object.keys(CATEGORY_LABELS) as LiveRoute["category"][]).map((c) => ({
       category: c,
       label: CATEGORY_LABELS[c],
