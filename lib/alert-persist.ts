@@ -11,8 +11,11 @@
  *   - Credentials: the app's existing server env via resolveSharedReplayStoreEnv (the claim store's read-write creds).
  *     KV_REST_API_READ_ONLY_TOKEN is never read.
  *   - /status shows counts only (today, last 7 days), cached 300 s (cachedAlertSummary).
- *   - Preview isolation: writes (and /status reads) only when VERCEL_ENV is unset (local/tests) or "production".
- *     Previews would otherwise resolve to the prod Upstash and pollute the prod lists.
+ *   - Preview isolation (Sentinel LOW-2): writes and /status reads only when VERCEL_ENV === "production" exactly;
+ *     unset or any other value = off. Previews would otherwise resolve to the prod Upstash and pollute the prod lists.
+ *   - Budget (Sentinel LOW-1): warn_rate alerts are never persisted (attacker-inflatable via unpaid junk), and each
+ *     instance writes at most ALERT_WRITE_CAP_PER_DAY alerts per UTC day; past the cap only an in-memory count grows.
+ *   - route is stored as a pathname only (query string / fragment stripped, Sentinel INFO-2 / Odin (c)).
  */
 import { resolveSharedReplayStoreEnv } from "@/lib/xrpl-replay-store";
 
@@ -31,6 +34,7 @@ let envOverride: Env | null = null;
 /** Tests only. */
 export function setAlertPersistForTests(o: { fetch?: FetchFn | null; env?: Env | null } | null): void {
   memo = null;
+  stats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0 }, skippedKind: 0 };
   fetchOverride = o?.fetch ?? null;
   envOverride = o?.env ?? null;
 }
@@ -57,8 +61,9 @@ function creds(): { url: string; token: string } | null {
     // Under vitest the sink stays off unless a test opts in (keeps every existing fetch-counting test unchanged).
     if (!envOverride && process.env.VITEST) return null;
     const env = envOverride ?? (process.env as Env);
-    const ve = (env.VERCEL_ENV ?? "").trim();
-    if (ve && ve !== "production") return null;
+    // Sentinel LOW-2 (Odin 9:25 AM AST): fail closed. Writes AND reads only when VERCEL_ENV is exactly "production";
+    // unset (local, scripts, a Vercel project with system env exposure off) or anything else means off.
+    if (env.VERCEL_ENV !== "production") return null;
     const c = resolveSharedReplayStoreEnv(env);
     return c ? { url: c.url.replace(/\/+$/, ""), token: c.token } : null;
   } catch {
@@ -85,23 +90,56 @@ async function pipeline(c: { url: string; token: string }, cmds: (string | numbe
   }
 }
 
+/** Pathname only: drop any query string and fragment (Odin 9:25 AM AST (c)). */
+export function stripQuery(route: string): string {
+  const i = route.search(/[?#]/);
+  return (i === -1 ? route : route.slice(0, i)).trim();
+}
+
+/** Alert kinds never persisted (Sentinel LOW-1: warn_rate is driven by unpaid junk, so an attacker could inflate it). */
+export const NEVER_PERSIST = new Set(["warn_rate"]);
+/** Hard per-instance cap on alert writes per UTC day (both rails together). */
+export const ALERT_WRITE_CAP_PER_DAY = 50;
+type WriteStats = { day: string; written: number; overCap: Record<AlertRail, number>; skippedKind: number };
+let stats: WriteStats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0 }, skippedKind: 0 };
+function statsFor(day: string): WriteStats {
+  if (stats.day !== day) stats = { day, written: 0, overCap: { xrpl: 0, solana: 0 }, skippedKind: 0 };
+  return stats;
+}
+/** Tests / diagnostics: this instance's write counters for the current UTC day. */
+export function alertWriteStats(): Readonly<WriteStats> {
+  return { ...stats, overCap: { ...stats.overCap } };
+}
+
 /** Build the stored entry from a rail alert object. Only whitelisted, non-secret fields. */
 export function alertEntry(alert: unknown, now: Date = new Date()): PersistedAlert {
   const a = (alert && typeof alert === "object" ? alert : {}) as Record<string, unknown>;
   const code = typeof a.kind === "string" ? a.kind.slice(0, 64) : "unknown";
   const severity = typeof a.severity === "string" ? a.severity.slice(0, 16) : "alert";
-  const route = typeof a.route === "string" ? a.route.slice(0, 80) : null;
+  const route = typeof a.route === "string" ? stripQuery(a.route).slice(0, 80) || null : null;
   return { ts: now.toISOString(), code, severity, route, payer: truncateAddress(a.payer) };
 }
 
 /** Fire-and-forget. Never throws, never returns a promise the caller must await. */
 export function persistAlert(rail: AlertRail, alert: unknown): void {
   try {
+    const kind = alert && typeof alert === "object" ? (alert as { kind?: unknown }).kind : undefined;
     const c = creds();
     if (!c) return;
     const now = new Date();
+    const day = utcDay(now);
+    const st = statsFor(day);
+    if (typeof kind === "string" && NEVER_PERSIST.has(kind)) {
+      st.skippedKind++;
+      return;
+    }
+    if (st.written >= ALERT_WRITE_CAP_PER_DAY) {
+      st.overCap[rail]++; // in-memory only past the cap
+      return;
+    }
+    st.written++;
     const entry = alertEntry(alert, now);
-    const ck = countKey(rail, utcDay(now));
+    const ck = countKey(rail, day);
     const p = pipeline(
       c,
       [

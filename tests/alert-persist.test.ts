@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  ALERT_LIST_CAP, ALERT_STATUS_CACHE_S, alertEntry, cachedAlertSummary, countKey, flushAlertPersistForTests, listKey, persistAlert, readAlertSummary,
+  ALERT_LIST_CAP, ALERT_STATUS_CACHE_S, ALERT_WRITE_CAP_PER_DAY, alertEntry, alertWriteStats, stripQuery, cachedAlertSummary, countKey, flushAlertPersistForTests, listKey, persistAlert, readAlertSummary,
   resetAlertSummaryCacheForTests, setAlertPersistForTests, truncateAddress,
 } from "@/lib/alert-persist";
 import { AlertCounts } from "@/components/AlertCounts";
@@ -81,10 +81,80 @@ describe("alert persistence", () => {
   it("LTRIM keeps the cap at 500", async () => {
     const u = fakeUpstash();
     setAlertPersistForTests({ fetch: u.f as never, env: ENV });
-    for (let i = 0; i < ALERT_LIST_CAP + 25; i++) persistAlert("xrpl", { kind: "xrpl_entry_dropped" });
+    u.lists.set(listKey("xrpl"), Array.from({ length: ALERT_LIST_CAP + 20 }, (_, i) => `old${i}`));
+    for (let i = 0; i < 3; i++) persistAlert("xrpl", { kind: "xrpl_entry_dropped" });
     await flushAlertPersistForTests();
     expect(u.lists.get(listKey("xrpl"))).toHaveLength(ALERT_LIST_CAP);
-    expect(u.kv.get(countKey("xrpl", today()))).toBe(ALERT_LIST_CAP + 25);
+    expect(u.calls.every((c) => c.some((x) => x[0] === "LTRIM" && x[2] === 0 && x[3] === ALERT_LIST_CAP - 1))).toBe(true);
+  });
+
+  it("LOW-1: warn_rate is never persisted (either rail, through the real emit path)", async () => {
+    const u = fakeUpstash();
+    setAlertPersistForTests({ fetch: u.f as never, env: ENV });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { __emitXrplAlertForTests } = await import("@/lib/xrpl-rail");
+    __emitXrplAlertForTests({ kind: "warn_rate", count: 99, windowMs: 300000, threshold: 10 });
+    persistAlert("solana", { kind: "warn_rate", count: 99, windowMs: 300000, threshold: 10 });
+    await flushAlertPersistForTests();
+    expect(u.f).not.toHaveBeenCalled();
+    expect(alertWriteStats().skippedKind).toBe(2);
+    expect(alertWriteStats().written).toBe(0);
+  });
+
+  it("LOW-1: hard cap of 50 writes per UTC day per instance; past it only the in-memory count grows; resets next UTC day", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-19T23:00:00Z"));
+      const u = fakeUpstash();
+      setAlertPersistForTests({ fetch: u.f as never, env: ENV });
+      expect(ALERT_WRITE_CAP_PER_DAY).toBe(50);
+      for (let i = 0; i < 40; i++) persistAlert("xrpl", { kind: "xrpl_entry_dropped" });
+      for (let i = 0; i < 30; i++) persistAlert("solana", { kind: "solana_claim_write_failed", severity: "low" });
+      await flushAlertPersistForTests();
+      expect(u.f).toHaveBeenCalledTimes(50);
+      expect(alertWriteStats()).toMatchObject({ day: "2026-10-19", written: 50, overCap: { xrpl: 0, solana: 20 } });
+      expect((u.kv.get(countKey("xrpl", "2026-10-19")) ?? 0) + (u.kv.get(countKey("solana", "2026-10-19")) ?? 0)).toBe(50);
+      persistAlert("xrpl", { kind: "xrpl_entry_dropped" });
+      expect(alertWriteStats().overCap.xrpl).toBe(1);
+      expect(u.f).toHaveBeenCalledTimes(50);
+      vi.setSystemTime(new Date("2026-10-20T00:00:01Z"));
+      persistAlert("xrpl", { kind: "xrpl_entry_dropped" });
+      await flushAlertPersistForTests();
+      expect(u.f).toHaveBeenCalledTimes(51);
+      expect(alertWriteStats()).toMatchObject({ day: "2026-10-20", written: 1, overCap: { xrpl: 0, solana: 0 } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("LOW-2: VERCEL_ENV must be exactly 'production' (unset, preview, ' production', 'Production' = no write, no read)", async () => {
+    const u = fakeUpstash();
+    const creds = { UPSTASH_REDIS_REST_URL: "https://fake.example", UPSTASH_REDIS_REST_TOKEN: "tok" };
+    for (const ve of [undefined, "", "preview", "development", " production", "production ", "Production"]) {
+      setAlertPersistForTests({ fetch: u.f as never, env: { ...creds, ...(ve === undefined ? {} : { VERCEL_ENV: ve }) } });
+      persistAlert("xrpl", { kind: "xrpl_entry_dropped" });
+      expect(await readAlertSummary()).toEqual({ status: "not_applicable", xrpl: null, solana: null });
+    }
+    await flushAlertPersistForTests();
+    expect(u.f).not.toHaveBeenCalled();
+    setAlertPersistForTests({ fetch: u.f as never, env: { ...creds, VERCEL_ENV: "production" } });
+    persistAlert("xrpl", { kind: "xrpl_entry_dropped" });
+    await flushAlertPersistForTests();
+    expect(u.f).toHaveBeenCalledTimes(1);
+  });
+
+  it("(c) route is stored as pathname only: query string and fragment stripped", async () => {
+    expect(stripQuery("/api/pulse?wallet=0xabc&token=x")).toBe("/api/pulse");
+    expect(stripQuery("/api/x#frag")).toBe("/api/x");
+    expect(stripQuery("/api/plain")).toBe("/api/plain");
+    expect(alertEntry({ kind: "k", route: "?only=query" }).route).toBeNull();
+    const u = fakeUpstash();
+    setAlertPersistForTests({ fetch: u.f as never, env: ENV });
+    persistAlert("solana", { kind: "solana_reconcile", route: "/api/market/quote?symbol=SOL&key=secret#x" });
+    await flushAlertPersistForTests();
+    const raw = u.lists.get(listKey("solana"))![0];
+    expect(JSON.parse(raw).route).toBe("/api/market/quote");
+    expect(raw).not.toMatch(/symbol|secret|\?|#/);
   });
 
   it("Upstash error, throw, or hang: never throws, never blocks (returns synchronously), abort at 500 ms", async () => {
@@ -126,7 +196,7 @@ describe("alert persistence", () => {
     setAlertPersistForTests({ fetch: u.f as never, env: { ...ENV, VERCEL_ENV: "preview" } });
     persistAlert("xrpl", { kind: "x" });
     expect(await readAlertSummary()).toEqual({ status: "not_applicable", xrpl: null, solana: null });
-    setAlertPersistForTests({ fetch: u.f as never, env: { KV_REST_API_URL: "https://fake.example", KV_REST_API_READ_ONLY_TOKEN: "ro" } });
+    setAlertPersistForTests({ fetch: u.f as never, env: { KV_REST_API_URL: "https://fake.example", KV_REST_API_READ_ONLY_TOKEN: "ro", VERCEL_ENV: "production" } });
     persistAlert("xrpl", { kind: "x" });
     await flushAlertPersistForTests();
     expect(u.f).not.toHaveBeenCalled();
