@@ -109,7 +109,7 @@ describe("pricing and isolation", () => {
   it("default deps reuse the shared SSRF-guarded GET and the real x402-check", () => {
     const d = defaultDeepDeps();
     expect(d.get).toBe(guardedGet);
-    expect(d.base).toBe(checkX402Endpoint);
+    expect(typeof d.base).toBe("function");
   });
 });
 
@@ -329,5 +329,76 @@ describe("handler", () => {
     expect(j.priced.amountUsd).toBe("$0.03");
     expect(j.priced.amountAtomic).toBe("30000");
     expect(j.tier).toBe("deep");
+  });
+});
+
+describe("web-checks opt-out (Sentinel LOW 10/19)", () => {
+  it("main probe refuses an opted-out host (403 opted_out, not billed) and sends nothing", async () => {
+    const { vi } = await import("vitest");
+    process.env.HP_WEB_CHECKS_OPTOUT = "optout.example";
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (u: string | URL) => { seen.push(String(u)); return new Response("{}", { status: 402 }); });
+    try {
+      const r = await defaultDeepDeps().base({ url: "https://sub.optout.example/api/x" });
+      expect(r).toMatchObject({ ok: false, code: "opted_out", status: 403 });
+      expect(seen).toEqual([]);
+      const res = await x402CheckDeepHandler(new NextRequest(`http://localhost/api/x402-check/deep?url=${encodeURIComponent("https://optout.example/a")}`));
+      expect(res.status).toBe(403);
+      expect((await res.json()).charged).toBe(false);
+    } finally {
+      delete process.env.HP_WEB_CHECKS_OPTOUT;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("main probe refuses a redirect hop to an opted-out host before requesting it", async () => {
+    const { vi } = await import("vitest");
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (u: string | URL) => {
+      seen.push(String(u));
+      return new Response("", { status: 302, headers: { location: "https://optout.example/next" } });
+    });
+    try {
+      const r = await checkX402Endpoint({ url: "https://93.184.215.14/start" }, { optedOut: (h) => h === "optout.example" });
+      expect(r).toMatchObject({ ok: false, code: "opted_out", status: 403 });
+      if (!r.ok) expect(r.error).toContain("Redirect target optout.example");
+      expect(seen.some((u) => u.includes("optout.example"))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("tlsInspect refuses an opted-out host without connecting", async () => {
+    const { tlsInspect } = await import("@/lib/audit-security");
+    let connected = false;
+    const r = await tlsInspect("optout.example", 1_000, (h) => h === "optout.example", (async () => { connected = true; throw new Error("must not connect"); }) as never);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("opt-out list");
+    expect(connected).toBe(false);
+  });
+
+  it("tlsInspect destroys the socket on a TLS error", async () => {
+    const net = await import("node:net");
+    const { tlsInspect } = await import("@/lib/audit-security");
+    const server = net.createServer((c) => { c.on("error", () => {}); c.write("HTTP/1.1 400 Bad Request\r\n\r\nnot tls at all\r\n"); });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+    const port = (server.address() as { port: number }).port;
+    let sock: import("node:net").Socket | undefined;
+    let destroyCalls = 0;
+    const connectFn = (async () => {
+      sock = net.connect(port, "127.0.0.1");
+      await new Promise((r) => sock!.once("connect", r));
+      const orig = sock.destroy.bind(sock);
+      sock.destroy = ((e?: Error) => { destroyCalls++; return orig(e); }) as typeof sock.destroy;
+      return sock;
+    }) as never;
+    try {
+      const r = await tlsInspect("tls-error.example", 3_000, () => false, connectFn);
+      expect(r.ok).toBe(false);
+      expect(sock!.destroyed).toBe(true);
+      expect(destroyCalls).toBeGreaterThanOrEqual(1); // tlsInspect itself releases the raw socket
+    } finally {
+      server.close();
+    }
   });
 });

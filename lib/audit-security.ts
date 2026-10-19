@@ -44,10 +44,17 @@ export type AuditDeps = {
 // ---------------------------------------------------------------------------
 // Default deps
 // ---------------------------------------------------------------------------
-export async function tlsInspect(host: string, timeoutMs = 6_000): Promise<TlsInfo> {
+export async function tlsInspect(
+  host: string,
+  timeoutMs = 6_000,
+  optedOut: (host: string) => boolean = (h) => isOptedOut(h),
+  connectFn: typeof guardedNetConnect = guardedNetConnect,
+): Promise<TlsInfo> {
+  // Same web-checks opt-out check as guardedGet, before any connection (Sentinel LOW 10/19).
+  if (optedOut(host.replace(/^\[|\]$/g, ""))) return { ok: false, error: `Target ${host} is on the web-checks opt-out list; no request was sent to it.` };
   let sock;
   try {
-    sock = await guardedNetConnect(host, 443, { timeoutMs });
+    sock = await connectFn(host, 443, { timeoutMs });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "connect failed" };
   }
@@ -59,6 +66,9 @@ export async function tlsInspect(host: string, timeoutMs = 6_000): Promise<TlsIn
     }, timeoutMs);
     t.once("error", (e) => {
       clearTimeout(timer);
+      // Release the TLS wrapper and the raw guarded socket on failure too (Sentinel LOW 10/19).
+      t.destroy();
+      sock.destroy();
       resolve({ ok: false, error: e.message });
     });
     t.once("secureConnect", () => {

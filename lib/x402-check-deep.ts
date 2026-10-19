@@ -33,6 +33,7 @@ import { checkX402Endpoint, type X402CheckResult, type X402CheckError } from "@/
 import { guardedGet, type GuardedGetOk, type GuardedGetErr, type GuardedGetOpts } from "@/lib/guarded-get";
 import { tlsInspect, type TlsInfo } from "@/lib/audit-security";
 import { addressBody } from "@/lib/tx-guard";
+import { isOptedOut } from "@/lib/dark-checks-shared";
 import { cdpGet, defaultDeps as bazaarDefaultDeps, networkLabel, parseWellKnown, payToKey, resourceKey, type Deps as BazaarDeps } from "@/lib/bazaar-check";
 
 export const DEEP_SIDE_TIMEOUT_MS = 6_000;
@@ -51,7 +52,7 @@ export const X402_CHECK_DEEP_METHODOLOGY = {
   published: `Unpaid GETs of the target origin's /.well-known/x402, /openapi.json and /llms.txt (${DEEP_SIDE_TIMEOUT_MS / 1000}s, ${DEEP_LISTING_MAX_BYTES / 1000}KB, ${DEEP_MAX_REDIRECTS} redirects each, SSRF-checked every hop). Addresses: payTo values in JSON, plus 0x addresses in llms.txt (known USDC contracts and the 402's own asset contracts excluded). A payTo also counts as published when it appears verbatim in any of the three. Comparison is per address family (EVM vs other rails): a Solana or XRPL payTo is only reported as unpublished when the listings publish other addresses of that family.`,
   lookalike: "Each 402 payTo vs every other address the payee advertises. A different address with >=3 matching characters at both ends, or >=6 matching in total (prefix + suffix, EVM case-insensitive without 0x, XRPL without the leading r), is flagged as the address-poisoning lookalike pattern (same rule as /api/tx-guard).",
   drift: "Live 402 accepts (network, payTo, amount) vs the /.well-known/x402 listing for this URL, the openapi operation for this path (payTo per address family, stated USD price), and the Coinbase CDP Bazaar entry for this URL (public discovery API, /merchant by payTo).",
-  limits: `Never pays or signs. SSRF-safe at every hop (private, loopback, link-local and cloud-metadata addresses blocked). ${DEEP_BUDGET_MS / 1000}s overall budget for the extra checks; a check that cannot finish is reported as unavailable.`,
+  limits: `Never pays or signs. SSRF-safe at every hop (private, loopback, link-local and cloud-metadata addresses blocked). Hosts on the web-checks opt-out list are never contacted (main probe, every redirect hop, TLS and listing fetches). ${DEEP_BUDGET_MS / 1000}s overall budget for the extra checks; a check that cannot finish is reported as unavailable.`,
   billing: "Billed exactly like /api/x402-check: any HTTP answer from the target is a completed report. Bad input, blocked host, DNS/connection failure, timeout or too many redirects on the main probe return 400/502/504 and are not charged. Extra checks that fail are reported as unavailable inside a billed report.",
   notAdvice: "Describes what the endpoint and its listings serve right now. A pass is not a guarantee that paying is safe; a published-address match only shows consistency with the payee's own listings. If the payee's site or listings are compromised, they can all show the same wrong address; confirm the payee address through a separate channel before large payments.",
 } as const;
@@ -68,7 +69,8 @@ export type DeepDeps = {
 };
 
 export const defaultDeepDeps = (): DeepDeps => ({
-  base: checkX402Endpoint,
+  // Main probe honors the same web-checks opt-out list as guardedGet, on every hop (Sentinel LOW 10/19).
+  base: (input) => checkX402Endpoint(input, { optedOut: (h) => isOptedOut(h) }),
   get: guardedGet,
   tls: (h) => tlsInspect(h, DEEP_SIDE_TIMEOUT_MS),
   bazaar: bazaarDefaultDeps(),
