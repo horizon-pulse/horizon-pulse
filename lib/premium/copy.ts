@@ -63,11 +63,11 @@ export function legalBlock() {
 
 /**
  * Technical notes on /premium-terms. Paragraphs 3-5 = Counsel F1-F3 (async re-read 10/19); paragraphs 1-2 (EOA-only,
- * failed-settle pause, Odin rulings 10/19) are NOT Counsel-reviewed yet: listed in the async build report, delta 2.
+ * failed-settle pause, Odin rulings 10/19) are NOT Counsel-reviewed yet (paragraph 2 breaker sentence = DRAFT): see the async build report, delta 3.
  */
 export const TECHNICAL_NOTES: string[] = [
-  "Wallets: at launch, premium accepts payments signed by a regular wallet key (an EOA) only. Smart-wallet signatures (ERC-1271 or ERC-6492) are refused before anything is charged.",
-  "If two payments from one address fail to settle within 24 hours, new report and watch jobs from that address are refused for 24 hours. Nothing is charged for a refused request.",
+  "Wallets: at launch, premium accepts payments signed by a regular wallet key (an EOA) only. Smart-wallet signatures (ERC-1271 or ERC-6492) are not supported and are refused before anything is charged; depending on the signature, the error is smart_wallet_unsupported or invalid_signature.",
+  "If two payments from one address fail to settle within 24 hours, new report and watch jobs from that address are refused for 24 hours. If several payments fail to settle across the service within 24 hours, report and watch purchases may temporarily be settled when the payment is verified, before the job runs; if the job then fails, the refund terms above apply. Nothing is charged for a refused request. If an earlier payment was charged but not delivered, the refund terms above apply.",
   "Report and watch purchases return a job ID, a status link and a job token. The token is shown once and cannot be recovered; anyone who has it can open the job, so keep it secret. Send it as Authorization: Bearer <token> (never in the URL). Without the right token the link returns Not found. Results stay available for 30 days after a report is delivered or a watch ends; after that the link returns Gone.",
   "Report and watch purchases are charged only after the first deliverable is built. If we cannot build it within 10 minutes, the job ends as failed_uncharged and the payment authorization is never submitted. The $1, $5 and $10 tiers are settled before the report is built; if we then cannot deliver, the response says charged: true and you can redeem as below or ask for a refund.",
   "If a response says settle_unconfirmed, do not sign a new payment. For the $1, $5 and $10 tiers you can retry the exact same request with the same payment and an x-hp-payer-proof header: an EIP-191 signature by the paying address over the redeem_message returned with that response. Only standard wallets (EOAs) can sign this proof; smart-contract wallets are not supported. The content is delivered once, only after the payment is confirmed on Base. Otherwise contact us with the reconcile_id.",

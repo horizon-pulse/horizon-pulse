@@ -16,7 +16,9 @@
  *        settle timeout -> 504 / ambiguous -> 502, settle_unconfirmed + reconcile + HIGH, never a 402
  *   ASYNC (Odin Q1): verify at accept -> 202 + status link + job token; settle after the first deliverable (jobs.ts).
  */
-import { ASYNC_BREAKER_REASON, asyncBreakerOpen, currentBlock, newJobId, releaseOpen, reserveOpen, settleBlocked, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S } from "./jobs";
+import { persistAlert } from "@/lib/alert-persist";
+import { CLAIM_TTL_MS } from "./claim";
+import { asyncBreakerOpen, settleAtAccept, currentBlock, newJobId, releaseOpen, reserveOpen, settleBlocked, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S } from "./jobs";
 import { after, NextRequest, NextResponse } from "next/server";
 import { hasCdpCredentials } from "@/lib/config";
 import { requestFingerprint } from "@/lib/request-fingerprint";
@@ -123,10 +125,16 @@ function okResponse(x: Tier, result: unknown, tx: string | null, header: string 
 
 /** Sentinel item 4: one redeem of a settle_unconfirmed claim, same fingerprint, payer proof, settle confirmed on-chain. */
 async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded, input: string, rq: string, raw: string, c: Claim, t0: number): Promise<NextResponse> {
-  if (c.rq !== rq || !c.rc) return jsonError(409, conflictBody(c.rc ?? null));
+  // Sentinel LOW-B: a mismatched redeem (other request, or missing / wrong payer proof) -> 409 WITHOUT the reconcile_id,
+  // plus one deduped reconcile line + HIGH alert per claim (first mismatch only).
+  const mismatch = async (why: string, error = "authorization_already_used") => {
+    const key = `redeem-mismatch:${claimKey(d.from!, d.nonce!)}`;
+    if (await store.setNx(key, why, CLAIM_TTL_MS.unconfirmed).catch(() => false)) reconcile("redeem_mismatch", x, d, rq, null);
+    return jsonError(409, { ...conflictBody(null), error, message: `This payment authorization has an unconfirmed settle. To redeem it, retry the exact original request with ${PAYER_PROOF_HEADER}: an EIP-191 signature by the paying address over the redeem_message from the original response.` });
+  };
+  if (c.rq !== rq || !c.rc) return mismatch("fingerprint");
   const proof = req.headers.get(PAYER_PROOF_HEADER);
-  if (!(await payerProofValid(d.from!, proof, redeemMessage(c.rc, rq, d.to!, d.value!))))
-    return jsonError(409, { ...conflictBody(c.rc), error: "payer_proof_required", message: `Send ${PAYER_PROOF_HEADER}: an EIP-191 signature by the paying address over the redeem message for this reconcile_id.` });
+  if (!(await payerProofValid(d.from!, proof, redeemMessage(c.rc, rq, d.to!, d.value!)))) return mismatch(proof ? "bad_proof" : "no_proof", "payer_proof_required");
   const held: Held = { key: claimKey(d.from!, d.nonce!), raw, claim: c };
   const landed = c.job === "settled" ? "landed" : await settleLanded({ payer: d.from!, nonce: d.nonce!, block_at_accept: c.blk ?? null } as never);
   if (landed !== "landed") return jsonError(503, { error: "settle_not_confirmed_yet", reconcile_id: c.rc, charged: "unknown" }, { "Retry-After": "30" });
@@ -136,8 +144,10 @@ async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded
     const result = await runResearch(x, input, t0 + SYNC_HARD_LIMIT_S * 1000);
     return okResponse(x, { ...(result as object), redeemed: { reconcile_id: c.rc } }, null, null);
   } catch {
-    await moveClaim(store, mine, { s: "unconfirmed" }).catch(() => null);
-    return jsonError(502, unconfirmedBody(c.rc, true));
+    // Sentinel LOW-A: rotate the reconcile_id (new redeem_message) so the used proof cannot be replayed
+    const line = reconcile("charged_not_delivered", x, d, rq, null);
+    await moveClaim(store, mine, { s: "unconfirmed", rc: line.reconcile_id, job: "settled" }).catch(() => null);
+    return jsonError(502, unconfirmedBody(line.reconcile_id, true, redeemMessage(line.reconcile_id, rq, d.to!, d.value!)));
   }
 }
 
@@ -174,13 +184,15 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
   if (!store) return jsonError(503, { error: "store_unavailable", charged: false });
 
   let jobId: string | null = null;
+  let settleFirst = false;
   let accepted = false;
   try {
     const rq = await requestFingerprint(req);
     if (x.mode === "async") {
       if (await settleBlocked(store, d.from!))
-        return jsonError(429, { error: SETTLE_BLOCK_REASON, charged: false, message: "Two payments from this address failed to settle in the last 24 hours. New report and watch jobs from it are paused for 24 hours; nothing was charged." }, { "Retry-After": String(SETTLE_BLOCK_S) });
-      if (await asyncBreakerOpen(store)) return jsonError(503, { error: ASYNC_BREAKER_REASON, charged: false, message: "Report and watch purchases are paused for now; nothing was charged." }, { "Retry-After": "3600" });
+        return jsonError(429, { error: SETTLE_BLOCK_REASON, charged: false, message: "Two payments from this address failed to settle in the last 24 hours. New report and watch jobs from it are paused for 24 hours; nothing was charged for this request. Retry after the Retry-After time, or use the $1, $5 or $10 tiers. See /premium-terms. If an earlier payment was charged but not delivered, see the refund terms at /premium-terms." }, { "Retry-After": String(SETTLE_BLOCK_S) });
+      // Odin ruling on e2caa71: breaker tripped -> no 503; settle right after verify, before the work, + HIGH alert
+      settleFirst = await asyncBreakerOpen(store);
       jobId = newJobId();
       if (!(await reserveOpen(store, d.from!, jobId))) {
         jobId = null;
@@ -193,7 +205,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
       const c = got.existing;
       if (!c || c.s === "inflight" || c.s === "job") return inProgress();
       if (c.s === "unconfirmed" && x.mode === "sync") return redeem(store, req, x, d, v.input, rq, got.raw!, c, t0);
-      if (c.s === "unconfirmed") return jsonError(409, conflictBody(c.rc ?? null));
+      if (c.s === "unconfirmed") return jsonError(409, conflictBody(null)); // LOW-B: never echo the reconcile_id
       return jsonError(409, conflictBody(c.rc ?? null));
     }
     let held = got.held;
@@ -216,11 +228,24 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     }
 
     if (x.mode === "async") {
-      const { job, token } = await createJob(store, x, d, rq, v.input, held, jobId!);
+      const blk = await currentBlock();
+      if (blk === null) {
+        // Sentinel LOW-D: no recorded block -> settle resolution could never be bounded; refuse before any settle
+        await releaseClaim(store, held);
+        return jsonError(503, { error: "chain_unavailable", charged: false }, { "Retry-After": "5" });
+      }
+      const { job, token } = await createJob(store, x, d, rq, v.input, held, jobId!, settleFirst, blk);
       accepted = true;
+      if (settleFirst) {
+        console.error(`[premium][ALERT][HIGH] ${JSON.stringify({ kind: "premium_async_settle_first", severity: "high", route: routePath(x), tier: x.id, job_id: job.id })}`);
+        persistAlert("premium", { kind: "premium_async_settle_first", severity: "high", route: routePath(x), payer: d.from });
+        await settleAtAccept(store, job, x);
+      }
       after(() => runJob(store, job.id, clock() + (SYNC_HARD_LIMIT_S - 5) * 1000 - (clock() - t0)).then(() => undefined, () => undefined));
       return NextResponse.json(
-        { job_id: job.id, status: "accepted", status_url: `/api/premium/job/${job.id}`, job_token: token, charged: false, message: "Accepted. Poll status_url with header Authorization: Bearer <job_token>. You are charged only after the first deliverable is built; the token is shown once.", ...legalBlock() },
+        { job_id: job.id, status: job.status, status_url: `/api/premium/job/${job.id}`, job_token: token, charged: job.charged, message: job.settle_first
+            ? "Accepted. Poll status_url with header Authorization: Bearer <job_token>. Payments are temporarily settled when verified, before the job runs; if the job then fails, see the refund terms at /premium-terms. The token is shown once."
+            : "Accepted. Poll status_url with header Authorization: Bearer <job_token>. You are charged only after the first deliverable is built; the token is shown once.", ...legalBlock() },
         { status: 202, headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } },
       );
     }
@@ -232,6 +257,11 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
       return jsonError(503, { error: "time_budget_exceeded", charged: false }, { "Retry-After": "5" });
     }
     const blk = await currentBlock(); // Odin P1: bounds the redeem's AuthorizationUsed log search
+    if (blk === null) {
+      // Sentinel LOW-D: no block number -> a failed settle could never be redeemed; refuse before settle (uncharged)
+      await releaseClaim(store, held);
+      return jsonError(503, { error: "chain_unavailable", charged: false }, { "Retry-After": "5" });
+    }
     const s = await settlePayment(d, x);
     if (!s.ok) {
       const line = reconcile(s.kind === "timeout" ? "settle_timeout" : "settle_ambiguous", x, d, rq, s.tx);

@@ -30,7 +30,7 @@ import { TECHNICAL_NOTES, RECONCILE_RETENTION_S, PRIVACY_PREMIUM_ADDITION, PRIVA
 import { CAP_EXEMPT_OUTCOMES, recordReconcile, RECONCILE_WRITE_CAP_PER_DAY, reconcileWriteStats, flushReconcileForTests, setReconcileForTests, storedFingerprint, type ReconcileLine } from "@/lib/premium/reconcile";
 import { MemoryPremiumStore, premiumPrefix, setPremiumStoreForTests, UpstashPremiumStore, type PremiumStore } from "@/lib/premium/store";
 import { setPremiumClockForTests } from "@/lib/premium/handler";
-import { ASYNC_BREAKER_REASON, settleLanded, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S, AUTH_USED_TOPIC, FIRST_DELIVERABLE_BUDGET_MS, JOB_KEYS, loadJob, runJob, setJobClockForTests, setJobRpcForTests, stopWatch, cronSweep } from "@/lib/premium/jobs";
+import { settleLanded, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S, AUTH_USED_TOPIC, FIRST_DELIVERABLE_BUDGET_MS, JOB_KEYS, loadJob, runJob, setJobClockForTests, setJobRpcForTests, stopWatch, cronSweep } from "@/lib/premium/jobs";
 import { ARCHIVE_CONTEXT_CHARS, ARCHIVE_TEXT_CAP_BYTES, matchSnippet, noArchive, robotsAllows, setArchiveFetchForTests } from "@/lib/premium/archive";
 import { DAY_MS, dayWindow, resembles, setWatchDepsForTests, watchRefundAtomic } from "@/lib/premium/watch";
 import { alertWriteStats, PREMIUM_ALERT_WRITE_CAP_PER_DAY, ALERT_WRITE_CAP_PER_DAY, persistAlert, setAlertPersistForTests } from "@/lib/alert-persist";
@@ -74,6 +74,7 @@ let fac: ReturnType<typeof installFacilitatorMock>;
 let rpcAnswer: "used" | "unused" | "down";
 let logsAnswer: unknown[];
 let logQueries: any[];
+let blockDown = false;
 let parallelCalls: string[];
 let reconciles: ReconcileLine[];
 let settleBehaviour: () => unknown;
@@ -107,6 +108,7 @@ beforeEach(() => {
   rpcAnswer = "unused";
   logsAnswer = [];
   logQueries = [];
+  blockDown = false;
   parallelCalls = [];
   reconciles = [];
   settleBehaviour = () => ({ success: true, transaction: "0x" + "cd".repeat(32), network: "eip155:8453", payer: FROM });
@@ -114,6 +116,7 @@ beforeEach(() => {
   const rpcFetch = (async (_u: string, init: RequestInit) => {
     const body = JSON.parse(String(init.body));
     if (rpcAnswer === "down") throw new Error("down");
+    if (body.method === "eth_blockNumber" && blockDown) throw new Error("block rpc down");
     if (body.method === "eth_blockNumber") return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x100" }));
     if (body.method === "eth_getLogs") logQueries.push(body.params[0]);
     if (body.method === "eth_getLogs") return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: logsAnswer }));
@@ -655,6 +658,7 @@ describe("delta 2: per-payer failed-settle cap (Sentinel MEDIUM-2 async) + EOA-o
     expect(third.r.status).toBe(429);
     expect(third.j.error).toBe(SETTLE_BLOCK_REASON);
     expect(third.j.charged).toBe(false);
+    expect(third.j.message).toBe("Two payments from this address failed to settle in the last 24 hours. New report and watch jobs from it are paused for 24 hours; nothing was charged for this request. Retry after the Retry-After time, or use the $1, $5 or $10 tiers. See /premium-terms. If an earlier payment was charged but not delivered, see the refund terms at /premium-terms.");
     expect(fac.filter((c) => c.op === "verify").length).toBe(verifies);
     now += SETTLE_BLOCK_S * 1000 + 1000;
     // open slots have expired too; block gone
@@ -677,12 +681,14 @@ describe("delta 2: per-payer failed-settle cap (Sentinel MEDIUM-2 async) + EOA-o
     expect(r.status).toBe(402);
     const j = (await r.json()) as any;
     expect(j.error).toBe("smart_wallet_unsupported");
-    expect(j.message).toMatch(/EOA/);
+    expect(j.message).toBe("Premium accepts payments signed by a regular wallet key (EOA) only at launch. Smart-wallet signatures (ERC-1271 / ERC-6492) are not supported yet; nothing was charged for this request. See /premium-terms.");
     expect(fac.length + store.writes.length).toBe(0);
   });
   it("/premium-terms copy states EOA-only and the failed-settle pause", () => {
     expect(TECHNICAL_NOTES.join(" ")).toMatch(/EOA/);
     expect(TECHNICAL_NOTES.join(" ")).toMatch(/fail to settle within 24 hours/);
+    expect(TECHNICAL_NOTES[0]).toContain("depending on the signature, the error is smart_wallet_unsupported or invalid_signature.");
+    expect(TECHNICAL_NOTES[1]).toContain("If several payments fail to settle across the service within 24 hours, report and watch purchases may temporarily be settled when the payment is verified, before the job runs; if the job then fails, the refund terms above apply. Nothing is charged for a refused request. If an earlier payment was charged but not delivered, the refund terms above apply.");
   });
 });
 
@@ -709,17 +715,52 @@ describe("delta 2: Odin P1–P5", () => {
     expect(await settleLanded({ payer: FROM, nonce: nonce(), block_at_accept: null } as never)).toBe("unknown");
     expect(logQueries).toHaveLength(0);
   });
-  it("P2 global breaker: 3 failed settles in 24 h (any payers) -> async accepts 503 async_settle_breaker_open before verify; sync unaffected", async () => {
+  it("Odin ruling e2caa71: global breaker (3 failed settles / 24 h) -> no 503; async settles right after verify, before work, + HIGH alert; per-payer 429 unchanged", async () => {
+    on();
+    const errs: string[] = [];
+    vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => void errs.push(a.map(String).join(" ")));
+    for (let i = 0; i < 3; i++) await store.zadd("settlefail:global", now + DAY_MS, `job_${String(i).padStart(24, "0")}`, 86_400);
+    const order: string[] = [];
+    fac = installFacilitatorMock({ verify: () => (order.push("verify"), { isValid: true, payer: FROM }), settle: () => (order.push("settle"), settleBehaviour()) });
+    const pc0 = parallelCalls.length;
+    const { r, j } = await acceptReport("q=breaker%20test");
+    expect(r.status).toBe(202);
+    expect(j.charged).toBe(true);
+    expect(j.message).toContain("settled when verified, before the job runs");
+    expect(order).toEqual(["verify", "settle"]);
+    expect(parallelCalls.length).toBe(pc0); // settle happened before any work
+    expect(errs.some((l) => l.includes("[ALERT][HIGH]") && l.includes("premium_async_settle_first"))).toBe(true);
+    await drainAfters();
+    const v = (await (await status(j.job_id, j.job_token)).json()) as any;
+    expect(v.status).toBe("delivered");
+    expect(order).toEqual(["verify", "settle"]); // no second settle
+    // sync tiers unaffected
+    expect((await call("brief", "q=sync%20still%20ok", { "payment-signature": await payment() })).status).toBe(200);
+    // breaker ages out -> back to settle-after-first-deliverable
+    now += DAY_MS + 1000;
+    const after = await acceptReport("q=after%20breaker");
+    expect(after.r.status).toBe(202);
+    expect(after.j.charged).toBe(false);
+  });
+  it("settle-first job whose work then fails -> failed_charged + charged_not_delivered reconcile (refund path), never failed_uncharged", async () => {
     on();
     for (let i = 0; i < 3; i++) await store.zadd("settlefail:global", now + DAY_MS, `job_${String(i).padStart(24, "0")}`, 86_400);
+    setParallelForTests({ fetch: (async () => new Response("x", { status: 500 })) as never });
+    const { j } = await acceptReport("q=prepaid%20fails");
+    await drainAfters();
+    const v = (await (await status(j.job_id, j.job_token)).json()) as any;
+    expect(v.status).toBe("failed_charged");
+    expect(v.charged).toBe(true);
+    expect(v.reconcile_id).toMatch(/^rc_/);
+    expect(reconciles.map((l) => l.outcome)).toContain("charged_not_delivered");
+  });
+  it("per-payer 429 still applies while the breaker is tripped", async () => {
+    on();
+    for (let i = 0; i < 3; i++) await store.zadd("settlefail:global", now + DAY_MS, `job_${String(i).padStart(24, "0")}`, 86_400);
+    await store.set(`settleblock:${FROM.toLowerCase()}`, "1", 86_400);
     const v0 = fac.length;
-    const r = await acceptReport("q=breaker%20test");
-    expect(r.r.status).toBe(503);
-    expect(r.j.error).toBe(ASYNC_BREAKER_REASON);
+    expect((await acceptReport("q=blocked%20payer")).r.status).toBe(429);
     expect(fac.length).toBe(v0);
-    expect((await call("brief", "q=sync%20still%20ok", { "payment-signature": await payment() })).status).toBe(200);
-    now += DAY_MS + 1000;
-    expect((await acceptReport("q=after%20breaker")).r.status).toBe(202);
   });
   it("P2: settle_never_landed counts as a failed settle (feeds the payer cap and the breaker)", async () => {
     on();
@@ -776,5 +817,98 @@ describe("delta 2: Odin P1–P5", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]).toContain('"EVAL"');
     expect(sent[0]).toContain('"hp:premium:pv:open:payer:x","hp:premium:pv:open:global"');
+  });
+});
+
+/* ======================= delta 3: Sentinel async review LOW-A..D ======================= */
+describe("delta 3: Sentinel LOW-A..D", () => {
+  const timeout = () => new Promise((_r, rej) => rej(Object.assign(new Error("timed out"), { name: "TimeoutError" })));
+  async function unconfirmed(q: string) {
+    on();
+    settleBehaviour = timeout;
+    const h = await payment();
+    const first = (await (await call("brief", q, { "payment-signature": h })).json()) as any;
+    return { h, first };
+  }
+  it("LOW-A: a redeem whose work fails rotates the reconcile_id; the old proof no longer works, a new proof over the new message does", async () => {
+    const { h, first } = await unconfirmed("q=low%20a%20test");
+    rpcAnswer = "used";
+    logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
+    const proof1 = await ACCOUNT.signMessage({ message: first.redeem_message });
+    setParallelForTests({ fetch: (async () => new Response("x", { status: 500 })) as never });
+    const r1 = await call("brief", "q=low%20a%20test", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof1 });
+    expect(r1.status).toBe(502);
+    const j1 = (await r1.json()) as any;
+    expect(j1.reconcile_id).not.toBe(first.reconcile_id);
+    expect(j1.redeem_message).not.toBe(first.redeem_message);
+    setParallelForTests({ fetch: (async () => new Response(JSON.stringify({ results: [{ url: "https://a.example.com/x402", title: "A", publish_date: null, excerpts: [EXCERPT] }] }))) as never });
+    expect((await call("brief", "q=low%20a%20test", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof1 })).status).toBe(409); // replayed proof
+    const proof2 = await ACCOUNT.signMessage({ message: j1.redeem_message });
+    expect((await call("brief", "q=low%20a%20test", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof2 })).status).toBe(200);
+  });
+  it("LOW-B: mismatched redeems -> 409 without reconcile_id; one deduped redeem_mismatch reconcile + HIGH per claim", async () => {
+    const { h, first } = await unconfirmed("q=low%20b%20test");
+    const before = reconciles.length;
+    const other = privateKeyToAccount(generatePrivateKey());
+    const attempts = [
+      call("brief", "q=other%20request", { "payment-signature": h }),
+      call("brief", "q=low%20b%20test", { "payment-signature": h }),
+      call("brief", "q=low%20b%20test", { "payment-signature": h, [PAYER_PROOF_HEADER]: await other.signMessage({ message: first.redeem_message }) }),
+    ];
+    for (const r of await Promise.all(attempts)) {
+      expect(r.status).toBe(409);
+      const j = (await r.json()) as any;
+      expect(j.reconcile_id).toBeUndefined();
+      expect(JSON.stringify(j)).not.toContain(first.reconcile_id);
+    }
+    const mm = reconciles.slice(before).filter((l) => l.outcome === "redeem_mismatch");
+    expect(mm).toHaveLength(1);
+    expect(parallelCalls.length).toBe(0);
+  });
+  it("LOW-C: a settle timeout is not a strike until confirmed failed; a timeout that lands later leaves no strike", async () => {
+    on();
+    settleBehaviour = timeout;
+    const { j } = await acceptReport("q=low%20c%20lands");
+    await drainAfters();
+    expect((await loadJob(store, j.job_id))!.status).toBe("settle_unconfirmed");
+    expect(await store.zcardAfterPrune(JOB_KEYS.settleFail(FROM), now)).toBe(0);
+    rpcAnswer = "used";
+    logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
+    await runJob(store, j.job_id, now + 50_000);
+    expect((await loadJob(store, j.job_id))!.status).toBe("delivered");
+    expect(await store.zcardAfterPrune(JOB_KEYS.settleFail(FROM), now)).toBe(0);
+  });
+  it("LOW-C: a landed payment clears an earlier strike for that job and lifts the payer block", async () => {
+    on();
+    settleBehaviour = () => ({ success: false, errorReason: "unexpected" });
+    const a = await acceptReport("q=low%20c%20one");
+    const b = await acceptReport("q=low%20c%20two");
+    await drainAfters();
+    expect(await store.get(JOB_KEYS.settleBlock(FROM))).not.toBeNull();
+    rpcAnswer = "used";
+    logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
+    await runJob(store, a.j.job_id, now + 50_000);
+    expect(await store.zcardAfterPrune(JOB_KEYS.settleFail(FROM), now)).toBe(1);
+    expect(await store.get(JOB_KEYS.settleBlock(FROM))).toBeNull();
+    expect(b.r.status).toBe(202);
+  });
+  it("LOW-D: block-number read fails -> sync 503 chain_unavailable before settle, claim released", async () => {
+    on();
+    blockDown = true;
+    const r = await call("brief", "q=low%20d%20sync", { "payment-signature": await payment() });
+    expect(r.status).toBe(503);
+    expect(((await r.json()) as any).error).toBe("chain_unavailable");
+    expect(fac.some((c) => c.op === "settle")).toBe(false);
+    expect([...store.kv.keys()].filter((k) => k.startsWith("claim:"))).toHaveLength(0);
+  });
+  it("LOW-D: block-number read fails -> async 503 before any job / settle, slot released", async () => {
+    on();
+    blockDown = true;
+    const { r, j } = await acceptReport("q=low%20d%20async");
+    expect(r.status).toBe(503);
+    expect(j.error).toBe("chain_unavailable");
+    expect([...store.kv.keys()].filter((k) => k.startsWith("job:"))).toHaveLength(0);
+    expect(await store.zcardAfterPrune(JOB_KEYS.openPayer(FROM), now)).toBe(0);
+    expect(fac.some((c) => c.op === "settle")).toBe(false);
   });
 });

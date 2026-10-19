@@ -253,7 +253,7 @@ export const USDC_BASE_DOMAIN = { name: "USD Coin", version: "2", chainId: 8453,
  * (402 invalid_signature) before any write. Documented limitation for Odin.
  */
 export const SMART_WALLET_REASON = "smart_wallet_unsupported";
-export const SMART_WALLET_MESSAGE = "Premium accepts payments signed by a regular wallet key (EOA) only at launch. Smart-wallet signatures (ERC-1271 / ERC-6492) are not supported yet; nothing was charged.";
+export const SMART_WALLET_MESSAGE = "Premium accepts payments signed by a regular wallet key (EOA) only at launch. Smart-wallet signatures (ERC-1271 / ERC-6492) are not supported yet; nothing was charged for this request. See /premium-terms.";
 /** EOA signatures are exactly 65 bytes; any other well-formed hex signature is a smart-wallet (ERC-1271 / ERC-6492) signature. */
 export function isSmartWalletSignature(d: Decoded): boolean {
   return typeof d.signature === "string" && /^0x(?:[0-9a-fA-F]{2})+$/.test(d.signature) && d.signature.length > 132;

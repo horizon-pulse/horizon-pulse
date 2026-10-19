@@ -34,7 +34,7 @@ export const RETENTION_MS = 30 * DAY_MS;
 const S = (ms: number) => Math.ceil(ms / 1000);
 const INDEX_TTL_S = S(62 * DAY_MS);
 
-export type JobStatus = "accepted" | "running" | "built" | "settling" | "delivered" | "failed_uncharged" | "settle_unconfirmed" | "watching" | "completed" | "stopped";
+export type JobStatus = "accepted" | "running" | "built" | "settling" | "delivered" | "failed_uncharged" | "settle_unconfirmed" | "watching" | "completed" | "stopped" | "failed_charged";
 export type Job = {
   id: string;
   tier: Tier["id"];
@@ -59,6 +59,9 @@ export type Job = {
   reconcile_id: string | null;
   failure: string | null;
   purge_at: number;
+  /** Odin ruling on e2caa71: global breaker tripped at accept -> settled right after verify, before the work. */
+  settle_first?: boolean;
+  prepaid?: boolean;
   watch?: { t0: number; missed: number; recorded: number; stop: null | "ours" | "abuse"; refund_owed: string | null; known_payTos: string[] };
 };
 
@@ -131,11 +134,16 @@ export async function settleBlocked(store: PremiumStore, payer: string): Promise
 }
 /** Odin P2 global breaker: >= 3 failed settles (any payer) in 24 h -> every async accept 503 until they age out. */
 export const GLOBAL_SETTLE_FAIL_LIMIT = 3;
-export const ASYNC_BREAKER_REASON = "async_settle_breaker_open";
 export async function asyncBreakerOpen(store: PremiumStore): Promise<boolean> {
   return (await store.zcardAfterPrune(K.settleFailGlobal, clock())) >= GLOBAL_SETTLE_FAIL_LIMIT;
 }
 /** Counts settle_timeout / settle_ambiguous / settle_never_landed (one entry per job). */
+/** Sentinel LOW-C: the payment landed after all -> remove this job's strike; lift the payer block if under the limit. */
+async function clearSettleFailure(store: PremiumStore, job: Job) {
+  await store.zrem(K.settleFail(job.payer), job.id);
+  await store.zrem(K.settleFailGlobal, job.id);
+  if ((await store.zcardAfterPrune(K.settleFail(job.payer), clock())) < SETTLE_FAIL_LIMIT) await store.del(K.settleBlock(job.payer));
+}
 async function noteSettleFailure(store: PremiumStore, job: Job) {
   const now = clock();
   const exp = now + SETTLE_BLOCK_S * 1000;
@@ -176,10 +184,10 @@ async function closeOpen(store: PremiumStore, job: Job) {
 }
 
 /** Accept: called only after Base gate, binding, window, signature, rate limit, claim (state job), nonce and verify. */
-export async function createJob(store: PremiumStore, x: Tier, d: Decoded, rq: string, input: string, held: Held, id: string = newJobId()): Promise<{ job: Job; token: string }> {
+export async function createJob(store: PremiumStore, x: Tier, d: Decoded, rq: string, input: string, held: Held, id: string = newJobId(), settleFirst = false, blockAtAccept?: number | null): Promise<{ job: Job; token: string }> {
   const now = clock();
   const token = randomBytes(32).toString("base64url");
-  const block = await currentBlock();
+  const block = blockAtAccept !== undefined ? blockAtAccept : await currentBlock();
   const job: Job = {
     id,
     tier: x.id,
@@ -203,6 +211,7 @@ export async function createJob(store: PremiumStore, x: Tier, d: Decoded, rq: st
     reconcile_id: null,
     failure: null,
     purge_at: now + 2 * DAY_MS,
+    ...(settleFirst ? { settle_first: true } : {}),
   };
   await store.set(K.auth(id), JSON.stringify(d.raw), S(CLAIM_TTL_MS.job));
   await saveJob(store, job);
@@ -344,7 +353,33 @@ async function stepWatchDay0(store: PremiumStore, job: Job): Promise<boolean> {
   return true;
 }
 
-async function settleJob(store: PremiumStore, job: Job, x: Tier) {
+/** Charged (settle-first) job whose deliverable could not be built: refund owed via the reconcile line. */
+async function failCharged(store: PremiumStore, job: Job, x: Tier, why: string) {
+  const line = recordReconcile({ reconcile_id: newReconcileId(), route: `${x.route === "research" ? "/api/research/report" : "/api/seller-watch"}/${x.id}`, tier: x.id, payer: job.payer, nonce: job.nonce, amount: job.amount, payTo: DEFAULT_PAY_TO, tx: job.settle_tx, fingerprint: job.rq, outcome: "charged_not_delivered", job_id: job.id });
+  job.status = "failed_charged";
+  job.failure = why;
+  job.reconcile_id = line.reconcile_id;
+  job.purge_at = clock() + RETENTION_MS;
+  await closeOpen(store, job);
+  await store.zrem(K.active, job.id);
+  await saveJob(store, job);
+}
+
+/** Settle-first mode: settle now (after verify, before work). On success the job runs prepaid; failure = settle_unconfirmed. */
+export async function settleAtAccept(store: PremiumStore, job: Job, x: Tier): Promise<Job> {
+  await settleJob(store, job, x, true);
+  return job;
+}
+
+function markPrepaid(job: Job, tx: string | null) {
+  job.charged = true;
+  job.prepaid = true;
+  job.settle_tx = tx;
+  job.status = "accepted";
+  markNonceSettled(job.payer, job.nonce);
+}
+
+async function settleJob(store: PremiumStore, job: Job, x: Tier, atAccept = false) {
   const raw = await store.get(K.auth(job.id));
   if (!raw) return failUncharged(store, job, "authorization_missing");
   if (clock() / 1000 > job.valid_before - 30) return failUncharged(store, job, "authorization_expired_before_settle");
@@ -353,8 +388,16 @@ async function settleJob(store: PremiumStore, job: Job, x: Tier) {
   const payload = JSON.parse(raw);
   const d = { raw: payload, from: job.payer, nonce: job.nonce } as Decoded;
   const s = await settlePayment(d, x);
-  if (s.ok) return deliver(store, job, s.tx);
-  await noteSettleFailure(store, job).catch(() => undefined);
+  if (s.ok) {
+    if (!atAccept) return deliver(store, job, s.tx);
+    markPrepaid(job, s.tx);
+    await moveClaim(store, heldOf(job), { s: "settled", job: job.id }).then((h) => h && (job.claim = { key: h.key, raw: h.raw })).catch(() => null);
+    await store.del(K.auth(job.id));
+    await saveJob(store, job);
+    return;
+  }
+  // Sentinel LOW-C: a timeout is a strike only once confirmed failed (settle_never_landed); ambiguous counts now
+  if (s.kind !== "timeout") await noteSettleFailure(store, job).catch(() => undefined);
   const outcome = s.kind === "timeout" ? "settle_timeout" : "settle_ambiguous";
   const line = recordReconcile({ reconcile_id: newReconcileId(), route: `${x.route === "research" ? "/api/research/report" : "/api/seller-watch"}/${x.id}`, tier: x.id, payer: job.payer, nonce: job.nonce, amount: job.amount, payTo: DEFAULT_PAY_TO, tx: s.tx, fingerprint: job.rq, outcome, job_id: job.id });
   job.status = "settle_unconfirmed";
@@ -435,7 +478,8 @@ export async function runJob(store: PremiumStore, id: string, deadline: number, 
     const x = tierFor(job.route as never, job.tier)!;
     if (["accepted", "running", "built"].includes(job.status)) {
       if (clock() > job.created_at + FIRST_DELIVERABLE_BUDGET_MS) {
-        await failUncharged(store, job, "first_deliverable_budget_exceeded");
+        if (job.prepaid) await failCharged(store, job, x, "first_deliverable_budget_exceeded");
+        else await failUncharged(store, job, "first_deliverable_budget_exceeded");
         return job;
       }
       if (job.status !== "built") {
@@ -445,12 +489,17 @@ export async function runJob(store: PremiumStore, id: string, deadline: number, 
         try {
           done = job.tier === "report" ? await stepReport(store, job, x, deadline) : await stepWatchDay0(store, job);
         } catch (e) {
-          await failUncharged(store, job, "work_failed");
+          if (job.prepaid) await failCharged(store, job, x, "work_failed");
+          else await failUncharged(store, job, "work_failed");
           return job;
         }
         if (!done) return job;
         job.status = "built";
         await saveJob(store, job);
+      }
+      if (job.prepaid) {
+        await deliver(store, job, job.settle_tx);
+        return job;
       }
       if (clock() + 11_000 > deadline) return job; // settle needs its 10 s reserve; next poll / cron settles
       await settleJob(store, job, x);
@@ -458,7 +507,15 @@ export async function runJob(store: PremiumStore, id: string, deadline: number, 
     }
     if (job.status === "settle_unconfirmed") {
       const landed = await settleLanded(job);
-      if (landed === "landed") {
+      if (landed === "landed") await clearSettleFailure(store, job).catch(() => undefined);
+      if (landed === "landed" && job.settle_first && !(await store.get(K.result(job.id)))) {
+        // settle-first job: payment confirmed, deliverable not built yet -> run the work prepaid
+        markPrepaid(job, job.settle_tx);
+        job.http_equivalent = null;
+        await moveClaim(store, heldOf(job), { s: "settled", job: job.id }).then((h) => h && (job.claim = { key: h.key, raw: h.raw })).catch(() => null);
+        await store.del(K.auth(job.id));
+        await saveJob(store, job);
+      } else if (landed === "landed") {
         job.claim = { key: job.claim.key, raw: job.claim.raw };
         await deliver(store, job, job.settle_tx);
       } else if (landed === "not_landed" && clock() / 1000 > job.valid_before) {
@@ -490,6 +547,7 @@ export async function statusView(store: PremiumStore, job: Job) {
     charged: job.charged,
     ...(job.status === "settle_unconfirmed" ? { http_equivalent: job.http_equivalent, reconcile_id: job.reconcile_id } : {}),
     ...(job.status === "failed_uncharged" ? { failure: job.failure } : {}),
+    ...(job.status === "failed_charged" ? { failure: job.failure, reconcile_id: job.reconcile_id } : {}),
     ...(job.settle_tx ? { tx: job.settle_tx, network: BASE_CAIP2 } : {}),
   };
   if (released) {

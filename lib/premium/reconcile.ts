@@ -18,7 +18,7 @@ import { persistAlert, truncateAddress } from "@/lib/alert-persist";
 import { resolveSharedReplayStoreEnv } from "@/lib/xrpl-replay-store";
 import { RECONCILE_RETENTION_S } from "./copy";
 
-export type ReconcileOutcome = "settle_timeout" | "settle_ambiguous" | "authorization_already_used" | "charged_not_delivered" | "refund_owed";
+export type ReconcileOutcome = "settle_timeout" | "settle_ambiguous" | "authorization_already_used" | "charged_not_delivered" | "refund_owed" | "redeem_mismatch";
 export type ReconcileLine = {
   reconcile_id: string;
   ts: string;
