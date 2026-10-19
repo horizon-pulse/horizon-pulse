@@ -32,6 +32,7 @@
 import { checkX402Endpoint, type X402CheckResult, type X402CheckError } from "@/lib/x402-check";
 import { guardedGet, type GuardedGetOk, type GuardedGetErr, type GuardedGetOpts } from "@/lib/guarded-get";
 import { tlsInspect, type TlsInfo } from "@/lib/audit-security";
+import { addressBody } from "@/lib/tx-guard";
 import { cdpGet, defaultDeps as bazaarDefaultDeps, networkLabel, parseWellKnown, payToKey, resourceKey, type Deps as BazaarDeps } from "@/lib/bazaar-check";
 
 export const DEEP_SIDE_TIMEOUT_MS = 6_000;
@@ -48,11 +49,11 @@ export const X402_CHECK_DEEP_METHODOLOGY = {
   headers: "One unpaid GET of the final URL, no redirects followed: Strict-Transport-Security, X-Content-Type-Options, frame policy (X-Frame-Options or CSP frame-ancestors), Content-Security-Policy, Referrer-Policy.",
   cors: "Read passively from that same response (no forged Origin, no preflight). A browser agent can read a v2 challenge cross-origin only if Access-Control-Allow-Origin allows it and PAYMENT-REQUIRED is in Access-Control-Expose-Headers.",
   published: `Unpaid GETs of the target origin's /.well-known/x402, /openapi.json and /llms.txt (${DEEP_SIDE_TIMEOUT_MS / 1000}s, ${DEEP_LISTING_MAX_BYTES / 1000}KB, ${DEEP_MAX_REDIRECTS} redirects each, SSRF-checked every hop). Addresses: payTo values in JSON, plus 0x addresses in llms.txt (known USDC contracts and the 402's own asset contracts excluded). A payTo also counts as published when it appears verbatim in any of the three. Comparison is per address family (EVM vs other rails): a Solana or XRPL payTo is only reported as unpublished when the listings publish other addresses of that family.`,
-  lookalike: "Each 402 payTo vs every other address the payee advertises. A different address with >=3 matching characters at both ends, or >=6 matching in total (prefix + suffix, EVM case-insensitive), is flagged as the address-poisoning lookalike pattern (same rule as /api/tx-guard).",
+  lookalike: "Each 402 payTo vs every other address the payee advertises. A different address with >=3 matching characters at both ends, or >=6 matching in total (prefix + suffix, EVM case-insensitive without 0x, XRPL without the leading r), is flagged as the address-poisoning lookalike pattern (same rule as /api/tx-guard).",
   drift: "Live 402 accepts (network, payTo, amount) vs the /.well-known/x402 listing for this URL, the openapi operation for this path (payTo per address family, stated USD price), and the Coinbase CDP Bazaar entry for this URL (public discovery API, /merchant by payTo).",
   limits: `Never pays or signs. SSRF-safe at every hop (private, loopback, link-local and cloud-metadata addresses blocked). ${DEEP_BUDGET_MS / 1000}s overall budget for the extra checks; a check that cannot finish is reported as unavailable.`,
   billing: "Billed exactly like /api/x402-check: any HTTP answer from the target is a completed report. Bad input, blocked host, DNS/connection failure, timeout or too many redirects on the main probe return 400/502/504 and are not charged. Extra checks that fail are reported as unavailable inside a billed report.",
-  notAdvice: "Describes what the endpoint and its listings serve right now. A pass is not a guarantee that paying is safe; a published-address match only shows consistency with the payee's own listings.",
+  notAdvice: "Describes what the endpoint and its listings serve right now. A pass is not a guarantee that paying is safe; a published-address match only shows consistency with the payee's own listings. If the payee's site or listings are compromised, they can all show the same wrong address; confirm the payee address through a separate channel before large payments.",
 } as const;
 
 type Level = "pass" | "warn" | "fail" | "info";
@@ -83,14 +84,16 @@ const KNOWN_TOKEN_CONTRACTS = new Set([
 ]);
 
 const isEvm = (a: string) => /^0x[0-9a-fA-F]{40}$/.test(a);
+const isXrpl = (a: string) => /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(a);
 const obj = (v: unknown): Record<string, unknown> | null => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 const str = (v: unknown): string | null => (typeof v === "string" && v.length ? v : null);
 
 /** Address-poisoning lookalike (same rule as lib/tx-guard expected_match). EVM compared case-insensitively without 0x. */
 export function lookalike(a: string, b: string): { lookalike: boolean; prefixMatch: number; suffixMatch: number } {
-  const evm = isEvm(a) && isEvm(b);
-  const x = evm ? a.slice(2).toLowerCase() : a;
-  const y = evm ? b.slice(2).toLowerCase() : b;
+  // Same comparable body as tx-guard expected_match: EVM without 0x (lowercased), XRPL without the leading 'r'.
+  const chain = isEvm(a) && isEvm(b) ? "base" : isXrpl(a) && isXrpl(b) ? "xrpl" : "solana";
+  const x = addressBody(chain, a);
+  const y = addressBody(chain, b);
   if (x === y) return { lookalike: false, prefixMatch: x.length, suffixMatch: x.length };
   let p = 0;
   while (p < x.length && p < y.length && x[p] === y[p]) p++;

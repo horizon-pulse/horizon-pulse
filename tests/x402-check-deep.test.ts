@@ -126,6 +126,21 @@ describe("lookalike", () => {
   it("unrelated addresses are not lookalikes", () => {
     expect(lookalike(PAY, OTHER).lookalike).toBe(false);
   });
+  it("XRPL: the shared leading 'r' is stripped first (tx-guard rule), so it cannot create a false lookalike", () => {
+    // 'r' + 2 shared chars + same 3-char tail: raw strings match 3 leading + 3 trailing (false fail); without 'r' only 2 + 3 = 5.
+    const a = "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh";
+    const b = "rHbQzZqLmNpXsTuVwXyZaBcDeFgHiJyTh";
+    expect(lookalike(a, b).lookalike).toBe(false);
+    expect(lookalike(a, b).prefixMatch).toBe(2);
+  });
+  it("XRPL: a real lookalike (3 leading after r, 7 trailing) still fails", () => {
+    const a = "rPT1Sjq2YGrBMTttX4GZHjKu9dyfzbpAYe";
+    const b = "rPT1QqQqQqQqQqQqQqQqQqQqQqQfzbpAYe";
+    const l = lookalike(a, b);
+    expect(l.lookalike).toBe(true);
+    expect(l.prefixMatch).toBe(3);
+    expect(l.suffixMatch).toBe(7);
+  });
   it("6 matching in total (prefix-heavy) is flagged; base58 compared case-sensitively", () => {
     expect(lookalike("0xabcdef1111111111111111111111111111111112", "0xabcdef2222222222222222222222222222222223").lookalike).toBe(true);
     expect(lookalike("ABCxyz", "abcxyz").lookalike).toBe(false);
