@@ -149,7 +149,10 @@ describe("all 27 paid handlers build `priced` with the rail-aware helper", () =>
     // market-mvp: nested route dirs (app/api/market/{search,quote}) count as routes; a dir with handler.ts is a route.
     const api = path.join(ROOT, "app", "api");
     const dirs = readdirSync(api, { withFileTypes: true })
-      .filter((d) => d.isDirectory() && d.name !== "demo")
+      // premium ladder 10/19 (Michael GO via Odin 2:04 PM AST): app/api/research + app/api/seller-watch are 404 unless
+      // HP_PREMIUM_ENABLED=true and use their own Base-only payment path (lib/premium/payment.ts, spec v3 §3), so they
+      // are deliberately outside the rail-aware `priced` rule; covered by tests/premium-ladder.test.ts.
+      .filter((d) => d.isDirectory() && d.name !== "demo" && d.name !== "research" && d.name !== "seller-watch")
       .flatMap((d) =>
         existsSync(path.join(api, d.name, "handler.ts"))
           ? [d.name]

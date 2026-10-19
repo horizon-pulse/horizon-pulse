@@ -19,7 +19,7 @@
  */
 import { resolveSharedReplayStoreEnv } from "@/lib/xrpl-replay-store";
 
-export type AlertRail = "xrpl" | "solana";
+export type AlertRail = "xrpl" | "solana" | "premium";
 export const ALERT_LIST_CAP = 500;
 export const ALERT_COUNT_TTL_S = 35 * 86_400;
 export const ALERT_PERSIST_TIMEOUT_MS = 500;
@@ -34,7 +34,7 @@ let envOverride: Env | null = null;
 /** Tests only. */
 export function setAlertPersistForTests(o: { fetch?: FetchFn | null; env?: Env | null } | null): void {
   memo = null;
-  stats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0 }, skippedKind: 0 };
+  stats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0, premium: 0 }, skippedKind: 0 };
   fetchOverride = o?.fetch ?? null;
   envOverride = o?.env ?? null;
 }
@@ -101,9 +101,9 @@ export const NEVER_PERSIST = new Set(["warn_rate"]);
 /** Hard per-instance cap on alert writes per UTC day (both rails together). */
 export const ALERT_WRITE_CAP_PER_DAY = 50;
 type WriteStats = { day: string; written: number; overCap: Record<AlertRail, number>; skippedKind: number };
-let stats: WriteStats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0 }, skippedKind: 0 };
+let stats: WriteStats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0, premium: 0 }, skippedKind: 0 };
 function statsFor(day: string): WriteStats {
-  if (stats.day !== day) stats = { day, written: 0, overCap: { xrpl: 0, solana: 0 }, skippedKind: 0 };
+  if (stats.day !== day) stats = { day, written: 0, overCap: { xrpl: 0, solana: 0, premium: 0 }, skippedKind: 0 };
   return stats;
 }
 /** Tests / diagnostics: this instance's write counters for the current UTC day. */

@@ -1,5 +1,6 @@
 import { buildSkillMarkdown } from "@/lib/agent-skill";
 import { freeTierMode, skillWithFreeTier } from "@/lib/free-tier";
+import { premiumSkillSection } from "@/lib/premium/discovery";
 
 /**
  * GET /skill.md — agent skill (plain markdown with name/description front
@@ -10,7 +11,8 @@ import { freeTierMode, skillWithFreeTier } from "@/lib/free-tier";
 export const dynamic = "force-static";
 
 export function GET(): Response {
-  const md = buildSkillMarkdown();
+  // HP_PREMIUM_ENABLED=true appends the premium section; off -> "" (byte-identical).
+  const md = buildSkillMarkdown() + premiumSkillSection();
   // HP_FREE_TIER=optin appends the free-tier section; off -> byte-identical.
   return new Response(freeTierMode() === "optin" ? skillWithFreeTier(md) : md, {
     headers: {
