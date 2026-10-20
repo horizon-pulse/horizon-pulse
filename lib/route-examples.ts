@@ -988,10 +988,10 @@ export const OUTPUT_EXAMPLES: Record<string, Record<string, unknown>> = {
       },
       {
         "level": 2,
-        "text": "27 routes. One protocol."
+        "text": "30 routes. One protocol."
       }
     ],
-    "textSample": "# Horizon Pulse\n\nLive on Base + Solana + Polygon + XRP Ledger · x402 v2\n# Pay-per-call APIs\n built for agents.\n\n27 paid …",
+    "textSample": "# Horizon Pulse\n\nLive on Base + Solana + Polygon + XRP Ledger · x402 v2\n# Pay-per-call APIs\n built for agents.\n\n30 paid …",
     "fields": {
       "heading": "Pay-per-call APIsbuilt for agents.",
       "links": [
