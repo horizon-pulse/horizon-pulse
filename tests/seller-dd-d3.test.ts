@@ -369,6 +369,23 @@ describe("seller-dd D3 Counsel retention: 90-day window, real purge, dispute hol
     expect(await store.get(rcptKeys.ctx(v.id))).toBeNull();
   });
 
+  it("Odin H2: dispute-open log write fails -> 503, no hold, readable entry TTL unchanged", async () => {
+    const v = await buy();
+    const ttls: Record<string, number> = {};
+    const os = store.set.bind(store);
+    store.set = async (k: string, val: string, t: number) => { ttls[k] = t; return os(k, val, t); };
+    const oz = store.zadd.bind(store);
+    store.zadd = async (k: string, sc: number, m: string, t: number) => { if (m.startsWith("dispute_open:")) throw new Error("log down"); return oz(k, sc, m, t); };
+    const r = await dispute(v.id, "open");
+    expect(r.status).toBe(503);
+    expect(ttls[rcptKeys.ctx(v.id)]).toBeUndefined(); // TTL not rewritten
+    expect(ttls[rcptKeys.dispute(v.id)]).toBeUndefined();
+    expect(await store.get(rcptKeys.dispute(v.id))).toBeNull();
+    store.now = () => NOW + 90 * DAY + 1000;
+    expect(await store.get(rcptKeys.ctx(v.id))).toBeNull(); // still purged at 90 days
+    store.zadd = oz; store.set = os;
+  });
+
   it("dispute route: auth rules match recheck (401), flag off 404, bad action 400, open -> 200", async () => {
     const v = await buy();
     expect((await dispute(v.id, "open", "Bearer nope")).status).toBe(401);

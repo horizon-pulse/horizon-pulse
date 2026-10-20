@@ -109,9 +109,11 @@ export async function openDispute(store: PremiumStore, id: string, nowMs: number
   if (nowMs - Date.parse(rec.issued_at) > DISPUTE_WINDOW_MS) return { ok: false, status: 410, error: "dispute_window_expired" };
   const raw = await store.get(rcptKeys.ctx(id));
   if (!raw) return { ok: false, status: 410, error: "dispute_window_expired" };
+  // Odin H2: add-only log entry FIRST; if it fails -> 503 and no hold (ctx TTL unchanged, no dispute marker).
+  try { await store.zadd(rcptKeys.log(), nowMs, `dispute_open:${id}:${nowMs}`, RECEIPT_TTL_S); }
+  catch { return { ok: false, status: 503, error: "store_unavailable" }; }
   await store.set(rcptKeys.dispute(id), JSON.stringify({ opened_at: new Date(nowMs).toISOString() }), RECEIPT_TTL_S);
   await store.set(rcptKeys.ctx(id), raw, RECEIPT_TTL_S); // hold: not deleted at 90 days while the dispute is open
-  await store.zadd(rcptKeys.log(), nowMs, `dispute_open:${id}:${nowMs}`, RECEIPT_TTL_S);
   return { ok: true, state: "open", ctx_expires_at: null };
 }
 export async function resolveDispute(store: PremiumStore, id: string, nowMs: number): Promise<DisputeResult> {
