@@ -5,6 +5,7 @@
  *  - publisher-confirmed pairs (two independent publishers, same value + shared topic word, near-duplicates rejected).
  * Claim text = the primary page sentence, verbatim. The model writes only the answer line (checked), else a template.
  */
+import { briefModelAnswerEnabled } from "./contract";
 import type { ParallelResult } from "./parallel";
 import { extractAllowed } from "./parallel";
 import type { OnchainFact } from "./onchain";
@@ -80,7 +81,8 @@ export async function buildVerified(q: string, t: IndexType, web: ParallelResult
     // On-chain types: deterministic templated answer that states the values (no model, no vague wording).
     answer = onchainAnswer(chain);
     answer_by = "template";
-  } else if (claims.length >= minConfirmed) {
+  } else if (claims.length >= minConfirmed && briefModelAnswerEnabled()) {
+    // Odin 10/20 7:22 AM: model answer only behind HP_BRIEF_MODEL_ANSWER (default OFF); otherwise templated below.
     const w = await writeAnswer(q, claims.map((c) => c.text), deadline);
     if (w) (answer = w.text, answer_by = "model", usage = { inputTokens: w.inputTokens, outputTokens: w.outputTokens });
   }

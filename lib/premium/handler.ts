@@ -215,7 +215,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
       // Sentinel M2 / Odin ruling (2): global daily cap on unsettled (pre-settle) Parallel + LLM spend, all payers.
       // Checked BEFORE any 402, so nobody signs an authorization we cannot serve. Fails closed.
       if (!(await unsettledBudgetOpen(premiumStore())))
-        return jsonError(503, { error: "daily_research_budget_exhausted", reason: "global_unsettled_cap", charged: false, message: "Verified briefs are paused until the next UTC day. Nothing was charged; do not sign a payment." }, { "Retry-After": "3600" });
+        return jsonError(503, { error: "daily_research_budget_exhausted", reason: "global_unsettled_cap", charged: false, message: "Verified briefs are paused until the next UTC day. Do not sign a payment. Nothing was charged for this request." }, { "Retry-After": "3600" });
     }
   }
   if (x.route === "research" && !parallelKeyPresent()) return jsonError(503, { error: "premium_provider_unavailable", charged: false, message: "Nothing was charged for this request." });

@@ -17,8 +17,43 @@ export const QUOTE_CAP = 300;
 /** Fixed, versioned response schema (bump on any breaking change; documented at CONTRACT_URL). */
 export const BRIEF_SCHEMA_VERSION = "brief-verified/1";
 
-/** §1, published verbatim at /contracts/brief-verified. */
-export const OUTCOME_CONTRACT = [
+/**
+ * Odin 10/20 7:22 AM: the refund line is OPEN (his 10/19 3:20 PM ruling is current). Clause 6 is NOT approved. It is
+ * selected by HP_BRIEF_REFUND_CHOICE, default "pending" (no refund promise published). Michael picks (a) or (b); "e3" is
+ * Counsel's 10/20 E3 text, kept for reference. Launch is blocked while pending (briefLaunchBlockers).
+ */
+export type RefundChoice = "pending" | "a" | "b" | "e3";
+export function briefRefundChoice(env: Record<string, string | undefined> = process.env): RefundChoice {
+  const v = env.HP_BRIEF_REFUND_CHOICE;
+  return v === "a" || v === "b" || v === "e3" ? v : "pending";
+}
+export const CLAUSE_6: Record<RefundChoice, string> = {
+  pending: "6. Refunds and corrections: terms pending; none are offered until they are published here.",
+  // (a) no refund promise: charged only on pass. DRAFT for Michael + Counsel.
+  a: "6. No refund promise: a brief is charged only when it passes clause 5; a brief that does not pass is not charged. Delivered briefs are final. If you believe a claim we marked confirmed did not meet clause 3, tell us at horizonpulse.co@proton.me with the transaction hash; any correction is at our discretion.",
+  // (b) refunds on request, no time promise. DRAFT for Michael + Counsel (E3 without "usually within 7 days").
+  b: "6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash. If we confirm the error, we refund the full price in USDC on Base to the address that paid, under the refund terms at /premium-terms. A page that changes or disappears after delivery is not an error; the fetch time and body hash record what it said when we fetched it.",
+  e3: "6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash. If we confirm the error, we refund the full price in USDC on Base to the address that paid, usually within 7 days, under the refund terms at /premium-terms. A page that changes or disappears after delivery is not an error; the fetch time and body hash record what it said when we fetched it.",
+};
+/**
+ * Odin 10/20 7:22 AM: ZDR on the xAI key is unconfirmed, so every answer line is templated from code-confirmed facts.
+ * The model answer path stays behind HP_BRIEF_MODEL_ANSWER=true (default OFF) AND the existing ZDR/LLM gates.
+ */
+export function briefModelAnswerEnabled(env: Record<string, string | undefined> = process.env): boolean {
+  return env.HP_BRIEF_MODEL_ANSWER === "true";
+}
+/** Counsel E5(a), verbatim; published only while the model answer path is on. */
+export const CLAUSE_10_MODEL = "10. For x402 questions the answer line is written by an AI model from the confirmed claims only; code checks that it names the question's subject and contains no number or date that is not in those claims. Its wording can differ slightly between requests for the same question. On-chain answers are templated. Claim text is never written by the model.";
+/** DRAFT for Counsel (templated-only build). */
+export const CLAUSE_10_TEMPLATE = "10. The answer line is produced by code from the confirmed claims: for on-chain questions it states the values read, and for x402 questions it is the text of a confirmed claim. No AI model writes any part of the brief.";
+/** Things that must be resolved before the brief can launch (flag flip). */
+export function briefLaunchBlockers(env: Record<string, string | undefined> = process.env): string[] {
+  return briefRefundChoice(env) === "pending" ? ["refund_choice_pending"] : [];
+}
+
+/** §1, published verbatim at /contracts/brief-verified. Clause 6 and 10 follow the switches above. */
+export function outcomeContract(env: Record<string, string | undefined> = process.env): string {
+  return [
   "1. A brief contains an answer (names the question's subject) and 2–8 claims. Only supported question types are accepted; others are refused before payment.",
   "2. Every claim carries a verbatim quote from a public page, with the URL, the fetch time, the page's body hash, and the quote's offset in the body. Quotes are capped at 300 characters and attributed.",
   "3. A claim is confirmed only when one of these holds:",
@@ -27,12 +62,14 @@ export const OUTCOME_CONTRACT = [
   "   - official — two different documents from the x402 specification publishers (x402.org, docs.x402.org, Coinbase developer documentation, github.com/coinbase/x402) state the same fact; mirrored copies of one page count as one document. Specification pages are undated, so no effective date is required.",
   "4. consistent (two dated sources within tolerance) is shown but never counted as confirmed.",
   "5. At least 2 independently confirmed claims, or no charge: a brief passes only when at least 2 claims are confirmed and every claim's quote is found verbatim in the text of its page as fetched for this brief (fetch time and body hash shown). A brief that does not pass is not charged (settle after produce).",
-  "6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash. If we confirm the error, we refund the full price in USDC on Base to the address that paid, usually within 7 days, under the refund terms at /premium-terms. A page that changes or disappears after delivery is not an error; the fetch time and body hash record what it said when we fetched it.",
+  CLAUSE_6[briefRefundChoice(env)],
   "7. Every claim carries its evidence object. Briefs are not signed. For a charged brief, the x402 PAYMENT-RESPONSE settlement header (with the transaction hash) is the payment record.",
   "8. No financial, legal or medical recommendations. Briefs describe; they do not advise.",
   `9. Scope: on-chain live values (Ethereum and Base gas, base fee and gas limit; USDC supply on Ethereum and Base) and x402 specification facts only. Out of scope, refused before payment with nothing charged: ${OUT_OF_SCOPE_CATEGORIES.join("; ")}.`,
-  "10. For x402 questions the answer line is written by an AI model from the confirmed claims only; code checks that it names the question's subject and contains no number or date that is not in those claims. Its wording can differ slightly between requests for the same question. On-chain answers are templated. Claim text is never written by the model.",
+  briefModelAnswerEnabled(env) ? CLAUSE_10_MODEL : CLAUSE_10_TEMPLATE,
 ].join("\n");
+}
+export const OUTCOME_CONTRACT = outcomeContract();
 
 export type Evidence = { url: string; quote: string; fetched_at: string; body_sha256: string; offset: number; publisher: string };
 export type ContractClaim = {

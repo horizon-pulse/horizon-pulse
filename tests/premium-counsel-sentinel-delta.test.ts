@@ -3,7 +3,7 @@
  * Handler-level Sentinel fixes (M1-M4, LOW-7) are in premium-async.test.ts "delta 7"; LOW-6 in premium-verified-scope.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { OUTCOME_CONTRACT } from "@/lib/premium/contract";
+import { briefLaunchBlockers, briefRefundChoice, CLAUSE_10_TEMPLATE, CLAUSE_6, OUTCOME_CONTRACT, outcomeContract } from "@/lib/premium/contract";
 import { AI_PROVIDER_PRIVACY, AI_SELECTION_TERM, BRIEF_DESCRIPTION, BUYER_TERMS, DISCLAIMER, TECHNICAL_NOTES } from "@/lib/premium/copy";
 import { EXTRACT_NEVER } from "@/lib/premium/parallel";
 import { distinctOperators, rpcOperator } from "@/lib/premium/onchain";
@@ -36,14 +36,28 @@ describe("Counsel E1-E10 (verbatim copy)", () => {
     expect([c.primary.fetched_at, c.secondary.fetched_at].sort()).toEqual(["2026-10-20T08:30:00.000Z", "2026-10-20T09:00:00.000Z"]);
     expect(JSON.stringify(b.claims)).not.toContain("BUILD_TIME");
   });
-  it("E3/E4: clause 6 is a 30-day correction window (usually within 7 days, /premium-terms, no public log); clause 7 has no forward promise", () => {
-    expect(OUTCOME_CONTRACT).toContain("6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash.");
-    expect(OUTCOME_CONTRACT).toContain("usually within 7 days, under the refund terms at /premium-terms");
-    expect(OUTCOME_CONTRACT).not.toMatch(/24 hours|logged publicly|coming later/);
+  it("E3 (Odin 7:22 AM): clause 6 is behind HP_BRIEF_REFUND_CHOICE, default pending (no refund promise); (a), (b) and E3 texts ready; launch blocked while pending", () => {
+    expect(briefRefundChoice({})).toBe("pending");
+    expect(OUTCOME_CONTRACT).toContain(CLAUSE_6.pending);
+    expect(outcomeContract({})).not.toMatch(/refund the full price|usually within 7 days|24 hours|logged publicly/);
+    expect(outcomeContract({ HP_BRIEF_REFUND_CHOICE: "a" })).toContain("6. No refund promise: a brief is charged only when it passes clause 5");
+    const b = outcomeContract({ HP_BRIEF_REFUND_CHOICE: "b" });
+    expect(b).toContain("we refund the full price in USDC on Base");
+    expect(b).not.toContain("usually within 7 days");
+    expect(outcomeContract({ HP_BRIEF_REFUND_CHOICE: "e3" })).toContain("6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash.");
+    expect(briefLaunchBlockers({})).toEqual(["refund_choice_pending"]);
+    expect(briefLaunchBlockers({ HP_BRIEF_REFUND_CHOICE: "a" })).toEqual([]);
+    const copy = readFileSync("lib/premium/copy.ts", "utf8");
+    expect(copy).not.toMatch(/Michael-approved \[M\]|\[M\] approved/);
+    expect(copy).toContain("[M] items: OPEN, pending Michael");
+  });
+  it("E4: clause 7 has no forward promise", () => {
+    expect(OUTCOME_CONTRACT).not.toMatch(/coming later/);
     expect(OUTCOME_CONTRACT).toContain("7. Every claim carries its evidence object. Briefs are not signed. For a charged brief, the x402 PAYMENT-RESPONSE settlement header (with the transaction hash) is the payment record.");
   });
   it("E5: clause 10, AI_ANSWER_NOTE, AI_SELECTION_TERM, AI_PROVIDER_PRIVACY; never 'fact-checked' in public copy", () => {
-    expect(OUTCOME_CONTRACT).toContain("10. For x402 questions the answer line is written by an AI model from the confirmed claims only;");
+    expect(outcomeContract({ HP_BRIEF_MODEL_ANSWER: "true" })).toContain("10. For x402 questions the answer line is written by an AI model from the confirmed claims only;");
+    expect(OUTCOME_CONTRACT).toContain(CLAUSE_10_TEMPLATE); // default: model answer OFF (ZDR unconfirmed)
     expect(AI_ANSWER_NOTE).toContain("Its wording can vary slightly between requests.");
     expect(AI_SELECTION_TERM).not.toContain("We add no prose of our own");
     expect(AI_SELECTION_TERM).toContain("that line is marked as machine-written");
@@ -102,5 +116,18 @@ describe("Sentinel LOW-5: the LLM answer reservation is kept through timeout", (
     expect(recon).toHaveLength(1);
     expect(recon[0][1]).toBe(recon[0][0]);
     expect(recon[0][1]).toBeGreaterThan(0);
+  });
+});
+
+describe("Odin 7:22 AM: all answer lines templated (model path behind HP_BRIEF_MODEL_ANSWER, default OFF)", () => {
+  it("x402 answer is a confirmed claim's text; the model is never called even with the LLM gates on", async () => {
+    let called = 0;
+    setSynthesisForTests({ env: { HP_PREMIUM_LLM_ENABLED: "true", PREMIUM_LLM_ZDR_CONFIRMED: "true", PREMIUM_LLM_API_KEY: "test-not-a-key" }, spend: { reserve: async () => true, reconcile: async () => {} }, model: async () => (called++, { text: JSON.stringify({ answer: "x402 is great." }) }) });
+    const t = SOURCE_INDEX.find((x) => x.id === "x402")!;
+    const web = [page("https://a.com/x", "x402 is an open payment protocol that uses the HTTP 402 status code for stablecoin payments in 2025."), page("https://b.org/y", "Launched in 2025, x402 is an open payment protocol built on the HTTP 402 status code.")];
+    const b = await buildVerified("What is the x402 payment protocol", t, web as any, [], null, "t", Date.now() + 5000, 1);
+    expect(called).toBe(0);
+    expect(b.answer_by).toBe("template");
+    expect(b.claims.map((c: any) => c.text)).toContain(b.answer);
   });
 });

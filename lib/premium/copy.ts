@@ -1,5 +1,6 @@
 /**
- * Premium public copy. Counsel-reviewed text (spec §8, v3.2), Michael-approved [M] items via Odin 2026-10-19 2:04 PM AST.
+ * Premium public copy. Counsel-reviewed text (spec §8, v3.2). [M] items: OPEN, pending Michael (Odin 10/20 7:22 AM;
+ * his 10/19 3:20 PM ruling is current). REFUND_LINE and the verified-brief clause 6 are NOT approved. Clause 6 is switched in contract.ts (HP_BRIEF_REFUND_CHOICE, default pending).
  * Verbatim strings: do not edit without Counsel. Public contact = CONTACT_EMAIL (lib/config.ts), the Horizon Pulse
  * business email already published in llms.txt and /.well-known/x402.
  */
@@ -21,6 +22,7 @@ export const FCRA_CLAUSE =
 export const WATCH_TERMS =
   "Watch: one check report at the start, then one check record per day for 30 days, available at your status link for 30 days after the watch ends. You are charged only once the first report is built; if it cannot be built, you are not charged, or, if settlement was temporarily moved to payment verification, you are refunded in full. If we miss 3 or more daily checks, or end the watch early for any reason, you get a refund for the undelivered days (price × undelivered days ÷ 30). The watched service going down, changing or delisting is a reported event, not a failure. There are no webhooks; check the status link. We may refuse or stop a watch that breaks our terms; in that case unused days are refunded unless the watch was stopped for abuse. No auto-renewal: a watch ends after 30 days and is never charged again.";
 
+/** OPEN, not approved (Odin 10/20 7:22 AM): the published refund line is Michael's pick. */
 export const REFUND_LINE =
   `Refunds: Delivered results are final. If you were charged and we did not deliver (for example a payment settle error, or a job or watch we failed to complete), send the receipt ID or transaction hash to ${PREMIUM_CONTACT} within 30 days. We confirm the payment on-chain and refund the amount owed in USDC on Base to the paying address, usually within 7 days. Undelivered watch days are refunded pro rata. Other refund requests are at our discretion.`;
 
@@ -33,7 +35,7 @@ export const PRIVACY_PREMIUM_ADDITION =
 export const RECONCILE_RETENTION_S = 365 * 86_400;
 
 /**
- * Buyer terms (Counsel cond. 1, [M] approved): at least as protective of Parallel's IP as Parallel Customer Terms
+ * Buyer terms (Counsel cond. 1, [M] OPEN, pending Michael): at least as protective of Parallel's IP as Parallel Customer Terms
  * §1(f) (effective 2026-10-17; re-read at sign-up). Linked from every premium 402 and response.
  */
 /**
