@@ -8,6 +8,8 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// Pulse price from the repo openapi.json (never hard-coded; Odin 10/20).
+const PULSE_PRICE = JSON.parse(fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "public", "openapi.json"), "utf8")).paths["/api/pulse"].get["x-payment-info"].priceUsd;
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from "@x402/core/http";
@@ -48,7 +50,7 @@ if (LIVE !== "skip") {
   const names = tools.map((t) => t.name).sort();
   ok(JSON.stringify(names) === JSON.stringify(EXPECTED_TOOLS), `tools/list: ${names.length} tools (${names.join(",")})`);
   const pulseTool = tools.find((t) => t.name === "pulse");
-  ok(/\$0\.005 USDC per call/.test(pulseTool?.description ?? ""), "pulse description carries exact price $0.005");
+  ok(pulseTool?.description?.includes(`${PULSE_PRICE} USDC per call`), `pulse description carries exact price ${PULSE_PRICE} (from openapi.json)`);
   ok(tools.find((t) => t.name === "portfolio")?.inputSchema?.required?.includes("address"), "portfolio requires address");
   ok(tools.find((t) => t.name === "http")?.inputSchema?.properties?.headers, "http tool uses POST body schema (headers)");
 
