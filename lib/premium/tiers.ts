@@ -56,6 +56,19 @@ export const ROUTE_BASE: Record<PremiumRoute, string> = {
 export function premiumEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return env.HP_PREMIUM_ENABLED === "true";
 }
+/**
+ * Per-tier allowlist (Odin option A, 10/20). HP_PREMIUM_TIERS is a comma list of tier ids, e.g. "brief".
+ * Fail closed: unset or empty means no tier is live. A tier not listed behaves exactly like premium off (404, unlisted).
+ */
+export function allowedTierIds(env: Record<string, string | undefined> = process.env): Set<string> {
+  return new Set((env.HP_PREMIUM_TIERS ?? "").split(",").map((v) => v.trim()).filter(Boolean));
+}
+export function tierAllowed(x: Tier | string, env: Record<string, string | undefined> = process.env): boolean {
+  return premiumEnabled(env) && allowedTierIds(env).has(typeof x === "string" ? x : x.id);
+}
+export function routeHasAllowedTier(route: PremiumRoute, env: Record<string, string | undefined> = process.env): boolean {
+  return PREMIUM_TIERS.some((x) => x.route === route && tierAllowed(x, env));
+}
 export function premiumAsyncEnabled(env: Record<string, string | undefined> = process.env): boolean {
   return premiumEnabled(env) && env.HP_PREMIUM_ASYNC_ENABLED === "true";
 }
@@ -82,7 +95,7 @@ export function asyncTierLive(x: Tier): boolean {
 /** Tiers that discovery may list right now (sync tiers when premium is on; async tiers only with the async flag). */
 export function listedTiers(env: Record<string, string | undefined> = process.env): Tier[] {
   if (!premiumEnabled(env)) return [];
-  return PREMIUM_TIERS.filter((x) => x.mode === "sync" || (premiumAsyncEnabled(env) && ASYNC_LIVE.has(x.id)));
+  return PREMIUM_TIERS.filter((x) => tierAllowed(x, env)).filter((x) => x.mode === "sync" || (premiumAsyncEnabled(env) && ASYNC_LIVE.has(x.id)));
 }
 
 /**

@@ -1,13 +1,13 @@
 import { notFound } from "next/navigation";
 import { AI_PROVIDER_TERMS, BUYER_TERMS, TECHNICAL_NOTES } from "@/lib/premium/copy";
 import { premiumLlmEnabled } from "@/lib/premium/synthesis";
-import { premiumEnabled } from "@/lib/premium/tiers";
+import { listedTiers } from "@/lib/premium/tiers";
 
 export const dynamic = "force-dynamic";
 
 /** Premium buyer terms (Counsel cond. 1). 404 while HP_PREMIUM_ENABLED is off. */
 export default function PremiumTermsPage() {
-  if (!premiumEnabled()) notFound();
+  if (listedTiers().length === 0) notFound();
   return (
     <main style={{ maxWidth: 760, margin: "40px auto", padding: "0 20px", lineHeight: 1.6 }}>
       <h1>Horizon Pulse premium terms</h1>

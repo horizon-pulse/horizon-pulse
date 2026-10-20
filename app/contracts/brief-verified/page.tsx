@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
 import { BRIEF_SCHEMA_VERSION, OUTCOME_CONTRACT } from "@/lib/premium/contract";
-import { premiumEnabled } from "@/lib/premium/tiers";
+import { tierAllowed } from "@/lib/premium/tiers";
 
 export const dynamic = "force-dynamic";
 
 /** Hardened brief spec §1 (published verbatim) + fixed schema version. 404 while HP_PREMIUM_ENABLED is off. */
 export default function BriefVerifiedContractPage() {
-  if (!premiumEnabled()) notFound();
+  if (!tierAllowed("brief")) notFound();
   return (
     <main style={{ maxWidth: 760, margin: "40px auto", padding: "0 20px", lineHeight: 1.6 }}>
       <h1>Verified brief: outcome contract</h1>

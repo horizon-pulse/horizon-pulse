@@ -83,7 +83,7 @@ let now: number;
 let pages: Record<string, { status: number; body: string; headers?: Record<string, string> }>;
 
 function on(extra: Record<string, string> = {}) {
-  vi.stubEnv("HP_PREMIUM_ENABLED", "true");
+  vi.stubEnv("HP_PREMIUM_ENABLED", "true"); vi.stubEnv("HP_PREMIUM_TIERS", "brief,standard,extended,report,monitor,watch,watch-report");
   vi.stubEnv("HP_PREMIUM_ASYNC_ENABLED", "true");
   vi.stubEnv("PARALLEL_API_KEY", "test-parallel-key-not-real");
   vi.stubEnv("CDP_API_KEY_ID", "test-key-id");

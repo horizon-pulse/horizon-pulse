@@ -79,7 +79,7 @@ let settleBehaviour: () => unknown;
 let errors: string[];
 
 function on(extra: Record<string, string> = {}) {
-  vi.stubEnv("HP_PREMIUM_ENABLED", "true");
+  vi.stubEnv("HP_PREMIUM_ENABLED", "true"); vi.stubEnv("HP_PREMIUM_TIERS", "brief,standard,extended,report,monitor,watch,watch-report");
   vi.stubEnv("PARALLEL_API_KEY", KEY);
   vi.stubEnv("CDP_API_KEY_ID", "test-key-id");
   vi.stubEnv("CDP_API_KEY_SECRET", "test-key-secret");

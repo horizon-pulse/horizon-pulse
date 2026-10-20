@@ -57,7 +57,7 @@ import { briefPassTier, runResearch } from "./research";
 import { classifyQuestion } from "./source-index";
 import { CONTRACT_URL } from "./contract";
 import { premiumStore, type PremiumStore } from "./store";
-import { asyncTierLive, premiumAsyncEnabled, premiumEnabled, projectedSeconds, ROUTE_BASE, SETTLE_RESERVE_S, tierFor, WORK_BUDGET_S, type PremiumRoute, type Tier } from "./tiers";
+import { asyncTierLive, routeHasAllowedTier, tierAllowed, premiumAsyncEnabled, premiumEnabled, projectedSeconds, ROUTE_BASE, SETTLE_RESERVE_S, tierFor, WORK_BUDGET_S, type PremiumRoute, type Tier } from "./tiers";
 
 export const Q_MAX_CHARS = 500;
 /** Odin C1: whole sync request must finish inside maxDuration 60 s. */
@@ -71,7 +71,7 @@ export function setPremiumClockForTests(f: (() => number) | null) {
 }
 
 export function bareRouteResponse(route: PremiumRoute): NextResponse {
-  if (!premiumEnabled()) return notFound();
+  if (!premiumEnabled() || !routeHasAllowedTier(route)) return notFound();
   return jsonError(400, { error: "tier_required", message: `Use a tier path: ${ROUTE_BASE[route]}/{tier}. There is no ?tier= parameter.` });
 }
 
@@ -194,10 +194,13 @@ async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded
 
 export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg: string | undefined): Promise<NextResponse> {
   const t0 = clock();
-  if (!premiumEnabled()) return notFound();
+  if (!premiumEnabled() || !routeHasAllowedTier(route)) return notFound();
+  { const y = tierFor(route, seg); if (y && !tierAllowed(y)) return notFound(); }
   const url = new URL(req.url);
   if (url.searchParams.has("tier")) return jsonError(400, { error: "tier_query_not_supported", message: "Tier is a path segment only; remove ?tier=." });
-  const x = tierFor(route, seg);
+  const x0 = tierFor(route, seg);
+  const x = x0 && tierAllowed(x0) ? x0 : null;
+  if (x0 && !x) return notFound();
   if (!x) return jsonError(400, { error: "unknown_tier", message: `Unknown tier. Use ${ROUTE_BASE[route]}/{tier}.` });
   if (req.method !== "GET") return jsonError(405, { error: "method_not_allowed" }, { Allow: "GET, OPTIONS" });
   const v = validateInput(route, url);
@@ -496,8 +499,9 @@ async function chargeOnPass(store: PremiumStore, req: NextRequest, x: Tier, d: D
 }
 
 export function premiumOptions(route: PremiumRoute, seg: string | undefined): NextResponse {
-  if (!premiumEnabled()) return notFound();
+  if (!premiumEnabled() || !routeHasAllowedTier(route)) return notFound();
   const x = tierFor(route, seg);
+  if (x && !tierAllowed(x)) return notFound();
   if (!x) return jsonError(400, { error: "unknown_tier" });
   if (x.mode === "async" && !(premiumAsyncEnabled() && asyncTierLive(x))) return jsonError(503, { error: "tier_not_available", charged: false });
   const res = challenge(x, description(x), undefined, 200);
