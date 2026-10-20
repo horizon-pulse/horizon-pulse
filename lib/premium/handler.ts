@@ -378,6 +378,8 @@ async function capTripped(store: PremiumStore | null, where: "pre_402" | "reserv
   try {
     if (store && !(await store.setNx(`brief:capalert:${new Date(clock()).toISOString().slice(0, 10)}`, "1", 2 * 86_400_000).catch(() => true))) return;
   } catch { /* alert anyway */ }
+  // Odin 7:50 AM: a distinct, fixed log token so a log-based check can match it without reading hp:alerts.
+  console.error(`[premium] brief_cap_tripped level=${level} where=${where} cap_usd=${UNSETTLED_DAILY_CAP_USD}`);
   console.error(`[premium][ALERT][${level.toUpperCase()}] ${JSON.stringify({ kind: CAP_ALERT_KIND, severity: level, route: "/api/research/report/brief", where, cap_usd: UNSETTLED_DAILY_CAP_USD })}`);
   persistAlert("premium", { kind: CAP_ALERT_KIND, severity: level, route: "/api/research/report/brief", payer: null });
 }

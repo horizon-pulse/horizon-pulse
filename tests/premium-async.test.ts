@@ -1242,6 +1242,8 @@ describe("delta 7: Sentinel hardened-brief findings", () => {
     expect(alerts).toHaveLength(1);
     expect(alerts[0]).toContain("[premium][ALERT][WARN]");
     expect(alerts[0]).toContain('"severity":"warn"');
+    const lines = err.mock.calls.map((c) => String(c[0])).filter((l) => l.startsWith("[premium] brief_cap_tripped "));
+    expect(lines).toEqual(["[premium] brief_cap_tripped level=warn where=pre_402 cap_usd=3"]);
   });
   it("LOW-7: our outage (Parallel down) -> 503 before settle; authorization reusable and decline slot not consumed", async () => {
     on();
