@@ -24,8 +24,7 @@ describe("brief 402: extensions.bazaar (Base only, $1, narrow copy)", () => {
   it("Base only, $1, payTo, resource metadata", () => {
     expect(pr.accepts).toHaveLength(1);
     expect(pr.accepts[0]).toMatchObject({ network: "eip155:8453", amount: "1000000", payTo: "0x5b32c973596078a967562ca652761404f19be0e9" });
-    expect(pr.resource).toMatchObject({ serviceName: "Horizon Pulse" });
-    expect(pr.resource.iconUrl).toBeUndefined(); // Odin 9:24 condition 1
+    expect(pr.resource).toMatchObject({ serviceName: "Horizon Pulse", iconUrl: "https://horizonpulse.dev/icon.png" }); // Odin 10:16: restored
   });
   it("copy states exactly the accepted scope, charge-on-pass and unpaid refusals; no other tiers, no provider names", () => {
     expect(BRIEF_BAZAAR_Q_DESCRIPTION).toContain("Base or Ethereum gas (on-chain read), USDC supply on Ethereum and Base (on-chain totalSupply), or an x402 spec fact");

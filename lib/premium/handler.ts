@@ -203,6 +203,10 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
   if (x0 && !x) return notFound();
   if (!x) return jsonError(400, { error: "unknown_tier", message: `Unknown tier. Use ${ROUTE_BASE[route]}/{tier}.` });
   if (req.method !== "GET") return jsonError(405, { error: "method_not_allowed" }, { Allow: "GET, OPTIONS" });
+  // Odin 10:16 (bare-GET fix): an unpaid GET with no q returns the brief's unpaid 402 + Bazaar block, so the catalog URL
+  // probes like every other route. Nothing is classified, verified or settled. A PAID call without a valid q still falls
+  // through to validateInput below: 400 before verify, never settled.
+  if (x.id === "brief" && !url.searchParams.has("q") && !paymentHeader(req)) return challenge(x, description(x));
   const v = validateInput(route, url);
   if (!v.ok) return v.res;
 

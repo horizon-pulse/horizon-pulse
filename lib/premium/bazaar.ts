@@ -1,3 +1,4 @@
+import { PUBLIC_BASE_URL } from "@/lib/config";
 /**
  * CDP Bazaar discovery block for the $1 verified brief's unpaid 402 (Odin 9:18 AM ET, 10/20).
  * Same shape as the multi-network routes (declareDiscoveryExtension, one charged method), Base only,
@@ -9,6 +10,7 @@ import DEMO from "./demo-brief-verified.json";
 
 export const BRIEF_SERVICE_META = {
   serviceName: "Horizon Pulse",
+  iconUrl: `${PUBLIC_BASE_URL}/icon.png`, // Odin 10:16: restored to match /api/x402-check/deep
   tags: ["research", "verified-brief", "x402", "gas-fees", "usdc", "base", "ethereum"],
 } as const;
 

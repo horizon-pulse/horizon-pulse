@@ -208,7 +208,8 @@ describe("N2 / T3a.3: path URLs only, 400 before any 402", () => {
   });
   it("missing / bad q or target -> 400 before 402", async () => {
     on({ HP_PREMIUM_ASYNC_ENABLED: "true" });
-    expect((await call("brief", "")).status).toBe(400);
+    expect((await call("brief", "")).status).toBe(402); // Odin 10:16 bare-GET: unpaid, no q -> the 402 quote (was 400)
+    expect((await call("brief", "q=")).status).toBe(400);
     expect((await call("brief", "q=" + "x".repeat(501))).status).toBe(400);
     expect((await call("watch", "target=http%3A%2F%2Fexample.com")).status).toBe(400);
     expect((await call("watch", "target=notaurl")).status).toBe(400);
@@ -461,6 +462,32 @@ describe("paid sync path", () => {
     expect((await r.json()).charged).toBe(false);
     expect(fac.some((c) => c.op === "settle")).toBe(false);
     expect(fac.some((c) => c.op === "verify")).toBe(false);
+  });
+  it("bare-GET (Odin 10:16): unpaid GET with no q -> 402 + Bazaar block, charged nothing, no verify/settle", async () => {
+    on();
+    const r = await call("brief", "");
+    expect(r.status).toBe(402);
+    const pr: any = decodePaymentRequiredHeader(r.headers.get("payment-required")!);
+    expect(pr.accepts).toHaveLength(1);
+    expect(pr.accepts[0].amount).toBe("1000000");
+    expect(pr.extensions?.bazaar?.info?.input?.queryParams?.q).toBeTruthy();
+    expect(fac.some((c) => c.op === "verify" || c.op === "settle")).toBe(false);
+  });
+  it("bare-GET (Odin 10:16): PAID call with no q -> 400 before verify, never settled", async () => {
+    on();
+    for (const qs of ["", "q=", "q=ab"]) {
+      const r = await call("brief", qs, { "payment-signature": await payment() });
+      expect(r.status).toBe(400);
+      expect(r.headers.get("payment-required")).toBeNull();
+    }
+    expect(fac.some((c) => c.op === "verify" || c.op === "settle")).toBe(false);
+  });
+  it("bare-GET (Odin 10:16): PAID call with a valid q keeps the normal flow (verify, pass, settle, 200)", async () => {
+    on();
+    const r = await call("brief", input("brief"), { "payment-signature": await payment() });
+    expect(r.status).toBe(200);
+    expect(fac.some((c) => c.op === "verify")).toBe(true);
+    expect(fac.some((c) => c.op === "settle")).toBe(true);
   });
   it("verify invalid -> 402 for the tier; verify error -> 503; neither settles", async () => {
     on();
