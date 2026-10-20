@@ -1,0 +1,52 @@
+{
+ "question": "When did Coinbase launch the Base network",
+ "search": [
+  {
+   "url": "https://www.coinbase.com/en-in/blog/introducing-base",
+   "title": "Introducing Base - Coinbase",
+   "publish_date": null,
+   "excerpts": [
+    "By Will Robinson Feb 23, 2023"
+   ]
+  },
+  {
+   "url": "https://techcrunch.com/2023/02/23/coinbase-launches-blockchain-base-to-help-developers-build-dapps-on-chain/",
+   "title": "Coinbase launches blockchain Base to help developers build dApps on-chain | TechCrunch",
+   "publish_date": "2023-02-23",
+   "excerpts": [
+    "Coinbase launches blockchain Base to help developers build dApps on-chain"
+   ]
+  },
+  {
+   "url": "https://www.coindesk.com/tech/2023/08/09/coinbase-officially-launches-base-blockchain-milestone-for-a-public-company",
+   "title": "Coinbase Officially Launches Base Blockchain in Milestone for a Public Company ",
+   "publish_date": "2023-08-09",
+   "excerpts": [
+    "Coinbase Officially Launches Base Blockchain in Milestone for a Public Company"
+   ]
+  },
+  {
+   "url": "https://www.forbes.com/sites/leeorshimron/2023/08/16/layer-2-wars-heat-up-as-coinbase-launches-base",
+   "title": "Layer 2 Wars Heat Up As Coinbase Launches Base",
+   "publish_date": "2023-08-16",
+   "excerpts": [
+    "Layer 2 Wars Heat Up As Coinbase Launches Base"
+   ]
+  },
+  {
+   "url": "https://finance.yahoo.com/news/coinbase-launches-bridge-layer-2-092003819.html",
+   "title": "Coinbase launches bridge for layer-2 blockchain Base, sets mainet launch date",
+   "publish_date": "2023-08-04",
+   "excerpts": [
+    "Coinbase launches bridge for layer-2 blockchain Base, sets mainet launch date"
+   ]
+  }
+ ],
+ "real_body_claims": [
+  "By Will Robinson Feb 23, 2023",
+  "Coinbase launches blockchain Base to help developers build dApps on-chain",
+  "Coinbase Officially Launches Base Blockchain in Milestone for a Public Company",
+  "Layer 2 Wars Heat Up As Coinbase Launches Base",
+  "Coinbase launches bridge for layer-2 blockchain Base, sets mainet launch date"
+ ]
+}

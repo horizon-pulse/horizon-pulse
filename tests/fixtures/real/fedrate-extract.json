@@ -1,0 +1,33 @@
+{
+ "extract_id": "extract_e6c352a34f202e08a783e7c3a6fb81b0",
+ "results": [
+  {
+   "url": "https://fred.stlouisfed.org/graph/?g=1DIsX",
+   "title": "Federal Funds Effective Rate | FRED | St. Louis Fed",
+   "publish_date": "2026-09-18",
+   "excerpts": [
+    "# Federal Funds Effective Rate (DFF)\nObservations\n2025-02-13: 4.33\nUpdated: Sep 18, 2026 3:16 PM CDT\n[Next Release Date: Sep 21, 2026](https://fred.stlouisfed.org/releases/calendar?rid=18&y=2026)\n\n...\n\n## Notes\n### Notes:\n(1) The rate that the borrowing institution pays to the lending institution is determined between the two banks; the weighted average rate for all of these types of negotiations is called the effective federal funds rate.(2) The effective federal funds rate is essentially determined by the market but is influenced by the Federal Reserve as it uses the Interest on Reserve Balances rate to steer the federal funds rate toward the target range.(2)\nThe Federal Open Market Committee (FOMC) meets eight times a year to determine the federal funds target range. The Fed's primary tool for influencing the federal funds rate is the interest the Fed pays on the funds that banks hold as reserve balances at their Federal Reserve Bank, which is the Interest on Reserves Balances (IORB) rate.\nBecause banks are unlikely to lend funds in the federal funds market for less than they get paid in their reserve balance account at the Federal Reserve, the Interest on Reserve Balances (IORB) is an effective tool for guiding the federal funds rate. (3) Whether the Federal Reserve raises or lowers the target range for the federal funds rate depends on the state of the economy.\nIf the FOMC believes the economy is growing too fast and inflation pressures are inconsistent with the dual mandate of the Federal Reserve, the Committee may temper economic activity by raising the target range for federal funds rate, and increasing the IORB rate to steer the federal funds rate into the target range.\nIn the opposing scenario, the FOMC may spur greater economic activity by lowering the target range for federal funds rate, and decreasing the IORB rate to steer the federal funds rate into the target range. (3) Therefore, the FOMC must observe the current state of the economy to determine the best course of monetary policy that will maximize economic growth while adhering to the dual mandate set forth by Congress."
+   ],
+   "full_content": null
+  },
+  {
+   "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260916a.htm",
+   "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+   "publish_date": "2026-09-16",
+   "excerpts": [
+    "# Press Release\n## Federal Reserve issues FOMC statement\nThe Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve's dual mandate. The Committee is continuing its policy of maintaining ample reserves in the banking system."
+   ],
+   "full_content": null
+  }
+ ],
+ "errors": [],
+ "warnings": null,
+ "usage": [
+  {
+   "name": "sku_extract_excerpts",
+   "count": 2
+  }
+ ],
+ "metadata": null,
+ "session_id": "session_e6c352a34f202e08a783e7c3a6fb81b0"
+}

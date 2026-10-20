@@ -1,0 +1,391 @@
+{
+ "question": "What is the current federal funds rate target range",
+ "results": [
+  {
+   "url": "https://fred.stlouisfed.org/series/DFEDTARU",
+   "title": "Federal Funds Target Range - Upper Limit (DFEDTARU) | FRED | St. Louis Fed",
+   "publish_date": "2026-10-19",
+   "excerpts": [
+    "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-19: 4.00\nUpdated: Oct 19, 2026 7:01 AM CDT\nNext Release Date: Oct 20, 2026\n* 2026-10-19: | 4.00 |\n* 2026-10-18: | 4.00 |\n* 2026-10-17: | 4.00 |\n* 2026-10-16: | 4.00 |\n* 2026-10-15: | 4.00 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 1828 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-19 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Upper Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Upper Limit , Percent, Not Seasonally Adjusted (DFEDTARU)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Upper Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, October 19, 2026 .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/graph/?g=j9bq",
+   "title": "Federal Funds Target Range - Lower Limit | FRED | St. Louis Fed",
+   "publish_date": "2026-10-16",
+   "excerpts": [
+    "Federal Funds Target Range - Lower Limit (DFEDTARL)\nObservations\n2026-10-16: 3.75\nUpdated: Oct 16, 2026 7:01 AM CDT\nNext Release Date: Oct 17, 2026\n* 2026-10-16: | 3.75 |\n* 2026-10-15: | 3.75 |\n* 2026-10-14: | 3.75 |\n* 2026-10-13: | 3.75 |\n* 2026-10-12: | 3.75 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 4960 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-16 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Lower Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Lower Limit , Percent, Not Seasonally Adjusted (DFEDTARL)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Lower Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents lower limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Lower Limit [DFEDTARL], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARL, October 17, 2026 .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/graph?graph_id=492410",
+   "title": "Federal Funds Target Range - Upper Limit | FRED | St. Louis Fed",
+   "publish_date": "2026-10-01",
+   "excerpts": [
+    "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-01: 4.00\nUpdated: Oct 1, 2026 7:00 AM CDT\nNext Release Date: Oct 2, 2026\n* 2026-10-01: | 4.00 |\n* 2026-09-30: | 4.00 |\n* 2026-09-29: | 4.00 |\n* 2026-09-28: | 4.00 |\n* 2026-09-27: | 4.00 |\n* View All\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\nFullscreen\nData in this graph are copyrighted. Please review the copyright information in the series notes before sharing.\nShare Graph\n* Custom Graph Link\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/graph?g=h20M",
+   "title": "Federal Funds Target Range - Upper Limit | FRED | St. Louis Fed",
+   "publish_date": "2026-10-09",
+   "excerpts": [
+    "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-09: 4.00\nUpdated: Oct 9, 2026 7:01 AM CDT\nNext Release Date: Oct 10, 2026\n* 2026-10-09: | 4.00 |\n* 2026-10-08: | 4.00 |\n* 2026-10-07: | 4.00 |\n* 2026-10-06: | 4.00 |\n* 2026-10-05: | 4.00 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\nFullscreen\nData in this graph are copyrighted. Please review the copyright information in the series notes before sharing.\nShare Graph\n* Custom Graph Link\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/series/DFEDTARU/data?end_date=2026-07-09&start_date=2026-07-01",
+   "title": "Federal Funds Target Range - Upper Limit (DFEDTARU) | FRED | St. Louis Fed",
+   "publish_date": "2026-09-05",
+   "excerpts": [
+    "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-09-05: 3.75\nUpdated: Sep 5, 2026 7:01 AM CDT\nNext Release Date: Sep 6, 2026\n* 2026-09-05: | 3.75 |\n* 2026-09-04: | 3.75 |\n* 2026-09-03: | 3.75 |\n* 2026-09-02: | 3.75 |\n* 2026-09-01: | 3.75 |\n* View All\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\nFullscreen\nData in this graph are copyrighted. Please review the copyright information in the series notes before sharing.\nShare Graph\n* Custom Graph Link\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260916.htm",
+   "title": "The Fed - Monetary Policy:",
+   "publish_date": null,
+   "excerpts": [
+    "The Fed - Monetary Policy:\nThe Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve's"
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260916a.htm",
+   "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+   "publish_date": null,
+   "excerpts": [
+    "The Federal Open Market Committee approved the following statement for release by a 12 – 0 vote: The Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve's dual mandate. The Committee is continuing its policy of maintaining ample reserves in the banking system. Economic activity is expanding at a solid pace. While uncertainty remains elevated owing, in part, to geopolitical developments, domestic spending has been resilient. Productivity growth is strong, and capital investment is robust. Job gains have kept pace with the workforce, and the unemployment rate has changed little. Inflation remains elevated. Today's policy action will support a timelier return to the Committee's 2 percent goal."
+   ]
+  },
+  {
+   "url": "http://federalreserve.gov/monetarypolicy/files/monetary20260729a1.pdf",
+   "title": "",
+   "publish_date": null,
+   "excerpts": [
+    "EDT July 29, 2026 The Federal Open Market Committee approved the following statement for release by a 9 – 3 vote: The Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent, in support of the Federal Reserve's dual mandate."
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/aboutthefed/fedexplained/accessible-version.htm",
+   "title": "FOMC's target range for the federal funds rate",
+   "publish_date": null,
+   "excerpts": [
+    "FOMC's target range for the federal funds rate\nHow the Federal Reserve implements monetary policy. FOMC decides to make policy more accommodative (“ease” policy). Arrow points from FOMC graphic to the left"
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20250730a.htm",
+   "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+   "publish_date": null,
+   "excerpts": [
+    "Press Release Federal Reserve issues FOMC statement In support of its goals, the Committee decided to maintain the target range for the federal funds rate at 4-1/4 to 4-1/2 percent. In considering the extent and timing of additional adjustments to the target range for the federal funds rate, the Committee will carefully assess incoming data, the evolving outlook, and the balance of risks. ... Waller, who preferred to lower the target range for the federal funds rate by 1/4 percentage point at this meeting. Absent and not voting was Adriana D. Kugler."
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm",
+   "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+   "publish_date": null,
+   "excerpts": [
+    "Implementation Note issued July 29, 2026 Last Update: July 29, 2026 Board of Governors _of the_ Federal Reserve System 20th Street and Constitution Avenue N.W., Washington, DC 20551 July 29, 2026 Federal Reserve issues FOMC statement For release at 2:00 p.m. The Committee decided to maintain the target range for the federal funds rate at <strong>3-1/2 to 3-3/4 percent</strong>, in support of the Federal Reserve&#x27;s dual mandate. Press Release Federal Reserve issues FOMC statement The Federal Open Market Committee approved the following statement for release by a 9 – 3 vote: ... Voting against the monetary policy action were Beth M. Hammack, Neel Kashkari, and Lorie K. Logan, who preferred to raise the target range for the federal funds rate by 1/4 percentage point at this meeting."
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260617a.htm",
+   "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+   "publish_date": null,
+   "excerpts": [
+    "Press Release Federal Reserve issues FOMC statement The Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent, in support of the Federal Reserve's dual mandate. The Committee reaffirmed its policy of maintaining ample reserves in the banking system. Economic activity is expanding at a solid pace despite elevated uncertainty that owes, in part, to the conflict in the Middle East. Productivity growth and capital investment are strong. Job gains have kept pace with the workforce, and the unemployment rate has changed little. Inflation remains elevated relative to the Committee's 2 percent goal, in part reflecting supply shocks that have driven price increases in certain sectors, including energy. The Committee will deliver price stability."
+   ]
+  },
+  {
+   "url": "https://gov.house/data/fed-funds/",
+   "title": "Federal funds target range: latest data and chart · GOV.HOUSE",
+   "publish_date": null,
+   "excerpts": [
+    "● FILED 18 OCT 2026 · 04:59 ET HOUSE: IN SESSION SENATE: IN SESSION FOMC: NEXT 28 OCT INDEPENDENT · NO GOVERNMENT FUNDING\nSubscribe\nIndex / Data / Fed funds\nFederal funds target range\n4.00 percent\nDaily Latest 16 OCT 2026 1y change +3.75\nThe latest reading, 4.00% for 16 Oct 2026, was unchanged from the previous day. A year earlier it was 4.25%.\n1 year 2 years 5 years All\nUpper limit Lower limit Fed median projection\nSource: Federal Reserve Bank of St.\nLouis, FRED (DFEDTARU, DFEDTARL) · Unit: percent · Updated by gov.house 18 Oct 2026 11:49 ET\nThe Fed's own projection\nMedian projection of Federal Reserve officials (FOMC Summary of Economic Projections) for the end of each year, shown as ◇ on the chart: 2026 4.10; 2027 4.10; 2028 3.90.\nSource: Federal Reserve, Summary of Economic Projections, via FRED, released 16 Sep 2026. Updated after each quarterly projection meeting.\nAbout this data\nThe FOMC's target range for the federal funds rate, upper and lower limits, via the Federal Reserve Bank of St. Louis (FRED).\nWhat it measures\nThe range the Federal Open Market Committee sets for the overnight rate at which banks lend reserves to each other. It is the Fed's main policy lever and moves only at FOMC meetings, eight times a year, or in rare emergency actions.\nWhy it matters\nAlmost every other US interest rate takes its cue from it, from Treasury bills and credit cards to business loans. The diamonds on the chart show where the median Fed official expects the rate to be at the end of each year.\ngov.house refreshes this page automatically from the official source twice a day.\nFigures are shown as published; recent values can be revised by the source agency.\nLatest values\n* Date | Upper limit | Lower limit\n* 16 OCT 2026 | 4.00 | 3.75\n* 09 OCT 2026 | 4.00 | 3.75\n* 02 OCT 2026 | 4.00 | 3.75\n* 25 SEP 2026 | 4.00 | 3.75\n* 18 SEP 2026 | 4.00 | 3.75\n* 11 SEP 2026 | 3.75 | 3.50\n* 04 SEP 2026 | 3.75 | 3.50\n* 28 AUG 2026 | 3.75 | 3.50\n* 21 AUG 2026 | 3.75 | 3.50\n* 14 AUG 2026 | 3.75 | 3.50\n* 07 AUG 2026 | 3.75 | 3.50\n* 31 JUL 2026 | 3.75 | 3.50\nSource: Federal Reserve Bank of St. Louis, FRED (DFEDTARU, DFEDTARL). Unit: percent."
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/series/DFEDTARU",
+   "title": "Federal Funds Target Range - Upper Limit (DFEDTARU) | FRED | St. Louis Fed",
+   "publish_date": "2026-10-19",
+   "excerpts": [
+    "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-19: 4.00\nUpdated: Oct 19, 2026 7:01 AM CDT\nNext Release Date: Oct 20, 2026\n* 2026-10-19: | 4.00 |\n* 2026-10-18: | 4.00 |\n* 2026-10-17: | 4.00 |\n* 2026-10-16: | 4.00 |\n* 2026-10-15: | 4.00 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 1828 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-19 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Upper Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Upper Limit , Percent, Not Seasonally Adjusted (DFEDTARU)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Upper Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, October 19, 2026 .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/series/DFEDTARL?cb=1792415605886",
+   "title": "Federal Funds Target Range - Lower Limit (DFEDTARL) | FRED | St. Louis Fed",
+   "publish_date": "2026-10-19",
+   "excerpts": [
+    "Federal Funds Target Range - Lower Limit (DFEDTARL)\nObservations\n2026-10-19: 3.75\nUpdated: Oct 19, 2026 7:01 AM CDT\nNext Release Date: Oct 20, 2026\n* 2026-10-19: | 3.75 |\n* 2026-10-18: | 3.75 |\n* 2026-10-17: | 3.75 |\n* 2026-10-16: | 3.75 |\n* 2026-10-15: | 3.75 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 1828 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-19 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Lower Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Lower Limit , Percent, Not Seasonally Adjusted (DFEDTARL)\nUnits\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Lower Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents lower limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Lower Limit [DFEDTARL], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARL, October 19, 2026 .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/graph/?g=1&id=DFEDTARU&cosd=2017-01-01&coed=2025-03-01",
+   "title": "Federal Funds Target Range - Upper Limit | FRED | St. Louis Fed",
+   "publish_date": "2026-10-18",
+   "excerpts": [
+    "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-18: -5.9\nUpdated: Oct 18, 2026 7:00 AM CDT\nNext Release Date: Oct 19, 2026\n* 2026-10-18: | -5.9 |\n* 2026-10-17: | -5.9 |\n* 2026-10-16: | -5.9 |\n* 2026-10-15: | -5.9 |\n* 2026-10-14: | -5.9 |\n* View All |\nUnits:\nPercent Change from Year Ago ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 6151 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2009-12-16 2:00:00 to 2026-10-18 2:00:00.\nThe chart has 2 Y axes displaying Percent Change from Year Ago and yAxisRight.\nFederal Funds Target Range - Upper Limit\nPercent Change from Year Ago\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Upper Limit , Percent, Not Seasonally Adjusted (DFEDTARU)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Upper Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, October 18, 2026 .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/series/DFEDTARL?_=202610171945",
+   "title": "Federal Funds Target Range - Lower Limit (DFEDTARL) | FRED | St. Louis Fed",
+   "publish_date": "2026-10-17",
+   "excerpts": [
+    "Federal Funds Target Range - Lower Limit (DFEDTARL)\nObservations\n2026-10-17: 3.75\nUpdated: Oct 17, 2026 7:01 AM CDT\nNext Release Date: Oct 18, 2026\n* 2026-10-17: | 3.75 |\n* 2026-10-16: | 3.75 |\n* 2026-10-15: | 3.75 |\n* 2026-10-14: | 3.75 |\n* 2026-10-13: | 3.75 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 1828 data points.\nView as data table, Chart\nLine 1\n(a) Federal Funds Target Range - Lower Limit , Percent, Not Seasonally Adjusted (DFEDTARL)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Lower Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents lower limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Lower Limit [DFEDTARL], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARL, October 17, 2026 .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://fred.stlouisfed.org/graph/?g=j9bq",
+   "title": "Federal Funds Target Range - Lower Limit | FRED | St. Louis Fed",
+   "publish_date": "2026-10-16",
+   "excerpts": [
+    "Federal Funds Target Range - Lower Limit (DFEDTARL)\nObservations\n2026-10-16: 3.75\nUpdated: Oct 16, 2026 7:01 AM CDT\nNext Release Date: Oct 17, 2026\n* 2026-10-16: | 3.75 |\n* 2026-10-15: | 3.75 |\n* 2026-10-14: | 3.75 |\n* 2026-10-13: | 3.75 |\n* 2026-10-12: | 3.75 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 4960 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-16 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Lower Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Lower Limit , Percent, Not Seasonally Adjusted (DFEDTARL)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Lower Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents lower limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Lower Limit [DFEDTARL], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARL, October 17, 2026 .\nRelease Tables\nPermalink/Embed"
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260916.htm",
+   "title": "The Fed - Monetary Policy:",
+   "publish_date": null,
+   "excerpts": [
+    "The Fed - Monetary Policy:\nThe Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve's"
+   ]
+  },
+  {
+   "url": "https://www.economy.com/united-states/interest-rates-federal-funds-target-rate-range-midpoint",
+   "title": "United States  Interest rates: Federal funds target rate - Range midpoint | Moody's Analytics",
+   "publish_date": null,
+   "excerpts": [
+    "* Sign In\n* SEARCH\n* Sign In/Register\n* Economic Indicators\n* United States\n* Interest rates: Federal funds target rate - Range midpoint\nUnited States - Interest rates: Federal funds target rate - Range midpoint\nUnited States: Interest rates: Federal funds target rate - Range midpoint\n* Mnemonic | JRFEDD.IUSA |\n* Unit | % p.a., NSA |\n* Adjustments | Not Seasonally Adjusted |\n* | Daily | 0 %\n* Data | 16 Oct 2026 | 3.88\n* | 15 Oct 2026 | 3.88\nSeries Information\n* Source | U.S. Board of Governors of the Federal Reserve System (FRB)\n* Release | Federal funds target rate [monetary policy] - Daily infilled\n* Frequency | Business Daily\n* Start Date | 7/13/1990\n* End Date | 10/16/2026\n  Release Information\nDescription\nEight times a year, the Federal Open Market Committee (FOMC) meets to discuss U.S. monetary policy and set key policy interest rates: the federal funds target rate and the discount window borrowing rate .\nDefinitions\nThe federal funds rate is the interest rate at which depository institutions lend balances at the Federal Reserve to other depository institutions overnight. The FOMC sets a target rate (in effect, a desired price for lending), but member institutions may lend at whatever rate they can negotiate (the effective rate ).\n* JRFEDD.US - federal funds target rate\n* JRFEDHD.US - range high\n* JRFEDLD.US - range low\n* JRDISCD.US - federal discount window rate\n  These corresponding series have a value only on the decision dates:\n* JRFEDXD.US - federal funds target rate\n* JRFEDXHD.US - range high\n* JRFEDXLD.US - range low\n* JRDISCXD.US - federal discount window rate\nRevisions\nThe U.S. monetary policy target rates (JRFEDD.US, JRDISCD.US) are not subject to revision.\nThe effective federal funds rate (IRFEDD.US) is based on trades reported to FRBNY, and may be revised after initial publication.\nSee also"
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260617a.htm",
+   "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+   "publish_date": null,
+   "excerpts": [
+    "Press Release Federal Reserve issues FOMC statement The Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent, in support of the Federal Reserve's dual mandate. The Committee reaffirmed its policy of maintaining ample reserves in the banking system."
+   ]
+  },
+  {
+   "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260729.htm",
+   "title": "The Fed - Monetary Policy:",
+   "publish_date": null,
+   "excerpts": [
+    "In support of the Committee's dual-mandate goals, nine members agreed to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent and also reaffirmed the FOMC's policy of maintaining ample reserves in the banking system. Members noted that the unemployment rate was largely unchanged and that solid growth in economic activity had continued, while inflation remained elevated relative to the Committee's 2 percent goal. In June, the Committee had underlined its continuing resolve to achieve its dual-mandate goals by indicating in its postmeeting statement that it \"will deliver price stability.\" Almost all members agreed that it was appropriate to retain this language in July's postmeeting statement. Three members voted against the decision to maintain the target range for the federal funds rate, preferring an increase of 25 basis points in the target range at this meeting."
+   ]
+  }
+ ],
+ "raw": [
+  {
+   "search_id": "search_4df3c8a2d99c85cd5e4d8dd35ba45df8",
+   "results": [
+    {
+     "url": "https://fred.stlouisfed.org/series/DFEDTARU",
+     "title": "Federal Funds Target Range - Upper Limit (DFEDTARU) | FRED | St. Louis Fed",
+     "publish_date": "2026-10-19",
+     "excerpts": [
+      "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-19: 4.00\nUpdated: Oct 19, 2026 7:01 AM CDT\nNext Release Date: Oct 20, 2026\n* 2026-10-19: | 4.00 |\n* 2026-10-18: | 4.00 |\n* 2026-10-17: | 4.00 |\n* 2026-10-16: | 4.00 |\n* 2026-10-15: | 4.00 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 1828 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-19 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Upper Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Upper Limit , Percent, Not Seasonally Adjusted (DFEDTARU)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Upper Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, October 19, 2026 .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://fred.stlouisfed.org/graph/?g=j9bq",
+     "title": "Federal Funds Target Range - Lower Limit | FRED | St. Louis Fed",
+     "publish_date": "2026-10-16",
+     "excerpts": [
+      "Federal Funds Target Range - Lower Limit (DFEDTARL)\nObservations\n2026-10-16: 3.75\nUpdated: Oct 16, 2026 7:01 AM CDT\nNext Release Date: Oct 17, 2026\n* 2026-10-16: | 3.75 |\n* 2026-10-15: | 3.75 |\n* 2026-10-14: | 3.75 |\n* 2026-10-13: | 3.75 |\n* 2026-10-12: | 3.75 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 4960 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-16 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Lower Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Lower Limit , Percent, Not Seasonally Adjusted (DFEDTARL)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Lower Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents lower limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Lower Limit [DFEDTARL], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARL, October 17, 2026 .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://fred.stlouisfed.org/graph?graph_id=492410",
+     "title": "Federal Funds Target Range - Upper Limit | FRED | St. Louis Fed",
+     "publish_date": "2026-10-01",
+     "excerpts": [
+      "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-01: 4.00\nUpdated: Oct 1, 2026 7:00 AM CDT\nNext Release Date: Oct 2, 2026\n* 2026-10-01: | 4.00 |\n* 2026-09-30: | 4.00 |\n* 2026-09-29: | 4.00 |\n* 2026-09-28: | 4.00 |\n* 2026-09-27: | 4.00 |\n* View All\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\nFullscreen\nData in this graph are copyrighted. Please review the copyright information in the series notes before sharing.\nShare Graph\n* Custom Graph Link\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://fred.stlouisfed.org/graph?g=h20M",
+     "title": "Federal Funds Target Range - Upper Limit | FRED | St. Louis Fed",
+     "publish_date": "2026-10-09",
+     "excerpts": [
+      "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-09: 4.00\nUpdated: Oct 9, 2026 7:01 AM CDT\nNext Release Date: Oct 10, 2026\n* 2026-10-09: | 4.00 |\n* 2026-10-08: | 4.00 |\n* 2026-10-07: | 4.00 |\n* 2026-10-06: | 4.00 |\n* 2026-10-05: | 4.00 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\nFullscreen\nData in this graph are copyrighted. Please review the copyright information in the series notes before sharing.\nShare Graph\n* Custom Graph Link\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://fred.stlouisfed.org/series/DFEDTARU/data?end_date=2026-07-09&start_date=2026-07-01",
+     "title": "Federal Funds Target Range - Upper Limit (DFEDTARU) | FRED | St. Louis Fed",
+     "publish_date": "2026-09-05",
+     "excerpts": [
+      "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-09-05: 3.75\nUpdated: Sep 5, 2026 7:01 AM CDT\nNext Release Date: Sep 6, 2026\n* 2026-09-05: | 3.75 |\n* 2026-09-04: | 3.75 |\n* 2026-09-03: | 3.75 |\n* 2026-09-02: | 3.75 |\n* 2026-09-01: | 3.75 |\n* View All\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\nFullscreen\nData in this graph are copyrighted. Please review the copyright information in the series notes before sharing.\nShare Graph\n* Custom Graph Link\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260916.htm",
+     "title": "The Fed - Monetary Policy:",
+     "publish_date": null,
+     "excerpts": [
+      "The Fed - Monetary Policy:\nThe Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve's"
+     ]
+    },
+    {
+     "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260916a.htm",
+     "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+     "publish_date": null,
+     "excerpts": [
+      "The Federal Open Market Committee approved the following statement for release by a 12 – 0 vote: The Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve's dual mandate. The Committee is continuing its policy of maintaining ample reserves in the banking system. Economic activity is expanding at a solid pace. While uncertainty remains elevated owing, in part, to geopolitical developments, domestic spending has been resilient. Productivity growth is strong, and capital investment is robust. Job gains have kept pace with the workforce, and the unemployment rate has changed little. Inflation remains elevated. Today's policy action will support a timelier return to the Committee's 2 percent goal."
+     ]
+    },
+    {
+     "url": "http://federalreserve.gov/monetarypolicy/files/monetary20260729a1.pdf",
+     "title": "",
+     "publish_date": null,
+     "excerpts": [
+      "EDT July 29, 2026 The Federal Open Market Committee approved the following statement for release by a 9 – 3 vote: The Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent, in support of the Federal Reserve's dual mandate."
+     ]
+    },
+    {
+     "url": "https://www.federalreserve.gov/aboutthefed/fedexplained/accessible-version.htm",
+     "title": "FOMC's target range for the federal funds rate",
+     "publish_date": null,
+     "excerpts": [
+      "FOMC's target range for the federal funds rate\nHow the Federal Reserve implements monetary policy. FOMC decides to make policy more accommodative (“ease” policy). Arrow points from FOMC graphic to the left"
+     ]
+    },
+    {
+     "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20250730a.htm",
+     "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+     "publish_date": null,
+     "excerpts": [
+      "Press Release Federal Reserve issues FOMC statement In support of its goals, the Committee decided to maintain the target range for the federal funds rate at 4-1/4 to 4-1/2 percent. In considering the extent and timing of additional adjustments to the target range for the federal funds rate, the Committee will carefully assess incoming data, the evolving outlook, and the balance of risks. ... Waller, who preferred to lower the target range for the federal funds rate by 1/4 percentage point at this meeting. Absent and not voting was Adriana D. Kugler."
+     ]
+    },
+    {
+     "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm",
+     "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+     "publish_date": null,
+     "excerpts": [
+      "Implementation Note issued July 29, 2026 Last Update: July 29, 2026 Board of Governors _of the_ Federal Reserve System 20th Street and Constitution Avenue N.W., Washington, DC 20551 July 29, 2026 Federal Reserve issues FOMC statement For release at 2:00 p.m. The Committee decided to maintain the target range for the federal funds rate at <strong>3-1/2 to 3-3/4 percent</strong>, in support of the Federal Reserve&#x27;s dual mandate. Press Release Federal Reserve issues FOMC statement The Federal Open Market Committee approved the following statement for release by a 9 – 3 vote: ... Voting against the monetary policy action were Beth M. Hammack, Neel Kashkari, and Lorie K. Logan, who preferred to raise the target range for the federal funds rate by 1/4 percentage point at this meeting."
+     ]
+    },
+    {
+     "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260617a.htm",
+     "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+     "publish_date": null,
+     "excerpts": [
+      "Press Release Federal Reserve issues FOMC statement The Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent, in support of the Federal Reserve's dual mandate. The Committee reaffirmed its policy of maintaining ample reserves in the banking system. Economic activity is expanding at a solid pace despite elevated uncertainty that owes, in part, to the conflict in the Middle East. Productivity growth and capital investment are strong. Job gains have kept pace with the workforce, and the unemployment rate has changed little. Inflation remains elevated relative to the Committee's 2 percent goal, in part reflecting supply shocks that have driven price increases in certain sectors, including energy. The Committee will deliver price stability."
+     ]
+    }
+   ],
+   "warnings": null,
+   "usage": [
+    {
+     "name": "sku_search",
+     "count": 1
+    },
+    {
+     "name": "sku_extract_excerpts",
+     "count": 2
+    }
+   ],
+   "metadata": null,
+   "session_id": "session_4df3c8a2d99c85cd5e4d8dd35ba45df8"
+  },
+  {
+   "search_id": "search_b90ecde34d9fce59d829e3351a67b527",
+   "results": [
+    {
+     "url": "https://gov.house/data/fed-funds/",
+     "title": "Federal funds target range: latest data and chart · GOV.HOUSE",
+     "publish_date": null,
+     "excerpts": [
+      "● FILED 18 OCT 2026 · 04:59 ET HOUSE: IN SESSION SENATE: IN SESSION FOMC: NEXT 28 OCT INDEPENDENT · NO GOVERNMENT FUNDING\nSubscribe\nIndex / Data / Fed funds\nFederal funds target range\n4.00 percent\nDaily Latest 16 OCT 2026 1y change +3.75\nThe latest reading, 4.00% for 16 Oct 2026, was unchanged from the previous day. A year earlier it was 4.25%.\n1 year 2 years 5 years All\nUpper limit Lower limit Fed median projection\nSource: Federal Reserve Bank of St.\nLouis, FRED (DFEDTARU, DFEDTARL) · Unit: percent · Updated by gov.house 18 Oct 2026 11:49 ET\nThe Fed's own projection\nMedian projection of Federal Reserve officials (FOMC Summary of Economic Projections) for the end of each year, shown as ◇ on the chart: 2026 4.10; 2027 4.10; 2028 3.90.\nSource: Federal Reserve, Summary of Economic Projections, via FRED, released 16 Sep 2026. Updated after each quarterly projection meeting.\nAbout this data\nThe FOMC's target range for the federal funds rate, upper and lower limits, via the Federal Reserve Bank of St. Louis (FRED).\nWhat it measures\nThe range the Federal Open Market Committee sets for the overnight rate at which banks lend reserves to each other. It is the Fed's main policy lever and moves only at FOMC meetings, eight times a year, or in rare emergency actions.\nWhy it matters\nAlmost every other US interest rate takes its cue from it, from Treasury bills and credit cards to business loans. The diamonds on the chart show where the median Fed official expects the rate to be at the end of each year.\ngov.house refreshes this page automatically from the official source twice a day.\nFigures are shown as published; recent values can be revised by the source agency.\nLatest values\n* Date | Upper limit | Lower limit\n* 16 OCT 2026 | 4.00 | 3.75\n* 09 OCT 2026 | 4.00 | 3.75\n* 02 OCT 2026 | 4.00 | 3.75\n* 25 SEP 2026 | 4.00 | 3.75\n* 18 SEP 2026 | 4.00 | 3.75\n* 11 SEP 2026 | 3.75 | 3.50\n* 04 SEP 2026 | 3.75 | 3.50\n* 28 AUG 2026 | 3.75 | 3.50\n* 21 AUG 2026 | 3.75 | 3.50\n* 14 AUG 2026 | 3.75 | 3.50\n* 07 AUG 2026 | 3.75 | 3.50\n* 31 JUL 2026 | 3.75 | 3.50\nSource: Federal Reserve Bank of St. Louis, FRED (DFEDTARU, DFEDTARL). Unit: percent."
+     ]
+    },
+    {
+     "url": "https://fred.stlouisfed.org/series/DFEDTARU",
+     "title": "Federal Funds Target Range - Upper Limit (DFEDTARU) | FRED | St. Louis Fed",
+     "publish_date": "2026-10-19",
+     "excerpts": [
+      "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-19: 4.00\nUpdated: Oct 19, 2026 7:01 AM CDT\nNext Release Date: Oct 20, 2026\n* 2026-10-19: | 4.00 |\n* 2026-10-18: | 4.00 |\n* 2026-10-17: | 4.00 |\n* 2026-10-16: | 4.00 |\n* 2026-10-15: | 4.00 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 1828 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-19 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Upper Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Upper Limit , Percent, Not Seasonally Adjusted (DFEDTARU)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Upper Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, October 19, 2026 .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://fred.stlouisfed.org/series/DFEDTARL?cb=1792415605886",
+     "title": "Federal Funds Target Range - Lower Limit (DFEDTARL) | FRED | St. Louis Fed",
+     "publish_date": "2026-10-19",
+     "excerpts": [
+      "Federal Funds Target Range - Lower Limit (DFEDTARL)\nObservations\n2026-10-19: 3.75\nUpdated: Oct 19, 2026 7:01 AM CDT\nNext Release Date: Oct 20, 2026\n* 2026-10-19: | 3.75 |\n* 2026-10-18: | 3.75 |\n* 2026-10-17: | 3.75 |\n* 2026-10-16: | 3.75 |\n* 2026-10-15: | 3.75 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 1828 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-19 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Lower Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Lower Limit , Percent, Not Seasonally Adjusted (DFEDTARL)\nUnits\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Lower Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents lower limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Lower Limit [DFEDTARL], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARL, October 19, 2026 .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://fred.stlouisfed.org/graph/?g=1&id=DFEDTARU&cosd=2017-01-01&coed=2025-03-01",
+     "title": "Federal Funds Target Range - Upper Limit | FRED | St. Louis Fed",
+     "publish_date": "2026-10-18",
+     "excerpts": [
+      "Federal Funds Target Range - Upper Limit (DFEDTARU)\nObservations\n2026-10-18: -5.9\nUpdated: Oct 18, 2026 7:00 AM CDT\nNext Release Date: Oct 19, 2026\n* 2026-10-18: | -5.9 |\n* 2026-10-17: | -5.9 |\n* 2026-10-16: | -5.9 |\n* 2026-10-15: | -5.9 |\n* 2026-10-14: | -5.9 |\n* View All |\nUnits:\nPercent Change from Year Ago ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 6151 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2009-12-16 2:00:00 to 2026-10-18 2:00:00.\nThe chart has 2 Y axes displaying Percent Change from Year Ago and yAxisRight.\nFederal Funds Target Range - Upper Limit\nPercent Change from Year Ago\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Upper Limit , Percent, Not Seasonally Adjusted (DFEDTARU)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Upper Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents upper limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Upper Limit [DFEDTARU], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARU, October 18, 2026 .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://fred.stlouisfed.org/series/DFEDTARL?_=202610171945",
+     "title": "Federal Funds Target Range - Lower Limit (DFEDTARL) | FRED | St. Louis Fed",
+     "publish_date": "2026-10-17",
+     "excerpts": [
+      "Federal Funds Target Range - Lower Limit (DFEDTARL)\nObservations\n2026-10-17: 3.75\nUpdated: Oct 17, 2026 7:01 AM CDT\nNext Release Date: Oct 18, 2026\n* 2026-10-17: | 3.75 |\n* 2026-10-16: | 3.75 |\n* 2026-10-15: | 3.75 |\n* 2026-10-14: | 3.75 |\n* 2026-10-13: | 3.75 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 1828 data points.\nView as data table, Chart\nLine 1\n(a) Federal Funds Target Range - Lower Limit , Percent, Not Seasonally Adjusted (DFEDTARL)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Lower Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents lower limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Lower Limit [DFEDTARL], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARL, October 17, 2026 .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://fred.stlouisfed.org/graph/?g=j9bq",
+     "title": "Federal Funds Target Range - Lower Limit | FRED | St. Louis Fed",
+     "publish_date": "2026-10-16",
+     "excerpts": [
+      "Federal Funds Target Range - Lower Limit (DFEDTARL)\nObservations\n2026-10-16: 3.75\nUpdated: Oct 16, 2026 7:01 AM CDT\nNext Release Date: Oct 17, 2026\n* 2026-10-16: | 3.75 |\n* 2026-10-15: | 3.75 |\n* 2026-10-14: | 3.75 |\n* 2026-10-13: | 3.75 |\n* 2026-10-12: | 3.75 |\n* View All |\nUnits:\nPercent ,\nNot Seasonally Adjusted\nFrequency:\nDaily,\n7-Day\n1Y 5Y 10Y Max\nFrom to\nDate:\nEdit Graph Edit Map\nDownload\nChart\nLine chart with 4960 data points.\nView as data table, Chart\nThe chart has 1 X axis displaying xAxis. Data ranges from 2008-12-16 2:00:00 to 2026-10-16 2:00:00.\nThe chart has 2 Y axes displaying Percent and yAxisRight.\nFederal Funds Target Range - Lower Limit\nPercent\nEnd of interactive chart.\nSource: Board of Governors of the Federal Reserve System (US) via FRED®\nShaded areas indicate U.S. recessions.\nfred.stlouisfed.org\nEDIT Line ADD Line FORMAT\nLine 1\n(a) Federal Funds Target Range - Lower Limit , Percent, Not Seasonally Adjusted (DFEDTARL)\nUnits\nPercent Change, Percent Change from Year Ago, Percent Percent Change Percent Change from Year Ago Compounded Annual Rate of Change Continuously Compounded Rate of Change Continuously Compounded Annual Rate of Change Index (Scale value to 100 for chosen date)\nSelect a date that will equal 100 for your custom index:\nU.S.\nDetails\nDisplay\nTitle\nAxis titles\nTooltip\nRecession shading\nLog scale left\nLog scale right\nCustomize\nFrame\nPlot area\nText\nHeight\nWidth\nApply\nLine 1\nFederal Funds Target Range - Lower Limit\nLine details & color\n* Custom Graph Link\n* Embed in Website\n* Graph Image Link\n  Account Tools\n* Save Graph\n* Add to Dashboard\n* Add to Data List\n* Get Email Notification\n* Save Map\nNotes\nSource: Board of Governors of the Federal Reserve System (US)\nRelease: FOMC Press Release\nUnits: Percent , Not Seasonally Adjusted\nFrequency: Daily, 7-Day\nNotes:\nThis series represents lower limit of the federal funds target range established by the Federal Open Market Committee. The data updated each day is the data effective as of that day.\nSuggested Citation:\nBoard of Governors of the Federal Reserve System (US), Federal Funds Target Range - Lower Limit [DFEDTARL], retrieved from FRED, Federal Reserve Bank of St. Louis; https://fred.stlouisfed.org/series/DFEDTARL, October 17, 2026 .\nRelease Tables\nPermalink/Embed"
+     ]
+    },
+    {
+     "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260916.htm",
+     "title": "The Fed - Monetary Policy:",
+     "publish_date": null,
+     "excerpts": [
+      "The Fed - Monetary Policy:\nThe Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve's"
+     ]
+    },
+    {
+     "url": "https://www.economy.com/united-states/interest-rates-federal-funds-target-rate-range-midpoint",
+     "title": "United States  Interest rates: Federal funds target rate - Range midpoint | Moody's Analytics",
+     "publish_date": null,
+     "excerpts": [
+      "* Sign In\n* SEARCH\n* Sign In/Register\n* Economic Indicators\n* United States\n* Interest rates: Federal funds target rate - Range midpoint\nUnited States - Interest rates: Federal funds target rate - Range midpoint\nUnited States: Interest rates: Federal funds target rate - Range midpoint\n* Mnemonic | JRFEDD.IUSA |\n* Unit | % p.a., NSA |\n* Adjustments | Not Seasonally Adjusted |\n* | Daily | 0 %\n* Data | 16 Oct 2026 | 3.88\n* | 15 Oct 2026 | 3.88\nSeries Information\n* Source | U.S. Board of Governors of the Federal Reserve System (FRB)\n* Release | Federal funds target rate [monetary policy] - Daily infilled\n* Frequency | Business Daily\n* Start Date | 7/13/1990\n* End Date | 10/16/2026\n  Release Information\nDescription\nEight times a year, the Federal Open Market Committee (FOMC) meets to discuss U.S. monetary policy and set key policy interest rates: the federal funds target rate and the discount window borrowing rate .\nDefinitions\nThe federal funds rate is the interest rate at which depository institutions lend balances at the Federal Reserve to other depository institutions overnight. The FOMC sets a target rate (in effect, a desired price for lending), but member institutions may lend at whatever rate they can negotiate (the effective rate ).\n* JRFEDD.US - federal funds target rate\n* JRFEDHD.US - range high\n* JRFEDLD.US - range low\n* JRDISCD.US - federal discount window rate\n  These corresponding series have a value only on the decision dates:\n* JRFEDXD.US - federal funds target rate\n* JRFEDXHD.US - range high\n* JRFEDXLD.US - range low\n* JRDISCXD.US - federal discount window rate\nRevisions\nThe U.S. monetary policy target rates (JRFEDD.US, JRDISCD.US) are not subject to revision.\nThe effective federal funds rate (IRFEDD.US) is based on trades reported to FRBNY, and may be revised after initial publication.\nSee also"
+     ]
+    },
+    {
+     "url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260617a.htm",
+     "title": "Federal Reserve Board - Federal Reserve issues FOMC statement",
+     "publish_date": null,
+     "excerpts": [
+      "Press Release Federal Reserve issues FOMC statement The Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent, in support of the Federal Reserve's dual mandate. The Committee reaffirmed its policy of maintaining ample reserves in the banking system."
+     ]
+    },
+    {
+     "url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260729.htm",
+     "title": "The Fed - Monetary Policy:",
+     "publish_date": null,
+     "excerpts": [
+      "In support of the Committee's dual-mandate goals, nine members agreed to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent and also reaffirmed the FOMC's policy of maintaining ample reserves in the banking system. Members noted that the unemployment rate was largely unchanged and that solid growth in economic activity had continued, while inflation remained elevated relative to the Committee's 2 percent goal. In June, the Committee had underlined its continuing resolve to achieve its dual-mandate goals by indicating in its postmeeting statement that it \"will deliver price stability.\" Almost all members agreed that it was appropriate to retain this language in July's postmeeting statement. Three members voted against the decision to maintain the target range for the federal funds rate, preferring an increase of 25 basis points in the target range at this meeting."
+     ]
+    }
+   ],
+   "warnings": null,
+   "usage": [
+    {
+     "name": "sku_search",
+     "count": 1
+    }
+   ],
+   "metadata": null,
+   "session_id": "session_b90ecde34d9fce59d829e3351a67b527"
+  }
+ ]
+}

@@ -1,0 +1,55 @@
+{
+ "question": "What is EIP-4844",
+ "search_id": "search_1454d972a342cd9da3f7a69f43d1da8f",
+ "results": [
+  {
+   "url": "https://eips.ethereum.org/EIPS/eip-4844",
+   "title": "EIP-4844: Shard Blob Transactions",
+   "publish_date": "2022-02-25",
+   "excerpts": [
+    "Ethereum Improvement Proposals\nAll Core Networking Interface ERC Meta Informational\n🎉 Final Standards Track: Core\nEIP-4844: Shard Blob Transactions\nShard Blob Transactions scale data-availability of Ethereum in a simple, forwards-compatible manner.\n* Authors | Vitalik Buterin ( @vbuterin ), Dankrad Feist ( @dankrad ), Diederik Loerakker ( @protolambda ), George Kadianakis ( @asn-d6 ), Matt Garnett ( @lightclient ), Mofi Taiwo ( @Inphi ), Ansgar Dietrichs ( @adietrichs )\n* Created | 2022-02-25\n* Requires | EIP-1559 , EIP-2718 , EIP-2930 , EIP-4895\nTable of Contents\nThroughout this proposal we use cryptographic methods and classes defined in the corresponding consensus 4844 specs .\nSpecifically, we use the following methods from polynomial-commitments.md :\n* verify_kzg_proof()\n* verify_blob_kzg_proof_batch()\nHelpers\nPlease cite this document as:\nVitalik Buterin ( @vbuterin ), Dankrad Feist ( @dankrad ), Diederik Loerakker ( @protolambda ), George Kadianakis ( @asn-d6 ), Matt Garnett ( @lightclient ), Mofi Taiwo ( @Inphi ), Ansgar Dietrichs ( @adietrichs ), \"EIP-4844: Shard Blob Transactions,\" Ethereum Improvement Proposals , no. 4844, February 2022.\nAvailable: https://eips.ethereum.org/EIPS/eip-4844.\nEthereum Improvement Proposals\n* Ethereum Improvement Proposals\n* ethereum/EIPs\n  Ethereum Improvement Proposals (EIPs) describe standards for the Ethereum platform, such as core protocol specifications."
+   ]
+  },
+  {
+   "url": "https://ieeexplore.ieee.org/document/11108700",
+   "title": "Impact of EIP-4844 on Ethereum: Consensus Security, Ethereum ...",
+   "publish_date": null,
+   "excerpts": [
+    "Impact of EIP-4844 on Ethereum: Consensus Security, Ethereum Usage, Rollup Transaction Dynamics, and Blob Gas Fee Markets | IEEE Journals & Magazine | IEEE Xplore\nIEEE Xplore logo - Link to home\nImpact of EIP-4844 on Ethereum: Consensus Security, Ethereum Usage, Rollup Transaction Dynamics, and Blob Gas Fee Markets\nPublisher: IEEE\nCite This\nPDF\nSeongwan Park  ; Bosul Mun  ; Seungyun Lee ; Woojin Jeong  ; Jaewook Lee  ; Hyeonsang Eom\nAll Authors\nSign In or Purchase\n3\nCites in\nPapers 262\nFull\nText Views\n*\n*\n*\n* Alerts\nAlerts\nOn March 13, 2024, Ethereum implemented EIP-4844, an upgrade designed to enhance its role as a data availability layer. While this upgrade reduces data posting costs for ... Show More\nMetadata\nAbstract:\nOn March 13, 2024, Ethereum implemented EIP-4844, an upgrade designed to enhance its role as a data availability layer. While this upgrade reduces data posting costs for rollups, it also raises concerns about its impact on consensus security due to the increased volume of propagated data.\nMoreover, the broader effects on rollup dynamics and the Ethereum ecosystem remain largely unexplored. In this paper, we conduct an empirical analysis of EIP-4844’s impact on consensus security, Ethereum usage, rollup transaction dynamics, and the blob gas fee market.\nWe investigate changes in slot sync time, provide quantitative assessments of rollup and user behaviors, and evaluate the efficiency of the blob gas fee market. Our findings reveal that EIP-4844 has successfully increased rollups' usage of Ethereum while lowering rollup transaction fees.\nHowever, we also observe a slight rise in the fork rate, though our analysis suggests that this increase is not attributed to blob propagation waiting time. Additionally, some rollup users experience delayed transaction inclusion in Ethereum blocks, which appears to be influenced by cost-minimizing batching strategies.\nThese results demonstrate both the benefits and trade-offs of the upgrade, suggesting future directions for further research on Ethereum's scalability and consensus stability.\nPublished in: IEEE Transactions on Network Science and Engineering ( Volume: 13 )\nPage(s): 1294 - 1310\nDate of Publication: 04 August 2025"
+   ]
+  },
+  {
+   "url": "https://rig.ethereum.org/paper/eip-4844-economics-and-rollup-strategies",
+   "title": "EIP-4844 Economics and Rollup Strategies | Robust Incentives Group",
+   "publish_date": null,
+   "excerpts": [
+    "[ Posts ]\n[ Papers ]\n[ Talks ]\nToggle theme Mobile navigation menu\nOctober 2, 2023\nEIP-4844 Economics and Rollup Strategies\nDC (opens in a new tab)\nDavide Crapis , Edward W. Felten , and Akaki Mamageishvili\nAbstract\nWe study the economics of the Ethereum improvement proposal 4844 and its effect on rollups' data posting strategies. Rollups' cost consists of two parts: data posting and delay. In the new proposal, the data posting cost corresponds to a blob posting cost and is fixed in each block, no matter how much of the blob is utilized by the rollup.\nThe tradeoff is clear: the rollup prefers to post a full blob, but if its transaction arrival rate is low, filling up a blob space causes too large delay cost.\nThe first result of the paper shows that if a rollup transaction arrival rate is too low, it prefers to use the regular blockspace market for data posting, as it offers a more flexible cost structure.\nSecond, we show that shared blob posting is not always beneficial for participating rollups and change in the aggregate blob posting cost in the equilibrium depends on the types of participating rollups. In the end, we discuss blob cost-sharing rules from an axiomatic angle.\nGo to article (opens in a new tab)"
+   ]
+  },
+  {
+   "url": "https://ethereum.org/roadmap/danksharding",
+   "title": "Danksharding | ethereum.org",
+   "publish_date": null,
+   "excerpts": [
+    "Proto-Danksharding, also known as EIP-4844 (opens in a new tab) , is a way for rollups to add cheaper data to blocks. The name comes from the two researchers who proposed the idea: Protolambda and Dankrad Feist.\nWhy is it OK to delete the blob data?\nThe EIP-4844 KZG ceremony was open to the public and tens of thousands of people participated to add their own entropy (randomness). In total there were over 140,000 contributions, making it the world's largest ceremony of its kind."
+   ]
+  },
+  {
+   "url": "https://hacken.io/discover/eip-4844-explained",
+   "title": "Impact Of EIP-4844 On Ethereum: What You Need To Know",
+   "publish_date": null,
+   "excerpts": [
+    "Impact Of EIP-4844 On Ethereum: What You Need To Know\nJul 15, 2025 — EIP-4844 aims to reduce costs for blockchain rollups by introducing blob transactions, making it cheaper to settle transactions on Layer 1 (L1)"
+   ]
+  }
+ ],
+ "warnings": null,
+ "usage": [
+  {
+   "name": "sku_search",
+   "count": 1
+  }
+ ],
+ "metadata": null,
+ "session_id": "session_1454d972a342cd9da3f7a69f43d1da8f"
+}

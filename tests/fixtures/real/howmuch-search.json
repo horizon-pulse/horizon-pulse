@@ -1,0 +1,55 @@
+{
+ "question": "How much does it cost to send USDC on Base",
+ "search_id": "search_80522b6ace40c1c90a0d01e73c220287",
+ "results": [
+  {
+   "url": "https://www.coinbase.com/developer-platform/discover/launches/usdc-rewards",
+   "title": "Announcing USDC Rewards for CDP\u2019s MPC Wallets | Coinbase",
+   "publish_date": null,
+   "excerpts": [
+    "We\u2019re excited to announce that developers building on Coinbase Developer Platform can now earn USDC Rewards for USDC balances held in CDP\u2019s secure, API-based MPC Wallets. Along with earning rewards, you can send USDC on Base instantly and with zero fees.\nUSDC is a digital equivalent of the U .S. dollar, designed to be redeemable 1:1 with the U .S. dollar. It combines the stability of the U .S. dollar with the power and speed of the internet. You can use USDC to send and receive payments to anyone, anywhere, or hold and earn rewards.\n* USDC Rewards is a loyalty program funded by Coinbase. It\u2019s a reward for using Coinbase services to store USDC.\n* Onchain USDC rewards are available for balances held in MPC Wallets on Base, Ethereum , Arbitrum , and Polygon.\n* Coinbase has no right to use any USDC in your MPC Wallet.\nCoinbase does not intend for the reward-bearing products described herein to constitute a securities offering, and purchasing these products is not the same as investing in a securities offering.\nUSDC Rewards are offered at Coinbase\u2019s discretion. The rewards rate is subject to change and can vary by product and region."
+   ]
+  },
+  {
+   "url": "https://aavescan.com/base-v3/usdc",
+   "title": "USDC on Base V3 | Aavescan",
+   "publish_date": null,
+   "excerpts": [
+    "Data platform and API for Aave\nBase V3\nchevron right\nUSDC\nUSDC token icon USDC\nUSD Coin\nMarket\nAave V3 Base icon\nBase V3\n**Supply APR\ninfo\nCurrent interest rate being earned by depositors**\n5.85% info\nMarket is eligible for incentives via Merkl (merkl.xyz).\nAction : Lend USDC on Aave (Jumper bridgers)\nProtocol APR : 4.11%\nReward APR : 1.74% USDC\nDeposits\n190.3M USDC\nLoans\n171.9M USDC\nView and export 5+ years of historical data with Aavescan Pro .\nSupply APR Borrow APR Deposits ($) Loans ($) Utilization Deposits Loans Price ($)\nLine chart showing historical data for USDC on Base V3 Line chart showing historical data for USDC on Base V3\nLoading...\n1d 7d 30d 6m 1y PRO All\nPRO\nAverage USDC lending rates\nShowing the average APRs over historical periods for USDC on Aave V3 Base. Historical incentives not included.\n* Rate | 1d | 7d | 30d | 6m | 1y\n* Average Supply APR | 4.00% | 4.05% | 3.95% | 3.42% | 3.43%\n* Average Borrow APR | 4.93% | 4.99% | 4.88% | 4.40% | 4.77%\nDaily snapshots\nShowing daily snapshots (midnight UTC) for USDC on Aave V3 Base. Historical incentives not included.\nMonthly snapshots\nShowing monthly snapshots (first day of month, midnight UTC) for USDC on Aave V3 Base. Historical incentives not included."
+   ]
+  },
+  {
+   "url": "https://gasfeepredictor.com/cheapest-way-to-send-usdc",
+   "title": "Cheapest Way to Send USDC | Compare Network Fees Live",
+   "publish_date": null,
+   "excerpts": [
+    "Live USDC fee comparison\nThe cheapest network to send USDC right now isOptimism at about $0.0001. Ethereum mainnet costs about $0.021 for the same transfer. L2 comparison (full wallet-fee estimate, includes L1 data fee where applicable):Arbitrum $0.0027 \u00b7 Optimism $0.0001 \u00b7 Base $0.0008 \u00b7 Polygon $0.0014.\nIf your funds are on a centralized exchange that supports L2 withdrawals (Coinbase, Kraken, Binance now do), use that \u2014 exchange L2 withdrawal fees are usually under $0.10 vs $5+ on mainnet. Updated 2026-10-14 22:04 UTC\nCheapest right now\nOptimism \u2014 $0.000139 to send $500 USDC\n* Network The chain the transfer happens on. Ethereum mainnet, OP Stack rollups (Base, Optimism), Arbitrum Nitro, or Polygon PoS sidechain. | Est. fee Estimated USD cost to send the amount above on this network, using the standard tier. Excludes wallet padding (typically 10\u201330%). | % of amount Fee as a share of the amount transferred.\nUseful sanity check: a $5 fee on a $20 send is 25% of value. | Status Relative to the cheapest available network. Cheapest = #1. Low = within 5\u00d7. Normal = within 50\u00d7. High = dramatically more expensive (usually mainnet during congestion).\n| Confidence Exact: full wallet-fee estimate (mainnet & Polygon standard tier, and rollups \u2014 Base, Optimism, Arbitrum \u2014 where the live L1 data fee was queried). Estimate: shown only when a rollup's live L1-fee lookup was unavailable, leaving that row execution-only \u2014 real quote would run slightly higher. |\n* Optimism | $0.000139 | < 0.01% | cheapest | Exact | Details \u2192\n* Base | $0.000801 | < 0.01% | normal | Exact | Details \u2192\n* Polygon | $0.001402 | < 0.01% | normal | Exact | Details \u2192\n* Arbitrum | $0.002682 | < 0.01% | normal | Exact | Details \u2192\n* Ethereum | $0.0199 | < 0.01% | high | Exact | Details \u2192\n* BNB Chain | \u2014 | \u2014 | unavailable | \u2014 |\nAlways use an L2 \u2014 a $5 mainnet fee on a $25 send is 20% of the value. On Base or Arbitrum the fee is < $0.10, well below 1%.\nFrequently asked questions\nWhat is the cheapest network to send USDC?\nFor routine transfers, Base and Arbitrum trade the top spot most weeks \u2014 typically under $0.05 per send. Polygon PoS is also extremely cheap (a fraction of a cent), with the trade-off that it's a sidechain rather than an L2 rollup. Mainnet is almost always the most expensive option.\nIs USDC on Base the same as USDC on Ethereum?\nDepends on how many transfers you'll make. The mainnet\u2192Base bridge tx costs ~$5\u201315 in mainnet gas. If you're sending $20 once, bridging adds cost. If you're sending $20 ten times a month, the bridge pays for itself in ~2 transfers and you save on every one after. Use the bridge cost estimator linked below to model this.\nWhy does my exchange say 'USDC withdrawal fee = $5'?\n* Stablecoin transfer fees\n* Cheapest way to send USDC\n* Cheapest way to send USDT\n* Bridge cost estimator\n* Cheapest bridge to Base\n* Cheapest bridge to Arbitrum\n* Cheapest bridge to Optimism\nTransaction costs"
+   ]
+  },
+  {
+   "url": "https://docs.base.org/sdks/base-account/guides/accept-payments",
+   "title": "Accept Payments - Base Documentation",
+   "publish_date": null,
+   "excerpts": [
+    "Add one-tap USDC payments to your app with the pay() helper and Base Pay Button.\nWhy Base Pay?\nUSDC on Base is a fully-backed digital dollar that settles in seconds and costs pennies in gas.  Base Pay lets you accept those dollars with a single click\u2014no cards, no FX fees, no chargebacks.\n* Any user can pay \u2013 works with every Base Account (smart-wallet) out of the box.\n* USDC, not gas \u2013 you charge in dollars; gas sponsorship is handled automatically.\n* Fast \u2013 most payments confirm in <2\u00a0seconds on Base.\n* Funded accounts \u2013 users pay with USDC from their Base Account or Coinbase Account.\n* No extra fees \u2013 you receive the full amount.\nimport { pay, getPaymentStatus } from '@base-org/account';\n// Trigger a payment \u2013 user will see a popup from their wallet service\ntry {\nconst payment = await pay({\namount: '1.00',           // USD amount (USDC used internally)\nto:    '0xRecipient',     // your address\ntestnet: true            // set false for Mainnet\n});\n1. Get test USDC from the Circle Faucet (select \"Base Sepolia\").\n2. Pass testnet: true in your pay() and getPaymentStatus() calls.\n3. Use Sepolia BaseScan to watch the transaction."
+   ]
+  },
+  {
+   "url": "https://www.kraken.com/in/prices/usdc",
+   "title": "USDC price today - USDC price chart & live trends",
+   "publish_date": "2026-10-11",
+   "excerpts": [
+    "USDC price today is $1.00 .\nIn the last 24 hours USDC's price moved 0.00% . The current USDC to USD conversion rate is $1.00 per USDC. The circulating supply of USDC is 72,54,68,87,921 USDC and the current USDC market cap is $72,53,05,64,871 .\nUSDC\nUSDC icon\nUSDC\nUSD\nUSD icon\nUSD\nBuy/Sell Buy/Sell\nBuy USDC Buy USDC\nof assets\n24h change\nVolume 24h\n5\nStablecoins\nMIM\nMIM icon\nIST\nIST icon\nBNBUSD\nBNBUSD icon\n352\n+17.76%\n$39,54,01,56,592\nCategory\nTop gainers\nStablecoins\nMIM\nMIM icon\nIST\nIST icon\nBNBUSD\nBNBUSD icon\nUSDC Dollar Cost Averaging Calculator\nof assets\nSee how much value you'd have today if you had dollar-cost averaged into different cryptocurrencies.\nWhat if I had\nInvested\nUSD\nUSD icon\n100\nIn\nUSDC\nUSDC icon\nusdc\nEvery\nmonth\nSince\n2021\nTotal value\n$ 0.00 USD\n0.00%\nof assets\nCan I trade USDC at a lower price?\nYes, you can use Custom Orders on Kraken to automatically buy USDC if it reaches a lower price.\nIs now a good time to buy USDC?\nTiming the market can be incredibly challenging, which is why many traders opt to dollar-cost average USDC instead.\nof assets\nCirculating Supply\n100.0% 7KCr of 7KCr\nFully Diluted Cap\n$7.25KCr Listed Jan 8, 2020\nSign up today to buy, sell, and track USDC and hundreds of other crypto\nSign up and buy USDC Sign up and buy USDC\nSign up today to buy, sell, and track USDC and hundreds of other crypto\nSign up and buy USDC Sign up and buy USDC\nof assets\nThere is no maximum supply cap, allowing the token supply to grow or contract based on market needs."
+   ]
+  }
+ ],
+ "warnings": null,
+ "usage": [
+  {
+   "name": "sku_search",
+   "count": 1
+  }
+ ],
+ "metadata": null,
+ "session_id": "session_80522b6ace40c1c90a0d01e73c220287"
+}

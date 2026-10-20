@@ -212,7 +212,7 @@ describe("alert persistence", () => {
     const old = new Date(Date.now() - 3 * 86400000).toISOString().slice(0, 10);
     u.kv.set(countKey("xrpl", old), 4);
     const s = await readAlertSummary();
-    expect(s).toEqual({ status: "ok", xrpl: { today: 2, last7d: 6 }, solana: { today: 1, last7d: 1 } });
+    expect(s).toEqual({ status: "ok", xrpl: { today: 2, last7d: 6 }, solana: { today: 1, last7d: 1 }, xrplKinds: { todayEt: expect.any(Object), last24h: { xrpl_check_failing: 0, xrpl_entry_dropped: 0, other: 2 } } });
     const html = renderToStaticMarkup(AlertCounts({ a: s }));
     expect(html).toContain('data-hp-alerts="ok"');
     expect(html).toMatch(/data-hp-alert-rail="XRPL".*?>2<.*?>6</);

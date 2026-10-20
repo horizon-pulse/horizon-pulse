@@ -1,0 +1,51 @@
+{
+ "extract_id": "extract_0b8437ae114f993605e0ebff86d10edd",
+ "results": [
+  {
+   "url": "https://www.coindesk.com/markets/2019/12/05/circle-co-founder-sean-neville-steps-down-as-co-ceo",
+   "title": "Circle Co-Founder Sean Neville Steps Down as Co-CEO",
+   "publish_date": "2021-09-13",
+   "excerpts": [
+    "# Circle Co-Founder Sean Neville Steps Down as Co-CEO\n## Sean Neville, co-founder of Circle, is stepping down as co-CEO six years after founding the crypto trading and payments startup with Jeremy Allaire.\nBy [Nikhilesh De](https://www.coindesk.com/author/nikhilesh-de)\nUpdated Sep 13, 2021, 7:46 a.m. EDT Published Dec 4, 2019, 7:46 p.m. EST\n\n...\n\nNeville, who co-founded the Boston-based payments firm [in 2014](https://www.americanbanker.com/news/bitcoin-startup-circle-to-offer-old-school-phone-support) with Jeremy Allaire, said in an email obtained by CoinDesk that he notified the company’s Board of Directors during a quarterly meeting.\n\n...\n\nThe company [acquired Poloniex](https://www.coindesk.com/markets/2018/02/26/crypto-exchange-poloniex-acquired-by-payments-startup-circle/) in February 2018 for roughly $400 million.\n\n...\n\n[Satoshi-era bitcoin faces a bigger quantum threat after Google’s new Willow breakthrough](https://www.coindesk.com/tech/2026/10/16/satoshi-era-bitcoin-faces-a-bigger-quantum-threat-after-google-s-new-willow-breakthrough)\n7 hours ago\n3. 3\n\n...\n\n[Latest Research](https://www.coindesk.com/research)\n\n...\n\n[Chart showing altcoin, bitcoin movements since midnight.\n\n...\n\n**Disclosure & Polices** : CoinDesk is an [award-winning](https://www.coindesk.com/business/2023/02/20/coindesk-wins-a-polk-award-a-top-journalism-prize-for-explosive-ftx-coverage) media outlet that covers the cryptocurrency industry. Its journalists abide by a strict set of [editorial policies](https://www.coindesk.com/ethics) ."
+   ],
+   "full_content": null
+  },
+  {
+   "url": "https://www.bloomberg.com/news/articles/2025-06-05/circle-founder-is-a-billionaire-as-crypto-firm-jumps-after-ipo",
+   "title": "Circle (CRCL) Founder Jeremy Allaire Is a Billionaire as Shares Surge After IPO - Bloomberg",
+   "publish_date": "2025-06-05",
+   "excerpts": [
+    "# Circle Founder Is Billionaire as Crypto Firm Jumps After IPO\n[Circle Internet Group Inc.](https://www.bloomberg.com/quote/CRCL:US) co-founder Jeremy Allaire saw his fortune surge to more than $1.7 billion Thursday after the company’s stock almost tripled in its first day of trading."
+   ],
+   "full_content": null
+  },
+  {
+   "url": "https://tracxn.com/d/companies/circle/__urTWgaeF5GReg4UnjfHChbGakjNeU_YlDDVP6KXPe6g",
+   "title": "Circle - 2026 Company Profile, Team, Funding & Competitors - Tracxn",
+   "publish_date": "2026-05-16",
+   "excerpts": [
+    "# [Circle - Company Profile](https://www.circle.com/)\n## Circle's founders and board of directors\nThe founders of Circleare Sean Neville and [Jeremy Allaire](https://platform.tracxn.com/a/d/people/53281cfee4b0018e07aaecc2/jeremyallaire) . [Ryan Feit](https://platform.tracxn.com/a/d/people/6a01b33098465635c684e1a4/ryanfeit) and [Jeremy Allaire](https://platform.tracxn.com/a/d/people/53281cfee4b0018e07aaecc2/jeremyallaire) are the CEOs of Circle."
+   ],
+   "full_content": null
+  },
+  {
+   "url": "https://investor.circle.com/resources/investor-faqs/default.aspx",
+   "title": "\n\tCircle Internet Group, Inc. - Resources - Investor FAQs\n",
+   "publish_date": null,
+   "excerpts": [
+    "# Investor FAQs\nDisplay All\nWhen was Circle founded?\nThe company was founded in 2013. Circle Internet Group, Inc. (“Circle”) was incorporated as the company’s parent entity in 2024.\nWhere are Circle’s headquarters?"
+   ],
+   "full_content": null
+  }
+ ],
+ "errors": [],
+ "warnings": null,
+ "usage": [
+  {
+   "name": "sku_extract_excerpts",
+   "count": 4
+  }
+ ],
+ "metadata": null,
+ "session_id": "session_0b8437ae114f993605e0ebff86d10edd"
+}

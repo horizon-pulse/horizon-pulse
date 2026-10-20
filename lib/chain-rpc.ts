@@ -44,7 +44,7 @@ export const RPC_SOURCES: Record<ChainNetwork, string> = {
   xrpl: "Public XRPL servers (xrplcluster.com, s1.ripple.com)",
 };
 
-function rpcs(network: ChainNetwork): string[] {
+export function rpcs(network: ChainNetwork): string[] {
   switch (network) {
     case "base":
       return [process.env.BASE_RPC_URL ?? "", "https://base.drpc.org", "https://mainnet.base.org"].filter(Boolean);

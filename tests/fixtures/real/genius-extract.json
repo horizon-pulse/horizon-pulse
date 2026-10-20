@@ -1,0 +1,42 @@
+{
+ "extract_id": "extract_3f699b37a97155435c0208719d1191bf",
+ "results": [
+  {
+   "url": "https://www.fdic.gov/news/financial-institution-letters/2026/notice-proposed-rulemaking-establish-genius-act",
+   "title": "Notice of Proposed Rulemaking to Establish GENIUS Act Requirements and Standards for FDIC-Supervised Permitted Payment Stablecoin Issuers and Insured Depository Institutions | FDIC.gov",
+   "publish_date": "2026-10-19",
+   "excerpts": [
+    "# Notice of Proposed Rulemaking to Establish GENIUS Act Requirements and Standards for FDIC-Supervised Permitted Payment Stablecoin Issuers and Insured Depository Institutions\nLaws and Regulations\nApril 7, 2026\nShare on Facebook\nShare on X\nFollow the FDIC on LinkedIn\nShare through email\nPrint\n\n## Summary:\nOn April 7, 2026, the FDIC Board of Directors approved a notice of proposed rulemaking that would implement the Guiding and Establishing National Innovation for U.S. Stablecoins Act by establishing requirements and standards applicable to FDIC-supervised permitted payment stablecoin issuers (PPSIs) and insured depository institutions (IDIs) that engage in payment stablecoin-related activities.\nIn addition, the proposed rule would provide clarity to all IDIs with respect to FDIC deposit insurance coverage for deposits held at IDIs that serve as reserves of a PPSI’s payment stablecoin. The proposal also addresses tokenized deposits.\n\n...\n\n## Highlights:\n* The proposed rule would set out authorized and prohibited PPSI activities.\n* The proposed rule would require a PPSI to maintain identifiable reserve assets and would establish capital and risk management requirements and standards that are tailored to the size, complexity, and risk profile of a PPSI.\n* The proposed rule would generally require PPSIs to redeem a payment stablecoin within two business days.\n* The proposed rule would implement payment stablecoin-related custodial and safekeeping requirements for FDIC-supervised PPSIs and IDIs.\n* The proposed rule would provide that deposits held as reserves backing a payment stablecoin would not be insured to payment stablecoin holders on a pass-through basis.\n* The proposed rule would address tokenized deposits and provide that the application of deposit insurance to deposits does not depend upon the technology or recordkeeping used to record an IDI’s deposit liabilities.\n* Comments on the proposed rule will be accepted for 60 days after publication in the _Federal Register_ .\n\n...\n\n## Attachment(s)\n[Approval Requirements for Issuance of Payment Stablecoins by Subsidiaries of FDIC-Supervised Insured Depository Institutions](https://www.govinfo.gov/content/pkg/FR-2025-12-19/pdf/2025-23510.pdf)\n[Extension of Comment Period](https://www.govinfo.gov/content/pkg/FR-2026-02-11/pdf/2026-02665.pdf)\n\n...\n\n## Contact(s)\nI am a ... Bank Customer Banker Consumer Small Business Owner Analyst/Researcher/Student Legal Professional Bank Regulator Press/Media Vendor/Contractor Legislative Staff Member Jobseeker Court Clerk Prosecutor/Probation Officer Investigator\nYour request\nI want to..."
+   ],
+   "full_content": null
+  },
+  {
+   "url": "https://www.congress.gov/bill/119th-congress/senate-bill/1582/summary/00",
+   "title": "S.1582 - 119th Congress (2025-2026): GENIUS Act | Congress.gov | Library of Congress",
+   "publish_date": "2026-10-19",
+   "excerpts": [
+    "# S.1582 - GENIUS Act 119th Congress (2025-2026) |\n## Summary: S.1582 — 119th Congress (2025-2026) [All Information](https://www.congress.gov/bill/119th-congress/senate-bill/1582/all-info) (Except Text)\n### Shown Here:\nIntroduced in Senate (05/01/2025)\n**Guiding and Establishing National Innovation for U.S. Stablecoins Act or the GENIUS Act**\nThis bill establishes a regulatory framework for payment stablecoins (digital assets which an issuer must redeem for a fixed value).\nUnder the bill, only permitted issuers may issue a payment stablecoin for use by U.S. persons, subject to certain exceptions and safe harbors. Permitted issuers must be a subsidiary of an insured depository institution, a federal-qualified nonbank payment stablecoin issuer, or a state-qualified payment stablecoin issuer. Permitted issuers must be regulated by the appropriate federal or state regulator.\nPermitted issuers may choose federal or state regulation; however, state regulation is limited to those with a stablecoin issuance of $10 billion or less.\nPermitted issuers must maintain reserves backing the stablecoin on a one-to-one basis using U.S. currency or other similarly liquid assets, as specified. Permitted issuers must also publicly disclose their redemption policy and publish monthly the details of their reserves.\nThe bill specifies requirements for (1) reusing reserves; (2) providing safekeeping services for stablecoins; and (3) supervisory, examination, and enforcement authority over federal-qualified issuers.\nThe bill allows foreign issuers of stablecoins to offer, sell, or make available in the United States stablecoins using digital asset service providers, subject to requirements, including a determination by the Department of Treasury that they are subject to comparable foreign regulations.\nUnder the bill, permitted payment stablecoins are not considered securities under securities law. However, permitted issuers are subject to the Bank Secrecy Act for anti-money laundering and related purposes."
+   ],
+   "full_content": null
+  },
+  {
+   "url": "https://www.federalreserve.gov/newsevents/pressreleases/bcreg20260924a.htm",
+   "title": "Federal Reserve Board - Federal Reserve Board requests public comment on two proposals related to establishing a regulatory framework for Board-supervised payment stablecoin issuers under the GENIUS Act",
+   "publish_date": "2026-09-29",
+   "excerpts": [
+    "# Press Release\n## Federal Reserve Board requests public comment on two proposals related to establishing a regulatory framework for Board-supervised payment stablecoin issuers under the GENIUS Act\nThe Federal Reserve Board on Thursday requested public comment on two proposals related to establishing a regulatory framework for Board-supervised payment stablecoin issuers under the GENIUS Act.\nThe first proposal would require that Board-supervised payment stablecoin issuers fully back their stablecoins with certain permissible reserve assets, such as short-term Treasury bills and certain other high-quality, liquid assets.\nThe proposal would also establish standardized capital requirements to address certain credit and operational risks of payment stablecoin activities, as well as risk management standards, in accordance with the law.\nSeparately, the proposal would introduce rules for Board-supervised firms that safekeep the assets backing payment stablecoins. It would also clarify the permissibility of stablecoin and related activities for Board-supervised banks.\nThe second proposal would establish a tailored application process for Board-supervised banks applying to issue payment stablecoins. These applicants would be required to submit a business plan and financial information, among other documents.\n\n...\n\n[_Federal Register_ notice: Implementing the Federal Reserve Board’s Responsibilities under the GENIUS Act](https://www.federalregister.gov/documents/2026/09/29/2026-19860/implementing-the-federal-reserve-boards-responsibilities-under-the-genius-act)"
+   ],
+   "full_content": null
+  }
+ ],
+ "errors": [],
+ "warnings": null,
+ "usage": [
+  {
+   "name": "sku_extract_excerpts",
+   "count": 3
+  }
+ ],
+ "metadata": null,
+ "session_id": "session_3f699b37a97155435c0208719d1191bf"
+}

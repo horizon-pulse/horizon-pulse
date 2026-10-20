@@ -1,0 +1,128 @@
+{
+ "recording": true,
+ "recorded_at": "2026-10-20T03:43:25Z",
+ "note": "A recording of a real passing verified brief (schema brief-verified/1), shown to illustrate the response shape. The on-chain values were read from two independent RPC node operators at the blocks shown on 2026-10-20 and are not current. A buyer would have been charged $1 for this brief because it met the contract (2 onchain-confirmed claims).",
+ "question": "How much USDC is in circulation",
+ "answer": "USDC totalSupply() read on-chain: 47,835,740,440 USDC on Ethereum (block 26231180, 2026-10-20T03:42:59Z) and 4,267,723,904 USDC on Base (block 52839227, 2026-10-20T03:43:21Z). Other chains are not included.",
+ "status": "pass",
+ "fail_reasons": [],
+ "claims": [
+  {
+   "text": "USDC totalSupply() on Ethereum was 47,835,740,440 USDC at block 26231180 (2026-10-20T03:42:59Z).",
+   "status": "confirmed",
+   "tier": "onchain-confirmed",
+   "primary": null,
+   "secondary": null,
+   "match": {
+    "value": "47,835,740,440",
+    "unit": "USDC",
+    "date": "2026-10-20",
+    "topic": "totalSupply()"
+   },
+   "onchain": {
+    "value": "47,835,740,440",
+    "unit": "USDC",
+    "block": 26231180,
+    "chain": "ethereum",
+    "nodes": [
+     "ethereum.publicnode.com",
+     "eth.drpc.org"
+    ],
+    "observed_at": "2026-10-20T03:42:59Z"
+   },
+   "evidence": [
+    {
+     "kind": "onchain",
+     "chain": "ethereum",
+     "block": 26231180,
+     "block_timestamp": "2026-10-20T03:42:59Z",
+     "method": "totalSupply()",
+     "contract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+     "value": "47,835,740,440",
+     "unit": "USDC",
+     "node": "ethereum.publicnode.com",
+     "retrieved_at": "2026-10-20T03:43:25.430Z"
+    },
+    {
+     "kind": "onchain",
+     "chain": "ethereum",
+     "block": 26231180,
+     "block_timestamp": "2026-10-20T03:42:59Z",
+     "method": "totalSupply()",
+     "contract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+     "value": "47,835,740,440",
+     "unit": "USDC",
+     "node": "eth.drpc.org",
+     "retrieved_at": "2026-10-20T03:43:25.430Z"
+    }
+   ]
+  },
+  {
+   "text": "USDC totalSupply() on Base was 4,267,723,904 USDC at block 52839227 (2026-10-20T03:43:21Z).",
+   "status": "confirmed",
+   "tier": "onchain-confirmed",
+   "primary": null,
+   "secondary": null,
+   "match": {
+    "value": "4,267,723,904",
+    "unit": "USDC",
+    "date": "2026-10-20",
+    "topic": "totalSupply()"
+   },
+   "onchain": {
+    "value": "4,267,723,904",
+    "unit": "USDC",
+    "block": 52839227,
+    "chain": "base",
+    "nodes": [
+     "base.drpc.org",
+     "mainnet.base.org"
+    ],
+    "observed_at": "2026-10-20T03:43:21Z"
+   },
+   "evidence": [
+    {
+     "kind": "onchain",
+     "chain": "base",
+     "block": 52839227,
+     "block_timestamp": "2026-10-20T03:43:21Z",
+     "method": "totalSupply()",
+     "contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "value": "4,267,723,904",
+     "unit": "USDC",
+     "node": "base.drpc.org",
+     "retrieved_at": "2026-10-20T03:43:25.430Z"
+    },
+    {
+     "kind": "onchain",
+     "chain": "base",
+     "block": 52839227,
+     "block_timestamp": "2026-10-20T03:43:21Z",
+     "method": "totalSupply()",
+     "contract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+     "value": "4,267,723,904",
+     "unit": "USDC",
+     "node": "mainnet.base.org",
+     "retrieved_at": "2026-10-20T03:43:25.430Z"
+    }
+   ]
+  }
+ ],
+ "counts": {
+  "confirmed": 2,
+  "consistent": 0,
+  "unconfirmed": 0
+ },
+ "tiers": {
+  "publisher-confirmed": 0,
+  "onchain-confirmed": 2,
+  "official": 0
+ },
+ "method": "https://horizonpulse.dev/contracts/brief-verified",
+ "meta": {
+  "version": "1",
+  "schema": "brief-verified/1"
+ },
+ "type": "usdc_supply",
+ "answer_by": "template"
+}

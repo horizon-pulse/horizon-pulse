@@ -19,7 +19,7 @@
  */
 import { resolveSharedReplayStoreEnv } from "@/lib/xrpl-replay-store";
 
-export type AlertRail = "xrpl" | "solana";
+export type AlertRail = "xrpl" | "solana" | "premium";
 export const ALERT_LIST_CAP = 500;
 export const ALERT_COUNT_TTL_S = 35 * 86_400;
 export const ALERT_PERSIST_TIMEOUT_MS = 500;
@@ -34,7 +34,7 @@ let envOverride: Env | null = null;
 /** Tests only. */
 export function setAlertPersistForTests(o: { fetch?: FetchFn | null; env?: Env | null } | null): void {
   memo = null;
-  stats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0 }, skippedKind: 0 };
+  stats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0, premium: 0 }, skippedKind: 0 };
   fetchOverride = o?.fetch ?? null;
   envOverride = o?.env ?? null;
 }
@@ -47,6 +47,20 @@ export async function flushAlertPersistForTests(): Promise<void> {
 export const listKey = (rail: AlertRail) => `hp:alerts:${rail}`;
 export const countKey = (rail: AlertRail, day: string) => `hp:alerts:${rail}:count:${day}`;
 const utcDay = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * Sentinel 10/19 18:20 EDT: per-kind XRPL alert COUNTS on /status. Fixed allowlist; any other kind counts as "other".
+ * Stored as hourly counters (internal only, never shown) so /status can show "today (ET)" and "last 24 h" without
+ * exposing per-event timestamps. Key: hp:alerts:xrpl:kind:<kind>:<UTC yyyy-mm-ddThh>, TTL 3 days.
+ */
+export const XRPL_ALERT_KINDS = ["xrpl_check_failing", "xrpl_entry_dropped", "other"] as const;
+export type XrplAlertKind = (typeof XRPL_ALERT_KINDS)[number];
+export const XRPL_KIND_TTL_S = 3 * 86_400;
+export const xrplKindOf = (kind: unknown): XrplAlertKind => (kind === "xrpl_check_failing" || kind === "xrpl_entry_dropped" ? kind : "other");
+const utcHour = (d: Date) => d.toISOString().slice(0, 13);
+export const xrplKindKey = (k: XrplAlertKind, hour: string) => `hp:alerts:xrpl:kind:${k}:${hour}`;
+const etDay = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+export type XrplKindCounts = Record<XrplAlertKind, number>;
 
 /** First 6 + "…" + last 4; anything too short / not a string → null (never a full address). */
 export function truncateAddress(a: unknown): string | null {
@@ -100,10 +114,12 @@ export function stripQuery(route: string): string {
 export const NEVER_PERSIST = new Set(["warn_rate"]);
 /** Hard per-instance cap on alert writes per UTC day (both rails together). */
 export const ALERT_WRITE_CAP_PER_DAY = 50;
-type WriteStats = { day: string; written: number; overCap: Record<AlertRail, number>; skippedKind: number };
-let stats: WriteStats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0 }, skippedKind: 0 };
+/** Odin C5: premium alerts have their OWN per-instance daily cap, so a premium burst can never crowd out xrpl/solana. */
+export const PREMIUM_ALERT_WRITE_CAP_PER_DAY = 50;
+type WriteStats = { day: string; written: number; premiumWritten?: number; overCap: Record<AlertRail, number>; skippedKind: number };
+let stats: WriteStats = { day: "", written: 0, overCap: { xrpl: 0, solana: 0, premium: 0 }, skippedKind: 0 };
 function statsFor(day: string): WriteStats {
-  if (stats.day !== day) stats = { day, written: 0, overCap: { xrpl: 0, solana: 0 }, skippedKind: 0 };
+  if (stats.day !== day) stats = { day, written: 0, overCap: { xrpl: 0, solana: 0, premium: 0 }, skippedKind: 0 };
   return stats;
 }
 /** Tests / diagnostics: this instance's write counters for the current UTC day. */
@@ -121,7 +137,7 @@ export function alertEntry(alert: unknown, now: Date = new Date()): PersistedAle
 }
 
 /** Fire-and-forget. Never throws, never returns a promise the caller must await. */
-export function persistAlert(rail: AlertRail, alert: unknown): void {
+export function persistAlert(rail: AlertRail, alert: unknown, opts: { exemptFromCap?: boolean } = {}): void {
   try {
     const kind = alert && typeof alert === "object" ? (alert as { kind?: unknown }).kind : undefined;
     const c = creds();
@@ -133,13 +149,23 @@ export function persistAlert(rail: AlertRail, alert: unknown): void {
       st.skippedKind++;
       return;
     }
-    if (st.written >= ALERT_WRITE_CAP_PER_DAY) {
-      st.overCap[rail]++; // in-memory only past the cap
-      return;
+    if (rail === "premium") {
+      // Odin P3: charged_not_delivered / refund_owed alerts are never capped
+      if (!opts.exemptFromCap && (st.premiumWritten ?? 0) >= PREMIUM_ALERT_WRITE_CAP_PER_DAY) {
+        st.overCap.premium++;
+        return;
+      }
+      st.premiumWritten = (st.premiumWritten ?? 0) + 1;
+    } else {
+      if (st.written >= ALERT_WRITE_CAP_PER_DAY) {
+        st.overCap[rail]++; // in-memory only past the cap
+        return;
+      }
+      st.written++;
     }
-    st.written++;
     const entry = alertEntry(alert, now);
     const ck = countKey(rail, day);
+    const kk = rail === "xrpl" ? xrplKindKey(xrplKindOf(kind), utcHour(now)) : null;
     const p = pipeline(
       c,
       [
@@ -147,6 +173,7 @@ export function persistAlert(rail: AlertRail, alert: unknown): void {
         ["LTRIM", listKey(rail), 0, ALERT_LIST_CAP - 1],
         ["INCR", ck],
         ["EXPIRE", ck, ALERT_COUNT_TTL_S],
+        ...(kk ? [["INCR", kk], ["EXPIRE", kk, XRPL_KIND_TTL_S]] : []),
       ],
       ALERT_PERSIST_TIMEOUT_MS,
     )
@@ -161,7 +188,13 @@ export function persistAlert(rail: AlertRail, alert: unknown): void {
 
 /** Public /status shape: counts only (Odin 9:16 AM AST CHANGES REQUIRED: no code, timestamp or route in public markup). */
 export type RailAlertSummary = { today: number; last7d: number };
-export type AlertSummary = { status: "ok" | "unavailable" | "not_applicable"; xrpl: RailAlertSummary | null; solana: RailAlertSummary | null };
+export type AlertSummary = {
+  status: "ok" | "unavailable" | "not_applicable";
+  xrpl: RailAlertSummary | null;
+  solana: RailAlertSummary | null;
+  /** Only when status is "ok": allowlisted XRPL kinds, counts only (today in ET, last 24 h). */
+  xrplKinds?: { todayEt: XrplKindCounts; last24h: XrplKindCounts };
+};
 
 /** Uncached server-side read: today + last 7 UTC days per rail (one MGET pipeline, 800 ms bound). Never throws. */
 export async function readAlertSummary(now: Date = new Date()): Promise<AlertSummary> {
@@ -170,13 +203,23 @@ export async function readAlertSummary(now: Date = new Date()): Promise<AlertSum
     if (!c) return { status: "not_applicable", xrpl: null, solana: null };
     const days = Array.from({ length: 7 }, (_, i) => utcDay(new Date(now.getTime() - i * 86_400_000)));
     const rails: AlertRail[] = ["xrpl", "solana"];
-    const out = await pipeline(c, rails.map((r) => ["MGET", ...days.map((d) => countKey(r, d))]), ALERT_STATUS_TIMEOUT_MS);
+    // Last 48 UTC hours (covers "today in ET" at any hour and the last 24 h).
+    const hours = Array.from({ length: 48 }, (_, i) => new Date(now.getTime() - i * 3_600_000));
+    const today = etDay(now);
+    const kindCmds = XRPL_ALERT_KINDS.map((k) => ["MGET", ...hours.map((h) => xrplKindKey(k, utcHour(h)))]);
+    const out = await pipeline(c, [...rails.map((r) => ["MGET", ...days.map((d) => countKey(r, d))]), ...kindCmds], ALERT_STATUS_TIMEOUT_MS);
     if (!out) return { status: "unavailable", xrpl: null, solana: null };
+    const todayEt = {} as XrplKindCounts, last24h = {} as XrplKindCounts;
+    XRPL_ALERT_KINDS.forEach((k, j) => {
+      const v = (Array.isArray(out[2 + j]) ? (out[2 + j] as unknown[]) : []).map((x) => Math.max(0, Math.floor(Number(x ?? 0) || 0)));
+      last24h[k] = v.slice(0, 24).reduce((a, b) => a + b, 0);
+      todayEt[k] = v.reduce((a, b, i) => a + (etDay(hours[i]) === today ? b : 0), 0);
+    });
     const sum = (i: number): RailAlertSummary => {
       const counts = (Array.isArray(out[i]) ? (out[i] as unknown[]) : []).map((v) => Number(v ?? 0) || 0);
       return { today: counts[0] ?? 0, last7d: counts.reduce((a, b) => a + b, 0) };
     };
-    return { status: "ok", xrpl: sum(0), solana: sum(1) };
+    return { status: "ok", xrpl: sum(0), solana: sum(1), xrplKinds: { todayEt, last24h } };
   } catch {
     return { status: "unavailable", xrpl: null, solana: null };
   }
