@@ -5,20 +5,18 @@
  * (exactly the three accepted question types). Pending Counsel copy review + Odin Class A.
  */
 import { declareDiscoveryExtension } from "@x402/extensions/bazaar";
-import { PUBLIC_BASE_URL } from "@/lib/config";
 import DEMO from "./demo-brief-verified.json";
 
 export const BRIEF_SERVICE_META = {
   serviceName: "Horizon Pulse",
   tags: ["research", "verified-brief", "x402", "gas-fees", "usdc", "base", "ethereum"],
-  iconUrl: `${PUBLIC_BASE_URL}/icon.png`,
 } as const;
 
 export const BRIEF_BAZAAR_Q_DESCRIPTION =
   "Question (required). Accepted: Base or Ethereum gas (on-chain read), USDC supply on Ethereum and Base (on-chain totalSupply), or an x402 spec fact. Anything else is refused with 422 before payment. No personal data.";
 
 export const BRIEF_BAZAAR_OUTPUT_DESCRIPTION =
-  "Verified brief (schema brief-verified/1): answer plus 2-8 claims, each with an evidence array. Charged only if at least 2 claims are independently confirmed; otherwise 422, unpaid. The example is a trimmed real passing brief recorded at " +
+  "Verified brief (schema brief-verified/1): answer plus 2-8 claims, each with an evidence array. Charged only if at least 2 claims are confirmed in two independent sources as defined at /contracts/brief-verified; otherwise 422, unpaid. The example is a trimmed real passing brief recorded at " +
   `${DEMO.recorded_at} (GET /api/demo/brief-verified); live values differ on every call.`;
 
 /** Trimmed real recording: question, answer, status, first claim, counts. */
