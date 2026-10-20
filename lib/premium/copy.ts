@@ -24,7 +24,7 @@ export const FCRA_CLAUSE =
 export const WATCH_TERMS =
   "Watch: one check report at the start, then one check record per day for 30 days, available at your status link for 30 days after the watch ends. You are charged only once the first report is built; if it cannot be built, you are not charged, or, if settlement was temporarily moved to payment verification, you are refunded in full. If we miss 3 or more daily checks, or end the watch early for any reason, you get a refund for the undelivered days (price × undelivered days ÷ 30). The watched service going down, changing or delisting is a reported event, not a failure. There are no webhooks; check the status link. We may refuse or stop a watch that breaks our terms; in that case unused days are refunded unless the watch was stopped for abuse. No auto-renewal: a watch ends after 30 days and is never charged again.";
 
-/** APPROVED (Michael, 10/20 7:59 AM ET, option (a) relayed by Odin; confirmed in chat 8:02 AM ET: no delivered-brief refunds in v1). Counsel PASS 10/20 8:04 AM ET. */
+/** APPROVED (Michael, 10/20 7:59 AM ET, option (a) relayed by Odin; confirmed in chat 8:02 AM ET: no delivered-brief refunds in v1). Counsel PASS 10/20 8:04 AM ET. Michael approved with option (a), GO 10/20 8:05 AM ET (Odin relay). */
 export const REFUND_LINE =
   `Refunds: Delivered results are final. If you were charged and we did not deliver (for example a payment settle error, or a job or watch we failed to complete), send the receipt ID or transaction hash to ${PREMIUM_CONTACT} within 30 days. We confirm the payment on-chain and refund the amount owed in USDC on Base to the paying address, usually within 7 days. Undelivered watch days are refunded pro rata. Other refund requests are at our discretion.`;
 
