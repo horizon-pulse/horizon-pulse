@@ -31,9 +31,10 @@ export const PER_HOST_DAILY = 3;
 export const SETTLE_FAIL_LIMIT = 3;
 export const VALID_BEFORE_MAX_S = 300;
 
-/** Counsel-approved 402/Bazaar description (spec §1, verbatim). Test asserts < 500 chars. */
+/** 402/Bazaar description. 10/20 copy recheck (Odin Class A on 173cb97): "dated snapshots" -> CDP discovery listing (#4),
+ * "settlement history" -> recent window (#3). PENDING Counsel re-check. Test asserts < 500 chars. */
 export const DD_DESCRIPTION =
-  "Seller due-diligence for one x402 endpoint. We make a real capped test payment, check the paid response against the listed schema, compare payTo with our dated snapshots, read on-chain settlement history and screen for lookalike addresses. Returns a signed JSON verdict of evidenced facts. No charge unless the test payment succeeds and at least 3 of the other 4 checks complete. Facts, not endorsement; no warranty. Not affiliated with the seller checked. $5.";
+  "Seller due-diligence for one x402 endpoint. We make a real capped test payment, check the paid response against the listed schema, compare payTo with the CDP listing, read a recent window of on-chain USDC payments to the payTo and screen for lookalike addresses. Returns a signed JSON verdict of evidenced facts. No charge unless the test payment succeeds and at least 3 of the other 4 checks complete. Facts, not endorsement; no warranty. Not affiliated with the seller checked. $5.";
 
 /** Counsel notice (spec §5 + D1), verbatim, REQUIRED top-level field in every response body including no_charge. */
 export const DD_NOTICE =

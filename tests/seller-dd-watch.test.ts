@@ -13,11 +13,11 @@ const TESTER = privateKeyToAccount(key).address;
 const pad = (a: string) => `0x${a.toLowerCase().slice(2).padStart(64, "0")}`;
 const FUNDER = "0x" + "f1".repeat(20);
 const NONCE = "0x" + "ab".repeat(32);
-type Logs = { out?: any[]; in?: any[]; appr?: any[]; auth?: any[]; txCount?: string };
+type Logs = { head?: number; out?: any[]; in?: any[]; appr?: any[]; auth?: any[]; txCount?: string };
 function rpcWith(l: Logs, calls: string[] = []): Rpc {
   return async (m, p: any) => {
     calls.push(m);
-    if (m === "eth_blockNumber") return "0x10000";
+    if (m === "eth_blockNumber") return `0x${(l.head ?? 0x10000).toString(16)}`;
     if (m === "eth_getTransactionCount") return l.txCount ?? "0x0";
     const t = p[0].topics;
     if (t[0] === TRANSFER_TOPIC && t[1]) return l.out ?? [];
@@ -70,6 +70,40 @@ describe("L-5 watch", () => {
     expect(r.alerts.map((a) => a.kind)).toContain("seller_dd_kill_switch_flipped");
     const r2 = await runWatch(s, TESTER, rpcWith({}), env);
     expect(r2.alerts[0]).toMatchObject({ kind: "seller_dd_kill_switch_flipped", detail: "off->on" });
+  });
+  it("W1: starts 43,000 blocks behind -> catches up to head in one run, cursor saved per chunk, no behind alert", async () => {
+    const s = mk();
+    const head = 0x10000;
+    await s.set(watchKeys.cursor(), String(head - 43_000), 100);
+    const ranges: [number, number][] = [];
+    const cursors: string[] = [];
+    const origSet = s.set.bind(s);
+    s.set = async (k: string, v: string, t: number) => { if (k === watchKeys.cursor()) cursors.push(v); return origSet(k, v, t); };
+    const base = rpcWith({});
+    const rpc: Rpc = async (m, p: any) => { if (m === "eth_getLogs" && p[0].topics[0] === AUTH_USED_TOPIC) ranges.push([parseInt(p[0].fromBlock, 16), parseInt(p[0].toBlock, 16)]); return base(m, p); };
+    const r = await runWatch(s, TESTER, rpc, env);
+    expect(r.alerts).toEqual([]);
+    expect(ranges).toHaveLength(5);
+    expect(ranges[0]![0]).toBe(head - 43_000 + 1);
+    expect(ranges.at(-1)![1]).toBe(head);
+    for (let k = 1; k < ranges.length; k++) expect(ranges[k]![0]).toBe(ranges[k - 1]![1] + 1);
+    expect(ranges.every(([a, b]) => b - a + 1 <= 9_000)).toBe(true);
+    expect(cursors).toHaveLength(5);
+    expect(await s.get(watchKeys.cursor())).toBe(String(head));
+  });
+  it("W1: run ends behind (chunk cap / time budget) -> HIGH seller_dd_watch_behind, progress kept", async () => {
+    const s = mk();
+    const H = 1_000_000;
+    await s.set(watchKeys.cursor(), String(H - 200_000), 100);
+    const r = await runWatch(s, TESTER, rpcWith({ head: H }), env);
+    expect(r.alerts.map((a) => a.kind)).toEqual(["seller_dd_watch_gap", "seller_dd_watch_behind"]);
+    expect(Number(await s.get(watchKeys.cursor()))).toBe(H - 200_000 + 12 * 9_000);
+    let t = 0;
+    const s2 = mk();
+    await s2.set(watchKeys.cursor(), String(0x10000 - 43_000), 100);
+    const r2 = await runWatch(s2, TESTER, rpcWith({}), env, () => (t += 30_000));
+    expect(r2.alerts.map((a) => a.kind)).toContain("seller_dd_watch_behind");
+    expect(Number(await s2.get(watchKeys.cursor()))).toBeGreaterThan(0x10000 - 43_000);
   });
   it("RPC down -> HIGH rpc_unavailable, cursor unchanged", async () => {
     const s = mk();

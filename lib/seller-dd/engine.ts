@@ -103,7 +103,7 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
         : { name: "payTo_continuity", result: "fail", evidence: ev, note: `live 402 payTo ${listed.payTo} differs from listing payTo ${ref.payTo} at ${ref.source_url} fetched ${ref.fetched_at}` };
       if (!same) { flags.push(`payTo_changed_since_${ref.snapshot_date ?? ref.fetched_at.slice(0, 10)}`); blocked ??= "payto_changed_vs_listing"; }
     } else {
-      checks.payTo_continuity = { name: "payTo_continuity", result: "skipped", evidence: {}, note: "no dated snapshot or discovery listing found for this resource" };
+      checks.payTo_continuity = { name: "payTo_continuity", result: "skipped", evidence: {}, note: "no CDP discovery listing found for this resource" };
       blocked ??= "payto_not_pinned";
     }
     if (buyerMismatch) { flags.push("payTo_differs_from_expected_payTo"); blocked ??= "payto_mismatch_expected"; }

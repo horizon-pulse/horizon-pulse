@@ -21,6 +21,11 @@ describe("seller-dd copy (Counsel)", () => {
     expect(DD_DESCRIPTION).toContain("Facts, not endorsement; no warranty. Not affiliated with the seller checked. $5.");
     expect(DD_DESCRIPTION).toContain("No charge unless the test payment succeeds and at least 3 of the other 4 checks complete.");
   });
+  it("copy recheck 10/20: CDP listing + recent window; no 'dated snapshots' / 'settlement history'", () => {
+    expect(DD_DESCRIPTION).toContain("compare payTo with the CDP listing");
+    expect(DD_DESCRIPTION).toContain("a recent window of on-chain USDC payments");
+    expect(DD_DESCRIPTION).not.toMatch(/dated snapshots|settlement history/i);
+  });
   it("notice is verbatim (D1 contact)", () => {
     expect(DD_NOTICE).toBe("Technical facts as observed at checked_at, with evidence. Not an endorsement, rating, recommendation or warranty. Horizon Pulse is not affiliated with the seller checked. Not financial advice. Disputes or corrections: horizonpulse.co@proton.me.");
   });
