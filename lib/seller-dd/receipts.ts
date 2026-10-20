@@ -29,7 +29,9 @@ export const rcptKeys = {
 export const VERDICT_ID_RE = /^dd_[0-9a-f]{24}$/;
 
 export type ReceiptRecord = {
-  id: string; issued_at: string; resource_sha256: string; pass: boolean;
+  id: string; issued_at: string; resource_sha256: string;
+  /** pass = the charge criteria were met (buyer was charged), NOT a rating of the seller. */
+  pass: boolean;
   verdict_sha256: string; kid: string | null; supersedes: string | null; origin: "buyer" | "recheck";
 };
 
@@ -120,11 +122,13 @@ export async function resolveDispute(store: PremiumStore, id: string, nowMs: num
   const rec = await getReceipt(store, id);
   if (!rec) return { ok: false, status: 404, error: "unknown_verdict" };
   if (!(await store.get(rcptKeys.dispute(id)))) return { ok: false, status: 409, error: "no_open_dispute" };
+  // Add-only log entry FIRST (same rule as open); if it fails -> 503 and the hold stays in place.
+  try { await store.zadd(rcptKeys.log(), nowMs, `dispute_resolved:${id}:${nowMs}`, RECEIPT_TTL_S); }
+  catch { return { ok: false, status: 503, error: "store_unavailable" }; }
   const left = Date.parse(rec.issued_at) + DISPUTE_WINDOW_MS - nowMs;
   const raw = await store.get(rcptKeys.ctx(id));
   if (raw && left > 1000) await store.set(rcptKeys.ctx(id), raw, Math.floor(left / 1000));
   else await store.del(rcptKeys.ctx(id)); // past 90 days -> deleted now
   await store.del(rcptKeys.dispute(id));
-  await store.zadd(rcptKeys.log(), nowMs, `dispute_resolved:${id}:${nowMs}`, RECEIPT_TTL_S);
   return { ok: true, state: "resolved", ctx_expires_at: raw && left > 1000 ? new Date(nowMs + left).toISOString() : null };
 }

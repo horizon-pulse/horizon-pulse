@@ -62,6 +62,7 @@ beforeEach(() => {
   vi.stubEnv("CDP_API_KEY_ID", "test-id");
   vi.stubEnv("CDP_API_KEY_SECRET", "test-secret");
   store = new MemoryPremiumStore();
+  store.now = () => NOW; // Sentinel LOW-1: pin the memory store clock to the same NOW as the tests (no wall-clock drift)
   setPremiumStoreForTests(store);
   setSellerDdClockForTests(() => NOW);
   h.verify.mockReset().mockResolvedValue({ ok: true, payer: buyer.address });
@@ -330,7 +331,7 @@ describe("seller-dd D3 Counsel retention: 90-day window, real purge, dispute hol
 
   it("/premium-terms carries Counsel's dispute-window sentence verbatim", () => {
     vi.stubEnv("HP_PREMIUM_TIERS", "brief");
-    const s = "To handle disputes, the checked URL and payment address are kept in readable form for 90 days after a verdict and then deleted; after that, only hashes are kept, for 3 years. Disputes must be raised within 90 days of the verdict's checked_at time.";
+    const s = "To handle disputes, the checked URL and payment address are kept in readable form for 90 days after a verdict and then deleted; after that, only hashes are kept, for 3 years. Disputes must be raised within 90 days of the verdict's checked_at time. If a dispute is open, they are kept until it is resolved, then deleted.";
     expect(DD_DISPUTE_TERM).toBe(s);
     expect(renderToStaticMarkup(PremiumTermsPage())).toContain(s.replace("verdict's", "verdict&#x27;s"));
   });
@@ -384,6 +385,18 @@ describe("seller-dd D3 Counsel retention: 90-day window, real purge, dispute hol
     store.now = () => NOW + 90 * DAY + 1000;
     expect(await store.get(rcptKeys.ctx(v.id))).toBeNull(); // still purged at 90 days
     store.zadd = oz; store.set = os;
+  });
+
+  it("resolve: dispute_resolved log write fails -> 503, hold stays in place", async () => {
+    const v = await buy();
+    expect((await dispute(v.id, "open")).status).toBe(200);
+    const oz = store.zadd.bind(store);
+    store.zadd = async (k: string, sc: number, m: string, t: number) => { if (m.startsWith("dispute_resolved:")) throw new Error("log down"); return oz(k, sc, m, t); };
+    expect((await dispute(v.id, "resolve")).status).toBe(503);
+    expect(await store.get(rcptKeys.dispute(v.id))).toBeTruthy(); // still open
+    store.now = () => NOW + 200 * DAY;
+    expect(await store.get(rcptKeys.ctx(v.id))).toBeTruthy(); // still held past 90 days
+    store.zadd = oz;
   });
 
   it("dispute route: auth rules match recheck (401), flag off 404, bad action 400, open -> 200", async () => {
