@@ -446,6 +446,26 @@ export function mcpToolAnnotations(name: string): ToolAnnotations {
   return { readOnlyHint: !proxy, destructiveHint: proxy, idempotentHint: !proxy, openWorldHint: true };
 }
 
+/**
+ * F1 (Odin, Mastercard/Cloudflare e2e): the Cloudflare Agents SDK client (agents 0.29.0,
+ * withX402Client) only pays when a tool result has isError and _meta["x402/error"] with a
+ * non-empty accepts array; it ignores structuredContent. @x402/mcp puts the PaymentRequired
+ * in structuredContent + content only. This copies that same object into _meta["x402/error"]
+ * on payment-required results. content and structuredContent are left exactly as they were;
+ * any other result (data, handler errors) passes through untouched.
+ */
+export function addX402ErrorMeta<T>(result: T): T {
+  const r = result as { isError?: boolean; structuredContent?: unknown; _meta?: Record<string, unknown> } | null;
+  if (!r || r.isError !== true) return result;
+  const pr = r.structuredContent as { x402Version?: unknown; accepts?: unknown } | undefined;
+  if (!pr || typeof pr !== "object" || typeof pr.x402Version !== "number" || !Array.isArray(pr.accepts) || pr.accepts.length === 0) return result;
+  return { ...r, _meta: { ...(r._meta ?? {}), "x402/error": pr } } as T;
+}
+
+function withX402ErrorMeta<A extends unknown[], R>(fn: (...a: A) => R | Promise<R>): (...a: A) => Promise<R> {
+  return async (...a: A) => addX402ErrorMeta(await fn(...a));
+}
+
 export function buildMcpServer(): McpServer {
   const server = new McpServer({ name: "horizon-pulse", version: "1.0.0" });
   const resourceServer = getResourceServer();
@@ -466,7 +486,7 @@ export function buildMcpServer(): McpServer {
       // wrapper skips settlement on isError). Fire-and-forget; never affects the tool result.
       hooks: { onAfterSettlement: () => markMcpPayer() },
     });
-    server.tool(t.name, mcpToolDescription(t.name, t.opts), t.schema, mcpToolAnnotations(t.name), paid(async (args) => t.call(args as Record<string, unknown>)));
+    server.tool(t.name, mcpToolDescription(t.name, t.opts), t.schema, mcpToolAnnotations(t.name), withX402ErrorMeta(paid(async (args) => t.call(args as Record<string, unknown>))));
   }
   // FREE tools: no x402 wrapper, no challenge; counted as free, never in TOOLS (the paid list).
   for (const f of FREE_TOOLS) server.tool(f.name, f.description, f.schema, async (args) => f.call(args as Record<string, unknown>));

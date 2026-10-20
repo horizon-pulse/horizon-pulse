@@ -1,0 +1,11 @@
+{
+  "name": "hp-cf-agents-sdk-harness",
+  "private": true,
+  "description": "Test-only: the real Cloudflare Agents SDK MCP x402 client (agents 0.29.0), isolated so its MCP SDK peer (1.32.1) never touches the app's pinned @modelcontextprotocol/sdk 1.31.0. Used by tests/cf-agents-sdk-x402.test.ts.",
+  "type": "module",
+  "dependencies": {
+    "agents": "0.29.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "viem": "2.57.7"
+  }
+}
