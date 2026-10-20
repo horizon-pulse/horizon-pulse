@@ -98,7 +98,8 @@ function summarizeRequirements(pr: PaymentRequired): Json {
       network: a.network,
       asset: a.asset,
       amount: a.amount,
-      priceUsd: atomicToUsd(a.amount),
+      // XRPL accepts carry a decimal RLUSD amount (e.g. "0.002"), not 6-decimal atomic units: show it as-is.
+      priceUsd: /^\d+$/.test(String(a.amount)) ? atomicToUsd(a.amount) : `$${a.amount}`,
       payTo: a.payTo,
       maxTimeoutSeconds: a.maxTimeoutSeconds,
       extra: a.extra,

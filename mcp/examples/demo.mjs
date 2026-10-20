@@ -39,7 +39,7 @@ const wk = await (await fetch(`${BASE}/.well-known/x402`)).json();
 console.log(`GET ${BASE}/.well-known/x402 → ${wk.resources.length} paid operations`);
 for (const r of wk.resources) console.log(`  ${r}`);
 const llms = await (await fetch(`${BASE}/llms.txt`)).text();
-const llmsPayTo = (llms.match(/payTo:\s*`(0x[0-9a-fA-F]{40})`/) || [])[1];
+const llmsPayTo = (llms.match(/payTo:?\s*`(0x[0-9a-fA-F]{40})`/) || [])[1];
 const llmsMcp = (llms.match(/POST `\/mcp`[^\n]*/) || [""])[0];
 console.log(`GET ${BASE}/llms.txt → published payTo ${llmsPayTo}`);
 console.log(`  ${llmsMcp.slice(0, 120)}`);

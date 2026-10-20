@@ -104,7 +104,7 @@ export default function AgentsPage() {
                 Every route as a tool, <span>paid with a cap.</span>
               </h2>
               <p className="hp-lead">
-                The local MCP server (stdio, Node) exposes each route as a tool plus free <code>catalog</code>, <code>quote</code> and <code>demo</code> tools, and pays
+                The local MCP server (stdio, Node) exposes each multi-network route as a tool (the {premium.length ? "$1 verified brief is HTTP-only" : "premium tiers are HTTP-only"}) plus free <code>catalog</code>, <code>quote</code> and <code>demo</code> tools, and pays
                 the x402 challenge with the official x402 client from a wallet you configure.
               </p>
             </div>
