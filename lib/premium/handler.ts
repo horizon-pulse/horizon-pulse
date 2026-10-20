@@ -23,7 +23,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { hasCdpCredentials } from "@/lib/config";
 import { requestFingerprint } from "@/lib/request-fingerprint";
 import { claimKey, parseClaim, tryClaim, moveClaim, newOwner, releaseClaim, type Claim, type Held } from "./claim";
-import { legalBlock, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
+import { legalBlock, BRIEF_DESCRIPTION, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
 import { createJob, runJob, settleLanded } from "./jobs";
 import {
   ASYNC_MIN_REMAINING_S,
@@ -53,7 +53,7 @@ import { captureAllowed, captureBody } from "./capture";
 import { questionRefusal } from "./synthesis";
 import type { CaptureSink } from "./research";
 import { newReconcileId, recordReconcile, type ReconcileOutcome } from "./reconcile";
-import { runResearch } from "./research";
+import { briefPassTier, runResearch } from "./research";
 import { premiumStore, type PremiumStore } from "./store";
 import { asyncTierLive, premiumAsyncEnabled, premiumEnabled, projectedSeconds, ROUTE_BASE, SETTLE_RESERVE_S, tierFor, WORK_BUDGET_S, type PremiumRoute, type Tier } from "./tiers";
 
@@ -74,6 +74,7 @@ export function bareRouteResponse(route: PremiumRoute): NextResponse {
 }
 
 function description(x: Tier) {
+  if (x.id === "brief") return `${BRIEF_DESCRIPTION} No personal data in q.`;
   return `${x.route === "research" ? R1_DESCRIPTION : R2_DESCRIPTION} Tier ${x.id} ${x.priceUsd}.${x.route === "research" ? " Do not include personal data (private names, contact details, health or account information) in q." : ""}`;
 }
 
@@ -245,6 +246,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
       if (!c || c.s === "inflight" || c.s === "job") return inProgress();
       if (c.s === "unconfirmed" && x.mode === "sync") return redeem(store, req, x, d, v.input, rq, got.raw!, c, t0);
       if (c.s === "unconfirmed") return jsonError(409, conflictBody(null)); // LOW-B: never echo the reconcile_id
+      if (c.s === "declined") return jsonError(409, { error: "brief_declined", charged: false, message: "This payment authorization was already used for a brief that did not pass verification; it was never settled. Sign a new payment to ask again." });
       return jsonError(409, conflictBody(c.rc ?? null));
     }
     let held = got.held;
@@ -288,6 +290,12 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
         { status: 202, headers: { "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store" } },
       );
     }
+
+    // Hardened $1 brief (Michael 10/19): CHARGE ONLY ON PASS. Research runs after verify and BEFORE settle; a brief that
+    // does not pass briefPassTier() is never settled (the claim moves to "declined", nothing is charged, the signed
+    // authorization simply expires). Only a passing brief is settled; settle failures keep the existing unconfirmed/redeem
+    // path. A per-payer daily cap on declined briefs bounds unpaid research cost.
+    if (x.id === "brief") return await chargeOnPass(store, req, x, d, v.input, rq, held, t0);
 
     // Odin C1 + Sentinel item 3: settle before work, only if settle + projected work still fit the hard limit.
     const elapsed = (clock() - t0) / 1000;
@@ -335,6 +343,59 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
   }
 }
 
+export const BRIEF_DECLINE_CAP = 5;
+export const BRIEF_DECLINE_TTL_S = 86_400;
+const declineKey = (from: string) => `brief:declines:${from.toLowerCase()}:${new Date(clock()).toISOString().slice(0, 10)}`;
+async function chargeOnPass(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded, input: string, rq: string, held: Held, t0: number): Promise<NextResponse> {
+  const elapsed = (clock() - t0) / 1000;
+  if (elapsed + SETTLE_RESERVE_S + projectedSeconds(x, input) > SYNC_HARD_LIMIT_S) {
+    await releaseClaim(store, held);
+    return jsonError(503, { error: "time_budget_exceeded", charged: false }, { "Retry-After": "5" });
+  }
+  // Reserve one "decline" slot up front (atomic, capped); refunded when the brief passes.
+  const dk = declineKey(d.from!);
+  if (!(await store.spendReserve(dk, 1, BRIEF_DECLINE_CAP, BRIEF_DECLINE_TTL_S).catch(() => false))) {
+    await releaseClaim(store, held);
+    return jsonError(429, { error: "too_many_unverified_briefs", charged: false, message: `${BRIEF_DECLINE_CAP} briefs from this address did not pass verification today; nothing was charged for them. Retry tomorrow.` }, { "Retry-After": "3600" });
+  }
+  let result: unknown = null;
+  let why = "not_verified";
+  try {
+    result = await runResearch(x, input, t0 + (SYNC_HARD_LIMIT_S - SETTLE_RESERVE_S) * 1000, undefined, held.key);
+  } catch (e) {
+    why = researchFailureCode(e);
+  }
+  const tier = result ? briefGate(result) : null;
+  if (!tier) {
+    await moveClaim(store, held, { s: "declined" }).catch(() => null);
+    console.error(`[premium] brief declined, not charged: ${why} (tier ${x.id})`); // fixed code only
+    return jsonError(422, {
+      error: "brief_not_verified",
+      charged: false,
+      reason: (result as any)?.contract?.fail_reasons?.join(",") || why,
+      contract: "https://horizonpulse.dev/contracts/brief-verified",
+      // Spec §3 step 6: the failed brief is returned unpaid, with its reason (per-payer decline cap above limits abuse).
+      brief: (result as any)?.contract ?? null,
+      message: "This brief did not meet the published contract (at least 4 confirmed claims, every quote verbatim at its URL), so we did not charge you. Your payment authorization was not settled and will expire. See /contracts/brief-verified.",
+    });
+  }
+  await store.spendAdjust(dk, -1, BRIEF_DECLINE_TTL_S).catch(() => undefined);
+  const blk = await currentBlock();
+  if (blk === null) {
+    await releaseClaim(store, held); // not charged; the same authorization may be retried
+    return jsonError(503, { error: "chain_unavailable", charged: false }, { "Retry-After": "5" });
+  }
+  const s = await settlePayment(d, x);
+  if (!s.ok) {
+    const line = reconcile(s.kind === "timeout" ? "settle_timeout" : "settle_ambiguous", x, d, rq, s.tx);
+    await moveClaim(store, held, { s: "unconfirmed", rc: line.reconcile_id, blk }).catch(() => null);
+    return jsonError(s.kind === "timeout" ? 504 : 502, unconfirmedBody(line.reconcile_id, false, redeemMessage(line.reconcile_id, rq, d.to!, d.value!)));
+  }
+  markNonceSettled(d.from!, d.nonce!);
+  await moveClaim(store, held, { s: "settled" }).catch(() => null);
+  return okResponse(x, { ...(result as object), verification: { pass_tier: tier, charged_on_pass: true } }, s.tx, s.header);
+}
+
 export function premiumOptions(route: PremiumRoute, seg: string | undefined): NextResponse {
   if (!premiumEnabled()) return notFound();
   const x = tierFor(route, seg);
@@ -346,3 +407,9 @@ export function premiumOptions(route: PremiumRoute, seg: string | undefined): Ne
 }
 
 export { SETTLE_RESERVE_S };
+
+/** Test seam: settle/redeem flow tests stub the contract gate; production always uses briefPassTier (the contract). */
+let briefGate: (b: unknown) => ReturnType<typeof briefPassTier> = briefPassTier;
+export function setBriefGateForTests(fn: ((b: unknown) => ReturnType<typeof briefPassTier>) | null) {
+  briefGate = fn ?? briefPassTier;
+}

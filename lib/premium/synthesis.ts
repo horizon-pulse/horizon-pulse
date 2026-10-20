@@ -386,28 +386,10 @@ export async function synthesizeBrief<T extends Record<string, any>>(q: string, 
   if (kind === "when") answerV = answerV.filter((a) => dateValues(a.quote).length);
   if (kind === "number") answerV = answerV.filter((a) => [...factValues(a.quote)].some((f) => f.startsWith("n:")));
   if (!claimsV.length && !answerV.length) return fallback("nothing_verified");
-  // Odin ruling A+B (A): second non-reasoning call picks backing pairs from code-built strict candidates (KV spend cap,
-  // store:false, inside the sync budget). Picked pairs are re-verified by assemble(); any failure just skips the step.
-  let picked: Verified[][] = [];
-  const pairs = claimsV.some((qs: Verified[]) => qs.length > 1) ? [] : candidatePairs(q, extracted);
-  const left = deadline - (deps?.now ?? Date.now)();
-  if (pairs.length && left >= 2_500 && (await spend.reserve(PAIR_RESERVE_USD).catch(() => false))) {
-    let pa = PAIR_RESERVE_USD;
-    let pc = false;
-    try {
-      const user = `Question: ${sanitizeQuestion(q)}\n\n` + pairs.map((p: Verified[], i: number) => `<pair index="${i}">\nA (${domainOf(p[0].url)}): ${p[0].quote}\nB (${domainOf(p[1].url)}): ${p[1].quote}\n</pair>`).join("\n");
-      const cfg = llmConfig(env);
-      const call = deps?.pairModel ?? deps?.model ?? chatCompletionsCall(cfg.base);
-      pc = true;
-      const out = await call({ system: PAIR_SYSTEM, user, schema: PAIR_SCHEMA, model: cfg.model, key: env.PREMIUM_LLM_API_KEY!.trim(), signal: AbortSignal.timeout(Math.min(PAIR_TIMEOUT_MS, left - 1_000)) });
-      if (typeof out.inputTokens === "number" && typeof out.outputTokens === "number") pa = (out.inputTokens * LLM_PRICE.inPerM + out.outputTokens * LLM_PRICE.outPerM) / 1e6;
-      const idx = JSON.parse(out.text)?.picks;
-      if (Array.isArray(idx)) picked = [...new Set(idx)].filter((i: unknown) => Number.isInteger(i) && (i as number) >= 0 && (i as number) < pairs.length).slice(0, 3).map((i) => pairs[i as number]);
-    } catch {
-      console.error("[premium][llm] pair picker skipped"); // fixed code only
-    }
-    await spend.reconcile(PAIR_RESERVE_USD, pc ? pa : 0).catch(() => undefined);
-  }
+  // Hardened spec §3 step 3: candidate pairs are built AND chosen by code (deterministic order; the model never selects
+  // evidence). Up to 3 strict pairs are added as confirmed claims, ahead of the model's claims. (Replaces the 3457058
+  // pair-picker model call.)
+  const picked: Verified[][] = candidatePairs(q, extracted).slice(0, 3);
   if (picked.length) {
     const mains = new Set(picked.map((p) => p[0].quote));
     claimsV = [...picked, ...claimsV.filter((qs: Verified[]) => !mains.has(qs[0].quote))].slice(0, 5);
@@ -479,6 +461,24 @@ export function consistentValues(extracted: ParallelResult[], pool: { url: strin
   }
   return out.slice(0, 2);
 }
+/**
+ * Hardened brief: administered values (policy rates) have ONE authoritative source, the issuing authority. Shown with
+ * source_tier "issuing_authority", never as a cross-publisher confirmation. "documents" counts distinct pages from the same
+ * authority among the extracted pages (Claude §4.6: primary publication + a second document from the same authority).
+ */
+export const ISSUING_AUTHORITIES: { topic: RegExp; name: string; domains: string[] }[] = [
+  { topic: /\b(federal funds|fed funds|fomc|discount rate|interest on reserve|policy rate)\b/i, name: "Federal Reserve System", domains: ["federalreserve.gov", "newyorkfed.org", "stlouisfed.org"] },
+];
+export type Authority = { source_tier: "issuing_authority"; authority: string; url: string; documents: number; note: string };
+export function issuingAuthority(q: string, answerUrls: string[], extracted: ParallelResult[]): Authority | null {
+  const a = ISSUING_AUTHORITIES.find((x) => x.topic.test(q));
+  if (!a) return null;
+  const mine = (u: string) => { const d = domainOf(u) ?? ""; return a.domains.some((x) => d === x || d.endsWith(`.${x}`)); };
+  const url = answerUrls.find(mine);
+  if (!url) return null;
+  const documents = new Set(extracted.map((r) => r.url).filter(mine)).size;
+  return { source_tier: "issuing_authority", authority: a.name, url, documents, note: "Set by the issuing authority and quoted from its own publication; one authoritative source, not a cross-publisher confirmation." };
+}
 export function sharedFact(a: Set<string>, b: Set<string>): boolean {
   for (const x of a) for (const y of b) {
     if (x === y) return true;
@@ -513,6 +513,16 @@ function backingPool(extracted: ParallelResult[]): Verified[] {
     .filter((v) => v.quote.length >= 12 && okClaim(v.quote) && !isListFragment(v.quote));
 }
 export const PAIR_MAX_CANDIDATES = 12;
+/** Spec §3: > 60% token overlap (Jaccard over content words) = near-duplicate (syndicated copy), never a second source. */
+export function nearDuplicate(a: string, b: string): boolean {
+  // All word tokens (stopwords included): wire copies match almost word-for-word; independent paraphrases of the
+  // same fact share the value and subject words but not the phrasing.
+  const words = (t: string) => new Set(norm(t).split(/[^a-z0-9$%.]+/).filter(Boolean));
+  const ta = words(a), tb = words(b);
+  const inter = [...ta].filter((w) => tb.has(w)).length;
+  const uni = new Set([...ta, ...tb]).size;
+  return uni > 0 && inter / uni > 0.6;
+}
 /**
  * Odin ruling A+B (A): code-built candidate backing pairs. Every pair already meets the strict rules (two publishers, both
  * sentences name a subject term, same value + shared topic word, or definition-to-definition / same person); the model
@@ -525,12 +535,17 @@ export function candidatePairs(q: string, extracted: ParallelResult[], max = PAI
   const rel = backingPool(extracted).filter((v) => subjectCoverage(v.quote, subj) > 0);
   const out: Verified[][] = [];
   const seen = new Set<string>();
-  for (const a of rel) for (const b of rel) {
+  const usedMain = new Set<string>();
+  // Deterministic: by publisher domain, then page order (offset) - spec §4.
+  const order = rel.map((v, i) => ({ v, i })).sort((x, y) => (pub(x.v.url) < pub(y.v.url) ? -1 : pub(x.v.url) > pub(y.v.url) ? 1 : x.i - y.i)).map((x) => x.v);
+  for (const a of order) for (const b of order) {
     if (out.length >= max) return out;
-    if (pub(a.url) >= pub(b.url) || !sameFact(a, b) || !sameFact(b, a)) continue;
+    if (pub(a.url) >= pub(b.url) || usedMain.has(a.quote) || !sameFact(a, b) || !sameFact(b, a)) continue;
+    if (nearDuplicate(a.quote, b.quote)) continue; // wire-syndicated copy is not a second source
     const k = `${a.quote}|${b.quote}`;
     if (seen.has(k)) continue;
     seen.add(k);
+    usedMain.add(a.quote);
     out.push([a, b]);
   }
   return out;
@@ -652,21 +667,23 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
   const confirmFor = (qs: Verified[]) => {
     const by = new Set<string>();
     const vals = new Set<string>();
+    const bk: Verified[] = []; // the backing quotes themselves, so the evidence object can carry the secondary quote
     for (const a of qs) {
       const fa = factValues(a.quote);
       for (const b of allVerified) {
         if (pub(b.url) === pub(a.url) || sharedOwn(a, b) < 1) continue; // same value AND same topic word
-        for (const f of factValues(b.quote)) if (fa.has(f)) (by.add(pub(b.url)), vals.add(f.slice(2)));
+        for (const f of factValues(b.quote)) if (fa.has(f)) (by.add(pub(b.url)), vals.add(f.slice(2)), bk.includes(b) || bk.push(b));
       }
     }
-    return by.size ? { confirmed_by: [...by], confirmed_values: [...vals] } : {};
+    return by.size ? { confirmed_by: [...by], confirmed_values: [...vals], _bk: bk } : {};
   };
   const claims = claimsV.map((qs: Verified[]) => {
     const contra = qs.some(isContra);
     const backing = contra ? [] : [...new Set(qs.slice(1).map((v) => pub(v.url)))];
-    const cf = contra ? {} : (confirmFor(qs) as { confirmed_by?: string[]; confirmed_values?: string[] });
+    const { _bk, ...cf } = contra ? ({} as any) : (confirmFor(qs) as { confirmed_by?: string[]; confirmed_values?: string[]; _bk?: Verified[] });
     const by = [...new Set([...(cf.confirmed_by ?? []), ...backing])];
-    return { claim: qs[0].quote, snippets: qs.map(snip), sources: [...new Set(qs.map((v) => srcN(v.url)))], ...cf, ...(by.length ? { confirmed_by: by } : {}), ...(contra ? { contradicted: true } : {}) };
+    const extra = qs.length > 1 ? [] : ((_bk ?? []) as Verified[]).filter((b) => !qs.some((v) => v.quote === b.quote)).slice(0, 1);
+    return { claim: qs[0].quote, snippets: [...qs, ...extra].map(snip), sources: [...new Set(qs.map((v) => srcN(v.url)))], ...cf, ...(by.length ? { confirmed_by: by } : {}), ...(contra ? { contradicted: true } : {}) };
   });
   const pubsOf = (c: any) => c.contradicted ? new Set<string>() : new Set([pub(sources[c.sources[0] - 1].url), ...c.sources.map((n: number) => pub(sources[n - 1].url)), ...(c.confirmed_by ?? [])]);
   const unconfirmed = claims.filter((c: any) => pubsOf(c).size < 2).map((c: any) => c.claim);
@@ -675,8 +692,11 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
     // Replay #3: an answer line that IS a claim's main quote inherits that claim's verified backing (never if contradicted).
     const twin = claims.find((c: any) => c.claim === v.quote && !c.contradicted && c.confirmed_by?.length);
     const by = [...new Set([...((cf as any).confirmed_by ?? []), ...(twin?.confirmed_by ?? [])])];
-    return { text: v.quote, snippets: [snip(v)], sources: [srcN(v.url)], confirmed: by.length > 0, ...(by.length ? { confirmed_by: by } : {}) };
+    const bk = (((cf as any)._bk ?? []) as Verified[]).slice(0, 1);
+    const twinSn: string[] = twin ? twin.snippets.slice(1, 2) : [];
+    return { text: v.quote, snippets: [snip(v), ...(bk.length ? bk.map(snip) : twinSn)], sources: [srcN(v.url)], confirmed: by.length > 0, ...(by.length ? { confirmed_by: by } : {}) };
   });
+  const authority = issuingAuthority(q, answerV.map((v) => v.url), extracted);
   const consistent = isLiveValueQuestion(q) ? consistentValues(extracted, pool, pub, (deps?.now ?? Date.now)()).map((c) => ({
     status: "consistent" as const,
     values: c.map((v) => v.raw),
@@ -696,6 +716,7 @@ function assemble<T extends Record<string, any>>(code: T, q: string, kind: Retur
     snippets,
     claims,
     ...(consistent.length ? { consistent, consistent_note: CONSISTENT_NOTE } : {}),
+    ...(authority ? { authority } : {}),
     could_not_confirm: unconfirmed,
     could_not_confirm_note: unconfirmed.length ? "These claims appear on only one independent publisher; we could not confirm them elsewhere." : UNCONFIRMED_EMPTY_NOTE,
     ai_note: AI_SELECTION_NOTE,

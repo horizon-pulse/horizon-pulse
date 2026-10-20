@@ -1,0 +1,172 @@
+/**
+ * Hardened $1 verified brief: outcome contract + response shape (spec 2026-10-19-claude-hardened-brief-spec.md §1-§2).
+ * Pure code over the assembled brief: builds one evidence object per claim, sets each claim's status/tier, counts,
+ * and the brief's pass/fail. `status: "pass"` is the ONLY thing that lets the handler settle (settle-after-produce).
+ */
+import { createHash } from "node:crypto";
+import type { ParallelResult } from "./parallel";
+import { norm, pageSentences } from "./synthesis";
+import { domainOf, publisherOf } from "./research";
+
+export const CONTRACT_URL = "https://horizonpulse.dev/contracts/brief-verified";
+export const CONTRACT_MIN_CONFIRMED = 4;
+export const CONTRACT_MIN_CLAIMS = 3;
+export const CONTRACT_MAX_CLAIMS = 8;
+export const QUOTE_CAP = 300;
+/** Fixed, versioned response schema (bump on any breaking change; documented at CONTRACT_URL). */
+export const BRIEF_SCHEMA_VERSION = "brief-verified/1";
+
+/** §1, published verbatim at /contracts/brief-verified. */
+export const OUTCOME_CONTRACT = [
+  "1. A brief contains an answer (names the question's subject) and 3–8 claims.",
+  "2. Every claim carries a verbatim quote from a public page, with the URL, the fetch time, the page's body hash, and the quote's offset in the body. Quotes are capped at 300 characters and attributed.",
+  "3. A claim is confirmed only when one of these holds:",
+  "   - publisher-confirmed — a second, independent publisher states the same value or date plus a shared topic word (code-checked; wire-syndicated copy rejected by near-duplicate test);",
+  "   - onchain-confirmed — two independent nodes or explorers report the same value at the same block (gas, supply, balances, tx state);",
+  "   - official — the issuing authority's own primary publication plus a second document from the same authority, with the effective date (administered rates, statutes, regulators' notices).",
+  "4. consistent (two dated sources within tolerance) is shown but never counted as confirmed.",
+  "5. A brief passes when at least 4 claims are confirmed and every claim's quote verifies verbatim at its URL at delivery time. A brief that does not pass is not charged (settle after produce).",
+  "6. Refund: if any confirmed claim is later shown to lack its second source, the whole brief is refunded to the payer address on the receipt within 24 hours, and the correction is logged publicly.",
+  "7. Every brief carries a signed receipt (Signed Offers & Receipts shape) with the brief's body hash, and every claim carries its evidence object.",
+  "8. No financial, legal or medical recommendations. Briefs describe; they do not advise.",
+].join("\n");
+
+export type Evidence = { url: string; quote: string; fetched_at: string; body_sha256: string; offset: number; publisher: string };
+export type ContractClaim = {
+  text: string;
+  status: "confirmed" | "consistent" | "unconfirmed";
+  tier: "publisher-confirmed" | "onchain-confirmed" | "official" | null;
+  primary: Evidence | null;
+  secondary: Evidence | null;
+  match: { value?: string; unit?: string; date?: string; topic?: string } | null;
+  onchain: { value: string; unit: string; block: number; chain: string; nodes: string[]; observed_at: string } | null;
+  /** Odin checklist 1: machine-readable evidence array (one entry per source behind the claim). */
+  evidence: EvidenceItem[];
+};
+export type EvidenceItem =
+  | { kind: "quote"; quote: string; url: string; retrieved_at: string; publisher: string; body_sha256: string; offset: number; official_url?: string }
+  | { kind: "onchain"; chain: string; block: number; block_timestamp: string; method: string; contract?: string; value: string; unit: string; node: string; retrieved_at: string };
+export type ContractBrief = {
+  question: string;
+  answer: string;
+  status: "pass" | "fail";
+  fail_reasons: string[];
+  claims: ContractClaim[];
+  counts: { confirmed: number; consistent: number; unconfirmed: number };
+  tiers: Record<"publisher-confirmed" | "onchain-confirmed" | "official", number>;
+  method: string;
+  meta: { version: "1"; schema: typeof BRIEF_SCHEMA_VERSION };
+};
+
+const sha = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
+const pub = (u: string) => publisherOf(domainOf(u) ?? u);
+const ISO_DATE = /\b(19|20)\d\d-\d\d-\d\d\b/;
+const MONTH_DATE = /\b(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2},? (19|20)\d\d\b/;
+const effectiveDate = (t: string) => {
+  const m = t.match(ISO_DATE) ?? t.match(MONTH_DATE);
+  if (!m) return undefined;
+  const d = new Date(`${m[0]} UTC`);
+  return Number.isNaN(d.getTime()) ? m[0] : d.toISOString().slice(0, 10);
+};
+
+/**
+ * Body = the page's extracted text, markdown-stripped and normalised (the exact text the verifier matches against);
+ * body_sha256 hashes that text, offset is the quote's index in it. A quote that is not found returns null (fails verify).
+ */
+function evidence(url: string, quote: string, pageText: Map<string, string>, fetchedAt: string): Evidence | null {
+  const body = pageText.get(url);
+  const q = quote.replace(/ …$/, "");
+  if (!body) return null;
+  const offset = body.indexOf(norm(q));
+  if (offset < 0) return null;
+  return { url, quote: q, fetched_at: fetchedAt, body_sha256: sha(body), offset, publisher: pub(url) };
+}
+
+const quoteItem = (e: Evidence | null, official?: string): EvidenceItem[] =>
+  e ? [{ kind: "quote", quote: e.quote, url: e.url, retrieved_at: e.fetched_at, publisher: e.publisher, body_sha256: e.body_sha256, offset: e.offset, ...(official ? { official_url: official } : {}) }] : [];
+
+export function toContract(q: string, b: any, extracted: ParallelResult[], fetchedAt: string): ContractBrief {
+  const { pageText } = pageSentences(extracted, q, Number.MAX_SAFE_INTEGER);
+  const sources: any[] = Array.isArray(b?.sources) ? b.sources : [];
+  const snippets: any[] = Array.isArray(b?.snippets) ? b.snippets : [];
+  const snipById = (id: string) => snippets.find((s) => s.id === id);
+  const urlOf = (s: any) => sources[s.source - 1]?.url as string | undefined;
+  const reasons: string[] = [];
+  let verbatimOk = true;
+  const ev = (s: any): Evidence | null => {
+    const u = s && urlOf(s);
+    const e = u ? evidence(u, s.text, pageText, fetchedAt) : null;
+    if (!e) verbatimOk = false;
+    return e;
+  };
+  const auth = b?.authority?.source_tier === "issuing_authority" && b.authority.documents >= 2 ? b.authority : null;
+  const claims: ContractClaim[] = [];
+  const seen = new Set<string>();
+  const add = (c: ContractClaim) => {
+    const k = norm(c.text);
+    if (seen.has(k)) return;
+    seen.add(k);
+    claims.push(c);
+  };
+  // On-chain reads first: they are the source of record for live values.
+  for (const r of b?.onchain?.reads ?? []) {
+    const chain = r.chain === "ethereum" ? "Ethereum" : "Base";
+    add({
+      text: r.unit === "gwei" ? `Ethereum mainnet base fee was ${r.value} gwei at block ${r.block} (${r.timestamp}).` : `USDC totalSupply() on ${chain} was ${r.value} USDC at block ${r.block} (${r.timestamp}).`,
+      status: r.confirmed ? "confirmed" : "unconfirmed",
+      tier: r.confirmed ? "onchain-confirmed" : null,
+      primary: null,
+      secondary: null,
+      match: { value: r.value, unit: r.unit, date: String(r.timestamp).slice(0, 10), topic: r.unit === "gwei" ? "base fee" : "USDC supply" },
+      onchain: { value: r.value, unit: r.unit, block: r.block, chain: r.chain, nodes: r.nodes ?? [], observed_at: r.timestamp },
+      evidence: (r.nodes ?? []).map((node: string) => ({ kind: "onchain" as const, chain: r.chain, block: r.block, block_timestamp: r.timestamp, method: r.method, ...(r.contract ? { contract: r.contract } : {}), value: r.value, unit: r.unit, node, retrieved_at: b.onchain.retrieved_at ?? fetchedAt })),
+    });
+  }
+  const tooLong = (sn: any) => !!sn && String(sn.text).replace(/ …$/, "").length > QUOTE_CAP;
+  const fromVerified = (text: string, ids: string[], by: string[] | undefined, contradicted: boolean, values?: string[]) => {
+    // Quote cap (§1.2): a claim whose main quote is over 300 characters is left out of the contract view (not quoted).
+    const ss = ids.map(snipById).filter(Boolean).filter((sn, i) => i === 0 || !tooLong(sn));
+    if (!ss.length || tooLong(ss[0])) return;
+    const primary = ev(ss[0]);
+    const p0 = primary?.publisher;
+    const sec = ss.slice(1).find((s) => { const u = urlOf(s); return u && pub(u) !== p0; });
+    const secondary = sec ? ev(sec) : null;
+    const pubConfirmed = !contradicted && !!by?.length && !!secondary;
+    const official = !pubConfirmed && !contradicted && !!auth && !!primary && primary.url === auth.url && !!effectiveDate(text);
+    add({
+      text,
+      status: pubConfirmed || official ? "confirmed" : "unconfirmed",
+      tier: pubConfirmed ? "publisher-confirmed" : official ? "official" : null,
+      primary,
+      secondary: pubConfirmed ? secondary : null,
+      match: pubConfirmed ? { value: values?.[0], topic: undefined } : official ? { date: effectiveDate(text), topic: auth.authority } : null,
+      onchain: null,
+      evidence: [...quoteItem(primary, official ? auth.url : undefined), ...(pubConfirmed ? quoteItem(secondary) : [])],
+    });
+  };
+  for (const c of b?.claims ?? []) fromVerified(c.claim, c.snippets ?? [], c.confirmed_by, !!c.contradicted, c.confirmed_values);
+  for (const l of b?.answer?.lines ?? []) if (l?.snippets?.length) fromVerified(l.text, l.snippets, l.confirmed_by, false);
+  for (const c of b?.consistent ?? []) {
+    const [s1, s2] = c.snippets ?? [];
+    const p1 = ev(s1), p2 = ev(s2);
+    add({ text: s1?.text ?? c.range, status: "consistent", tier: null, primary: p1, secondary: p2, match: { value: c.range }, onchain: null, evidence: [...quoteItem(p1), ...quoteItem(p2)] });
+  }
+  const kept = claims.slice(0, CONTRACT_MAX_CLAIMS);
+  const counts = { confirmed: 0, consistent: 0, unconfirmed: 0 };
+  const tiers = { "publisher-confirmed": 0, "onchain-confirmed": 0, official: 0 };
+  for (const c of kept) {
+    counts[c.status]++;
+    if (c.tier) tiers[c.tier]++;
+  }
+  const answer = String(b?.answer?.lines?.[0]?.text ?? b?.onchain?.line ?? "").trim();
+  if (!answer) reasons.push("no_answer");
+  if (answer.split(/\s+/).length > 60) reasons.push("answer_over_60_words");
+  if (kept.length < CONTRACT_MIN_CLAIMS) reasons.push("fewer_than_3_claims");
+  if (counts.confirmed < CONTRACT_MIN_CONFIRMED) reasons.push(`confirmed_${counts.confirmed}_of_${CONTRACT_MIN_CONFIRMED}`);
+  if (!verbatimOk) reasons.push("quote_not_verbatim_at_url");
+  // Odin checklist 2: every claim must carry evidence; a confirmed claim needs two items (2 publishers / 2 nodes / authority + date).
+  if (kept.some((c) => !c.evidence.length)) reasons.push("claim_missing_evidence");
+  if (kept.some((c) => c.status === "confirmed" && c.tier !== "official" && c.evidence.length < 2)) reasons.push("confirmed_claim_missing_second_evidence");
+  if (typeof b?.synthesis === "string" && !b.synthesis.startsWith("llm_selected_verified") && !b?.onchain) reasons.push(`synthesis_${b.synthesis}`);
+  return { question: q, answer, status: reasons.length ? "fail" : "pass", fail_reasons: reasons, claims: kept, counts, tiers, method: CONTRACT_URL, meta: { version: "1", schema: BRIEF_SCHEMA_VERSION } };
+}

@@ -14,7 +14,7 @@
 import { randomBytes } from "node:crypto";
 import type { PremiumStore } from "./store";
 
-export type ClaimState = "inflight" | "job" | "settled" | "unconfirmed" | "conflict" | "redeemed";
+export type ClaimState = "inflight" | "job" | "settled" | "unconfirmed" | "conflict" | "redeemed" | "declined";
 export type Claim = { s: ClaimState; o: string; rq: string; at: number; rc?: string; job?: string; tier?: string; blk?: number | null };
 
 export const CLAIM_TTL_MS: Record<ClaimState, number> = {
@@ -24,6 +24,7 @@ export const CLAIM_TTL_MS: Record<ClaimState, number> = {
   unconfirmed: 30 * 86_400_000,
   conflict: 48 * 3600_000,
   redeemed: 48 * 3600_000,
+  declined: 48 * 3600_000, // $1 brief did not pass its bar: never settled, this authorization is not reused
 };
 
 export const claimKey = (from: string, nonce: string) => `claim:${from.toLowerCase()}:${nonce.toLowerCase()}`;

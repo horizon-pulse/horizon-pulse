@@ -87,7 +87,18 @@ export async function parallelSearch(objective: string, queries: string[], maxRe
  * Parallel v1 /v1/extract advanced_settings.fetch_policy (max_age_seconds min 600; cache fallback kept on). No surcharge
  * is listed for live fetch (Extract is $1 / 1,000 URLs); it adds latency, so it is bounded by LIVE_FETCH_TIMEOUT_S.
  */
-export const LIVE_FETCH_ALLOWLIST = ["etherscan.io", "usdc.org"] as const;
+// Hardened spec §3 step 1b: never read Etherscan / usdc.org HTML; live values come from on-chain reads (onchain.ts).
+// The live-fetch mechanism stays, with an EMPTY allowlist.
+export const LIVE_FETCH_ALLOWLIST: readonly string[] = [];
+export const EXTRACT_NEVER = ["etherscan.io", "usdc.org"] as const;
+export const extractAllowed = (url: string) => {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return !EXTRACT_NEVER.some((d) => h === d || h.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+};
 export const LIVE_FETCH_TIMEOUT_S = 6;
 export const liveFetchAllowed = (url: string) => {
   try {

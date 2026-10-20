@@ -4,7 +4,9 @@
  * our own; Parallel output is itself AI/ML-generated, so public copy never says "no AI".
  * Heuristics are labelled as such in the output; nothing here is a verdict.
  */
-import { parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
+import { toContract } from "./contract";
+import { extractAllowed, parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
+import { onchainTopic, readOnchain, type OnchainFact } from "./onchain";
 import type { Tier } from "./tiers";
 import { CONSISTENT_WINDOW_MS, isLiveValueQuestion, subjectCoverage, subjectTerms as questionSubjectTerms, synthesizeBrief } from "./synthesis";
 
@@ -443,13 +445,46 @@ export async function briefSearch(q: string, queries: string[], perSearch: numbe
   const seen = new Set(out.map((r) => r.url));
   return [...out, ...fresh.filter((r) => !seen.has(r.url))];
 }
+/** Live on-chain value (source of record) leads the brief when the question asks for one. */
+export function attachOnchain<T extends Record<string, any>>(brief: T, chain: OnchainFact | null): T & { onchain?: OnchainFact } {
+  return chain ? { ...brief, onchain: chain } : brief;
+}
+/**
+ * Hardened $1 brief pass rule (charge only on pass). A brief passes when it answers (an answer line naming the subject, or
+ * an on-chain read) AND carries at least one evidence tier: a strictly confirmed claim/answer (two publishers, same value),
+ * a 'consistent' live-value pair, an on-chain read, or an issuing-authority publication with a second document from the
+ * same authority. Every quote in it was already verified verbatim by synthesis.
+ */
+export type PassTier = "confirmed" | "consistent" | "onchain" | "issuing_authority";
+export function briefPassTier(b: any): PassTier | null {
+  if (!b || typeof b !== "object") return null;
+  // Hardened spec: the published contract decides. Without a passing contract view, nothing is charged.
+  if (b.contract) {
+    if (b.contract.status !== "pass") return null;
+    const t = b.contract.tiers ?? {};
+    return t["publisher-confirmed"] ? "confirmed" : t["onchain-confirmed"] ? "onchain" : t.official ? "issuing_authority" : null;
+  }
+  return null;
+}
+/** Pre-contract tiering (kept for reporting only; never used to settle). */
+export function legacyPassTier(b: any): PassTier | null {
+  if (!b || typeof b !== "object") return null;
+  if (b.onchain?.source_tier === "onchain" && Array.isArray(b.onchain.reads) && b.onchain.reads.length) return "onchain";
+  const llm = typeof b.synthesis === "string" && b.synthesis.startsWith("llm_selected_verified");
+  const lines = Array.isArray(b.answer?.lines) ? b.answer.lines : [];
+  if (!llm || !lines.length) return null;
+  if (lines.some((l: any) => l.confirmed) || (Array.isArray(b.claims) && b.claims.some((c: any) => c.confirmed_by?.length && !c.contradicted))) return "confirmed";
+  if (Array.isArray(b.consistent) && b.consistent.length) return "consistent";
+  if (b.authority?.source_tier === "issuing_authority" && b.authority.documents >= 2) return "issuing_authority";
+  return null;
+}
 export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N, q?: string, now: number = Date.now()): string[] {
   const pubs = new Set<string>();
   const out: string[] = [];
   const seen: ParallelResult[] = [];
   for (const r of q ? rankExtractCandidates(found, q, now) : found) {
     const d = domainOf(r.url);
-    if (!d || /\.pdf(\?|$)/i.test(r.url)) continue;
+    if (!d || /\.pdf(\?|$)/i.test(r.url) || !extractAllowed(r.url)) continue;
     if (seen.some((k) => domainOf(k.url) !== d && isSyndicated(k, r))) continue;
     seen.push(r);
     const p = publisherOf(d);
@@ -471,6 +506,8 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
   const perSearch = x.id === "brief" ? 6 : Math.max(3, Math.ceil(x.reads / Math.max(1, queries.length)));
   const found: ParallelResult[] = [];
   // One Parallel search call carries up to 5 queries; a tier's search units cap the number of queries sent.
+  const topic = x.id === "brief" ? onchainTopic(q) : null;
+  const chainP: Promise<OnchainFact | null> = topic ? readOnchain(topic, deadline) : Promise.resolve(null);
   if (x.id === "brief") found.push(...(await briefSearch(q, queries, perSearch, deadline)));
   else for (let i = 0; i < queries.length; i += 5) {
     found.push(...(await parallelSearch(q, queries.slice(i, i + 5), Math.min(20, perSearch * Math.min(5, queries.length - i)), deadline)));
@@ -481,7 +518,10 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
     const read = withSearchDates(urls.length ? await parallelExtract(q, urls, deadline).catch(() => [] as ParallelResult[]) : [], found);
     if (capture) capture.data = { search: found, extract: read };
     const code = compile(x, q, found, undefined, read);
-    return await synthesizeBrief(q, code, read, deadline, jobKey);
+    const [brief, chain] = await Promise.all([synthesizeBrief(q, code, read, deadline, jobKey), chainP]);
+    const full = attachOnchain(brief, chain);
+    // Hardened spec §1-§2: the contract view (evidence object per claim, pass/fail). Only status "pass" settles.
+    return { ...full, contract: toContract(q, full, read, new Date().toISOString()) };
   }
   const urls = [...new Set(found.map((r) => r.url))].slice(0, x.reads);
   const read = await parallelExtract(q, urls, deadline);

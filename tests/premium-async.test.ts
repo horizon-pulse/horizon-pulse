@@ -29,7 +29,7 @@ import { setParallelForTests } from "@/lib/premium/parallel";
 import { BUYER_TERMS, WATCH_TERMS, TECHNICAL_NOTES, RECONCILE_RETENTION_S, PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT } from "@/lib/premium/copy";
 import { CAP_EXEMPT_OUTCOMES, recordReconcile, RECONCILE_WRITE_CAP_PER_DAY, reconcileWriteStats, flushReconcileForTests, setReconcileForTests, storedFingerprint, type ReconcileLine } from "@/lib/premium/reconcile";
 import { MemoryPremiumStore, premiumPrefix, setPremiumStoreForTests, UpstashPremiumStore, type PremiumStore } from "@/lib/premium/store";
-import { setPremiumClockForTests } from "@/lib/premium/handler";
+import { setBriefGateForTests, setPremiumClockForTests } from "@/lib/premium/handler";
 import { settleLanded, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S, AUTH_USED_TOPIC, FIRST_DELIVERABLE_BUDGET_MS, JOB_KEYS, loadJob, runJob, setJobClockForTests, setJobRpcForTests, stopWatch, cronSweep } from "@/lib/premium/jobs";
 import { ARCHIVE_CONTEXT_CHARS, ARCHIVE_TEXT_CAP_BYTES, matchSnippet, noArchive, robotsAllows, setArchiveFetchForTests } from "@/lib/premium/archive";
 import { DAY_MS, dayWindow, resembles, setWatchDepsForTests, watchRefundAtomic } from "@/lib/premium/watch";
@@ -95,6 +95,7 @@ async function drainAfters() {
 const EXCERPT = "The x402 protocol lets an HTTP server answer 402 Payment Required and settle a stablecoin payment in the same request cycle.";
 
 beforeEach(() => {
+  setBriefGateForTests((b) => (b ? "confirmed" : null)); // legacy settle/redeem flow tests: contract gate stubbed to pass
   vi.unstubAllEnvs();
   afters.length = 0;
   now = Date.now();
@@ -568,14 +569,17 @@ describe("Sentinel SP-RACE-2 / MEDIUM-1 / LOW-1 / item 4, Odin C1 / C4", () => {
   });
   describe("redeem window (Odin 10/19)", () => {
     async function failedFirst(q: string) {
-      setParallelForTests({ fetch: (async () => new Response("x", { status: 422 })) as never });
+      // Charge-on-pass: brief work runs BEFORE settle, so a post-settle work failure can no longer happen on the sync
+      // brief; the redeemable claim is seeded by a settle timeout (unconfirmed) that later proves landed on-chain.
+      settleBehaviour = () => new Promise((_r, rej) => rej(Object.assign(new Error("timed out"), { name: "TimeoutError" })));
       const h = await payment();
       const first = (await (await call("brief", q, { "payment-signature": h })).json()) as any;
-      expect(first.status).toBe("charged_not_delivered");
-      setParallelForTests({ fetch: (async () => new Response(JSON.stringify({ results: [{ url: "https://a.example/", excerpts: ["e"] }] }))) as never });
+      expect(first.reconcile_id).toBeTruthy();
+      rpcAnswer = "used";
+      logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
       return { h, first };
     }
-    it("(1) expired window + valid payer proof on a charged_not_delivered claim -> redeem succeeds (200)", async () => {
+    it("(1) expired window + valid payer proof on a redeemable (unconfirmed, landed) claim -> redeem succeeds (200)", async () => {
       on();
       const { h, first } = await failedFirst("q=late%20redeem");
       now += 2 * 3600_000; // auth validBefore (now+1800 s) long gone
@@ -927,6 +931,7 @@ describe("delta 3: Sentinel LOW-A..D", () => {
   it("LOW-B: mismatched redeems -> 409 without reconcile_id; one deduped redeem_mismatch reconcile + HIGH per claim", async () => {
     const { h, first } = await unconfirmed("q=low%20b%20test");
     const before = reconciles.length;
+    const pc = parallelCalls.length; // charge-on-pass: the first call's research ran before its (timed-out) settle
     const other = privateKeyToAccount(generatePrivateKey());
     const attempts = [
       call("brief", "q=other%20request", { "payment-signature": h }),
@@ -941,7 +946,7 @@ describe("delta 3: Sentinel LOW-A..D", () => {
     }
     const mm = reconciles.slice(before).filter((l) => l.outcome === "redeem_mismatch");
     expect(mm).toHaveLength(1);
-    expect(parallelCalls.length).toBe(0);
+    expect(parallelCalls.length).toBe(pc);
   });
   it("LOW-C: a settle timeout is not a strike until confirmed failed; a timeout that lands later leaves no strike", async () => {
     on();

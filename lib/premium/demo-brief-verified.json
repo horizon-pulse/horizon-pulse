@@ -1,0 +1,195 @@
+{
+ "recording": true,
+ "recorded_at": "2026-10-20T03:10:00Z",
+ "note": "A stored real brief from an offline replay of our own test question, shown as a recording of the response shape (schema brief-verified/1). It did not meet the contract (fewer than 4 confirmed claims), so a buyer would not have been charged for it.",
+ "question": "What is EIP-4844",
+ "answer": "EIP-4844, or Proto-Danksharding, is a pivotal proposal to enhance Ethereum’s scalability and data availability.",
+ "status": "fail",
+ "fail_reasons": [
+  "confirmed_2_of_4"
+ ],
+ "claims": [
+  {
+   "text": "While Danksharding is still years away, Proto-Danksharding (EIP-4844) provides immediate scalability and has been implemented on all testnets and went live on Mainnet with the Cancun-Deneb upgrade in March 2024.",
+   "status": "confirmed",
+   "tier": "publisher-confirmed",
+   "primary": {
+    "url": "https://hacken.io/discover/eip-4844-explained",
+    "quote": "While Danksharding is still years away, Proto-Danksharding (EIP-4844) provides immediate scalability and has been implemented on all testnets and went live on Mainnet with the Cancun-Deneb upgrade in March 2024.",
+    "fetched_at": "2026-10-20T03:00:00Z",
+    "body_sha256": "ad7b74ac030c0806c8b6d131448f95bb8c2ef6ad566cfebb038c4fcf57ba7af0",
+    "offset": 5929,
+    "publisher": "hacken.io"
+   },
+   "secondary": {
+    "url": "https://ieeexplore.ieee.org/document/11108700",
+    "quote": "On March 13, 2024, Ethereum implemented EIP-4844, an upgrade designed to enhance its role as a data availability layer.",
+    "fetched_at": "2026-10-20T03:00:00Z",
+    "body_sha256": "6896b6b5572b9ca31e8d9e526ea1ba34764dd9f04a74e25ebe8184d1dc806e03",
+    "offset": 929,
+    "publisher": "ieee.org"
+   },
+   "match": {},
+   "onchain": null,
+   "evidence": [
+    {
+     "kind": "quote",
+     "quote": "While Danksharding is still years away, Proto-Danksharding (EIP-4844) provides immediate scalability and has been implemented on all testnets and went live on Mainnet with the Cancun-Deneb upgrade in March 2024.",
+     "url": "https://hacken.io/discover/eip-4844-explained",
+     "retrieved_at": "2026-10-20T03:00:00Z",
+     "publisher": "hacken.io",
+     "body_sha256": "ad7b74ac030c0806c8b6d131448f95bb8c2ef6ad566cfebb038c4fcf57ba7af0",
+     "offset": 5929
+    },
+    {
+     "kind": "quote",
+     "quote": "On March 13, 2024, Ethereum implemented EIP-4844, an upgrade designed to enhance its role as a data availability layer.",
+     "url": "https://ieeexplore.ieee.org/document/11108700",
+     "retrieved_at": "2026-10-20T03:00:00Z",
+     "publisher": "ieee.org",
+     "body_sha256": "6896b6b5572b9ca31e8d9e526ea1ba34764dd9f04a74e25ebe8184d1dc806e03",
+     "offset": 929
+    }
+   ]
+  },
+  {
+   "text": "On March 13, 2024, Ethereum implemented EIP-4844, an upgrade designed to enhance its role as a data availability layer.",
+   "status": "confirmed",
+   "tier": "publisher-confirmed",
+   "primary": {
+    "url": "https://ieeexplore.ieee.org/document/11108700",
+    "quote": "On March 13, 2024, Ethereum implemented EIP-4844, an upgrade designed to enhance its role as a data availability layer.",
+    "fetched_at": "2026-10-20T03:00:00Z",
+    "body_sha256": "6896b6b5572b9ca31e8d9e526ea1ba34764dd9f04a74e25ebe8184d1dc806e03",
+    "offset": 929,
+    "publisher": "ieee.org"
+   },
+   "secondary": {
+    "url": "https://hacken.io/discover/eip-4844-explained",
+    "quote": "Proto-Danksharding (EIP-4844) provides immediate scalability and has been implemented on all testnets and went live on Mainnet with the Cancun-Deneb upgrade in March 2024.",
+    "fetched_at": "2026-10-20T03:00:00Z",
+    "body_sha256": "ad7b74ac030c0806c8b6d131448f95bb8c2ef6ad566cfebb038c4fcf57ba7af0",
+    "offset": 5969,
+    "publisher": "hacken.io"
+   },
+   "match": {},
+   "onchain": null,
+   "evidence": [
+    {
+     "kind": "quote",
+     "quote": "On March 13, 2024, Ethereum implemented EIP-4844, an upgrade designed to enhance its role as a data availability layer.",
+     "url": "https://ieeexplore.ieee.org/document/11108700",
+     "retrieved_at": "2026-10-20T03:00:00Z",
+     "publisher": "ieee.org",
+     "body_sha256": "6896b6b5572b9ca31e8d9e526ea1ba34764dd9f04a74e25ebe8184d1dc806e03",
+     "offset": 929
+    },
+    {
+     "kind": "quote",
+     "quote": "Proto-Danksharding (EIP-4844) provides immediate scalability and has been implemented on all testnets and went live on Mainnet with the Cancun-Deneb upgrade in March 2024.",
+     "url": "https://hacken.io/discover/eip-4844-explained",
+     "retrieved_at": "2026-10-20T03:00:00Z",
+     "publisher": "hacken.io",
+     "body_sha256": "ad7b74ac030c0806c8b6d131448f95bb8c2ef6ad566cfebb038c4fcf57ba7af0",
+     "offset": 5969
+    }
+   ]
+  },
+  {
+   "text": "Big Goal: EIP-4844 aims to reduce costs for blockchain rollups by introducing blob transactions, making it cheaper to settle transactions on Layer 1 (L1) Ethereum.",
+   "status": "unconfirmed",
+   "tier": null,
+   "primary": {
+    "url": "https://hacken.io/discover/eip-4844-explained",
+    "quote": "Big Goal: EIP-4844 aims to reduce costs for blockchain rollups by introducing blob transactions, making it cheaper to settle transactions on Layer 1 (L1) Ethereum.",
+    "fetched_at": "2026-10-20T03:00:00Z",
+    "body_sha256": "ad7b74ac030c0806c8b6d131448f95bb8c2ef6ad566cfebb038c4fcf57ba7af0",
+    "offset": 69,
+    "publisher": "hacken.io"
+   },
+   "secondary": null,
+   "match": null,
+   "onchain": null,
+   "evidence": [
+    {
+     "kind": "quote",
+     "quote": "Big Goal: EIP-4844 aims to reduce costs for blockchain rollups by introducing blob transactions, making it cheaper to settle transactions on Layer 1 (L1) Ethereum.",
+     "url": "https://hacken.io/discover/eip-4844-explained",
+     "retrieved_at": "2026-10-20T03:00:00Z",
+     "publisher": "hacken.io",
+     "body_sha256": "ad7b74ac030c0806c8b6d131448f95bb8c2ef6ad566cfebb038c4fcf57ba7af0",
+     "offset": 69
+    }
+   ]
+  },
+  {
+   "text": "However, data sharding will still take a considerable amount of time to finish implementing and deploying.",
+   "status": "unconfirmed",
+   "tier": null,
+   "primary": {
+    "url": "https://eips.ethereum.org/EIPS/eip-4844",
+    "quote": "However, data sharding will still take a considerable amount of time to finish implementing and deploying.",
+    "fetched_at": "2026-10-20T03:00:00Z",
+    "body_sha256": "82d5e995d0b8c65c2d884a7fea98295c4291e41f269adcda5571714a4c18aa42",
+    "offset": 1358,
+    "publisher": "ethereum.org"
+   },
+   "secondary": null,
+   "match": null,
+   "onchain": null,
+   "evidence": [
+    {
+     "kind": "quote",
+     "quote": "However, data sharding will still take a considerable amount of time to finish implementing and deploying.",
+     "url": "https://eips.ethereum.org/EIPS/eip-4844",
+     "retrieved_at": "2026-10-20T03:00:00Z",
+     "publisher": "ethereum.org",
+     "body_sha256": "82d5e995d0b8c65c2d884a7fea98295c4291e41f269adcda5571714a4c18aa42",
+     "offset": 1358
+    }
+   ]
+  },
+  {
+   "text": "EIP-4844, or Proto-Danksharding, is a pivotal proposal to enhance Ethereum’s scalability and data availability.",
+   "status": "unconfirmed",
+   "tier": null,
+   "primary": {
+    "url": "https://hacken.io/discover/eip-4844-explained",
+    "quote": "EIP-4844, or Proto-Danksharding, is a pivotal proposal to enhance Ethereum’s scalability and data availability.",
+    "fetched_at": "2026-10-20T03:00:00Z",
+    "body_sha256": "ad7b74ac030c0806c8b6d131448f95bb8c2ef6ad566cfebb038c4fcf57ba7af0",
+    "offset": 483,
+    "publisher": "hacken.io"
+   },
+   "secondary": null,
+   "match": null,
+   "onchain": null,
+   "evidence": [
+    {
+     "kind": "quote",
+     "quote": "EIP-4844, or Proto-Danksharding, is a pivotal proposal to enhance Ethereum’s scalability and data availability.",
+     "url": "https://hacken.io/discover/eip-4844-explained",
+     "retrieved_at": "2026-10-20T03:00:00Z",
+     "publisher": "hacken.io",
+     "body_sha256": "ad7b74ac030c0806c8b6d131448f95bb8c2ef6ad566cfebb038c4fcf57ba7af0",
+     "offset": 483
+    }
+   ]
+  }
+ ],
+ "counts": {
+  "confirmed": 2,
+  "consistent": 0,
+  "unconfirmed": 3
+ },
+ "tiers": {
+  "publisher-confirmed": 2,
+  "onchain-confirmed": 0,
+  "official": 0
+ },
+ "method": "https://horizonpulse.dev/contracts/brief-verified",
+ "meta": {
+  "version": "1",
+  "schema": "brief-verified/1"
+ }
+}

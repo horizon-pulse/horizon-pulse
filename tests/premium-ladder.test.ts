@@ -12,7 +12,7 @@ import { decodePaymentRequiredHeader, encodePaymentSignatureHeader } from "@x402
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { installFacilitatorMock } from "./helpers/facilitator-mock";
 import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store";
-import { setPremiumClockForTests } from "@/lib/premium/handler";
+import { setBriefGateForTests, setPremiumClockForTests } from "@/lib/premium/handler";
 import * as researchTier from "@/app/api/research/report/[tier]/route";
 import * as researchBare from "@/app/api/research/report/route";
 import * as watchTier from "@/app/api/seller-watch/[tier]/route";
@@ -93,6 +93,7 @@ const LONG_EXCERPT =
 
 let store: MemoryPremiumStore;
 beforeEach(() => {
+  setBriefGateForTests((b) => (b ? "confirmed" : null)); // legacy settle/redeem flow tests: contract gate stubbed to pass
   vi.unstubAllEnvs();
   store = new MemoryPremiumStore();
   setPremiumStoreForTests(store);
@@ -419,32 +420,36 @@ describe("paid sync path", () => {
     expect(j.timeline.length).toBeGreaterThan(0);
     expect(j.sources.find((s: any) => s.pdf).label).toBe("primary_heuristic");
   });
-  it("Sentinel item 3: settle BEFORE Parallel; Parallel failure after settle -> 502 charged:true + charged_not_delivered reconcile + HIGH", async () => {
+  it("charge-on-pass (hardened spec, supersedes Sentinel item 3 for the brief): Parallel failure -> 422 brief_not_verified, charged:false, NO settle, claim declined", async () => {
     on();
     setParallelForTests({ fetch: (async () => new Response("x", { status: 500 })) as never });
     const r = await call("brief", input("brief"), { "payment-signature": await payment() });
-    expect(r.status).toBe(502);
+    expect(r.status).toBe(422);
     const j = await r.json();
-    expect(j.charged).toBe(true);
-    // regression (Odin $1 test 10/19, rc_c6c8…): a CONFIRMED settle followed by a work failure must not read as settle_unconfirmed
-    expect(j.status).toBe("charged_not_delivered");
-    expect(j.settled).toBe(true);
-    expect(typeof j.tx).toBe("string");
-    expect(j.reason).toBe("upstream_500");
-    expect(j.redeem_header).toBe("x-hp-payer-proof");
-    expect(r.headers.get("payment-response")).toBeTruthy();
-    expect(fac.map((c) => c.op)).toEqual(["verify", "settle"]);
-    expect(reconciles.map((l) => l.outcome)).toEqual(["charged_not_delivered"]);
+    expect(j.charged).toBe(false);
+    expect(j.error).toBe("brief_not_verified");
+    expect(r.headers.get("payment-response")).toBeNull();
+    expect(fac.map((c) => c.op)).toEqual(["verify"]);
+    expect(reconciles).toHaveLength(0);
   });
-  it("Sentinel item 3: settle happens before any Parallel call (order)", async () => {
+  it("charge-on-pass: Parallel runs BEFORE settle; settle only after the gate passes (order)", async () => {
     on();
     const order: string[] = [];
     fac = installFacilitatorMock({ verify: () => (order.push("verify"), { isValid: true }), settle: () => (order.push("settle"), settleBehaviour()) });
-    const pf = parallelCalls;
-    setParallelForTests({ fetch: (async (u: string) => (order.push("parallel"), new Response(JSON.stringify({ results: [] })))) as never });
+    setParallelForTests({ fetch: (async (u: string) => (order.push("parallel"), new Response(JSON.stringify({ results: [{ url: "https://a.example/", excerpts: ["e"] }] })))) as never });
     expect((await call("brief", input("brief"), { "payment-signature": await payment() })).status).toBe(200);
-    expect(order.indexOf("settle")).toBeLessThan(order.indexOf("parallel"));
-    expect(pf.length).toBe(0);
+    expect(order.indexOf("parallel")).toBeGreaterThan(-1);
+    expect(order.indexOf("parallel")).toBeLessThan(order.indexOf("settle"));
+  });
+  it("charge-on-pass: real contract gate (no stub) on a brief that misses the contract -> 422, unpaid, failed brief returned with reasons", async () => {
+    on();
+    setBriefGateForTests(null);
+    const r = await call("brief", input("brief"), { "payment-signature": await payment() });
+    expect(r.status).toBe(422);
+    const j = await r.json();
+    expect(j.charged).toBe(false);
+    expect(fac.some((c) => c.op === "settle")).toBe(false);
+    expect(j.contract).toBe("https://horizonpulse.dev/contracts/brief-verified");
   });
   it("verify invalid -> 402 for the tier; verify error -> 503; neither settles", async () => {
     on();
