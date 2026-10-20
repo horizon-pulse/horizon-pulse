@@ -86,10 +86,34 @@ describe("seller-dd replay (100% expected outcomes)", () => {
     const store = new MemoryPremiumStore(); store.now = () => NOW;
     const out = await runSellerDd({ resource: "https://seller.example.com/api", request_id: "w", deadline: NOW + 45_000 }, deps(FIXTURES[0]!, store, { paid: 0, signed: 0 }));
     const hst = out.verdict.history as any;
-    expect(hst.window_blocks).toBe(9000);
+    expect(hst.window_blocks).toBe(9001); // fixture blocks 100..9100 inclusive
+    expect(hst.window_note).toBe("recent window only: last 9001 Base blocks (about 5 hours), not a full history");
+    expect(hst.window_note).not.toMatch(/0 days/);
     expect(hst.window_note).toContain("not a full history");
     const { DD_DESCRIPTION } = await import("@/lib/seller-dd/config");
     expect(`${JSON.stringify(out.verdict)} ${DD_DESCRIPTION}`).not.toMatch(/30[ -]?day/i);
+  });
+  it("Counsel item 2: window label in hours under 2 days, days otherwise, never 'about 0 days'", async () => {
+    const { windowLabel } = await import("@/lib/seller-dd/engine");
+    expect(windowLabel(1, 9000).text).toBe("about 5 hours");
+    expect(windowLabel(1, 100).text).toBe("about 1 hour");
+    expect(windowLabel(1, 86_399).text).toBe("about 48 hours");
+    expect(windowLabel(1, 86_400).text).toBe("about 2 days");
+    expect(windowLabel(1, 1_296_000).text).toBe("about 30 days");
+  });
+  it("Counsel item 3: no CDP listing -> payTo_continuity 'skipped', never 'fail'", async () => {
+    const store = new MemoryPremiumStore(); store.now = () => NOW;
+    const fx = FIXTURES.find((f) => f.name.startsWith("no listing"))!;
+    const out = await runSellerDd({ resource: "https://seller.example.com/api", request_id: "nl", deadline: NOW + 45_000 }, deps(fx, store, { paid: 0, signed: 0 }));
+    expect((out.verdict.checks as any[]).find((c) => c.name === "payTo_continuity")).toMatchObject({ result: "skipped", note: "no CDP discovery listing found for this resource" });
+  });
+  it("D5: excerpt capped at 200 chars; D4: no terms link -> excerpt allowed, unreadable terms -> hash only", async () => {
+    const { excerptFor, termsAllowExcerpt } = await import("@/lib/seller-dd/checks");
+    expect(excerptFor("x".repeat(5000), true)!.length).toBe(200);
+    expect(excerptFor("secret", false)).toBeNull();
+    const net = { get402: async () => ({ ok: false as const, code: "timeout" as const }), getPaid: async () => ({ ok: false as const, code: "timeout" as const }) };
+    expect((await termsAllowExcerpt(null, net)).allowed).toBe(true);
+    expect((await termsAllowExcerpt("https://s.example.com/terms", net)).allowed).toBe(false);
   });
   it("replay set has >= 10 sellers", () => expect(FIXTURES.length).toBeGreaterThanOrEqual(10));
   it("per-host cap: 4th request to the same host in a day is not paid", async () => {

@@ -283,7 +283,7 @@ export async function readHistory(payTo: string, deadline: number, deps: RpcDeps
       if (b !== null && (first === null || Number(b) < first)) first = Number(b);
     }
     const whole = vol / 1_000_000n, frac = (vol % 1_000_000n).toString().padStart(6, "0");
-    return { window_blocks: windowBlocks, window_days: Math.round((windowBlocks * 2) / 864) / 100, unique_payers: counts.size, repeat_payers: [...counts.values()].filter((n) => n > 1).length, first_seen_block: first, volume_usdc: `${whole}.${frac}`, from_block: Number(from), to_block: Number(head), source: new URL(url).host };
+    return { window_blocks: windowBlocks, window_days: Math.round(((Number(head - from) + 1) * 2) / 864) / 100, unique_payers: counts.size, repeat_payers: [...counts.values()].filter((n) => n > 1).length, first_seen_block: first, volume_usdc: `${whole}.${frac}`, from_block: Number(from), to_block: Number(head), source: new URL(url).host };
   } catch {
     return null;
   }
