@@ -5,6 +5,7 @@
  * route configs, so this never drifts from what the 402s charge.
  * Docs only: no payment logic.
  */
+import { premiumListings } from "./premium/listing";
 import fs from "node:fs";
 import path from "node:path";
 import { BASE_CAIP2, BASE_PAY_TO_BASENAME, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, PUBLIC_BASE_URL, USDC_BASE } from "./config";
@@ -102,7 +103,7 @@ description: Call Horizon Pulse pay-per-call APIs at ${PUBLIC_BASE_URL} and pay 
 
 # Horizon Pulse: pay-per-call APIs for agents (x402 v2, USDC on Base, Solana or Polygon, RLUSD on the XRP Ledger)
 
-${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call. Every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet, Solana mainnet or Polygon PoS mainnet, or RLUSD on XRP Ledger mainnet, at the same price on each. No account, no API key.
+${premiumListings().length ? `${routes.length + premiumListings().length} paid routes. ${routes.length} of them cost ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call, and every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet, Solana mainnet or Polygon PoS mainnet, or RLUSD on XRP Ledger mainnet, at the same price on each.${premiumListings().map((x) => ` Plus the ${x.priceUsd} verified brief (\`${x.path}\`, ${x.rail}; see Premium tiers below).`).join("")} ` : `${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call. Every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet, Solana mainnet or Polygon PoS mainnet, or RLUSD on XRP Ledger mainnet, at the same price on each. `}No account, no API key.
 
 - Base URL: ${PUBLIC_BASE_URL} (call and pay this host only)
 - Amounts: USDC, 6 decimals on Base, Solana and Polygon (10000 atomic = $0.01); RLUSD on the XRP Ledger as a decimal value (0.01 = $0.01)

@@ -15,6 +15,7 @@ import { exampleRecordedAt } from "../lib/route-examples";
 import * as M from "../lib/money-market-rates";
 import { BATCH_VALUE_NOTE } from "../lib/batch";
 import { NOTE as TX_GUARD_NOTE, TX_GUARD_METHODOLOGY } from "../lib/tx-guard";
+import { ALL_PREMIUM_LISTINGS } from "../lib/premium/listing";
 import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "../lib/solana-config";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -266,6 +267,43 @@ for (const r of LIVE_PAID_ROUTES) {
     op.responses = responses;
     paths[p][m] = op;
   }
+}
+
+// PREMIUM tiers (live: the $1 verified brief only). Base USDC only, so they carry x-premium-payment-info instead of
+// x-payment-info: the multi-network tables (/docs paid groups, skill.md route table, stdio MCP catalog) skip them and
+// list them in their own premium sections. $5/$10 tiers are not documented.
+for (const x of ALL_PREMIUM_LISTINGS) {
+  paths[x.path] = {
+    get: {
+      operationId: "getResearchReportBrief",
+      tags: ["Verified brief"],
+      summary: x.summary,
+      description: `${x.description}\n\nPrice: ${x.priceUsd} USDC (${x.amount} atomic), ${x.rail}: x402 v2 \`exact\` on Base (eip155:8453) only; other networks are refused before payment. The research runs before settlement, and the payment settles only if the brief passes the contract; otherwise 422 and nothing is charged. Out-of-scope questions get 422 before any payment. Contract: ${PUBLIC_BASE_URL}${x.contract}. Terms: ${PUBLIC_BASE_URL}${x.terms}. Unpaid sample: ${PUBLIC_BASE_URL}${x.demo}. Not payable over MCP: the hosted MCP tool verified_brief returns this same unpaid 402 challenge.`,
+      "x-premium-payment-info": {
+        protocol: "x402",
+        x402Version: 2,
+        scheme: "exact",
+        network: "eip155:8453",
+        asset: USDC_BASE,
+        assetSymbol: "USDC",
+        decimals: 6,
+        priceUsd: x.priceUsd,
+        amount: x.amount,
+        payTo: DEFAULT_PAY_TO,
+        facilitator: CDP_FACILITATOR_URL,
+        discovery: `${PUBLIC_BASE_URL}/.well-known/x402`,
+        contract: `${PUBLIC_BASE_URL}${x.contract}`,
+        terms: `${PUBLIC_BASE_URL}${x.terms}`,
+      },
+      parameters: [{ name: "q", in: "query", required: true, description: "Question about Base or Ethereum gas, USDC supply on Ethereum and Base, or an x402 spec fact. Anything else is refused with 422 before payment. No personal data.", schema: { type: "string" }, example: "How much USDC is in circulation?" }],
+      responses: {
+        "200": { description: "Verified brief (schema brief-verified/1). Charged.", content: { "application/json": { schema: { type: "object" } } } },
+        "402": { description: "Payment required: PAYMENT-REQUIRED header, $1 USDC on Base only.", content: { "application/json": { schema: { type: "object" } } } },
+        "422": { description: "Out of scope, or the brief did not pass the contract. Reason codes only. Nothing charged.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        "503": { description: "Temporarily unavailable or daily budget reached. Nothing charged.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+      },
+    },
+  };
 }
 
 // FREE route (Markets spec v2): documented here but NOT a paid operation. No x-payment-info, security: [] (no x402),

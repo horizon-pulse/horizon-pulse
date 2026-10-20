@@ -27,7 +27,7 @@ Prefer **horizonpulse.dev** in agent docs, OpenAPI, and clients. The `*.vercel.a
 
 | Fact | Value |
 | --- | --- |
-| **Live paid routes** | See the table below — the frozen crypto routes + `/api/fetch` + `/api/http` + `/api/extract` + `/api/x402-check` + `/api/bazaar-check` + `/api/market/search` + `/api/market/quote` + `/api/screenshot` + `/api/search` + `/api/pdf` |
+| **Live paid routes** | 30: see the table below (29 multi-network routes + the $1 verified brief, Base only) |
 | **First settle** | `/api/pulse` **$0.005** — tx `0xedbd1a51…` |
 | **Crypto policy** | **Frozen** — six crypto routes: no price changes |
 | **Fetch** | Non-crypto LIVE: clean-text (`$0.02`) |
@@ -74,26 +74,40 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 
 ## Endpoints
 
-**Paid (frozen crypto routes + fetch + http + extract + x402-check + bazaar-check + market/search + market/quote + screenshot + search + pdf):**
+**Paid (30 routes: 29 multi-network + the $1 verified brief, Base only; same list as /.well-known/x402):**
 
 | Route | Price | Auth |
 | --- | --- | --- |
-| `GET /api/pulse` | **$0.002** USDC (`2000` atomic) | x402 v2 |
-| `GET /api/signals` | **$0.005** USDC (`5000` atomic) | x402 v2 |
-| `GET /api/yield` | **$0.02** USDC (`20000` atomic) | x402 v2 |
-| `GET /api/portfolio?address=0x…` | **$0.04** USDC (`40000` atomic) | x402 v2 |
-| `GET /api/gas` | **$0.002** USDC (`2000` atomic) | x402 v2 |
-| `GET /api/funding` | **$0.003** USDC (`3000` atomic) | x402 v2 |
-| `GET /api/fetch?url=https://…` | **$0.02** USDC (`20000` atomic) | x402 v2 |
-| `GET` / `POST` `/api/http` | **$0.01** USDC (`10000` atomic) | x402 v2 |
-| `GET` / `POST` `/api/extract` | **$0.015** USDC (`15000` atomic) | x402 v2 |
-| `GET /api/x402-check?url=https://…` | **$0.01** USDC (`10000` atomic) | x402 v2 |
-| `GET /api/bazaar-check?url=…` | **$0.01** USDC (`10000` atomic) | x402 v2 |
-| `GET /api/market/search?q=…` | **$0.005** USDC (`5000` atomic), untested price | x402 v2 |
-| `GET /api/market/quote?url=https://…` | **$0.005** USDC (`5000` atomic), untested price | x402 v2 |
-| `GET /api/screenshot?url=https://…` | **$0.02** USDC (`20000` atomic) | x402 v2 |
-| `GET /api/search?q=…&n=3` | **$0.03** USDC (`30000` atomic) | x402 v2 |
-| `GET /api/pdf?url=https://…` | **$0.02** USDC (`20000` atomic) | x402 v2 |
+| `GET /api/pulse` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/signals` | **$0.005** USDC (`5000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/yield` | **$0.02** USDC (`20000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/portfolio` | **$0.04** USDC (`40000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/gas` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/funding` | **$0.003** USDC (`3000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/fetch` | **$0.02** USDC (`20000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET` / `POST` `/api/http` | **$0.01** USDC (`10000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET` / `POST` `/api/extract` | **$0.015** USDC (`15000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/x402-check` | **$0.01** USDC (`10000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/x402-check/deep` | **$0.03** USDC (`30000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/bazaar-check` | **$0.01** USDC (`10000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/market/search` | **$0.005** USDC (`5000` atomic), untested price | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/market/quote` | **$0.005** USDC (`5000` atomic), untested price | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/tx-status` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/tokenized-stock` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/watch` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/balance` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/tx-guard` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET` / `POST` `/api/grocery/normalize` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET` / `POST` `/api/grocery/ingredient` | **$0.005** USDC (`5000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/chain/head` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/token/meta` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/name/resolve` | **$0.002** USDC (`2000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET` / `POST` `/api/batch` | **$0.01** USDC (`10000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/discourse/split` | **$0.03** USDC (`30000` atomic), untested price | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/screenshot` | **$0.02** USDC (`20000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/search` | **$0.03** USDC (`30000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/pdf` | **$0.02** USDC (`20000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
+| `GET /api/research/report/brief?q=…` | **$1** USDC (`1000000` atomic): at least 2 independently confirmed claims, or no charge ([contract](https://horizonpulse.dev/contracts/brief-verified), [terms](https://horizonpulse.dev/premium-terms)) | x402 v2 (Base USDC only) |
 
 **Free (not paid APIs):**
 

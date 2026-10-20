@@ -92,8 +92,8 @@ export default async function StatusPage() {
               </div>
               <div className="hp-stat">
                 <div className="k">Paid routes</div>
-                <div className="v">{s.routes}</div>
-                <div className="d">{s.endpoints} endpoints in /.well-known/x402</div>
+                <div className="v">{s.paidRoutes}</div>
+                <div className="d">{s.endpoints + s.premium.length} endpoints in /.well-known/x402</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Price per call</div>
@@ -208,9 +208,25 @@ export default async function StatusPage() {
                     );
                   }),
                 ])}
+                {s.premium.length ? (
+                  <tr className="grp" key="premium">
+                    <td colSpan={5}>Verified brief ({s.premium[0].rail})</td>
+                  </tr>
+                ) : null}
+                {s.premium.map((x) => (
+                  <tr key={x.path}>
+                    <td className="r">{x.path}</td>
+                    <td className="m">GET</td>
+                    <td className="b">
+                      {x.summary} <a href={x.contract}>Contract</a> · <a href={x.terms}>Terms</a>
+                    </td>
+                    <td className="p">{x.priceUsd}</td>
+                    <td className="s"><a href={x.demo}>Sample →</a></td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-            <p className="hp-fine">{LIVE_PAID_ROUTES.length} routes from the live catalog. How agents pay is on the <a href="/#how">homepage</a>.</p>
+            <p className="hp-fine">{s.paidRoutes} routes from the live catalog. How agents pay is on the <a href="/#how">homepage</a>.</p>
           </div>
         </section>
         <AlertCounts a={alerts} />

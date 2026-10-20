@@ -4,6 +4,7 @@
  * Source of truth: app/api/**\/route.ts on disk + lib/live-catalog.ts (what /.well-known/x402 lists).
  * Surfaces: homepage, /status, /try copy line, /.well-known/x402, /llms.txt, /openapi.json, /skill.md, MCP tools.
  */
+import { ALL_PREMIUM_LISTINGS } from "@/lib/premium/listing";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
@@ -33,7 +34,7 @@ const LIVE = LIVE_PAID_ROUTES.map(routePath);
 /** A listed path is valid if it is a real route; a /api/demo/<slug> must also be a known demo slug. */
 function isReal(p: string): boolean {
   const demo = p.match(/^\/api\/demo\/([^/]+)$/);
-  if (demo) return DEMO_SLUGS.has(demo[1]);
+  if (demo) return DEMO_SLUGS.has(demo[1]) || ALL_PREMIUM_LISTINGS.some((x) => x.demo === p);
   return REAL_RX.some((rx) => rx.test(p));
 }
 /** /api/... tokens in free text; drops "/api/demo" with no slug and placeholder text. */

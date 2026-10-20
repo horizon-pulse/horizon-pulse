@@ -195,7 +195,7 @@ describe("/api/batch Class A delta (Odin 10/19): value statement + no 404 sample
     const spec = JSON.parse(fs.readFileSync("public/openapi.json", "utf8"));
     for (const m of ["get", "post"]) expect(spec.paths["/api/batch"][m].description).toContain(BATCH_VALUE_NOTE);
     expect(fs.readFileSync("public/llms.txt", "utf8")).toContain(BATCH_VALUE_NOTE);
-    expect(fs.readFileSync("public/llms.txt", "utf8")).toContain("no free sample for `/api/batch`");
+    expect(fs.readFileSync("public/llms.txt", "utf8")).toContain("no unpaid sample for `/api/batch`");
     const { buildSkillMarkdown } = await import("@/lib/agent-skill");
     expect(buildSkillMarkdown()).toContain(BATCH_VALUE_NOTE);
     const { TOOLS, mcpToolDescription } = await import("@/lib/mcp-server");

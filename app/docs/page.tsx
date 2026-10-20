@@ -26,6 +26,8 @@ for (const [p, item] of Object.entries<Json>(spec.paths))
   for (const [m, op] of Object.entries<Json>(item)) if (op["x-payment-info"]) ops.push({ id: op.operationId, method: m.toUpperCase(), path: p, op }); // paid only; free routes below
 /** FREE routes (no x402) documented in /openapi.json without x-payment-info. */
 const freeOps = Object.entries<Json>(spec.paths).flatMap(([p, item]) => Object.entries<Json>(item).filter(([, op]) => op["x-free"]).map(([m, op]) => ({ id: op.operationId as string, method: m.toUpperCase(), path: p, op })));
+/** Live premium tiers (Base USDC only), documented with x-premium-payment-info so the multi-network tables skip them. */
+const premiumOps = Object.entries<Json>(spec.paths).flatMap(([p, item]) => Object.entries<Json>(item).filter(([, op]) => op["x-premium-payment-info"]).map(([m, op]) => ({ id: op.operationId as string, method: m.toUpperCase(), path: p, op })));
 const groups = (spec.tags as { name: string; description: string }[]).map((t) => ({ ...t, ops: ops.filter((o) => o.op.tags[0] === t.name) }));
 
 const typeOf = (s: Json): string => {
@@ -132,7 +134,7 @@ curl -si ${BASE}/api/pulse | grep -i '^payment-required' | cut -d' ' -f2 | base6
 #    and retries with PAYMENT-SIGNATURE. You get 200 plus a PAYMENT-RESPONSE receipt.`;
 
 export default function DocsPage() {
-  const s = { ops: ops.length, routes: new Set(ops.map((o) => o.path)).size };
+  const s = { ops: ops.length + premiumOps.length, routes: new Set([...ops, ...premiumOps].map((o) => o.path)).size };
   return (
     <div className="hp">
       <SiteHeader />
@@ -222,6 +224,29 @@ export default function DocsPage() {
             </div>
           </section>
         ))}
+
+        {premiumOps.length ? (
+          <section className="hp-section" id="verified-brief">
+            <div className="hp-wrap">
+              <div>
+                <div className="hp-label">Premium</div>
+                <h2>Verified brief (Base USDC only)</h2>
+                <p className="hp-lead">Same 402 flow, but paid in USDC on Base only; other networks are refused before payment.</p>
+              </div>
+              {premiumOps.map((o) => (
+                <div className="hp-tile" key={o.id} id={o.id}>
+                  <h3>
+                    <code>{o.method} {o.path}</code> · {o.op["x-premium-payment-info"].priceUsd}
+                  </h3>
+                  <p>{o.op.description}</p>
+                  <p>
+                    <a href="/contracts/brief-verified">Contract</a> · <a href="/premium-terms">Terms</a> · <a href="/api/demo/brief-verified">Unpaid sample</a>
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="hp-section" id="free-data">
           <div className="hp-wrap">

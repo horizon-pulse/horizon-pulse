@@ -10,6 +10,7 @@
  */
 
 import { DEMO_ROUTES } from "./demo-catalog";
+import { premiumListings } from "./premium/listing";
 import {
   PULSE_PRICE_USD,
   PULSE_PRICE_ATOMIC,
@@ -428,8 +429,15 @@ const usd = (p: string) => Number(p.replace(/[^0-9.]/g, ""));
 export function catalogStats() {
   const prices = LIVE_PAID_ROUTES.map((r) => usd(r.priceUsd));
   const fmt = (n: number) => `$${n}`;
+  const premium = premiumListings();
   return {
     routes: LIVE_PAID_ROUTES.length,
+    /** Live premium tiers (Base USDC only), listed apart from the multi-network catalog. */
+    premium,
+    /** Every live paid route: the multi-network catalog plus live premium tiers. Use this for any public count. */
+    paidRoutes: LIVE_PAID_ROUTES.length + premium.length,
+    /** Unpaid samples: /api/demo/{route} twins plus each premium tier's demo. */
+    demoSamples: DEMO_ROUTES.length + premium.length,
     endpoints: LIVE_PAID_ROUTES.reduce((n, r) => n + (r.method === "GET|POST" ? 2 : 1), 0),
     minPrice: fmt(Math.min(...prices)),
     maxPrice: fmt(Math.max(...prices)),

@@ -605,15 +605,23 @@ describe("discovery (T3.2 / T3a.4) and N1 (no MCP)", () => {
     expect(sec).toContain("`GET /api/research/report/brief?q=…` — $1");
     expect(sec).not.toMatch(/\?tier=|solana|xrpl|polygon/i);
   });
-  it("N1: premium is not on hosted /mcp or local mcp/ (no premium path or tool in either source)", () => {
-    for (const f of ["lib/mcp-server.ts", "mcp/src/catalog.ts", "mcp/src/index.ts", "app/mcp/route.ts"]) {
-      const src = readFileSync(path.join(ROOT, f), "utf8");
-      expect(src).not.toMatch(/research\/report|seller-watch|premium/i);
+  it("N1 (amended 10/20 listing-count change): no premium payment over MCP. Local mcp/ has no premium path; hosted /mcp only has verified_brief, which returns the unpaid 402 and never wraps a payment", () => {
+    for (const f of ["mcp/src/catalog.ts", "mcp/src/index.ts", "app/mcp/route.ts"]) {
+      expect(readFileSync(path.join(ROOT, f), "utf8")).not.toMatch(/research\/report|seller-watch|premium/i);
     }
+    const src = readFileSync(path.join(ROOT, "lib/mcp-server.ts"), "utf8");
+    expect(src).not.toMatch(/seller-watch|standard|extended/);
+    const tool = src.slice(src.indexOf("export const VERIFIED_BRIEF_TOOL"));
+    expect(tool).not.toMatch(/createPaymentWrapper|PAYMENT-SIGNATURE"?\s*:|settle/);
   });
-  it("cheap-route surfaces never mention premium (balance, related-routes, live catalog)", () => {
-    for (const f of ["lib/balance.ts", "lib/route-hints.ts", "lib/live-catalog.ts", "public/openapi.json", "public/llms.txt"]) {
+  it("cheap-route surfaces never mention premium (balance, related-routes, live catalog); openapi/llms list only the brief", () => {
+    for (const f of ["lib/balance.ts", "lib/route-hints.ts", "lib/live-catalog.ts"]) {
       expect(readFileSync(path.join(ROOT, f), "utf8")).not.toMatch(/research\/report|seller-watch/);
+    }
+    for (const f of ["public/openapi.json", "public/llms.txt"]) {
+      const t = readFileSync(path.join(ROOT, f), "utf8");
+      expect(t).not.toMatch(/research\/report\/(standard|extended|report|monitor)|seller-watch/);
+      expect(t).toContain("/api/research/report/brief");
     }
   });
 });

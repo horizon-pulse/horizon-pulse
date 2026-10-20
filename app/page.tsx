@@ -50,12 +50,13 @@ export default function HomePage() {
               <span>built for agents.</span>
             </h1>
             <p className="hp-sub">
-              {s.routes} paid services for market data, onchain checks, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
+              {s.paidRoutes} paid services for market data, onchain checks, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
               {s.minPrice}–{s.maxPrice} per call in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, and gets JSON back.
+              {s.premium.length ? <> Plus a {s.premium[0].priceUsd} <a href={s.premium[0].contract}>verified brief</a> ({s.premium[0].rail}).</> : null}
             </p>
             <div className="hp-ctas">
               <a className="hp-btn primary" href="/try">Try a free sample</a>
-              <a className="hp-btn ghost" href="#catalog">See all {s.routes} paid services</a>
+              <a className="hp-btn ghost" href="#catalog">See all {s.paidRoutes} paid services</a>
             </div>
             <CopyLine text="curl https://horizonpulse.dev/api/demo/pulse" />
             <p className="hp-proof">
@@ -67,8 +68,8 @@ export default function HomePage() {
             <div className="hp-stats">
               <div className="hp-stat">
                 <div className="k">Paid routes</div>
-                <div className="v">{s.routes}</div>
-                <div className="d">{s.bySiteGroup.map((g) => `${g.short} ${g.routes.length}`).join(" · ")}</div>
+                <div className="v">{s.paidRoutes}</div>
+                <div className="d">{[...s.bySiteGroup.map((g) => `${g.short} ${g.routes.length}`), ...(s.premium.length ? [`verified brief ${s.premium.length}`] : [])].join(" · ")}</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Price per call</div>
@@ -77,12 +78,12 @@ export default function HomePage() {
               </div>
               <div className="hp-stat">
                 <div className="k">Free samples</div>
-                <div className="v">{s.demoTwins}</div>
-                <div className="d">{s.demoTwins} of {s.routes} paid routes have a free demo twin{s.noDemo.length ? ` (none for ${s.noDemo.join(", ")})` : ""}</div>
+                <div className="v">{s.demoTwins + s.premium.length}</div>
+                <div className="d">{s.demoTwins + s.premium.length} of {s.paidRoutes} paid routes have a free demo twin{s.noDemo.length ? ` (none for ${s.noDemo.join(", ")})` : ""}</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Discovery</div>
-                <div className="v">{s.routes}</div>
+                <div className="v">{s.paidRoutes}</div>
                 <div className="d">URLs in /.well-known/x402 · {s.postRoutes} also accept POST</div>
               </div>
             </div>
@@ -94,10 +95,10 @@ export default function HomePage() {
             <div data-reveal>
               <div className="hp-label">Catalog</div>
               <h2>
-                {WORDS[s.routes] ?? s.routes} routes. <span>One protocol.</span>
+                {WORDS[s.paidRoutes] ?? s.paidRoutes} routes. <span>One protocol.</span>
               </h2>
               <p className="hp-lead">
-                Every route works the same way: request, get a 402, pay in USDC, get JSON. {s.demoTwins} of {s.routes} have a free twin at{" "}
+                Every route works the same way: request, get a 402, pay in USDC, get JSON. {s.demoTwins + s.premium.length} of {s.paidRoutes} have a free twin at{" "}
                 <code>/api/demo/&lt;route&gt;</code> that runs the route on a fixed input (discourse/split: a stored recording, not re-run).
               </p>
             </div>
@@ -147,6 +148,22 @@ export default function HomePage() {
                     );
                   }),
                 ])}
+                {s.premium.length ? (
+                  <tr className="grp" key="premium">
+                    <td colSpan={5}>Verified brief ({s.premium[0].rail})</td>
+                  </tr>
+                ) : null}
+                {s.premium.map((x) => (
+                  <tr key={x.path}>
+                    <td className="r">{x.path}</td>
+                    <td className="m">GET</td>
+                    <td className="b">
+                      {x.summary} <a href={x.contract}>Contract</a> · <a href={x.terms}>Terms</a>
+                    </td>
+                    <td className="p">{x.priceUsd}</td>
+                    <td className="s"><a href={x.demo}>Sample →</a></td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
