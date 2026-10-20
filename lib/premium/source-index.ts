@@ -39,6 +39,14 @@ export const SOURCE_INDEX: IndexType[] = [
       "https://docs.cdp.coinbase.com/x402/core-concepts/facilitator",
       "https://github.com/coinbase/x402",
       "https://www.x402.org/",
+      // Independent ecosystem publishers' own x402 docs (not mirrors or forks of the spec repo); re-read 10/20 12:30 AM.
+      "https://developers.cloudflare.com/agents/agentic-payments/x402/",
+      "https://agentic-docs.polygon.technology/general/x402/guides/how-it-works",
+      "https://solana.com/docs/tools/x402-facilitator",
+      "https://docs.celo.org/build/agents/x402",
+      "https://developers.fireblocks.com/docs/x402-facilitator-overview",
+      "https://developers.stellar.org/docs/build/agentic-payments/x402",
+      "https://www.quicknode.com/docs/build-with-ai/x402-payments",
     ] },
 ];
 /** Published in the contract: what verified briefs do NOT cover (refused unpaid, before payment). */

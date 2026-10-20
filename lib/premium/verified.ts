@@ -60,7 +60,9 @@ export async function buildVerified(q: string, t: IndexType, web: ParallelResult
   const docDate = (u: string) => u.match(/(20\d{2})(\d{2})(\d{2})/)?.slice(1, 4).join("-") ?? index.find((r) => r.url === u)?.publish_date ?? "";
   const newest = index.map((r) => docDate(r.url)).filter(Boolean).sort().pop() ?? "";
   const live = isLiveValueQuestion(q);
-  if (t.official) for (const [a, b] of candidatePairs(q, index, 12, true)) {
+  // Official pairs only among the authority's own domains; other curated ecosystem docs feed publisher pairs.
+  const ownDomain = (u: string) => { try { const h = new URL(u).hostname.toLowerCase(); return !!t.official?.domains.some((d) => h === d || h.endsWith(`.${d}`)); } catch { return false; } };
+  if (t.official) for (const [a, b] of candidatePairs(q, index.filter((r) => ownDomain(r.url)), 12, true)) {
     if (docKey(a.url) === docKey(b.url)) continue;
     if (live && newest && docDate(a.url) !== newest && docDate(b.url) !== newest) continue;
     pair(a, b, "official");
