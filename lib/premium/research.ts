@@ -1,3 +1,4 @@
+import { BRIEF_VERIFIED_SENTENCE } from "./copy";
 /**
  * R1 sync tiers (brief $1, standard $5, extended $10): extractive output only (spec §1).
  * Quoted snippets (<= ~50 words, <= 5 per source), source URLs, dates, a claim -> source table. We add no prose of
@@ -560,5 +561,5 @@ export async function runVerifiedBrief(q: string, deadline: number, capture?: Ca
   const s = Date.now();
   const contract = await buildVerified(q, t, web, index, chain, new Date().toISOString(), deadline);
   timing.build_ms = Date.now() - s;
-  return { tier: "brief", question: q, contract, timing, disclaimer: ADVICE_DISCLAIMER, ...((contract as { answer_by?: string }).answer_by === "model" ? { ai_note: AI_ANSWER_NOTE } : {}), coverage: t.label };
+  return { tier: "brief", question: q, contract, timing, disclaimer: `${ADVICE_DISCLAIMER} ${BRIEF_VERIFIED_SENTENCE}`, ...((contract as { answer_by?: string }).answer_by === "model" ? { ai_note: AI_ANSWER_NOTE } : {}), coverage: t.label };
 }

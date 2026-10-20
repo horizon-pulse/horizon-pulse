@@ -140,3 +140,12 @@ describe("Odin 7:22 AM: all answer lines templated (model path behind HP_BRIEF_M
     expect(b.claims.map((c: any) => c.text)).toContain(b.answer);
   });
 });
+
+import { BRIEF_VERIFIED_SENTENCE as __BVS } from "../lib/premium/copy";
+import { readFileSync as __rf } from "node:fs";
+describe("launch: brief-only verified sentence", () => {
+  it("is verbatim and only on the brief response", () => {
+    expect(__BVS).toBe("'Verified' means each claim was confirmed in two independent sources as defined at /contracts/brief-verified; Horizon Pulse does not check whether the sources themselves are accurate.");
+    expect(__rf("lib/premium/research.ts","utf8")).toContain("disclaimer: `${ADVICE_DISCLAIMER} ${BRIEF_VERIFIED_SENTENCE}`");
+  });
+});

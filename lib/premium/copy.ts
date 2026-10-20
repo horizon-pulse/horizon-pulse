@@ -1,8 +1,8 @@
 /**
  * Premium public copy. Counsel-reviewed text (spec §8, v3.2). [M] items: OPEN, pending Michael (Odin 10/20 7:22 AM;
  * his 10/19 3:20 PM ruling is current). Verified-brief clause 6 (refund item): APPROVED (Michael, 10/20 7:59 AM ET), option (a),
- * no refund promise for delivered briefs (contract.ts). REFUND_LINE stays OPEN (kept: it is the charge-without-delivery
- * line that clause 6 (a) refers to; flagged to Odin/Counsel 10/20).
+ * no refund promise for delivered briefs (contract.ts). REFUND_LINE (the charge-without-delivery line clause 6 (a)
+ * refers to): APPROVED, see its comment below (Counsel PASS 10/20 8:04 AM ET).
  * Verbatim strings: do not edit without Counsel. Public contact = CONTACT_EMAIL (lib/config.ts), the Horizon Pulse
  * business email already published in llms.txt and /.well-known/x402.
  */
@@ -12,6 +12,9 @@ export const PREMIUM_CONTACT = CONTACT_EMAIL;
 export const BUYER_TERMS_PATH = "/premium-terms";
 export const BUYER_TERMS_URL = `${PUBLIC_BASE_URL}${BUYER_TERMS_PATH}`;
 
+/** Brief response only (Counsel, Odin confirm 10/20). Verbatim. */
+export const BRIEF_VERIFIED_SENTENCE =
+  "'Verified' means each claim was confirmed in two independent sources as defined at /contracts/brief-verified; Horizon Pulse does not check whether the sources themselves are accurate.";
 export const DISCLAIMER =
   "Automated compilation of short quotes from public sources, with links and fetch times, as of the time shown. Informational only: not due diligence, an audit, a background or credit check, a consumer report, or legal, financial, investment or security advice. Horizon Pulse does not check whether the sources are accurate, and a missing finding does not mean there is nothing to find. Screening results are mechanical address matches against dated public-list snapshots (such as OFAC SDN and ScamSniffer) and must be confirmed with the official source. Provided as is, without warranty of any kind. To the extent permitted by law, Horizon Pulse's total liability for any job is limited to the amount paid for that job.";
 
