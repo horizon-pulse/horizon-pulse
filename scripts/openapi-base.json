@@ -843,12 +843,12 @@
               "type": "string",
               "maxLength": 64
             },
-            "description": "Ticker (AAPL or AAPLc) or the 0x token address on Base; omit for every listed token (AAPL, AMZN, COIN, CRCL, GOOGL, INTC, META, MSFT, MSTR, NVDA, SNDK, SPCX, TSLA)"
+            "description": "Ticker (AAPL or AAPLc) or the 0x token address on Base; omit for every listed token (AAPL, AMZN, CRCL, GOOGL, INTC, META, MSFT, MSTR, NVDA, SNDK, SPCX, TSLA)"
           }
         ],
         "responses": {
           "200": {
-            "description": "Paid success: tokenized stock status JSON (no price) with notAdvice line"
+            "description": "Paid success: tokenized stock status JSON (no price) with notAdvice and usPersons lines"
           },
           "402": {
             "description": "Payment Required (x402 v2)"

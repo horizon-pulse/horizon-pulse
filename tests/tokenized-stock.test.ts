@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { encodeAbiParameters, encodeFunctionResult, parseAbi, type Hex } from "viem";
-import { NOT_ADVICE, TOKENIZED_STOCKS, TOKENIZED_STOCK_TICKERS, formatFixed, parseStockInput, tokenizedStock, type Deps } from "@/lib/tokenized-stock";
+import { NOT_ADVICE, TOKENIZED_STOCK_US_PERSONS, TOKENIZED_STOCKS, TOKENIZED_STOCK_TICKERS, formatFixed, parseStockInput, tokenizedStock, type Deps } from "@/lib/tokenized-stock";
 import { tokenizedStockHandler, paymentOpts } from "@/app/api/tokenized-stock/handler";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 
@@ -46,17 +46,18 @@ function deps(answer: (url: string, n: number) => unknown, calls: string[] = [])
 }
 
 describe("parseStockInput", () => {
-  it("accepts AAPL, AAPLc, $aapl, address; empty = all 13", () => {
+  it("accepts AAPL, AAPLc, $aapl, address; empty = all 12", () => {
     expect(parseStockInput({ symbol: "AAPL" })).toEqual({ ok: true, tickers: ["AAPL"] });
     expect(parseStockInput({ symbol: "aaplc" })).toEqual({ ok: true, tickers: ["AAPL"] });
     expect(parseStockInput({ symbol: "$nvda" })).toEqual({ ok: true, tickers: ["NVDA"] });
     expect(parseStockInput({ symbol: TOKENIZED_STOCKS.TSLA.token.toLowerCase() })).toEqual({ ok: true, tickers: ["TSLA"] });
     expect(parseStockInput({})).toMatchObject({ ok: true, tickers: TOKENIZED_STOCK_TICKERS });
-    expect(TOKENIZED_STOCK_TICKERS).toHaveLength(13);
+    expect(TOKENIZED_STOCK_TICKERS).toHaveLength(12);
   });
-  it("COINc is COIN (not CO + IN), CRCL stays CRCL", () => {
-    expect(parseStockInput({ symbol: "COINc" })).toEqual({ ok: true, tickers: ["COIN"] });
-    expect(parseStockInput({ symbol: "COIN" })).toEqual({ ok: true, tickers: ["COIN"] });
+  it("COIN is not listed (pulled 10/20: address not in Coinbase's public API); CRCL stays CRCL", () => {
+    expect(parseStockInput({ symbol: "COINc" })).toMatchObject({ ok: false });
+    expect(parseStockInput({ symbol: "COIN" })).toMatchObject({ ok: false });
+    expect(parseStockInput({ symbol: "0xb200000000000000000000c85a31389D71F3ecfb" })).toMatchObject({ ok: false });
     expect(parseStockInput({ symbol: "CRCL" })).toEqual({ ok: true, tickers: ["CRCL"] });
   });
   it("bad input 400, unknown 404 (not charged)", () => {
@@ -83,6 +84,7 @@ describe("engine (mocked Multicall3)", () => {
     expect(s).toMatchObject({ ticker: "AAPL", symbol: "AAPLc", decimals: 8, multiplier: "2", issuer: "Coinbase (from the published token list, not an on-chain field)", zeroSupply: false });
     expect(s.supply).toEqual({ total: "1.5", totalAtomic: "150000000", shareEquivalent: "3", cap: null, capUnlimited: true });
     expect(Object.keys(s).filter((k) => /price|feed|market|frozen/i.test(k))).toEqual([]);
+    // Guard covers every field, usPersons included (route-specific line names no Chainlink).
     expect(JSON.stringify(r)).not.toMatch(/priceUsd|feedLikelyFrozen|latestRoundData|Chainlink/);
     expect(s.paused).toEqual({ any: false, features: [], transfer: false, mint: false, burn: false, seize: false });
     expect(r.notAdvice).toBe(NOT_ADVICE);
@@ -102,8 +104,8 @@ describe("engine (mocked Multicall3)", () => {
     expect(r.stocks[0].supply.shareEquivalent).toBeNull();
     expect(r.stocks[0].errors).toContain("multiplier unavailable");
   });
-  it("COIN, CRCL, INTC with zero supply are a normal status (zeroSupply true), not an error", async () => {
-    for (const t of ["COIN", "CRCL", "INTC"]) {
+  it("CRCL, INTC with zero supply are a normal status (zeroSupply true), not an error", async () => {
+    for (const t of ["CRCL", "INTC"]) {
       const res = await tokenizedStockHandler(new NextRequest(`https://horizonpulse.dev/api/tokenized-stock?symbol=${t}`), deps(() => agg(rows([t], { supply: 0n }))));
       expect(res.status, t).toBe(200);
       const j = await res.json();
@@ -111,11 +113,11 @@ describe("engine (mocked Multicall3)", () => {
       expect(j.notAdvice).toBe(NOT_ADVICE);
     }
   });
-  it("all 13 in one call", async () => {
+  it("all 12 in one call", async () => {
     const calls: string[] = [];
     const r = await tokenizedStock(TOKENIZED_STOCK_TICKERS, deps(() => agg(rows(TOKENIZED_STOCK_TICKERS)), calls));
     expect(calls).toHaveLength(1);
-    expect(r.ok && r.count).toBe(13);
+    expect(r.ok && r.count).toBe(12);
   });
   it("falls back across RPCs; all down → 502", async () => {
     const calls: string[] = [];
@@ -136,7 +138,10 @@ describe("handler", () => {
     expect(res.status).toBe(200);
     const j = await res.json();
     expect(j).toMatchObject({ source: "tokenized-stock", ok: true, count: 1, priced: { amountAtomic: "2000", amountUsd: "$0.002" } });
-    expect(j.notAdvice).toMatch(/^Not investment advice\./);
+    expect(j.notAdvice).toBe("Not financial, investment, tax, legal or health advice. Quotes about tokens, securities or other financial products are not a recommendation to buy, sell or hold anything. Price differences are observed technical values that may be stale (reference feeds freeze outside market hours and during corporate actions) and are not a trading signal.");
+    expect(NOT_ADVICE).toBe(j.notAdvice);
+    expect(j.usPersons).toBe("Data only. These tokens are issued under Regulation S and are not available to U.S. persons or in other restricted jurisdictions; check your own eligibility. This route does not offer, sell, recommend or facilitate buying, selling or holding them. Horizon Pulse is not affiliated with Coinbase or Base.");
+    expect(TOKENIZED_STOCK_US_PERSONS).toBe(j.usPersons);
   });
   it("404 / 400 / 502 carry charged:false", async () => {
     for (const [q, st] of [["?symbol=IBM", 404], ["?symbol=%3Cscript%3E", 400]] as const) {
