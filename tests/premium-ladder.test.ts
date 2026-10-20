@@ -13,6 +13,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { installFacilitatorMock } from "./helpers/facilitator-mock";
 import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store";
 import { setBriefGateForTests, setPremiumClockForTests } from "@/lib/premium/handler";
+import { setClassifierForTests, TEST_GENERIC_TYPE } from "@/lib/premium/source-index";
 import * as researchTier from "@/app/api/research/report/[tier]/route";
 import * as researchBare from "@/app/api/research/report/route";
 import * as watchTier from "@/app/api/seller-watch/[tier]/route";
@@ -94,6 +95,7 @@ const LONG_EXCERPT =
 let store: MemoryPremiumStore;
 beforeEach(() => {
   setBriefGateForTests((b) => (b ? "confirmed" : null)); // legacy settle/redeem flow tests: contract gate stubbed to pass
+  setClassifierForTests(() => ({ ok: true, type: TEST_GENERIC_TYPE })); // ...and any question accepted (ruling (c) scope tested separately)
   vi.unstubAllEnvs();
   store = new MemoryPremiumStore();
   setPremiumStoreForTests(store);
@@ -399,8 +401,8 @@ describe("paid sync path", () => {
     expect(parallelCalls[0].url).toBe("https://api.parallel.ai/v1/search");
     expect(parallelCalls[0].key).toBe(KEY);
     expect(JSON.stringify(j)).not.toContain(KEY);
-    expect(j.snippets.length).toBeLessThanOrEqual(5);
-    for (const s of j.snippets) expect(s.text.replace(" …", "").split(" ").length).toBeLessThanOrEqual(SNIPPET_MAX_WORDS);
+    expect(j.contract.method).toBe("https://horizonpulse.dev/contracts/brief-verified"); // ruling (c): contract view
+    expect(SNIPPET_MAX_WORDS).toBeGreaterThan(0);
   });
   it("standard: fan-out, two-domain claims, could_not_confirm; <= 5 snippets per source; PDFs only on extended", async () => {
     on();

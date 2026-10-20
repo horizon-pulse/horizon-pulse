@@ -12,7 +12,7 @@ export const USDC_CONTRACTS: { chain: ChainNetwork; address: string }[] = [
 ];
 const TOTAL_SUPPLY = "0x18160ddd";
 
-export type OnchainTopic = "usdc_supply" | "eth_gas";
+export type OnchainTopic = "usdc_supply" | "eth_gas" | "base_gas";
 export function onchainTopic(q: string): OnchainTopic | null {
   if (/\busdc\b/i.test(q) && /\b(supply|circulation|circulating|outstanding|minted)\b/i.test(q)) return "usdc_supply";
   if (/\bgas\b/i.test(q) && /\b(ethereum|mainnet|eth)\b/i.test(q) && !/\b(base|arbitrum|optimism|polygon|solana)\b/i.test(q)) return "eth_gas";
@@ -84,13 +84,20 @@ export async function readOnchain(topic: OnchainTopic, deadline: number, deps: R
       const line = reads.map((r) => `${r.value} USDC on ${r.chain === "ethereum" ? "Ethereum" : "Base"} (totalSupply() at block ${r.block}, ${r.timestamp})`).join("; ");
       return { source_tier: "onchain", retrieved_at: new Date(deps.now()).toISOString(), topic, line: `USDC supply read on-chain: ${line}.`, reads, note: "Read directly from Circle's USDC contracts on Ethereum and Base at a pinned block by two independent nodes; other chains are not included, so this is not the all-chain total." };
     }
-    const p = await pinned(deps, "ethereum", deadline, async (_url, _bh, blk) => {
+    // Gas topics (Ethereum mainnet or Base): base fee AND block gas limit of the same pinned block; both nodes must agree on both.
+    const chain: ChainNetwork = topic === "base_gas" ? "base" : "ethereum";
+    const name = chain === "base" ? "Base" : "Ethereum mainnet";
+    const p = await pinned(deps, chain, deadline, async (_url, _bh, blk) => {
       const b = hexToBig(blk?.baseFeePerGas);
-      return b === null ? null : b.toString();
+      const l = hexToBig(blk?.gasLimit);
+      return b === null || l === null ? null : `${b}|${l}`;
     });
     if (!p) return null;
-    reads.push({ chain: "ethereum", block: p.block, timestamp: iso(p.ts), method: "baseFeePerGas", value: gwei(BigInt(p.v)), unit: "gwei", nodes: p.nodes, confirmed: p.confirmed });
-    return { source_tier: "onchain", retrieved_at: new Date(deps.now()).toISOString(), topic, line: `Ethereum mainnet base fee read on-chain: ${reads[0].value} gwei (block ${p.block}, ${iso(p.ts)}).`, reads, note: "Base fee per gas of the cited Ethereum block, read by two independent nodes; it changes every block (~12 s). Priority tips are paid on top." };
+    const [bf, gl] = p.v.split("|").map((x) => BigInt(x));
+    const ts = iso(p.ts);
+    reads.push({ chain, block: p.block, timestamp: ts, method: "baseFeePerGas", value: gwei(bf), unit: "gwei", nodes: p.nodes, confirmed: p.confirmed });
+    reads.push({ chain, block: p.block, timestamp: ts, method: "gasLimit", value: gl.toLocaleString("en-US"), unit: "gas", nodes: p.nodes, confirmed: p.confirmed });
+    return { source_tier: "onchain", retrieved_at: new Date(deps.now()).toISOString(), topic, line: `${name} base fee read on-chain: ${reads[0].value} gwei (block ${p.block}, ${ts}).`, reads, note: `Base fee per gas and gas limit of the cited ${name} block, read by two independent nodes; the base fee changes every block. Priority tips are paid on top.` };
   } catch {
     return null;
   }

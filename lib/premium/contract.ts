@@ -9,8 +9,8 @@ import { norm, pageSentences } from "./synthesis";
 import { domainOf, publisherOf } from "./research";
 
 export const CONTRACT_URL = "https://horizonpulse.dev/contracts/brief-verified";
-export const CONTRACT_MIN_CONFIRMED = 4;
-export const CONTRACT_MIN_CLAIMS = 3;
+export const CONTRACT_MIN_CONFIRMED = 2; // Odin ruling (c); raised to the highest N that holds the bar (see result file)
+export const CONTRACT_MIN_CLAIMS = 2;
 export const CONTRACT_MAX_CLAIMS = 8;
 export const QUOTE_CAP = 300;
 /** Fixed, versioned response schema (bump on any breaking change; documented at CONTRACT_URL). */
@@ -18,14 +18,14 @@ export const BRIEF_SCHEMA_VERSION = "brief-verified/1";
 
 /** §1, published verbatim at /contracts/brief-verified. */
 export const OUTCOME_CONTRACT = [
-  "1. A brief contains an answer (names the question's subject) and 3–8 claims.",
+  "1. A brief contains an answer (names the question's subject) and 2–8 claims. Only supported question types are accepted; others are refused before payment.",
   "2. Every claim carries a verbatim quote from a public page, with the URL, the fetch time, the page's body hash, and the quote's offset in the body. Quotes are capped at 300 characters and attributed.",
   "3. A claim is confirmed only when one of these holds:",
   "   - publisher-confirmed — a second, independent publisher states the same value or date plus a shared topic word (code-checked; wire-syndicated copy rejected by near-duplicate test);",
   "   - onchain-confirmed — two independent nodes or explorers report the same value at the same block (gas, supply, balances, tx state);",
   "   - official — the issuing authority's own primary publication plus a second document from the same authority, with the effective date (administered rates, statutes, regulators' notices).",
   "4. consistent (two dated sources within tolerance) is shown but never counted as confirmed.",
-  "5. A brief passes when at least 4 claims are confirmed and every claim's quote verifies verbatim at its URL at delivery time. A brief that does not pass is not charged (settle after produce).",
+  "5. At least 2 independently confirmed claims, or no charge: a brief passes only when at least 2 claims are confirmed and every claim's quote verifies verbatim at its URL at delivery time. A brief that does not pass is not charged (settle after produce).",
   "6. Refund: if any confirmed claim is later shown to lack its second source, the whole brief is refunded to the payer address on the receipt within 24 hours, and the correction is logged publicly.",
   "7. Every brief carries a signed receipt (Signed Offers & Receipts shape) with the brief's body hash, and every claim carries its evidence object.",
   "8. No financial, legal or medical recommendations. Briefs describe; they do not advise.",
@@ -62,7 +62,7 @@ const sha = (s: string) => createHash("sha256").update(s, "utf8").digest("hex");
 const pub = (u: string) => publisherOf(domainOf(u) ?? u);
 const ISO_DATE = /\b(19|20)\d\d-\d\d-\d\d\b/;
 const MONTH_DATE = /\b(January|February|March|April|May|June|July|August|September|October|November|December) \d{1,2},? (19|20)\d\d\b/;
-const effectiveDate = (t: string) => {
+export const effectiveDate = (t: string) => {
   const m = t.match(ISO_DATE) ?? t.match(MONTH_DATE);
   if (!m) return undefined;
   const d = new Date(`${m[0]} UTC`);
@@ -73,7 +73,7 @@ const effectiveDate = (t: string) => {
  * Body = the page's extracted text, markdown-stripped and normalised (the exact text the verifier matches against);
  * body_sha256 hashes that text, offset is the quote's index in it. A quote that is not found returns null (fails verify).
  */
-function evidence(url: string, quote: string, pageText: Map<string, string>, fetchedAt: string): Evidence | null {
+export function evidence(url: string, quote: string, pageText: Map<string, string>, fetchedAt: string): Evidence | null {
   const body = pageText.get(url);
   const q = quote.replace(/ …$/, "");
   if (!body) return null;
@@ -82,7 +82,14 @@ function evidence(url: string, quote: string, pageText: Map<string, string>, fet
   return { url, quote: q, fetched_at: fetchedAt, body_sha256: sha(body), offset, publisher: pub(url) };
 }
 
-const quoteItem = (e: Evidence | null, official?: string): EvidenceItem[] =>
+/** Templated (deterministic) claim text for an on-chain read. */
+export function onchainText(r: any): string {
+  const chain = r.chain === "ethereum" ? "Ethereum mainnet" : "Base";
+  if (r.method === "baseFeePerGas") return `${chain} base fee was ${r.value} gwei at block ${r.block} (${r.timestamp}).`;
+  if (r.method === "gasLimit") return `${chain} block gas limit was ${r.value} gas at block ${r.block} (${r.timestamp}).`;
+  return `USDC totalSupply() on ${r.chain === "ethereum" ? "Ethereum" : "Base"} was ${r.value} USDC at block ${r.block} (${r.timestamp}).`;
+}
+export const quoteItem = (e: Evidence | null, official?: string): EvidenceItem[] =>
   e ? [{ kind: "quote", quote: e.quote, url: e.url, retrieved_at: e.fetched_at, publisher: e.publisher, body_sha256: e.body_sha256, offset: e.offset, ...(official ? { official_url: official } : {}) }] : [];
 
 export function toContract(q: string, b: any, extracted: ParallelResult[], fetchedAt: string): ContractBrief {
@@ -112,12 +119,12 @@ export function toContract(q: string, b: any, extracted: ParallelResult[], fetch
   for (const r of b?.onchain?.reads ?? []) {
     const chain = r.chain === "ethereum" ? "Ethereum" : "Base";
     add({
-      text: r.unit === "gwei" ? `Ethereum mainnet base fee was ${r.value} gwei at block ${r.block} (${r.timestamp}).` : `USDC totalSupply() on ${chain} was ${r.value} USDC at block ${r.block} (${r.timestamp}).`,
+      text: onchainText(r),
       status: r.confirmed ? "confirmed" : "unconfirmed",
       tier: r.confirmed ? "onchain-confirmed" : null,
       primary: null,
       secondary: null,
-      match: { value: r.value, unit: r.unit, date: String(r.timestamp).slice(0, 10), topic: r.unit === "gwei" ? "base fee" : "USDC supply" },
+      match: { value: r.value, unit: r.unit, date: String(r.timestamp).slice(0, 10), topic: r.method === "baseFeePerGas" ? "base fee" : r.method === "gasLimit" ? "gas limit" : "USDC supply" },
       onchain: { value: r.value, unit: r.unit, block: r.block, chain: r.chain, nodes: r.nodes ?? [], observed_at: r.timestamp },
       evidence: (r.nodes ?? []).map((node: string) => ({ kind: "onchain" as const, chain: r.chain, block: r.block, block_timestamp: r.timestamp, method: r.method, ...(r.contract ? { contract: r.contract } : {}), value: r.value, unit: r.unit, node, retrieved_at: b.onchain.retrieved_at ?? fetchedAt })),
     });

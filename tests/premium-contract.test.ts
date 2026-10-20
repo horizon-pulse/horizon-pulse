@@ -15,7 +15,7 @@ function brief(nConfirmed: number, nClaims = 5, mutate?: (t: string) => string) 
 }
 describe("hardened brief outcome contract", () => {
   it("publishes the 8 clauses verbatim", () => {
-    expect(OUTCOME_CONTRACT).toContain("A brief passes when at least 4 claims are confirmed");
+    expect(OUTCOME_CONTRACT).toContain("At least 2 independently confirmed claims, or no charge");
     expect(OUTCOME_CONTRACT.split("\n").filter((l) => /^\d\./.test(l))).toHaveLength(8);
   });
   it("4 publisher-confirmed claims + all verbatim -> pass; evidence objects carry hash and offset", () => {
@@ -26,10 +26,10 @@ describe("hardened brief outcome contract", () => {
     expect(c.claims[1].primary!.offset).toBeGreaterThan(0);
     expect(c.claims[0].secondary!.publisher).not.toBe(c.claims[0].primary!.publisher);
   });
-  it("3 confirmed -> fail (never charged)", () => {
-    const c = toContract("q", brief(3), ex as any, "t");
+  it("1 confirmed -> fail (never charged); minimum is 2 (Odin ruling (c))", () => {
+    const c = toContract("q", brief(1), ex as any, "t");
     expect(c.status).toBe("fail");
-    expect(c.fail_reasons).toContain("confirmed_3_of_4");
+    expect(c.fail_reasons).toContain("confirmed_1_of_2");
   });
   it("a quote not verbatim at its URL fails the whole brief", () => {
     const c = toContract("q", brief(5, 5, (t) => t.replace("one", "uno")), ex as any, "t");

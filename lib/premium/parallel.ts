@@ -35,7 +35,8 @@ function clean(results: unknown): ParallelResult[] {
       url: o.url.slice(0, 2048),
       title: typeof o.title === "string" ? o.title.slice(0, 300) : null,
       publish_date: typeof o.publish_date === "string" ? o.publish_date.slice(0, 32) : null,
-      excerpts: Array.isArray(o.excerpts) ? o.excerpts.filter((e): e is string => typeof e === "string").map((e) => e.slice(0, 4000)).slice(0, 10) : [],
+      // Verified brief: full page text (capped) when requested, so sentences are read in context, not only excerpts.
+      excerpts: typeof o.full_content === "string" && o.full_content.length ? [o.full_content.slice(0, FULL_CONTENT_MAX_CHARS)] : Array.isArray(o.excerpts) ? o.excerpts.filter((e): e is string => typeof e === "string").map((e) => e.slice(0, 4000)).slice(0, 10) : [],
     });
   }
   return out;
@@ -69,11 +70,14 @@ async function post(path: string, body: unknown, deadline: number): Promise<any>
 
 /** POST /v1/search body. v1 rejects unknown top-level fields (additionalProperties:false -> 422): max_results lives under
  * advanced_settings (a top-level max_results was only accepted by v1beta). */
-export type SearchOpts = { afterDate?: string };
+export type SearchOpts = { afterDate?: string; includeDomains?: string[] };
 /** afterDate (YYYY-MM-DD) maps to advanced_settings.source_policy.after_date (Parallel v1): content published on/after it. */
 export function searchBody(objective: string, queries: string[], maxResults: number, opts: SearchOpts = {}) {
   const advanced_settings: Record<string, unknown> = { max_results: maxResults };
-  if (opts.afterDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.afterDate)) advanced_settings.source_policy = { after_date: opts.afterDate };
+  const sp: Record<string, unknown> = {};
+  if (opts.afterDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.afterDate)) sp.after_date = opts.afterDate;
+  if (opts.includeDomains?.length) sp.include_domains = opts.includeDomains.slice(0, 20);
+  if (Object.keys(sp).length) advanced_settings.source_policy = sp;
   return { objective, search_queries: queries.slice(0, 5), mode: "fast" as const, advanced_settings };
 }
 
@@ -108,17 +112,21 @@ export const liveFetchAllowed = (url: string) => {
     return false;
   }
 };
-export function extractBody(objective: string, urls: string[], live = false) {
+export const FULL_CONTENT_MAX_CHARS = 40_000;
+export function extractBody(objective: string, urls: string[], live = false, full = false) {
   const body: Record<string, unknown> = { urls: urls.slice(0, 20), objective };
-  if (live) body.advanced_settings = { fetch_policy: { max_age_seconds: 600, timeout_seconds: LIVE_FETCH_TIMEOUT_S, disable_cache_fallback: false } };
+  const adv: Record<string, unknown> = {};
+  if (live) adv.fetch_policy = { max_age_seconds: 600, timeout_seconds: LIVE_FETCH_TIMEOUT_S, disable_cache_fallback: false };
+  if (full) adv.full_content = true;
+  if (Object.keys(adv).length) body.advanced_settings = adv;
   return body;
 }
-export async function parallelExtract(objective: string, urls: string[], deadline: number): Promise<ParallelResult[]> {
+export async function parallelExtract(objective: string, urls: string[], deadline: number, full = false): Promise<ParallelResult[]> {
   if (urls.length === 0) return [];
   const live = urls.filter(liveFetchAllowed);
   const cached = urls.filter((u) => !liveFetchAllowed(u));
   const [a, b] = await Promise.all([
-    cached.length ? post("/v1/extract", extractBody(objective, cached), deadline) : Promise.resolve({ results: [] }),
+    cached.length ? post("/v1/extract", extractBody(objective, cached, false, full), deadline) : Promise.resolve({ results: [] }),
     live.length ? post("/v1/extract", extractBody(objective, live, true), deadline).catch(() => post("/v1/extract", extractBody(objective, live), deadline)) : Promise.resolve({ results: [] }),
   ]);
   return clean([...(a?.results ?? []), ...(b?.results ?? [])]);

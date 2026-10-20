@@ -5,10 +5,12 @@
  * Heuristics are labelled as such in the output; nothing here is a verdict.
  */
 import { toContract } from "./contract";
-import { extractAllowed, parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
+import { buildVerified } from "./verified";
+import { classifyQuestion, fetchIndexPages } from "./source-index";
+import { ParallelError, extractAllowed, parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
 import { onchainTopic, readOnchain, type OnchainFact } from "./onchain";
 import type { Tier } from "./tiers";
-import { CONSISTENT_WINDOW_MS, isLiveValueQuestion, subjectCoverage, subjectTerms as questionSubjectTerms, synthesizeBrief } from "./synthesis";
+import { ADVICE_DISCLAIMER, CONSISTENT_WINDOW_MS, isLiveValueQuestion, subjectCoverage, subjectTerms as questionSubjectTerms, synthesizeBrief } from "./synthesis";
 
 export const SNIPPET_MAX_WORDS = 50;
 export const SNIPPETS_PER_SOURCE = 5;
@@ -500,19 +502,20 @@ export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N, q
 /** C1: optional sink for the cleaned search + extract results (Preview debug capture only; see capture.ts). */
 export type CaptureSink = { data?: { search: ParallelResult[]; extract: ParallelResult[] } };
 export async function runResearch(x: Tier, q: string, deadline: number, capture?: CaptureSink, jobKey?: string) {
-  const subs = x.id === "brief" ? briefQueries(q) : subQuestionList(q);
+  if ((x.id as string) === "brief" /* legacy path, unreachable since ruling (c) */) return runVerifiedBrief(q, deadline, capture);
+  const subs = (x.id as string) === "brief" /* legacy path, unreachable since ruling (c) */ ? briefQueries(q) : subQuestionList(q);
   const queries = [q, ...subs.filter((s) => s !== q)].slice(0, Math.max(1, x.searches));
   // Brief: wider candidate pool (one search call either way) so the reranker can find pages that name the subject.
-  const perSearch = x.id === "brief" ? 6 : Math.max(3, Math.ceil(x.reads / Math.max(1, queries.length)));
+  const perSearch = (x.id as string) === "brief" /* legacy path, unreachable since ruling (c) */ ? 6 : Math.max(3, Math.ceil(x.reads / Math.max(1, queries.length)));
   const found: ParallelResult[] = [];
   // One Parallel search call carries up to 5 queries; a tier's search units cap the number of queries sent.
-  const topic = x.id === "brief" ? onchainTopic(q) : null;
+  const topic = (x.id as string) === "brief" /* legacy path, unreachable since ruling (c) */ ? onchainTopic(q) : null;
   const chainP: Promise<OnchainFact | null> = topic ? readOnchain(topic, deadline) : Promise.resolve(null);
-  if (x.id === "brief") found.push(...(await briefSearch(q, queries, perSearch, deadline)));
+  if ((x.id as string) === "brief" /* legacy path, unreachable since ruling (c) */) found.push(...(await briefSearch(q, queries, perSearch, deadline)));
   else for (let i = 0; i < queries.length; i += 5) {
     found.push(...(await parallelSearch(q, queries.slice(i, i + 5), Math.min(20, perSearch * Math.min(5, queries.length - i)), deadline)));
   }
-  if (x.id === "brief") {
+  if ((x.id as string) === "brief" /* legacy path, unreachable since ruling (c) */) {
     // Odin 10/19 (1): extract page content for the top BRIEF_EXTRACT_N distinct publishers (search order), within the budget.
     const urls = briefExtractUrls(found, BRIEF_EXTRACT_N, q);
     const read = withSearchDates(urls.length ? await parallelExtract(q, urls, deadline).catch(() => [] as ParallelResult[]) : [], found);
@@ -526,4 +529,35 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
   const urls = [...new Set(found.map((r) => r.url))].slice(0, x.reads);
   const read = await parallelExtract(q, urls, deadline);
   return compile(x, q, [...found, ...read]);
+}
+
+/**
+ * Odin ruling (c): verified brief pipeline. Classify (rule-based) -> in parallel: open-web search+extract (full text),
+ * official index pages (1 h cache per type) and on-chain two-node reads -> code-confirmed claims -> model answer line
+ * only -> contract. The handler settles only when contract.status === "pass".
+ */
+export const AI_ANSWER_NOTE = "The answer line is written by an AI model provider from the confirmed claims only and checked by code; claim text is quoted verbatim from the cited pages or read on-chain.";
+export async function runVerifiedBrief(q: string, deadline: number, capture?: CaptureSink) {
+  const c = classifyQuestion(q);
+  if (!c.ok) throw new Error("unsupported_question_type");
+  const t = c.type;
+  const timing: Record<string, number> = {};
+  const timed = async <T>(k: string, p: Promise<T>): Promise<T> => { const s = Date.now(); try { return await p; } finally { timing[k] = Date.now() - s; } };
+  let upstreamErrors = 0;
+  const [web, index, chain] = await Promise.all([
+    timed("web_ms", (async () => {
+      const found = await briefSearch(q, briefQueries(q).slice(0, 2), 6, deadline);
+      const urls = briefExtractUrls(found, BRIEF_EXTRACT_N, q);
+      return withSearchDates(urls.length ? await parallelExtract(q, urls, deadline, true).catch(() => [] as ParallelResult[]) : [], found);
+    })().catch(() => (upstreamErrors++, [] as ParallelResult[]))),
+    timed("index_ms", t.official ? fetchIndexPages(t, q, deadline).catch(() => (upstreamErrors++, [] as ParallelResult[])) : Promise.resolve([] as ParallelResult[])),
+    timed("onchain_ms", t.onchain ? readOnchain(t.onchain, deadline) : Promise.resolve(null)),
+  ]);
+  // Every evidence source failed (Parallel down, no on-chain read): a work failure, not an empty brief.
+  if (!chain && upstreamErrors >= (t.official ? 2 : 1)) throw new ParallelError("upstream_unavailable");
+  if (capture) capture.data = { search: [], extract: [...index, ...web] };
+  const s = Date.now();
+  const contract = await buildVerified(q, t, web, index, chain, new Date().toISOString(), deadline);
+  timing.build_ms = Date.now() - s;
+  return { tier: "brief", question: q, contract, timing, disclaimer: ADVICE_DISCLAIMER, ai_note: AI_ANSWER_NOTE, coverage: t.label };
 }

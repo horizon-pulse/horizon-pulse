@@ -30,6 +30,7 @@ import { BUYER_TERMS, WATCH_TERMS, TECHNICAL_NOTES, RECONCILE_RETENTION_S, PRIVA
 import { CAP_EXEMPT_OUTCOMES, recordReconcile, RECONCILE_WRITE_CAP_PER_DAY, reconcileWriteStats, flushReconcileForTests, setReconcileForTests, storedFingerprint, type ReconcileLine } from "@/lib/premium/reconcile";
 import { MemoryPremiumStore, premiumPrefix, setPremiumStoreForTests, UpstashPremiumStore, type PremiumStore } from "@/lib/premium/store";
 import { setBriefGateForTests, setPremiumClockForTests } from "@/lib/premium/handler";
+import { setClassifierForTests, TEST_GENERIC_TYPE } from "@/lib/premium/source-index";
 import { settleLanded, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S, AUTH_USED_TOPIC, FIRST_DELIVERABLE_BUDGET_MS, JOB_KEYS, loadJob, runJob, setJobClockForTests, setJobRpcForTests, stopWatch, cronSweep } from "@/lib/premium/jobs";
 import { ARCHIVE_CONTEXT_CHARS, ARCHIVE_TEXT_CAP_BYTES, matchSnippet, noArchive, robotsAllows, setArchiveFetchForTests } from "@/lib/premium/archive";
 import { DAY_MS, dayWindow, resembles, setWatchDepsForTests, watchRefundAtomic } from "@/lib/premium/watch";
@@ -96,6 +97,7 @@ const EXCERPT = "The x402 protocol lets an HTTP server answer 402 Payment Requir
 
 beforeEach(() => {
   setBriefGateForTests((b) => (b ? "confirmed" : null)); // legacy settle/redeem flow tests: contract gate stubbed to pass
+  setClassifierForTests(() => ({ ok: true, type: TEST_GENERIC_TYPE })); // ...and any question accepted (ruling (c) scope tested separately)
   vi.unstubAllEnvs();
   afters.length = 0;
   now = Date.now();

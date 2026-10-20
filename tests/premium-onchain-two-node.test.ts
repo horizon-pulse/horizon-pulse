@@ -10,7 +10,7 @@ function deps(baseFee: (url: string) => string) {
       fetch: (async (url: string, init: any) => {
         const { method, params } = JSON.parse(init.body);
         calls.push(`${new URL(url).hostname}:${method}`);
-        const result = method === "eth_blockNumber" ? "0x64" : method === "eth_getBlockByNumber" ? (expect(params[0]).toBe("0x62"), { timestamp: "0x6713f000", baseFeePerGas: baseFee(url) }) : "0x0";
+        const result = method === "eth_blockNumber" ? "0x64" : method === "eth_getBlockByNumber" ? (expect(params[0]).toBe("0x62"), { timestamp: "0x6713f000", baseFeePerGas: baseFee(url), gasLimit: "0x1c9c380" }) : "0x0";
         return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }));
       }) as any,
     },

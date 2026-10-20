@@ -54,6 +54,8 @@ import { questionRefusal } from "./synthesis";
 import type { CaptureSink } from "./research";
 import { newReconcileId, recordReconcile, type ReconcileOutcome } from "./reconcile";
 import { briefPassTier, runResearch } from "./research";
+import { classifyQuestion } from "./source-index";
+import { CONTRACT_URL } from "./contract";
 import { premiumStore, type PremiumStore } from "./store";
 import { asyncTierLive, premiumAsyncEnabled, premiumEnabled, projectedSeconds, ROUTE_BASE, SETTLE_RESERVE_S, tierFor, WORK_BUDGET_S, type PremiumRoute, type Tier } from "./tiers";
 
@@ -198,6 +200,12 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     const refused = questionRefusal(v.input);
     if (refused)
       return jsonError(400, { error: "question_not_supported", reason: refused, charged: false, message: "We do not compile information about private individuals or health data. Nothing was charged. Do not include personal data in questions." });
+    // Odin ruling (c): the verified brief accepts only question types the curated source index can confirm; refused
+    // before any 402 / payment step, so nothing is authorised or charged.
+    if (x.id === "brief") {
+      const c = classifyQuestion(v.input);
+      if (!c.ok) return jsonError(422, { error: "question_type_not_supported", reason: c.reason, charged: false, message: c.message, contract: CONTRACT_URL });
+    }
   }
   if (x.route === "research" && !parallelKeyPresent()) return jsonError(503, { error: "premium_provider_unavailable", charged: false });
   if (x.mode === "async" && !(premiumAsyncEnabled() && asyncTierLive(x))) return jsonError(503, { error: "tier_not_available", charged: false, message: "This tier is not live yet." });
@@ -376,7 +384,7 @@ async function chargeOnPass(store: PremiumStore, req: NextRequest, x: Tier, d: D
       contract: "https://horizonpulse.dev/contracts/brief-verified",
       // Spec §3 step 6: the failed brief is returned unpaid, with its reason (per-payer decline cap above limits abuse).
       brief: (result as any)?.contract ?? null,
-      message: "This brief did not meet the published contract (at least 4 confirmed claims, every quote verbatim at its URL), so we did not charge you. Your payment authorization was not settled and will expire. See /contracts/brief-verified.",
+      message: "This brief did not meet the published contract (at least 2 independently confirmed claims, every quote verbatim at its URL), so we did not charge you. Your payment authorization was not settled and will expire. See /contracts/brief-verified.",
     });
   }
   await store.spendAdjust(dk, -1, BRIEF_DECLINE_TTL_S).catch(() => undefined);
