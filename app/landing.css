@@ -246,3 +246,6 @@
 .hp-prose a { color: var(--text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
 .hp-prose .hp-meta { font: 13px var(--mono); color: var(--text-3); margin: 0 0 32px; }
 .hp-prose hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0; }
+
+/* Odin 10:37: visible amber TEST label on the hero recording (payer is our own test wallet). Amber = the site palette's --t-err (#e5b567). */
+.hp-test-badge { display: inline-block; margin-right: 8px; padding: 1px 7px; border: 1px solid var(--t-err); border-radius: 4px; color: #08090a; background: var(--t-err); font: 600 11px/1.6 var(--mono); letter-spacing: .06em; }

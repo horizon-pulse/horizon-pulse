@@ -95,6 +95,7 @@ export function HeroTerminal() {
       </div>
       {tab === "replay" ? <Replay /> : <Code code={CODE[tab].code} />}
       <div className="hp-frame-foot">
+        <span className="hp-test-badge" aria-label="Test payment">TEST</span>
         <span>Recorded test call, {R.recordedAtUtc.slice(0, 10)}, paid from our own test wallet (not a customer).</span>
         <a href={`https://basescan.org/tx/${R.tx}`} target="_blank" rel="noreferrer">View tx {short(R.tx)} ↗</a>
       </div>
