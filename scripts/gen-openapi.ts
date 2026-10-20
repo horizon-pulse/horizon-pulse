@@ -14,6 +14,7 @@ import { USDC_BASE, CDP_FACILITATOR_URL, PUBLIC_BASE_URL, CONTACT_EMAIL, SERVICE
 import { exampleRecordedAt } from "../lib/route-examples";
 import * as M from "../lib/money-market-rates";
 import { BATCH_VALUE_NOTE } from "../lib/batch";
+import { NOTE as TX_GUARD_NOTE, TX_GUARD_METHODOLOGY } from "../lib/tx-guard";
 import { PAYAI_FACILITATOR_URL, SOLANA_MAINNET_CAIP2, SOLANA_PAYTO, USDC_SOLANA_MINT } from "../lib/solana-config";
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -90,6 +91,12 @@ function widen(s: Json): Json {
   return s;
 }
 
+/**
+ * tx-guard (Counsel 2026-10-19): the 402 description is trimmed to the 500-char cap, so openapi carries the
+ * response note and methodology lines verbatim after the price line (doc-only; no new copy, no 402 change).
+ */
+const TX_GUARD_DOC = `\n\nnote: ${TX_GUARD_NOTE}\n\nmethodology:\n${Object.entries(TX_GUARD_METHODOLOGY).map(([k, v]) => `- ${k}: ${v}`).join("\n")}`;
+
 const tags = (Object.keys(CATEGORY_LABELS) as (keyof typeof CATEGORY_LABELS)[]).map((c) => ({
   name: CATEGORY_LABELS[c],
   description: { crypto: "Crypto market data on Base and Ethereum.", web: "Read, call and render the public web.", agent: "Tools for agents working with x402." }[c],
@@ -149,7 +156,7 @@ for (const r of LIVE_PAID_ROUTES) {
       operationId: opId,
       tags: [CATEGORY_LABELS[r.category]],
       summary: r.docBlurb ?? r.blurb,
-      description: `${cfg.description}\n\nPrice: ${acc.price} USDC per call (${amount} atomic), paid with x402 v2 \`exact\` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.${p === "/api/batch" ? `\n\n${BATCH_VALUE_NOTE}` : ""}`,
+      description: `${cfg.description}\n\nPrice: ${acc.price} USDC per call (${amount} atomic), paid with x402 v2 \`exact\` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.${p === "/api/batch" ? `\n\n${BATCH_VALUE_NOTE}` : ""}${p === "/api/tx-guard" ? TX_GUARD_DOC : ""}`,
       "x-payment-info": {
         protocol: "x402",
         x402Version: 2,
