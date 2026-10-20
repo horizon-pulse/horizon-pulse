@@ -15,29 +15,51 @@ export type IndexType = {
   /** Objective + queries for the official-only search (cached 1 h per type, not per question). */
   indexQuery: string | null;
   onchain: OnchainTopic | null;
+  /** Open-web search + extract (publisher pairs). Off for on-chain types: the chain is the source of record. */
+  web: boolean;
+  /** Curated fixed document list (fetched instead of an official-domain search). */
+  urls?: string[];
+  /** Undated specification documents: official pairs need no effective date (published in the contract). */
+  undated?: boolean;
 };
 
+// Odin ruling 11:40 PM: launch narrow - on-chain live values + x402 spec facts ONLY.
 export const SOURCE_INDEX: IndexType[] = [
-  { id: "usdc_supply", label: "USDC supply (on-chain totalSupply)", match: [/\busdc\b/i, /\b(supply|circulation|circulating|outstanding|minted)\b/i], official: { authority: "Circle", domains: ["circle.com"] }, indexQuery: "USDC circulation supply Circle transparency", onchain: "usdc_supply" },
-  { id: "usdc_base_cost", label: "Cost to send USDC on Base (on-chain gas read)", match: [/\busdc\b/i, /\bbase\b/i, /\b(cost|fee|fees|gas|cheap|price to send)\b/i], official: { authority: "Coinbase / Base", domains: ["docs.base.org", "base.org", "coinbase.com"] }, indexQuery: "Base network fees USDC transfer cost gas", onchain: "base_gas" },
-  { id: "eth_gas", label: "Ethereum gas / base fee (on-chain)", match: [/\b(ethereum|eth|mainnet)\b/i, /\b(gas|base fee|basefee|gwei)\b/i], official: null, indexQuery: null, onchain: "eth_gas" },
-  { id: "fed_rate", label: "Federal funds rate (Federal Reserve)", match: [/\b(federal funds|fed funds|fomc target|policy rate|interest on reserve)/i], official: { authority: "Federal Reserve", domains: ["federalreserve.gov"] }, indexQuery: "FOMC federal funds rate target range statement implementation note", onchain: null },
-  { id: "sec_spot_btc_etf", label: "SEC spot bitcoin ETF approval (SEC)", match: [/\bsec\b|securities and exchange commission/i, /\bspot\b.*\bbitcoin\b.*\b(etf|etp|exchange-traded)/i], official: { authority: "U.S. SEC", domains: ["sec.gov"] }, indexQuery: "SEC approval spot bitcoin exchange-traded products January 2024 order", onchain: null },
-  { id: "genius_act", label: "GENIUS Act (U.S. statute)", match: [/\bgenius act\b|guiding and establishing national innovation for u\.?s\.? stablecoins/i], official: { authority: "U.S. Government", domains: ["congress.gov", "treasury.gov", "whitehouse.gov"] }, indexQuery: "GENIUS Act payment stablecoin issuer requirements reserves S.1582", onchain: null },
-  { id: "mica_stablecoins", label: "MiCA stablecoin rules (EU)", match: [/\bmica\b|markets in crypto-assets/i, /\b(stablecoin|e-money token|emt|art|asset-referenced|titles? iii|titles? iv|effect|apply|applies|application)\b/i], official: { authority: "European Union", domains: ["esma.europa.eu", "eur-lex.europa.eu", "eba.europa.eu", "finance.ec.europa.eu"] }, indexQuery: "MiCA Regulation (EU) 2023/1114 Titles III and IV apply 30 June 2024 stablecoins", onchain: null },
-  { id: "eip", label: "Ethereum Improvement Proposals (EIPs)", match: [/\beip[- ]?\d{1,5}\b/i], official: { authority: "Ethereum EIPs", domains: ["eips.ethereum.org", "ethereum.org"] }, indexQuery: null, onchain: null },
-  { id: "base_network", label: "Base network (Coinbase) facts", match: [/\bbase\b/i, /\b(coinbase|base network|base mainnet|base chain|layer[- ]?2|l2)\b/i], official: { authority: "Coinbase / Base", domains: ["base.org", "coinbase.com"] }, indexQuery: "Base network Coinbase mainnet launch announcement", onchain: null },
-  { id: "x402", label: "x402 payment protocol", match: [/\bx402\b/i, /^\s*(what|how)\b/i], official: { authority: "x402 / Coinbase", domains: ["x402.org", "coinbase.com", "docs.cdp.coinbase.com"] }, indexQuery: "x402 HTTP 402 payment protocol Coinbase", onchain: null },
-  { id: "circle_company", label: "Circle (company) facts", match: [/\bcircle\b/i, /\b(found|founded|founder|ceo|headquarter|ipo|listed)\w*/i], official: { authority: "Circle", domains: ["circle.com", "sec.gov"] }, indexQuery: "Circle Internet Group founded 2013 Jeremy Allaire Sean Neville", onchain: null },
-  { id: "solana_finality", label: "Solana / Base finality", match: [/\bsolana\b/i, /\b(finality|confirmation|block time)\b/i], official: { authority: "Solana / Base docs", domains: ["solana.com", "docs.base.org"] }, indexQuery: "Solana transaction finality confirmation Base finality seconds", onchain: null },
+  { id: "base_gas", label: "Base network gas / fees (on-chain read)", match: [/\b(on|the) base\b|\bbase (network|chain|l2|mainnet)\b/i, /\b(gas|fee|fees|gwei|cost|gas limit)\b/i], official: null, indexQuery: null, onchain: "base_gas", web: false },
+  { id: "eth_gas", label: "Ethereum mainnet gas / base fee / gas limit (on-chain read)", match: [/\b(ethereum|eth|mainnet)\b/i, /\b(gas|base fee|basefee|gwei|gas limit)\b/i], official: null, indexQuery: null, onchain: "eth_gas", web: false },
+  { id: "usdc_supply", label: "USDC supply on Ethereum and Base (on-chain totalSupply)", match: [/\busdc\b/i, /\b(supply|circulation|circulating|outstanding|minted|exists?|issued)\b/i], official: null, indexQuery: null, onchain: "usdc_supply", web: false },
+  { id: "x402", label: "x402 payment protocol (specification facts)", match: [/\bx402\b/i, /^\s*(what|how|which)\b/i], official: { authority: "x402 specification publishers (x402.org, Coinbase developer docs)", domains: ["x402.org", "docs.x402.org", "coinbase.com", "docs.cdp.coinbase.com", "github.com"] }, indexQuery: null, onchain: null, web: true, undated: true,
+    urls: [
+      "https://docs.x402.org/introduction",
+      "https://docs.x402.org/core-concepts/http-402",
+      "https://docs.x402.org/core-concepts/facilitator",
+      "https://docs.x402.org/core-concepts/client-server",
+      "https://docs.cdp.coinbase.com/x402/welcome",
+      "https://docs.cdp.coinbase.com/x402/core-concepts/how-it-works",
+      "https://docs.cdp.coinbase.com/x402/core-concepts/facilitator",
+      "https://github.com/coinbase/x402",
+      "https://www.x402.org/",
+    ] },
+];
+/** Published in the contract: what verified briefs do NOT cover (refused unpaid, before payment). */
+export const OUT_OF_SCOPE_CATEGORIES = [
+  "anything other than on-chain live values (Ethereum and Base gas, base fee, gas limit; USDC supply on Ethereum and Base) and x402 specification facts",
+  "statutes, regulations and other legal questions",
+  "prices, market data and order books",
+  "recommendations (buy, sell, hold, invest)",
+  "predictions and forecasts",
+  "private individuals and personal data",
+  "breaking news",
 ];
 
 /** Not briefs: recommendations, predictions, private persons. Refused unpaid even if a type matches. */
 const OUT_OF_SCOPE = [
   { re: /\b(should i|should we|is it (a )?good (time )?to|buy|sell|invest in|worth buying|recommend)\b/i, reason: "recommendation" },
+  { re: /\b(act|statute|law|legal|regulation|regulatory|mica|sec|compliance|lawful|illegal)\b/i, reason: "legal_or_statute" },
+  { re: /\b(price of|price today|order book|market cap|tvl)\b/i, reason: "market_data" },
   { re: /\b(will|going to|next meeting|forecast|predict|expect(ed)? to)\b.*\?*$/i, reason: "prediction" },
   { re: /\b(where does .* live|home address|phone number|email of)\b/i, reason: "private_person" },
-  { re: /\b(yesterday|this week|today'?s? (news|announcement)|right now|live order book)\b/i, reason: "breaking_or_live_market" },
+  { re: /\b(yesterday|this week|today'?s? (news|announcement)|breaking)\b/i, reason: "breaking_news" },
 ];
 
 export type Classified = { ok: true; type: IndexType } | { ok: false; reason: string; message: string };
@@ -47,11 +69,11 @@ let classifierOverride: ((q: string) => Classified) | null = null;
 export function setClassifierForTests(fn: ((q: string) => Classified) | null) {
   classifierOverride = fn;
 }
-export const TEST_GENERIC_TYPE: IndexType = { id: "test_generic", label: "test", match: [], official: null, indexQuery: null, onchain: null };
+export const TEST_GENERIC_TYPE: IndexType = { id: "test_generic", label: "test", match: [], official: null, indexQuery: null, onchain: null, web: true };
 export function classifyQuestion(q: string): Classified {
   if (classifierOverride) return classifierOverride(q);
   const oos = OUT_OF_SCOPE.find((o) => o.re.test(q));
-  if (oos) return { ok: false, reason: `out_of_scope:${oos.reason}`, message: "Verified briefs describe documented facts; they do not cover recommendations, predictions, private persons or breaking news. Nothing was charged." };
+  if (oos) return { ok: false, reason: `out_of_scope:${oos.reason}`, message: `Out of scope (${oos.reason}). Verified briefs cover only on-chain live values and x402 specification facts. Nothing was charged.` };
   const t = SOURCE_INDEX.find((x) => x.match.every((r) => r.test(q)));
   if (!t) return { ok: false, reason: "unsupported_question_type", message: `Verified briefs currently cover only: ${SOURCE_INDEX.map((x) => x.label).join("; ")}. Nothing was charged.` };
   return { ok: true, type: t };
@@ -79,6 +101,7 @@ export async function fetchIndexPages(t: IndexType, q: string, deadline: number,
   const eip = q.match(/\beip[- ]?(\d{1,5})\b/i)?.[1];
   const query = t.indexQuery ?? (eip ? `EIP-${eip}` : q);
   const key = eip ? `${t.id}:${eip}` : t.id;
+  if (t.urls?.length) return cachedIndex(t.id, now, async () => parallelExtract(t.label, t.urls!, deadline, true));
   return cachedIndex(key, now, async () => {
     const found = await parallelSearch(query, [query], 8, deadline, { includeDomains: t.official!.domains });
     const urls = [...new Set(found.map((r) => r.url))].filter((u) => !/\.pdf(\?|$)/i.test(u)).slice(0, INDEX_PAGES);

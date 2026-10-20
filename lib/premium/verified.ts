@@ -22,7 +22,8 @@ export async function buildVerified(q: string, t: IndexType, web: ParallelResult
   const claims: ContractClaim[] = [];
   const add = (c: ContractClaim) => {
     if (claims.length >= CONTRACT_MAX_CLAIMS) return;
-    if (claims.some((x) => norm(x.text) === norm(c.text) || nearDuplicate(x.text, c.text))) return;
+    // Near-duplicate test is for page quotes (syndicated copy); templated on-chain reads of different fields are distinct facts.
+    if (claims.some((x) => norm(x.text) === norm(c.text) || (!x.onchain && !c.onchain && nearDuplicate(x.text, c.text)))) return;
     claims.push(c);
   };
   for (const r of chain?.reads ?? []) {
@@ -34,14 +35,18 @@ export async function buildVerified(q: string, t: IndexType, web: ParallelResult
       evidence: r.nodes.map((node) => ({ kind: "onchain" as const, chain: r.chain, block: r.block, block_timestamp: r.timestamp, method: r.method, ...(r.contract ? { contract: r.contract } : {}), value: r.value, unit: r.unit, node, retrieved_at: chain!.retrieved_at })),
     });
   }
+  const subjQ = subjectTerms(q);
   const pair = (a: { url: string; quote: string }, b: { url: string; quote: string }, tier: "official" | "publisher-confirmed") => {
     if (a.quote.length > QUOTE_CAP || b.quote.length > QUOTE_CAP) return;
+    // A page claim must name EVERY subject term of the question (e.g. "x402" AND "facilitator"), so the answer can only
+    // be written from facts about what was asked, never from adjacent facts.
+    if (!namesSubject(a.quote, subjQ) || !coversQuestion(q, a.quote)) return;
     const p = evidence(a.url, a.quote, pageText, fetchedAt);
     const s = evidence(b.url, b.quote, pageText, fetchedAt);
     if (!p || !s) return; // verbatim at offset or not at all
     const vals = [...factValues(a.quote)].filter((v) => factValues(b.quote).has(v));
     const date = effectiveDate(a.quote) ?? (index.find((r) => r.url === a.url)?.publish_date ?? undefined) ?? undefined;
-    if (tier === "official" && !date) return; // spec: official needs the effective date
+    if (tier === "official" && !date && !t.undated) return; // spec: official needs the effective date (specs: undated, published)
     add({
       text: p.quote, status: "confirmed", tier, primary: p, secondary: s,
       match: { value: vals[0]?.slice(2), date: tier === "official" ? date : vals.find((v) => v.startsWith("d:"))?.slice(2) },
@@ -66,11 +71,15 @@ export async function buildVerified(q: string, t: IndexType, web: ParallelResult
   let answer = "";
   let answer_by: VerifiedBrief["answer_by"] = "none";
   let usage: VerifiedBrief["usage"];
-  if (claims.length >= minConfirmed) {
+  if (t.onchain && chain) {
+    // On-chain types: deterministic templated answer that states the values (no model, no vague wording).
+    answer = onchainAnswer(chain);
+    answer_by = "template";
+  } else if (claims.length >= minConfirmed) {
     const w = await writeAnswer(q, claims.map((c) => c.text), deadline);
     if (w) (answer = w.text, answer_by = "model", usage = { inputTokens: w.inputTokens, outputTokens: w.outputTokens });
   }
-  if (!answer) {
+  if (!answer && !t.onchain) {
     const c = claims.find((x) => namesSubject(x.text, subj)) ?? (t.onchain ? claims.find((x) => x.tier === "onchain-confirmed") : undefined);
     if (c) (answer = c.text, answer_by = "template");
   }
@@ -82,4 +91,30 @@ export async function buildVerified(q: string, t: IndexType, web: ParallelResult
   if (claims.length < Math.max(CONTRACT_MIN_CLAIMS, minConfirmed)) reasons.push(`confirmed_${claims.length}_of_${minConfirmed}`);
   if (claims.some((c) => !c.evidence.length || (c.tier !== "onchain-confirmed" && c.evidence.length < 2))) reasons.push("claim_missing_evidence");
   return { question: q, answer, status: reasons.length ? "fail" : "pass", fail_reasons: reasons, claims, counts, tiers, method: CONTRACT_URL, meta: { version: "1", schema: BRIEF_SCHEMA_VERSION }, type: t.id, answer_by, ...(usage ? { usage } : {}) };
+}
+
+export function onchainAnswer(f: OnchainFact): string {
+  const by = (m: string) => f.reads.filter((r) => r.confirmed && r.method === m);
+  if (f.topic === "usdc_supply") {
+    const parts = by("totalSupply()").map((r) => `${r.value} USDC on ${r.chain === "ethereum" ? "Ethereum" : "Base"} (block ${r.block}, ${r.timestamp})`);
+    return parts.length ? `USDC totalSupply() read on-chain: ${parts.join(" and ")}. Other chains are not included.` : "";
+  }
+  const bf = by("baseFeePerGas")[0], gl = by("gasLimit")[0];
+  if (!bf) return "";
+  const name = bf.chain === "base" ? "Base" : "Ethereum mainnet";
+  return `As of ${name} block ${bf.block} (${bf.timestamp}), the base fee was ${bf.value} gwei per gas${gl ? ` and the block gas limit was ${gl.value} gas` : ""}. A transaction pays its gas used × (base fee + priority tip)${bf.chain === "base" ? ", plus an L1 data fee on Base" : ""}.`;
+}
+
+const GENERIC = new Set(["what", "which", "how", "does", "do", "is", "are", "an", "a", "the", "of", "to", "in", "on", "for", "and", "use", "uses", "used", "work", "works", "mean", "means", "define", "defined", "current", "currently"]);
+/**
+ * A page claim must name the subject AND at least one other content word of the question (beyond the subject terms):
+ * "What is an x402 facilitator" needs "facilitator"; "What HTTP status code does x402 use" needs http/status/code.
+ */
+export function coversQuestion(q: string, text: string): boolean {
+  const subj = new Set(subjectTerms(q).map((w) => w.toLowerCase()));
+  const extra = requiredTerms(q).filter((w) => !subj.has(w));
+  return !extra.length || extra.some((w) => new RegExp(`\\b${w.replace(/s$/, "")}`, "i").test(text));
+}
+export function requiredTerms(q: string): string[] {
+  return [...new Set(q.toLowerCase().replace(/[?.!,]/g, " ").split(/\s+/).filter((w) => w.length >= 3 && !GENERIC.has(w)).map((w) => w.replace(/[^a-z0-9-]/g, "")).filter(Boolean))];
 }

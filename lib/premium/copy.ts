@@ -89,4 +89,4 @@ export const TECHNICAL_NOTES: string[] = [
 
 /** Hardened $1 brief: 402 / Bazaar description (<= 500 chars incl. the handler suffix), schema brief-verified/1. */
 export const BRIEF_DESCRIPTION =
-  "Verified brief (schema brief-verified/1): answer plus 3-8 claims, each with an evidence array (verbatim quote, URL, retrieval time, body hash, offset; or chain, block and block time for on-chain reads). Charged only if >=2 claims are confirmed (2 publishers, 2 nodes, or the issuing authority) and every quote verifies; otherwise unpaid. Contract: horizonpulse.dev/contracts/brief-verified. Not advice.";
+  "Verified brief (schema brief-verified/1), on-chain live values and x402 spec facts only: answer plus 3-8 claims, each with an evidence array (verbatim quote, URL, retrieval time, body hash, offset; or chain, block and block time for on-chain reads). Charged only if >=2 claims are confirmed (2 publishers, 2 nodes, or the issuing authority) and every quote verifies; otherwise unpaid. Contract: horizonpulse.dev/contracts/brief-verified. Not advice.";

@@ -7,6 +7,7 @@ import { createHash } from "node:crypto";
 import type { ParallelResult } from "./parallel";
 import { norm, pageSentences } from "./synthesis";
 import { domainOf, publisherOf } from "./research";
+import { OUT_OF_SCOPE_CATEGORIES } from "./source-index";
 
 export const CONTRACT_URL = "https://horizonpulse.dev/contracts/brief-verified";
 export const CONTRACT_MIN_CONFIRMED = 2; // Odin ruling (c); raised to the highest N that holds the bar (see result file)
@@ -27,8 +28,9 @@ export const OUTCOME_CONTRACT = [
   "4. consistent (two dated sources within tolerance) is shown but never counted as confirmed.",
   "5. At least 2 independently confirmed claims, or no charge: a brief passes only when at least 2 claims are confirmed and every claim's quote verifies verbatim at its URL at delivery time. A brief that does not pass is not charged (settle after produce).",
   "6. Refund: if any confirmed claim is later shown to lack its second source, the whole brief is refunded to the payer address on the receipt within 24 hours, and the correction is logged publicly.",
-  "7. Every brief carries a signed receipt (Signed Offers & Receipts shape) with the brief's body hash, and every claim carries its evidence object.",
+  "7. Every claim carries its evidence object. Signed receipts are coming later: briefs are not signed yet; the x402 PAYMENT-RESPONSE settlement header is the payment record for now.",
   "8. No financial, legal or medical recommendations. Briefs describe; they do not advise.",
+  `9. Scope: on-chain live values (Ethereum and Base gas, base fee and gas limit; USDC supply on Ethereum and Base) and x402 specification facts only. Out of scope, refused before payment with nothing charged: ${OUT_OF_SCOPE_CATEGORIES.join("; ")}.`,
 ].join("\n");
 
 export type Evidence = { url: string; quote: string; fetched_at: string; body_sha256: string; offset: number; publisher: string };

@@ -752,7 +752,7 @@ export async function writeAnswer(q: string, facts: string[], deadline: number):
     actual = ((out.inputTokens ?? 0) * LLM_PRICE.inPerM + (out.outputTokens ?? 0) * LLM_PRICE.outPerM) / 1e6 || reserve;
     const text = String(JSON.parse(out.text)?.answer ?? "").trim();
     const allowed = new Set(facts.flatMap((f) => [...factValues(f)]));
-    const ok = text && text.split(/\s+/).length <= 60 && [...factValues(text)].every((v) => allowed.has(v)) && namesSubject(text, subjectTerms(q)) && !/\b(should|recommend|buy|sell)\b/i.test(text) && !/\b(do(es)? not|don't|cannot|can't) (specify|say|state|mention|answer|determine)|not (provided|specified|stated)|no information\b/i.test(text);
+    const ok = text && text.split(/\s+/).length <= 60 && [...factValues(text)].every((v) => allowed.has(v)) && namesSubject(text, subjectTerms(q)) && !/\b(should|recommend|buy|sell)\b/i.test(text) && !/\b(do(es)? not|don't|cannot|can't) (specify|say|state|mention|answer|determine)|not (provided|specified|stated)|no information\b/i.test(text) && !/\b(pennies|cheap|inexpensive|low[- ]cost|very low|affordable|minimal|negligible)\b/i.test(text);
     return ok ? { text, inputTokens: out.inputTokens, outputTokens: out.outputTokens } : null;
   } catch {
     return null;

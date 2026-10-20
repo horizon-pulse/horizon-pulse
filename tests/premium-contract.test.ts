@@ -16,7 +16,9 @@ function brief(nConfirmed: number, nClaims = 5, mutate?: (t: string) => string) 
 describe("hardened brief outcome contract", () => {
   it("publishes the 8 clauses verbatim", () => {
     expect(OUTCOME_CONTRACT).toContain("At least 2 independently confirmed claims, or no charge");
-    expect(OUTCOME_CONTRACT.split("\n").filter((l) => /^\d\./.test(l))).toHaveLength(8);
+    expect(OUTCOME_CONTRACT.split("\n").filter((l) => /^\d\./.test(l))).toHaveLength(9);
+    expect(OUTCOME_CONTRACT).toContain("Signed receipts are coming later");
+    expect(OUTCOME_CONTRACT).toContain("statutes, regulations and other legal questions");
   });
   it("4 publisher-confirmed claims + all verbatim -> pass; evidence objects carry hash and offset", () => {
     const c = toContract("q A", brief(4), ex as any, "2026-10-20T03:00:00Z");

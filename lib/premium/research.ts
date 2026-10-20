@@ -545,7 +545,7 @@ export async function runVerifiedBrief(q: string, deadline: number, capture?: Ca
   const timed = async <T>(k: string, p: Promise<T>): Promise<T> => { const s = Date.now(); try { return await p; } finally { timing[k] = Date.now() - s; } };
   let upstreamErrors = 0;
   const [web, index, chain] = await Promise.all([
-    timed("web_ms", (async () => {
+    timed("web_ms", !t.web ? Promise.resolve([] as ParallelResult[]) : (async () => {
       const found = await briefSearch(q, briefQueries(q).slice(0, 2), 6, deadline);
       const urls = briefExtractUrls(found, BRIEF_EXTRACT_N, q);
       return withSearchDates(urls.length ? await parallelExtract(q, urls, deadline, true).catch(() => [] as ParallelResult[]) : [], found);
@@ -554,7 +554,7 @@ export async function runVerifiedBrief(q: string, deadline: number, capture?: Ca
     timed("onchain_ms", t.onchain ? readOnchain(t.onchain, deadline) : Promise.resolve(null)),
   ]);
   // Every evidence source failed (Parallel down, no on-chain read): a work failure, not an empty brief.
-  if (!chain && upstreamErrors >= (t.official ? 2 : 1)) throw new ParallelError("upstream_unavailable");
+  if (!chain && upstreamErrors >= (t.official ? 1 : 0) + (t.web ? 1 : 0) && upstreamErrors > 0) throw new ParallelError("upstream_unavailable");
   if (capture) capture.data = { search: [], extract: [...index, ...web] };
   const s = Date.now();
   const contract = await buildVerified(q, t, web, index, chain, new Date().toISOString(), deadline);
