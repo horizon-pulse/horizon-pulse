@@ -10,6 +10,8 @@
  * Data: https://api.coinbase.com/v1/tokenized-stocks (public, no key, paginated via next_page_token), fetched live per
  * check (cache optional later). No address in this file is used as the source of truth for Coinbase tokens.
  */
+import { getAddress, isAddress } from "viem";
+
 type Env = Record<string, string | undefined>;
 
 export function tokensAuthenticityEnabled(env: Env = process.env): boolean {
@@ -73,21 +75,48 @@ const ADDR_RE = /^0x[0-9a-fA-F]{40}$/;
 export function parseAddress(input: unknown): string | null {
   if (typeof input !== "string") return null;
   const s = input.trim();
-  return ADDR_RE.test(s) ? s : null;
+  if (!ADDR_RE.test(s)) return null;
+  // Mixed case must pass EIP-55 (C1); all-lower / all-upper hex are accepted. Always return the checksummed form.
+  if (!isAddress(s, { strict: true })) return null;
+  return getAddress(s);
 }
 
 const MAX_PAGES = 20;
-const TIMEOUT_MS = 8_000;
+/** Whole-fetch budget across all pages (C2). */
+export const TOTAL_BUDGET_MS = 11_000;
+/** Per-page body cap before parsing (C2). A page is ~235 KB today. */
+export const MAX_PAGE_BYTES = 2_000_000;
+
+async function readCapped(r: Response, max: number): Promise<string> {
+  const len = Number(r.headers.get("content-length") ?? "0");
+  if (len > max) throw new Error("coinbase api: body too large");
+  if (!r.body) return "";
+  const reader = r.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) { await reader.cancel().catch(() => {}); throw new Error("coinbase api: body too large"); }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
 
 /** Fetch the full public list (all pages). Throws on any failure: the caller answers 502, no partial "no match". */
-export async function fetchCoinbaseList(deps: Deps): Promise<ApiToken[]> {
+export async function fetchCoinbaseList(deps: Deps, budgetMs: number = TOTAL_BUDGET_MS, maxBytes: number = MAX_PAGE_BYTES): Promise<ApiToken[]> {
+  const signal = AbortSignal.timeout(budgetMs);
   const out: ApiToken[] = [];
   let token: string | undefined;
   for (let i = 0; i < MAX_PAGES; i++) {
     const url = COINBASE_TOKENIZED_STOCKS_API + (token ? `?page_token=${encodeURIComponent(token)}` : "");
-    const r = await deps.fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS), headers: { accept: "application/json" } });
+    const r = await Promise.race([
+      deps.fetch(url, { signal, headers: { accept: "application/json" } }),
+      new Promise<never>((_, rej) => { if (signal.aborted) rej(new Error("budget")); signal.addEventListener("abort", () => rej(new Error("coinbase api: time budget exceeded")), { once: true }); }),
+    ]);
     if (!r.ok) throw new Error(`coinbase api http ${r.status}`);
-    const j = (await r.json()) as { tokens?: unknown; next_page_token?: unknown };
+    const j = JSON.parse(await readCapped(r, maxBytes)) as { tokens?: unknown; next_page_token?: unknown };
     if (!Array.isArray(j.tokens)) throw new Error("coinbase api: no tokens array");
     for (const t of j.tokens as Record<string, unknown>[]) {
       if (typeof t?.contract_address === "string" && ADDR_RE.test(t.contract_address)) {
@@ -103,12 +132,12 @@ export async function fetchCoinbaseList(deps: Deps): Promise<ApiToken[]> {
 }
 
 /** Match one address. Returns facts about that address only (never the list). */
-export async function checkTokenAddress(input: unknown, deps: Deps): Promise<CheckResult> {
+export async function checkTokenAddress(input: unknown, deps: Deps, opts: { budgetMs?: number; maxBytes?: number } = {}): Promise<CheckResult> {
   const address = parseAddress(input);
-  if (!address) return { ok: false, status: 400, error: "address must be a 0x-prefixed 40-hex contract address", charged: false };
+  if (!address) return { ok: false, status: 400, error: "address must be a 0x-prefixed 40-hex contract address (mixed case must be a valid EIP-55 checksum)", charged: false };
   let list: ApiToken[];
   try {
-    list = await fetchCoinbaseList(deps);
+    list = await fetchCoinbaseList(deps, opts.budgetMs, opts.maxBytes);
   } catch {
     return { ok: false, status: 502, error: "issuer list unavailable; no answer given", charged: false };
   }

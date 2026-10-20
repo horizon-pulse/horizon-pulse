@@ -48,7 +48,7 @@ describe("tokens-authenticity", () => {
     if (r.ok) expect(r.statement).toBe("Listed in Coinbase's public tokenized-stocks API as of 2026-10-20T21:40:00.000Z.");
   });
   it("synthetic TSLAc lookalike address is not a match", async () => {
-    const r = await checkTokenAddress("0xb2000000000000000000001e800a7f5189430cD1", deps());
+    const r = await checkTokenAddress("0xb2000000000000000000001e800a7f5189430cd1", deps());
     expect(r).toMatchObject({ ok: true, match: false });
   });
   it("never re-exports the list, descriptions or icons; never says certified; carries Counsel lines verbatim", async () => {
@@ -64,6 +64,44 @@ describe("tokens-authenticity", () => {
     }
     expect(US_PERSONS_NOTICE).toBe("Data only. These tokens are issued under Regulation S and are not available to U.S. persons or in other restricted jurisdictions; check your own eligibility. This route does not offer, sell, recommend or facilitate buying, selling or holding them. Horizon Pulse is not affiliated with Coinbase, Base or Chainlink.");
     expect(NOT_AFFILIATED).toBe("Horizon Pulse is not affiliated with Coinbase, Base or Chainlink.");
+  });
+  it("C1: bad EIP-55 checksum on mixed case is 400; lowercase in -> checksummed out", async () => {
+    const bad = "0x29cC30f9D113B356Ce408667aa6433589CeCBDca"; // last char case flipped
+    expect(await checkTokenAddress(bad, deps())).toMatchObject({ ok: false, status: 400, charged: false });
+    const r = await checkTokenAddress(REAL_ELSA.toLowerCase(), deps());
+    expect(r).toMatchObject({ ok: true, address: REAL_ELSA });
+    const t = await checkTokenAddress(TSLA.toLowerCase(), deps());
+    expect(t).toMatchObject({ ok: true, address: TSLA });
+    const f = await checkTokenAddress(FAKE_ELSA, deps());
+    expect(f.ok && f.address.toLowerCase()).toBe(FAKE_ELSA);
+    expect(f.ok && f.address).not.toBe(FAKE_ELSA);
+  });
+  it("C2: whole fetch time budget -> 502; oversize body -> 502", async () => {
+    const hang: Deps = { now: () => NOW, fetch: vi.fn((_u: unknown, init?: RequestInit) => new Promise<Response>((_, rej) => init?.signal?.addEventListener("abort", () => rej(new Error("aborted"))))) as unknown as typeof fetch };
+    const t0 = Date.now();
+    expect(await checkTokenAddress(TSLA, hang, { budgetMs: 50 })).toMatchObject({ ok: false, status: 502, charged: false });
+    expect(Date.now() - t0).toBeLessThan(2000);
+    // fetch that ignores the signal entirely still gets cut by the budget
+    const deaf: Deps = { now: () => NOW, fetch: vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch };
+    expect(await checkTokenAddress(TSLA, deaf, { budgetMs: 50 })).toMatchObject({ ok: false, status: 502 });
+    // slow pages: each page fine alone, total exceeds budget
+    let n = 0;
+    const slow: Deps = { now: () => NOW, fetch: vi.fn(async () => { await new Promise((r) => setTimeout(r, 40)); return new Response(JSON.stringify({ tokens: [{ contract_address: AAPL, symbol: "AAPLc" }], next_page_token: `p${++n}` })); }) as unknown as typeof fetch };
+    expect(await checkTokenAddress(TSLA, slow, { budgetMs: 100 })).toMatchObject({ ok: false, status: 502 });
+    expect(n).toBeLessThan(5);
+    const big = JSON.stringify({ tokens: [{ contract_address: TSLA, symbol: "TSLAc", pad: "x".repeat(5000) }] });
+    const bigDeps: Deps = { now: () => NOW, fetch: vi.fn(async () => new Response(big)) as unknown as typeof fetch };
+    expect(await checkTokenAddress(TSLA, bigDeps, { maxBytes: 1000 })).toMatchObject({ ok: false, status: 502 });
+    expect(await checkTokenAddress(TSLA, bigDeps, { maxBytes: 100_000 })).toMatchObject({ ok: true, match: true });
+    const lied: Deps = { now: () => NOW, fetch: vi.fn(async () => new Response(big, { headers: { "content-length": "999999999" } })) as unknown as typeof fetch };
+    expect(await checkTokenAddress(TSLA, lied)).toMatchObject({ ok: false, status: 502 });
+  });
+  it("C3: not-advice line exact text (Counsel c)", () => {
+    expect(NOT_ADVICE).toBe("Not financial, investment, tax, legal or health advice. Quotes about tokens, securities or other financial products are not a recommendation to buy, sell or hold anything. Price differences are observed technical values that may be stale (reference feeds freeze outside market hours and during corporate actions) and are not a trading signal.");
+  });
+  it("C4: real ELSA keeps the 'cited public sources' wording", async () => {
+    const r = await checkTokenAddress(REAL_ELSA, deps());
+    expect(r.ok && r.statement).toContain("in the cited public sources as of");
   });
   it("bad input 400, list down or empty 502 (never a false 'no match')", async () => {
     expect(await checkTokenAddress("ELSA", deps())).toMatchObject({ ok: false, status: 400, charged: false });
