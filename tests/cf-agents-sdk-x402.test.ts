@@ -22,15 +22,17 @@ import { CDP_ENV } from "./helpers/capture";
 const ROOT = path.resolve(__dirname, "..");
 const HARNESS = path.join(ROOT, "tests", "cf-agents-sdk", "node_modules");
 const harness = (p: string) => path.join(HARNESS, p);
+// Fresh checkout (Odin Class A condition 1): no harness install -> skip cleanly with a reason, never fail.
+const HAVE_HARNESS = fs.existsSync(path.join(HARNESS, "agents", "package.json"));
+const SKIP_REASON = "SKIPPED: Cloudflare Agents SDK harness not installed (run `npm ci` in tests/cf-agents-sdk)";
+if (!HAVE_HARNESS) console.warn(`[cf-agents-sdk-x402] ${SKIP_REASON}`);
 
 let server: http.Server;
 let base = "";
 let calls: { op: string }[] = [];
 
 beforeAll(async () => {
-  if (!fs.existsSync(harness("agents/package.json"))) {
-    throw new Error("Cloudflare Agents SDK harness missing: run `npm ci` in tests/cf-agents-sdk");
-  }
+  if (!HAVE_HARNESS) return;
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.stubEnv("CDP_API_KEY_ID", CDP_ENV.CDP_API_KEY_ID);
   vi.stubEnv("CDP_API_KEY_SECRET", CDP_ENV.CDP_API_KEY_SECRET);
@@ -57,7 +59,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await new Promise((ok) => server?.close(ok));
+  if (server) await new Promise((ok) => server.close(ok));
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
@@ -89,7 +91,7 @@ async function cfClient(onAccepts: (a: unknown[]) => void) {
   });
 }
 
-describe("Cloudflare Agents SDK withX402Client detects /mcp payment requirements", () => {
+describe.skipIf(!HAVE_HARNESS)(HAVE_HARNESS ? "Cloudflare Agents SDK withX402Client detects /mcp payment requirements" : `Cloudflare Agents SDK withX402Client: ${SKIP_REASON}`, () => {
   it("unpaid paid-tool call: SDK sees _meta['x402/error'].accepts and asks to pay (declined, nothing signed or settled)", async () => {
     let seen: any[] | null = null;
     const c = await cfClient((a) => (seen = a as any[]));
