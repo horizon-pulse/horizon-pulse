@@ -17,6 +17,8 @@ import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store
 import { TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_BASE_DOMAIN, resetPremiumFacilitatorForTests, resetPremiumNoncesForTests } from "@/lib/premium/payment";
 import { receiptPublicKeys, verifyReceipt } from "@/lib/receipt-signer";
 import { generateKeyPairSync } from "node:crypto";
+import { GET as CRON_GET, setSellerDdCronForTests } from "@/app/api/seller-dd/cron/route";
+import type { Rpc } from "@/lib/seller-dd/watch";
 
 // Throwaway in-test Ed25519 key in the CDP secret format (base64 seed||pub) so the real client builds its auth header offline.
 const kp = generateKeyPairSync("ed25519");
@@ -43,6 +45,14 @@ const post = (body: unknown, pay: string, proof?: string) =>
 let store: MemoryPremiumStore;
 let settleMode: "http500" | "abort" = "http500";
 const calls = { verify: 0, settle: 0, other: [] as string[] };
+const CRON_SECRET = "c".repeat(24);
+// Minimal on-chain stub for the cron's watch step: empty logs, nonce 0, balance 3 USDC. No network.
+const quietRpc: Rpc = async (m) => (m === "eth_blockNumber" ? "0x10000" : m === "eth_getTransactionCount" ? "0x0" : m === "eth_call" ? "0x" + (3_000_000).toString(16).padStart(64, "0") : []);
+// Sentinel INFO (7aaa308 review): the cron reconciles but must NEVER settle a buyer authorization.
+async function runCron() {
+  const r = await CRON_GET(new NextRequest("https://horizonpulse.dev/api/seller-dd/cron", { headers: { authorization: `Bearer ${CRON_SECRET}` } }));
+  expect(r.status).toBe(200);
+}
 
 beforeEach(() => {
   vi.stubEnv("HP_PREMIUM_ENABLED", "true");
@@ -55,6 +65,8 @@ beforeEach(() => {
   vi.stubEnv("HP_RECEIPT_SIGNING_KEY", "33".repeat(32));
   vi.stubEnv("CDP_API_KEY_ID", "fault-test-key-id");
   vi.stubEnv("CDP_API_KEY_SECRET", FAKE_CDP_SECRET);
+  vi.stubEnv("CRON_SECRET", CRON_SECRET);
+  setSellerDdCronForTests({ rpc: quietRpc, nonceState: async () => "unused", now: () => NOW });
   calls.verify = 0; calls.settle = 0; calls.other = [];
   resetPremiumFacilitatorForTests();
   resetPremiumNoncesForTests();
@@ -91,7 +103,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   resetSettleFailureLatchForTests(); setSellerDdBuyerNonceForTests(null); vi.unstubAllEnvs(); vi.unstubAllGlobals();
-  setPremiumStoreForTests(undefined); setSellerDdDepsForTests(null); setSellerDdClockForTests(null); resetPremiumFacilitatorForTests();
+  setPremiumStoreForTests(undefined); setSellerDdDepsForTests(null); setSellerDdCronForTests(null); setSellerDdClockForTests(null); resetPremiumFacilitatorForTests();
 });
 
 describe("seller-dd redeem path under a failing facilitator settle (real payment code)", () => {
@@ -115,6 +127,10 @@ describe("seller-dd redeem path under a failing facilitator settle (real payment
       expect((await post(body, pay)).status).toBe(409);
       expect(calls.settle).toBe(1);
 
+      // daily cron runs while the claim is settle_unconfirmed: reconciles, never settles
+      await runCron();
+      expect(calls.settle).toBe(1);
+
       // the authorization landed on-chain after all -> redeem with payer proof
       setSellerDdBuyerNonceForTests(async () => "used");
       const proof = await buyer.signMessage({ message: b1.redeem_message });
@@ -130,6 +146,10 @@ describe("seller-dd redeem path under a failing facilitator settle (real payment
       expect(r3.status).toBe(409);
       expect(calls.settle).toBe(1); // no double charge: exactly one settle attempt for this authorization, ever
       expect(calls.verify).toBe(1);
+
+      // cron after redeem: still exactly one settle, ever
+      await runCron();
+      expect(calls.settle).toBe(1);
       expect(Number(await store.get(ddKeys.settleFail(NOW)))).toBe(1); // redeem does not touch the counter
       expect(await store.get(ddKeys.lossUsd(NOW))).toBeNull();
       expect(calls.other).toEqual([]);
