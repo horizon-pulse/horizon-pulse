@@ -58,6 +58,7 @@ export const OUT_OF_SCOPE_CATEGORIES = [
   "predictions and forecasts",
   "private individuals and personal data",
   "breaking news",
+  "definitions of an x402 facilitator (what a facilitator is)",
 ];
 
 /** Not briefs: recommendations, predictions, private persons. Refused unpaid even if a type matches. */
@@ -67,6 +68,8 @@ const OUT_OF_SCOPE = [
   { re: /\b(price of|price today|order book|market cap|tvl)\b/i, reason: "market_data" },
   { re: /\b(will|going to|next meeting|forecast|predict|expect(ed)? to)\b.*\?*$/i, reason: "prediction" },
   { re: /\b(where does .* live|home address|phone number|email of)\b/i, reason: "private_person" },
+  // Odin ruling A (10/19): no two independent, non-mirrored sources state the same facilitator definition, so it is refused, not answered.
+  { re: /\b(what(?:'s| is| are| does)\s+(?:an?\s+|the\s+)?(?:x402\s+)?facilitators?(?:\s+(?:mean|do))?\b|defin\w*\s+(?:of\s+)?(?:an?\s+|the\s+)?(?:x402\s+)?facilitator|facilitators?\s+(?:mean|definition))/i, reason: "facilitator_definition" },
   { re: /\b(yesterday|this week|today'?s? (news|announcement)|breaking)\b/i, reason: "breaking_news" },
 ];
 
