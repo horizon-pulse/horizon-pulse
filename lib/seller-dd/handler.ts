@@ -161,8 +161,9 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
   let sig: ReturnType<typeof signReceipt> | null = null;
   if (out.pass) { try { sig = signReceipt("seller-dd", out.verdict); } catch { sig = null; } }
   if (!out.pass || !sig) {
+    // unpaid: check names + results only (no evidence, excerpt, history or payTo facts leave without a charge)
     await moveClaim(store, held, { s: "declined" }).catch(() => null);
-    return noCharge(422, out.pass ? "signing_failed" : out.reason ?? "no_charge", { checks_evidenced: out.checks_evidenced, verdict_unsigned: { ...out.verdict, notice: undefined } });
+    return noCharge(422, out.pass ? "signing_failed" : out.reason ?? "no_charge", { checks_evidenced: out.checks_evidenced, checks: (out.verdict.checks as { name: string; result: string }[]).map((c) => ({ name: c.name, result: c.result })) });
   }
 
   // (4) settle buyer on PASS only

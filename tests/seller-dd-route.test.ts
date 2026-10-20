@@ -132,6 +132,7 @@ describe("seller-dd route", () => {
     expect(b).toMatchObject({ status: "no_charge", charged: false, notice: DD_NOTICE });
     expect(h.settle).not.toHaveBeenCalled();
     expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeGreaterThan(0);
+    expect(JSON.stringify(b)).not.toMatch(/"evidence"|excerpt|"history"|"sig"|"listed"/);
   });
   it("C4: buyer settle fails after test pay -> loss recorded, not charged; 3 failures -> route fails closed before verify", async () => {
     h.settle.mockResolvedValue({ ok: false, kind: "ambiguous", tx: null });
