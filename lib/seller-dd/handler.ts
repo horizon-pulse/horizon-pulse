@@ -301,20 +301,36 @@ export async function runRecheck(store: PremiumStore, oldId: string): Promise<{ 
   if (!(await store.setNx(rcptKeys.recheckLock(oldId), "1", 120_000).catch(() => false))) return { status: 409, body: { error: "recheck_in_progress" } };
   try {
     const now = clockFn();
-    const requestId = randomBytes(12).toString("hex");
-    const deps: EngineDeps = { net: defaultNetDeps(), continuity: cdpContinuityDeps(), store, lists, env: process.env, now: clockFn, ...(engineDepsOverride ?? {}) };
-    const out = await runSellerDd({ resource: old.resource, expected_payTo: old.expected_payTo, request_id: requestId, deadline: now + SYNC_DEADLINE_MS }, deps);
-    if (!out.test_paid) return { status: 422, body: { error: "recheck_not_completed", reason: out.reason, old_status: "current" } };
-    const body: Record<string, unknown> = { ...out.verdict, pass: out.pass, supersedes: oldId };
+    // Sentinel LOW-2: a paid-but-unfinished re-check is resumed from its saved record, never paid again.
+    const savedRaw = await store.get(rcptKeys.recheckPaid(oldId)).catch(() => undefined);
+    if (savedRaw === undefined) return { status: 503, body: { error: "store_unavailable", old_status: "current" } };
+    let body: Record<string, unknown>; let pass: boolean;
+    if (savedRaw) {
+      ({ body, pass } = JSON.parse(savedRaw) as { body: Record<string, unknown>; pass: boolean });
+    } else {
+      // Sentinel LOW-2: at most 1 re-check test pay per verdict per UTC day
+      const dayKey = rcptKeys.recheckDay(oldId, new Date(now).toISOString().slice(0, 10));
+      if (!(await store.setNx(dayKey, "1", 2 * 86_400_000).catch(() => false))) return { status: 429, body: { error: "recheck_daily_limit", old_status: "current" } };
+      const requestId = randomBytes(12).toString("hex");
+      const deps: EngineDeps = { net: defaultNetDeps(), continuity: cdpContinuityDeps(), store, lists, env: process.env, now: clockFn, ...(engineDepsOverride ?? {}) };
+      const out = await runSellerDd({ resource: old.resource, expected_payTo: old.expected_payTo, request_id: requestId, deadline: now + SYNC_DEADLINE_MS, loss_tag: "recheck" }, deps);
+      if (!out.test_paid) return { status: 422, body: { error: "recheck_not_completed", reason: out.reason, old_status: "current" } };
+      // Odin R1 / Sentinel LOW-1: every re-check test pay is our cost -> ledger entry tagged "recheck" (fail path: engine tags it)
+      if (out.pass && out.reservation) await recordLoss(store, out.reservation, "recheck", clockFn()).catch(() => undefined);
+      body = { ...out.verdict, pass: out.pass, supersedes: oldId }; pass = out.pass;
+      const saved = await store.set(rcptKeys.recheckPaid(oldId), JSON.stringify({ body, pass }), 30 * 86_400).then(() => true, () => false);
+      if (!saved) { alertHigh("seller_dd_recheck_paid_record_failed", { old: oldId }); return { status: 503, body: { error: "store_unavailable", old_status: "current" } }; }
+    }
     let sig: ReturnType<typeof signReceipt>;
-    try { sig = signReceipt("seller-dd", body); } catch { alertHigh("seller_dd_recheck_sign_failed"); return { status: 503, body: { error: "signing_failed", old_status: "current" } }; }
+    try { sig = signReceipt("seller-dd", body); } catch { alertHigh("seller_dd_recheck_sign_failed"); return { status: 503, body: { error: "signing_failed", old_status: "current", retry: "resumes_without_new_test_pay" } }; }
     const signed: Record<string, unknown> = { ...body, sig };
-    if (!(await logReceipt(store, signed, { expected_payTo: old.expected_payTo, pass: out.pass, origin: "recheck" }, clockFn()))) {
-      alertHigh("seller_dd_recheck_log_failed"); return { status: 503, body: { error: "store_unavailable", old_status: "current" } };
+    if (!(await logReceipt(store, signed, { expected_payTo: old.expected_payTo, pass, origin: "recheck" }, clockFn()))) {
+      alertHigh("seller_dd_recheck_log_failed"); return { status: 503, body: { error: "store_unavailable", old_status: "current", retry: "resumes_without_new_test_pay" } };
     }
     if (!(await markSuperseded(store, oldId, String(signed.id), clockFn()))) {
-      alertHigh("seller_dd_supersede_mark_failed", { old: oldId, new: signed.id }); return { status: 503, body: { error: "supersede_mark_failed", new_id: signed.id } };
+      alertHigh("seller_dd_supersede_mark_failed", { old: oldId, new: signed.id }); return { status: 503, body: { error: "supersede_mark_failed", new_id: signed.id, retry: "resumes_without_new_test_pay" } };
     }
+    await store.del(rcptKeys.recheckPaid(oldId)).catch(() => undefined);
     return { status: 200, body: { status: "reissued", ...signed } };
   } finally {
     await store.del(rcptKeys.recheckLock(oldId)).catch(() => undefined);

@@ -50,3 +50,8 @@ export const FETCH_TIMEOUT_MS = 8_000;
  * (Michael's 3.000000 USDC, Base block 52869933) is counted naturally by the LOW-2 inbound total. Odin round 4, 10/20.
  */
 export const DD_WATCH_START_BLOCK = 52_869_932;
+
+/** Counsel D3 copy (to-pulse/2026-10-20-counsel-seller-dd-d3.md), verbatim. */
+export const DD_SUPERSEDED_NOTE = "A superseded verdict has been replaced after a re-check; rely on the verdict named in superseded_by.";
+export const DD_PASS_NOTE = "pass means Horizon Pulse's charge criteria were met; it is not a rating of the seller.";
+export const DD_RETENTION_TERM = "Verdict receipts (hashes only) are kept for 3 years.";

@@ -9,12 +9,12 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Counsel D3 re-check (operator-only). POST {"id":"dd_..."} with `Authorization: Bearer <CRON_SECRET>` (existing secret;
- * no new env). Flag off -> 404 before any secret/store access. Wrong/missing auth -> 401 with no store access.
+ * Counsel D3 re-check (operator-only). POST {"id":"dd_..."} with `Authorization: Bearer <HP_DD_RECHECK_SECRET>` (Odin V1;
+ * never CRON_SECRET; unset -> 401 for every request). Flag off -> 404 before any secret/store access. Wrong/missing auth -> 401 with no store access.
  */
 export async function POST(req: NextRequest) {
   if (!sellerDdEnabled()) return new NextResponse("Not Found", { status: 404, headers: { "Cache-Control": "no-store" } });
-  const secret = process.env.CRON_SECRET ?? "";
+  const secret = process.env.HP_DD_RECHECK_SECRET ?? ""; // Odin V1: dedicated secret; unset/short -> refuse everything
   const got = /^Bearer\s+(.+)$/.exec(req.headers.get("authorization") ?? "")?.[1] ?? "";
   const ok = secret.length >= 16 && got.length === secret.length && timingSafeEqual(Buffer.from(got), Buffer.from(secret));
   if (!ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });

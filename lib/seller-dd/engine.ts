@@ -46,7 +46,7 @@ export type EngineDeps = {
   sleep?: (ms: number) => Promise<void>;
 };
 
-export type EngineInput = { resource: string; expected_payTo?: string | null; request_id: string; deadline: number };
+export type EngineInput = { resource: string; expected_payTo?: string | null; request_id: string; deadline: number; /** Odin R1: loss-ledger reason override (re-check cost is tagged "recheck") */ loss_tag?: string };
 export type EngineOut = { pass: boolean; reason: string | null; checks_evidenced: number; verdict: Record<string, unknown>; test_paid: boolean; reservation: Reservation | null };
 
 const evidenced = (c: Check) => c.result !== "skipped" && Object.keys(c.evidence).length > 0;
@@ -202,7 +202,7 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
   const n = list.filter(evidenced).length;
   const reason = pass ? null : blocked ?? (testOk ? `only_${others}_of_4_other_checks_evidenced` : "test_pay_not_evidenced");
 
-  if (!pass && testPaid && reservation) await recordLoss(deps.store, reservation, reason ?? "no_charge", now(), landState === "used" ? "confirmed" : "unconfirmed").catch(() => undefined);
+  if (!pass && testPaid && reservation) await recordLoss(deps.store, reservation, inp.loss_tag ?? reason ?? "no_charge", now(), landState === "used" ? "confirmed" : "unconfirmed").catch(() => undefined);
 
   const verdict: Record<string, unknown> = {
     v: 1,

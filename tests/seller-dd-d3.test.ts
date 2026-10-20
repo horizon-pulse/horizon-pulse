@@ -76,15 +76,15 @@ import { rcptKeys, verdictSha256 } from "@/lib/seller-dd/receipts";
 const SECRET = "s".repeat(32);
 const verify = (id: string) => VERIFY(new NextRequest(`https://horizonpulse.dev/api/seller-dd/verify?id=${id}`));
 const recheck = (id: string, auth = `Bearer ${SECRET}`) => RECHECK(new NextRequest("https://horizonpulse.dev/api/seller-dd/recheck", { method: "POST", body: JSON.stringify({ id }), headers: { authorization: auth } }));
-async function buy() {
-  const r = await POST(req("POST", { resource: "https://seller.example.com/api", expected_payTo: "0x" + "4e".repeat(20) }, await paymentHeader()));
+async function buy(resource = "https://seller.example.com/api") {
+  const r = await POST(req("POST", { resource, expected_payTo: "0x" + "4e".repeat(20) }, await paymentHeader()));
   expect(r.status).toBe(200);
   const { status, charged, tx, ...signed } = await r.json();
   return signed as Record<string, any>;
 }
 
 describe("seller-dd D3 correction path", () => {
-  beforeEach(() => vi.stubEnv("CRON_SECRET", SECRET));
+  beforeEach(() => vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET));
 
   it("flag off -> verify and recheck 404 before any store access", async () => {
     vi.stubEnv("HP_SELLER_DD_ENABLED", "");
@@ -102,7 +102,10 @@ describe("seller-dd D3 correction path", () => {
     const b = await r.json();
     expect(r.status).toBe(200);
     expect(b).toMatchObject({ id: v.id, status: "current", superseded_by: null, supersedes: null, verdict_sha256: verdictSha256(v) });
-    expect(b.checks).toBeUndefined();
+    // Odin V2: only these fields (+ Counsel's superseded line and the verify how-to)
+    expect(Object.keys(b).sort()).toEqual(["check", "id", "issued_at", "kid", "resource_sha256", "status", "superseded_by", "superseded_note", "supersedes", "verdict_sha256"]);
+    expect(JSON.stringify(b)).not.toContain("seller.example.com");
+    expect(b.pass).toBeUndefined(); expect(b.resource).toBeUndefined(); expect(b.note).toBeUndefined();
   });
 
   it("receipt-log write fails -> buyer never settled (fail closed)", async () => {
@@ -166,5 +169,104 @@ describe("seller-dd D3 correction path", () => {
     vi.stubEnv("HP_DD_TESTPAY", "off");
     expect((await recheck(old.id)).status).toBe(503);
     expect((await (await verify(old.id)).json()).status).toBe("current");
+  });
+});
+
+import { DD_PASS_NOTE, DD_RETENTION_TERM, DD_SUPERSEDED_NOTE } from "@/lib/seller-dd/config";
+import PremiumTermsPage from "@/app/premium-terms/page";
+import { renderToStaticMarkup } from "react-dom/server";
+describe("seller-dd D3 Counsel copy (verbatim)", () => {
+  beforeEach(() => vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET));
+  it("verify response carries both Counsel lines exactly", async () => {
+    expect(DD_SUPERSEDED_NOTE).toBe("A superseded verdict has been replaced after a re-check; rely on the verdict named in superseded_by.");
+    expect(DD_PASS_NOTE).toBe("pass means Horizon Pulse's charge criteria were met; it is not a rating of the seller.");
+    const old = await buy();
+    await recheck(old.id);
+    for (const id of [old.id]) {
+      const b = await (await verify(id)).json();
+      expect(b.superseded_note).toBe("A superseded verdict has been replaced after a re-check; rely on the verdict named in superseded_by.");
+      expect(b.note).toBeUndefined(); // moved to /premium-terms (verify no longer returns pass)
+      expect(b.issued_at).toBeTruthy(); // R5: superseded keeps its issue time
+    }
+  });
+  it("/premium-terms states retention exactly when seller-dd is on, and not at all when off", () => {
+    vi.stubEnv("HP_PREMIUM_TIERS", "brief");
+    expect(DD_RETENTION_TERM).toBe("Verdict receipts (hashes only) are kept for 3 years.");
+    const html = renderToStaticMarkup(PremiumTermsPage());
+    expect(html).toContain("Verdict receipts (hashes only) are kept for 3 years.");
+    expect(html).toContain("pass means Horizon Pulse&#x27;s charge criteria were met; it is not a rating of the seller.");
+    vi.stubEnv("HP_SELLER_DD_ENABLED", "");
+    expect(renderToStaticMarkup(PremiumTermsPage())).not.toContain("Verdict receipts");
+  });
+});
+
+import { ddKeys as K } from "@/lib/seller-dd/caps";
+describe("seller-dd D3 Odin round 5 + Sentinel D3", () => {
+  beforeEach(() => vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET));
+  const lossEntries = async () => (await store.zrangeByScore(K.loss(NOW), Number.MAX_SAFE_INTEGER, 100)).map((x) => JSON.parse(x));
+
+  it("V1: HP_DD_RECHECK_SECRET unset -> every request refused; CRON_SECRET never accepted", async () => {
+    const old = await buy();
+    vi.stubEnv("HP_DD_RECHECK_SECRET", "");
+    vi.stubEnv("CRON_SECRET", SECRET);
+    expect((await recheck(old.id)).status).toBe(401);
+    expect((await recheck(old.id, "")).status).toBe(401);
+    vi.stubEnv("HP_DD_RECHECK_SECRET", "t".repeat(32));
+    expect((await recheck(old.id, `Bearer ${SECRET}`)).status).toBe(401); // the cron secret is not the recheck secret
+    expect((await (await verify(old.id)).json()).status).toBe("current");
+  });
+
+  it("verify rate limit: 60/min per IP, 61st -> 429; another IP unaffected", async () => {
+    const id = "dd_" + "b".repeat(24);
+    const v = (ip: string) => VERIFY(new NextRequest(`https://horizonpulse.dev/api/seller-dd/verify?id=${id}`, { headers: { "x-real-ip": ip } }));
+    for (let i = 0; i < 60; i++) expect((await v("1.2.3.4")).status).toBe(404);
+    const r = await v("1.2.3.4");
+    expect(r.status).toBe(429);
+    expect(r.headers.get("retry-after")).toBe("60");
+    expect((await v("5.6.7.8")).status).toBe(404);
+  });
+
+  it("R1 / LOW-1: every re-check test pay is a ledger entry tagged recheck (pass and fail)", async () => {
+    const a = await buy(); const b = await buy("https://other-seller.example.org/api"); // distinct hosts: §3 per-host cap
+    const before = new Set((await lossEntries()).map((e) => JSON.stringify(e)));
+    expect((await recheck(a.id)).status).toBe(200); // pass
+    await store.del(K.ip("93.184.216.34", NOW), K.host("example.com", NOW)); // mock engine reuses one IP; §3 per-IP/host caps otherwise refuse (correctly)
+    setEngine(false);
+    const rb = await recheck(b.id); const jb = await rb.json(); expect([rb.status, jb.reason ?? jb.error]).toEqual([200, undefined]); // fail, still reissued
+    const added = (await lossEntries()).filter((e) => !before.has(JSON.stringify(e)));
+    expect(added).toHaveLength(2);
+    expect(added.every((e) => e.reason === "recheck")).toBe(true);
+    expect(new Set(added.map((e) => e.request_id)).size).toBe(2);
+  });
+
+  it("LOW-2: paid record saved before 503; retry finishes without a second test pay", async () => {
+    const old = await buy();
+    engineRan.mockClear();
+    const orig = store.setNx.bind(store);
+    let failSup = true;
+    store.setNx = async (k: string, ...a: [string, number]) => { if (k.startsWith("dd:superseded:") && failSup) { failSup = false; throw new Error("down"); } return orig(k, ...a); };
+    const r1 = await recheck(old.id);
+    expect(r1.status).toBe(503);
+    expect((await r1.json()).retry).toBe("resumes_without_new_test_pay");
+    expect(await store.get(rcptKeys.recheckPaid(old.id))).toBeTruthy();
+    const runs = engineRan.mock.calls.length;
+    const r2 = await recheck(old.id);
+    const b2 = await r2.json();
+    expect(r2.status).toBe(200);
+    expect(engineRan.mock.calls.length).toBe(runs); // no new engine run / test pay
+    expect((await (await verify(old.id)).json()).superseded_by).toBe(b2.id);
+    expect(await store.get(rcptKeys.recheckPaid(old.id))).toBeNull();
+  });
+
+  it("LOW-2: at most 1 re-check test pay per verdict per day", async () => {
+    const old = await buy();
+    const orig = store.setNx.bind(store);
+    store.setNx = async (k: string, ...a: [string, number]) => { if (k.startsWith("dd:rcpt:dd_")) throw new Error("down"); return orig(k, ...a); };
+    expect((await recheck(old.id)).status).toBe(503);
+    store.setNx = orig;
+    await store.del(rcptKeys.recheckPaid(old.id)); // even with no saved record, the day's slot is used
+    const r = await recheck(old.id);
+    expect(r.status).toBe(429);
+    expect((await r.json()).error).toBe("recheck_daily_limit");
   });
 });
