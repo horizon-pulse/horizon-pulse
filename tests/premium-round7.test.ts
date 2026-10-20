@@ -93,3 +93,16 @@ describe("round 7 Counsel N1 + item 3", () => {
     expect(BUYER_TERMS.join(" ")).not.toMatch(/failed clause 3 or 5/);
   });
 });
+
+import { paymentRequired } from "@/lib/premium/payment";
+import { PREMIUM_TIERS } from "@/lib/premium/tiers";
+import { BRIEF_BAZAAR_OUTPUT_DESCRIPTION } from "@/lib/premium/bazaar";
+describe("hotfix 10/20: brief 402 resource.description <= 500 (CDP verify cap)", () => {
+  it("description cap and per-type counts still in the 402 (Bazaar output description)", async () => {
+    const { BRIEF_DESCRIPTION } = await import("@/lib/premium/copy");
+    expect(`${BRIEF_DESCRIPTION} No personal data in q.`.length).toBeLessThanOrEqual(500);
+    expect(BRIEF_BAZAAR_OUTPUT_DESCRIPTION).toContain(BRIEF_CLAIMS_PER_TYPE);
+    expect(PREMIUM_TIERS.find((t) => t.id === "brief")).toBeTruthy();
+    expect(typeof paymentRequired).toBe("function");
+  });
+});

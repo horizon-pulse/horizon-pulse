@@ -23,7 +23,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { hasCdpCredentials } from "@/lib/config";
 import { requestFingerprint } from "@/lib/request-fingerprint";
 import { claimKey, parseClaim, tryClaim, moveClaim, newOwner, releaseClaim, type Claim, type Held } from "./claim";
-import { legalBlock, BRIEF_DESCRIPTION, BRIEF_CLAIMS_PER_TYPE, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
+import { legalBlock, BRIEF_DESCRIPTION, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
 import { createJob, runJob, settleLanded } from "./jobs";
 import {
   ASYNC_MIN_REMAINING_S,
@@ -76,7 +76,9 @@ export function bareRouteResponse(route: PremiumRoute): NextResponse {
 }
 
 function description(x: Tier) {
-  if (x.id === "brief") return `${BRIEF_DESCRIPTION} ${BRIEF_CLAIMS_PER_TYPE} No personal data in q.`;
+  // Hotfix 10/20: resource.description must stay <= 500 chars (CDP verify rejected 825). Per-type counts live in the
+  // Bazaar output description (still part of this 402), on the contract page and in the 422.
+  if (x.id === "brief") return `${BRIEF_DESCRIPTION} No personal data in q.`;
   return `${x.route === "research" ? R1_DESCRIPTION : R2_DESCRIPTION} Tier ${x.id} ${x.priceUsd}.${x.route === "research" ? " Do not include personal data (private names, contact details, health or account information) in q." : ""}`;
 }
 

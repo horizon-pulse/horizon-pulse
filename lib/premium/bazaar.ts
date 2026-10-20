@@ -1,4 +1,5 @@
 import { PUBLIC_BASE_URL } from "@/lib/config";
+import { BRIEF_CLAIMS_PER_TYPE } from "./copy";
 /**
  * CDP Bazaar discovery block for the $1 verified brief's unpaid 402 (Odin 9:18 AM ET, 10/20).
  * Same shape as the multi-network routes (declareDiscoveryExtension, one charged method), Base only,
@@ -19,7 +20,7 @@ export const BRIEF_BAZAAR_Q_DESCRIPTION =
 
 export const BRIEF_BAZAAR_OUTPUT_DESCRIPTION =
   "Verified brief (schema brief-verified/1): answer plus 2-8 claims, each with an evidence array. Charged only if at least 2 claims are confirmed in two independent sources as defined at /contracts/brief-verified; otherwise 422, unpaid. The example is a trimmed real passing brief recorded at " +
-  `${DEMO.recorded_at} (GET /api/demo/brief-verified); live values differ on every call.`;
+  `${DEMO.recorded_at} (GET /api/demo/brief-verified); live values differ on every call. ${BRIEF_CLAIMS_PER_TYPE}`;
 
 /** Trimmed real recording: question, answer, status, first claim, counts. */
 function example() {

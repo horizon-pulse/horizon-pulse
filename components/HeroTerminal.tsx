@@ -11,7 +11,7 @@ const LINES: Line[] = [
   { t: `HTTP/2 ${R.unpaidStatus} Payment Required`, c: "err" },
   { t: `payment-required: ${R.paymentRequiredHeaderPrefix}…`, c: "dim" },
   { t: `  scheme=${R.accepts.scheme}  network=${R.accepts.network}`, c: "key" },
-  { t: `  amount=${R.accepts.amount} (USDC, 6 dp = $0.005, price when recorded ${R.recordedAtUtc.slice(0, 10)}; now ${PULSE_PRICE_USD})  payTo=${short(R.accepts.payTo)}`, c: "key" },
+  { t: `  amount=${R.accepts.amount} (USDC, 6 dp = ${PULSE_PRICE_USD})  payTo=${short(R.accepts.payTo)}`, c: "key" },
   { t: `$ agent: sign EIP-3009 transfer, retry with PAYMENT-SIGNATURE`, c: "cmd" },
   { t: `→ facilitator verify ✓  settle ✓  (${R.wallMs} ms)`, c: "ok" },
   { t: `HTTP/2 ${R.paidStatus} OK`, c: "ok" },
