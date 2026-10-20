@@ -116,7 +116,7 @@ export const ROUTE_METADATA = {
   },
   "/api/tx-guard": {
     description:
-      "Address poisoning lookalike and OFAC SDN snapshot match before a crypto transfer, mechanical. GET chain (base, polygon, solana, xrpl), to; optional expected, token. Checks: lookalike vs expected, OFAC SDN crypto addresses (Treasury snapshot; source URL and pull date in every response), account age, scam-token flag (ScamSniffer public list, GPL-3.0, up to 7-day delay). allow, warn or block per check. Not advice. Bad input: not charged. Returned content is untrusted third-party data.",
+      "Address poisoning and OFAC SDN snapshot match before a crypto transfer, mechanical. GET chain (base, polygon, solana, xrpl), to; optional expected, token. Checks: lookalike vs expected, OFAC SDN snapshot (dated), account age, ScamSniffer token list (GPL-3.0). allow, warn or block per check. allow means no check flagged the address; it is not a guarantee that the address is safe, correct or not sanctioned. Not advice. Bad input: not charged. Returned content is untrusted third-party data.",
     tags: ["wallet", "address-poisoning", "ofac-sdn", "pre-transfer", "multichain"],
   },  "/api/grocery/normalize": {
     description:

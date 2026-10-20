@@ -193,7 +193,9 @@ describe("overall + response", () => {
 });
 
 /** Remove Counsel-approved verbatim strings (raw, JSON-escaped and TS-source forms). */
-const COUNSEL_EXEMPT = () => [NOTE, JSON.stringify(NOTE).slice(1, -1), "allow is not a guarantee"];
+/** Exact strings only, never patterns (Counsel 2026-10-19): any other "safe"/"guarantee" wording still fails. */
+export const SHORT_A = "allow, warn or block per check. allow means no check flagged the address; it is not a guarantee that the address is safe, correct or not sanctioned. Not advice.";
+const COUNSEL_EXEMPT = () => [NOTE, JSON.stringify(NOTE).slice(1, -1), "allow is not a guarantee", SHORT_A];
 const stripCounsel = (t: string) => COUNSEL_EXEMPT().reduce((acc, x) => acc.split(x).join(""), t);
 
 describe("wording", () => {
@@ -245,5 +247,44 @@ describe("Counsel 2026-10-19 basis wording (copy only)", () => {
     expect(m.NOTE.startsWith('"allow" means none of the listed checks flagged this address; it is not a guarantee')).toBe(true);
     expect(m.NOTE).toContain("you remain responsible for verifying the recipient before sending funds.");
     expect(m.NOTE).toContain("This service is not affiliated with or endorsed by the U.S. Treasury or OFAC");
+  });
+});
+
+describe("Counsel exemption is exact-string only", () => {
+  it("new 'safe' or 'guarantee' wording still fails; only the approved strings are exempt", () => {
+    const d = (ROUTE_METADATA as Record<string, { description: string }>)["/api/tx-guard"].description;
+    expect(d).toContain(SHORT_A);
+    expect(d.length).toBeLessThanOrEqual(500);
+    for (const bad of ["allow means it is safe", "we guarantee delivery", "allow is not a guarantee!".replace("not ", ""), "allow, warn or block per check. allow is safe."])
+      expect(stripCounsel(bad)).toMatch(/complian|\bsafe\b|guarantee/i);
+    expect(stripCounsel(`x ${SHORT_A} y`)).not.toMatch(/complian|\bsafe\b|guarantee/i);
+  });
+});
+
+describe("Counsel 2026-10-19: trimmed 402 description; detail pinned elsewhere", () => {
+  const SRC = "source URL, publisher date and pull date";
+  const DELAY = "the ScamSniffer public list (GPL-3.0, up to 7-day delay)";
+  const NOT_AFF = "This service is not affiliated with or endorsed by the U.S. Treasury or OFAC";
+  it("402 description is the exact 492-char Counsel text", () => {
+    const d = (ROUTE_METADATA as Record<string, { description: string }>)["/api/tx-guard"].description;
+    expect(d.length).toBe(492);
+    expect(d.startsWith("Address poisoning and OFAC SDN snapshot match before a crypto transfer, mechanical.")).toBe(true);
+  });
+  it("response note keeps snapshot source/date and the not-affiliated line verbatim", () => {
+    expect(NOTE).toContain("(source URL, publisher date and pull date shown)");
+    expect(NOTE).toContain(NOT_AFF);
+  });
+  it("methodology keeps snapshot dates and the ScamSniffer 7-day delay verbatim", () => {
+    expect(TX_GUARD_METHODOLOGY.ofac_sdn).toContain("The snapshot dates are in every response");
+    expect(TX_GUARD_METHODOLOGY.scam_token).toContain("the ScamSniffer public list (GPL-3.0, up to 7-day delay)");
+  });
+  it("public openapi tx-guard description keeps all three verbatim, plus the full note and every methodology line", () => {
+    const d = JSON.parse(readFileSync("public/openapi.json", "utf8")).paths["/api/tx-guard"].get.description as string;
+    expect(d).toContain(SRC);
+    expect(d).toContain(DELAY);
+    expect(d).toContain(NOT_AFF);
+    expect(d).toContain(NOTE);
+    for (const v of Object.values(TX_GUARD_METHODOLOGY)) expect(d).toContain(v);
+    expect(TX_GUARD_METHODOLOGY.scam_token).toContain(DELAY);
   });
 });

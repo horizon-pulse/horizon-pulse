@@ -157,6 +157,9 @@
  * (heading "## Honesty" renamed "## Route behavior and billing"); every 402 / OPTIONS key unchanged (key-by-key compare).
  * 2026-10-19 (branch copy/txguard-basis): ONLY golden.discovery refreshed (skill.md body, sha256 openapi.json,
  * sha256 llms.txt) for the tx-guard blurb "allow is not a guarantee" (Counsel PASS); every 402 / OPTIONS key unchanged.
+ * 2026-10-19 (copy/txguard-basis, Counsel PASS): the six cdp/local tx-guard keys (GET json, GET browser, OPTIONS) refreshed
+ * for the 492-char description ONLY (decoded and compared with the description masked: identical; payTo/amount/asset unchanged),
+ * plus discovery sha256 openapi.json (note + methodology appended to the tx-guard description). No other key changed.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
