@@ -25,6 +25,7 @@ import { BASE_CAIP2, DEFAULT_PAY_TO, PUBLIC_BASE_URL, USDC_BASE } from "@/lib/co
 import { defaultRpcDeps, ethCall, type RpcDeps } from "@/lib/chain-rpc";
 import { BUYER_TERMS_URL } from "./copy";
 import { tierPath, type Tier } from "./tiers";
+import { BRIEF_SERVICE_META, briefBazaarExtension } from "./bazaar";
 
 export const PREMIUM_CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -61,8 +62,10 @@ export function paymentRequired(x: Tier, description: string, error?: string, me
     ...(charged === false ? { charged: false as const } : {}),
     ...(error ? { error } : {}),
     ...(message ? { message } : {}),
-    resource: { url: `${PUBLIC_BASE_URL}${tierPath(x)}`, description, mimeType: "application/json", terms: BUYER_TERMS_URL },
+    resource: { url: `${PUBLIC_BASE_URL}${tierPath(x)}`, description, mimeType: "application/json", terms: BUYER_TERMS_URL, ...(x.id === "brief" ? BRIEF_SERVICE_META : {}) },
     accepts: [requirementFor(x)],
+    // Bazaar discovery: the brief only (the one live premium tier). Other tiers stay unlisted.
+    ...(x.id === "brief" ? { extensions: briefBazaarExtension() } : {}),
   };
 }
 
