@@ -30,7 +30,7 @@ function example() {
 export function briefBazaarExtension(): ReturnType<typeof declareDiscoveryExtension> {
   const ext = declareDiscoveryExtension({
     method: "GET",
-    input: { q: "How much USDC is in circulation?" },
+    input: { q: "How much USDC is in circulation" }, // Counsel B1: the demo recording's exact question
     inputSchema: { properties: { q: { type: "string", description: BRIEF_BAZAAR_Q_DESCRIPTION } }, required: ["q"] },
     output: { example: example(), schema: { type: "object", description: BRIEF_BAZAAR_OUTPUT_DESCRIPTION } },
   } as never);

@@ -40,3 +40,10 @@ describe("brief 402: extensions.bazaar (Base only, $1, narrow copy)", () => {
     expect(info?.resourceUrl ?? info?.resource ?? info).toBeTruthy();
   });
 });
+
+import DEMO_REC from "@/lib/premium/demo-brief-verified.json";
+describe("Counsel B1", () => {
+  it("the bazaar input example q is the demo recording's exact question", () => {
+    expect((briefBazaarExtension().bazaar as any).info.input.queryParams.q).toBe(DEMO_REC.question);
+  });
+});
