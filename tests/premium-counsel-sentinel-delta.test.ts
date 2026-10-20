@@ -47,6 +47,10 @@ describe("Counsel E1-E10 (verbatim copy)", () => {
     expect(outcomeContract({ HP_BRIEF_REFUND_CHOICE: "e3" })).toContain("6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash.");
     expect(briefLaunchBlockers({})).toEqual(["refund_choice_pending"]);
     expect(briefLaunchBlockers({ HP_BRIEF_REFUND_CHOICE: "a" })).toEqual([]);
+    expect(briefLaunchBlockers({ HP_BRIEF_REFUND_CHOICE: "b" })).toEqual(["premium_terms_refund_line_pending"]);
+    expect(briefLaunchBlockers({ HP_BRIEF_REFUND_CHOICE: "b", HP_REFUND_LINE_APPROVED: "true" })).toEqual([]);
+    expect(CLAUSE_6.pending).toBe("6. Refunds and corrections for delivered briefs: terms pending; none are offered until they are published here. This does not affect the refund terms at /premium-terms for a charge without delivery.");
+    expect(CLAUSE_6.a).toContain("Delivered briefs are final, except as the refund terms at /premium-terms provide for a charge without delivery.");
     const copy = readFileSync("lib/premium/copy.ts", "utf8");
     expect(copy).not.toMatch(/Michael-approved \[M\]|\[M\] approved/);
     expect(copy).toContain("[M] items: OPEN, pending Michael");
@@ -58,6 +62,7 @@ describe("Counsel E1-E10 (verbatim copy)", () => {
   it("E5: clause 10, AI_ANSWER_NOTE, AI_SELECTION_TERM, AI_PROVIDER_PRIVACY; never 'fact-checked' in public copy", () => {
     expect(outcomeContract({ HP_BRIEF_MODEL_ANSWER: "true" })).toContain("10. For x402 questions the answer line is written by an AI model from the confirmed claims only;");
     expect(OUTCOME_CONTRACT).toContain(CLAUSE_10_TEMPLATE); // default: model answer OFF (ZDR unconfirmed)
+    expect(outcomeContract({ HP_BRIEF_MODEL_ANSWER: "true" })).not.toContain(CLAUSE_10_TEMPLATE); // template clause only while the flag is off
     expect(AI_ANSWER_NOTE).toContain("Its wording can vary slightly between requests.");
     expect(AI_SELECTION_TERM).not.toContain("We add no prose of our own");
     expect(AI_SELECTION_TERM).toContain("that line is marked as machine-written");

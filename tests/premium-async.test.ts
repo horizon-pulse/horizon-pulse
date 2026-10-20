@@ -1142,7 +1142,7 @@ describe("delta 7: Sentinel hardened-brief findings", () => {
     expect(r.status).toBe(422);
     const j = (await r.json()) as any;
     expect(j.brief).toBeUndefined();
-    expect(Object.keys(j).sort()).toEqual(["charged", "contact", "contract", "disclaimer", "error", "message", "reason", "terms"].filter((k) => k in j).sort());
+    expect(Object.keys(j).sort()).toEqual(["charged", "contract", "error", "message", "reason"]); // Sentinel INFO-1: exact key list
     const s = JSON.stringify(j);
     expect(s).not.toContain("example.com");
     expect(s).not.toContain(EXCERPT.slice(0, 30));
@@ -1207,6 +1207,41 @@ describe("delta 7: Sentinel hardened-brief findings", () => {
     expect(r.status).toBe(502);
     expect(((await r.json()) as any).claims).toBeUndefined();
     expect(parallelCalls.length).toBe(pc);
+  });
+  it("delta LOW-1: passing-brief cache write fails -> 503 BEFORE settle, nothing charged, authorization reusable, slot returned", async () => {
+    on();
+    const realSet = store.set.bind(store);
+    store.set = (async (k: string, v: string, t: number) => { if (k.includes("brief:passed:")) throw new Error("kv down"); return realSet(k, v, t); }) as never;
+    const h = await payment();
+    const r = await call("brief", "q=cache%20fail", { "payment-signature": h });
+    expect(r.status).toBe(503);
+    expect(((await r.json()) as any)).toMatchObject({ error: "store_unavailable", reason: "brief_cache_unavailable", charged: false, message: "Nothing was charged for this request." });
+    expect(fac.some((c) => c.op === "settle")).toBe(false);
+    expect(declines()).toBe(0);
+    store.set = realSet as never;
+    expect((await call("brief", "q=cache%20fail", { "payment-signature": h })).status).toBe(200);
+  });
+  it("INFO-2: decline-cap store error -> 503 store_unavailable / decline_cap_unavailable, unsettled reservation returned, no research", async () => {
+    on();
+    const real = store.spendReserve.bind(store);
+    store.spendReserve = (async (k: string, a: number, c: number, t: number) => { if (k.includes("brief:declines:")) throw new Error("kv down"); return real(k, a, c, t); }) as never;
+    const r = await call("brief", "q=decline%20store", { "payment-signature": await payment() });
+    expect(r.status).toBe(503);
+    expect(((await r.json()) as any)).toMatchObject({ error: "store_unavailable", reason: "decline_cap_unavailable", charged: false });
+    expect(Number(store.kv.get([...store.kv.keys()].find((x) => x.includes("brief:unsettled:"))!)?.v ?? 0)).toBeCloseTo(0);
+    expect(parallelCalls.length).toBe(0);
+  });
+  it("delta LOW-2: the $3/day cap trip raises one WARN alert per UTC day (level via HP_BRIEF_CAP_ALERT_LEVEL)", async () => {
+    on();
+    await store.set(unsettledKey(Date.now()), String(UNSETTLED_DAILY_CAP_USD), 86_400);
+    const err = vi.mocked(console.error);
+    err.mockClear();
+    expect((await call("brief", "q=cap%20alert")).status).toBe(503);
+    expect((await call("brief", "q=cap%20alert")).status).toBe(503);
+    const alerts = err.mock.calls.map((c) => String(c[0])).filter((l) => l.includes("premium_brief_unsettled_cap_tripped"));
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toContain("[premium][ALERT][WARN]");
+    expect(alerts[0]).toContain('"severity":"warn"');
   });
   it("LOW-7: our outage (Parallel down) -> 503 before settle; authorization reusable and decline slot not consumed", async () => {
     on();

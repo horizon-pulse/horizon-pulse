@@ -214,7 +214,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
       if (!c.ok) return jsonError(422, { error: "question_type_not_supported", reason: c.reason, charged: false, message: c.message, contract: CONTRACT_URL });
       // Sentinel M2 / Odin ruling (2): global daily cap on unsettled (pre-settle) Parallel + LLM spend, all payers.
       // Checked BEFORE any 402, so nobody signs an authorization we cannot serve. Fails closed.
-      if (!(await unsettledBudgetOpen(premiumStore())))
+      if (!(await unsettledBudgetOpen(premiumStore())) && (await capTripped(premiumStore(), "pre_402"), true))
         return jsonError(503, { error: "daily_research_budget_exhausted", reason: "global_unsettled_cap", charged: false, message: "Verified briefs are paused until the next UTC day. Do not sign a payment. Nothing was charged for this request." }, { "Retry-After": "3600" });
     }
   }
@@ -370,6 +370,17 @@ export const UNSETTLED_DAILY_CAP_USD = 3;
 export const BRIEF_RUN_COST_USD = 0.05;
 const UNSETTLED_TTL_S = 2 * 86_400;
 export const unsettledKey = (now: number) => `brief:unsettled:${new Date(now).toISOString().slice(0, 10)}`;
+/** Sentinel delta LOW-2 / Odin 7:27 AM: alert when the $3/day cap trips (default WARN; level via HP_BRIEF_CAP_ALERT_LEVEL).
+ * Once per UTC day (setNx-deduped); persisted to hp:alerts, which the ops daily files to to-odin. Never blocks the response. */
+export const CAP_ALERT_KIND = "premium_brief_unsettled_cap_tripped";
+async function capTripped(store: PremiumStore | null, where: "pre_402" | "reserve") {
+  const level = (process.env.HP_BRIEF_CAP_ALERT_LEVEL ?? "warn").toLowerCase() === "high" ? "high" : "warn";
+  try {
+    if (store && !(await store.setNx(`brief:capalert:${new Date(clock()).toISOString().slice(0, 10)}`, "1", 2 * 86_400_000).catch(() => true))) return;
+  } catch { /* alert anyway */ }
+  console.error(`[premium][ALERT][${level.toUpperCase()}] ${JSON.stringify({ kind: CAP_ALERT_KIND, severity: level, route: "/api/research/report/brief", where, cap_usd: UNSETTLED_DAILY_CAP_USD })}`);
+  persistAlert("premium", { kind: CAP_ALERT_KIND, severity: level, route: "/api/research/report/brief", payer: null });
+}
 async function unsettledBudgetOpen(store: PremiumStore | null): Promise<boolean> {
   if (!store) return false;
   try {
@@ -412,6 +423,7 @@ async function chargeOnPass(store: PremiumStore, req: NextRequest, x: Tier, d: D
   // Odin ruling (2): reserve this run against the global unsettled cap (atomic, fails closed). Released only on settle.
   const uk = unsettledKey(clock());
   if (!(await store.spendReserve(uk, BRIEF_RUN_COST_USD, UNSETTLED_DAILY_CAP_USD, UNSETTLED_TTL_S).catch(() => false))) {
+    await capTripped(store, "reserve");
     await releaseClaim(store, held);
     return jsonError(503, { error: "daily_research_budget_exhausted", reason: "global_unsettled_cap", charged: false, message: "Verified briefs are paused until the next UTC day. Nothing was charged for this request." }, { "Retry-After": "3600" });
   }
@@ -460,7 +472,13 @@ async function chargeOnPass(store: PremiumStore, req: NextRequest, x: Tier, d: D
   }
   const delivered = { ...(result as object), verification: { pass_tier: tier, charged_on_pass: true } };
   // Odin ruling (4): cache the passing brief BEFORE settle, bound to this claim, so a redeem serves exactly this brief.
-  await storePassedBrief(store, held.key, rq, d.from!, delivered).catch(() => undefined);
+  // Sentinel delta LOW-1: if the redeem cache cannot be written, fail closed BEFORE settle: never take money for a
+  // brief we could not hand over on the redeem path. Authorization reusable; decline slot returned; spend stays counted.
+  if (!(await storePassedBrief(store, held.key, rq, d.from!, delivered).then(() => true, () => false))) {
+    await store.spendAdjust(dk, -1, BRIEF_DECLINE_TTL_S).catch(() => undefined);
+    await releaseClaim(store, held);
+    return jsonError(503, { error: "store_unavailable", reason: "brief_cache_unavailable", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "2" });
+  }
   const s = await settlePayment(d, x);
   if (!s.ok) {
     // Odin ruling (3): a pass whose settle fails (e.g. authorization cancelled, funds moved) COUNTS as a decline: slot kept.

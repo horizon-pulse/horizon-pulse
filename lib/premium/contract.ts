@@ -28,9 +28,9 @@ export function briefRefundChoice(env: Record<string, string | undefined> = proc
   return v === "a" || v === "b" || v === "e3" ? v : "pending";
 }
 export const CLAUSE_6: Record<RefundChoice, string> = {
-  pending: "6. Refunds and corrections: terms pending; none are offered until they are published here.",
+  pending: "6. Refunds and corrections for delivered briefs: terms pending; none are offered until they are published here. This does not affect the refund terms at /premium-terms for a charge without delivery.",
   // (a) no refund promise: charged only on pass. DRAFT for Michael + Counsel.
-  a: "6. No refund promise: a brief is charged only when it passes clause 5; a brief that does not pass is not charged. Delivered briefs are final. If you believe a claim we marked confirmed did not meet clause 3, tell us at horizonpulse.co@proton.me with the transaction hash; any correction is at our discretion.",
+  a: "6. No refund promise: a brief is charged only when it passes clause 5; a brief that does not pass is not charged. Delivered briefs are final, except as the refund terms at /premium-terms provide for a charge without delivery. If you believe a claim we marked confirmed did not meet clause 3, tell us at horizonpulse.co@proton.me with the transaction hash; any correction is at our discretion.",
   // (b) refunds on request, no time promise. DRAFT for Michael + Counsel (E3 without "usually within 7 days").
   b: "6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash. If we confirm the error, we refund the full price in USDC on Base to the address that paid, under the refund terms at /premium-terms. A page that changes or disappears after delivery is not an error; the fetch time and body hash record what it said when we fetched it.",
   e3: "6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash. If we confirm the error, we refund the full price in USDC on Base to the address that paid, usually within 7 days, under the refund terms at /premium-terms. A page that changes or disappears after delivery is not an error; the fetch time and body hash record what it said when we fetched it.",
@@ -44,11 +44,14 @@ export function briefModelAnswerEnabled(env: Record<string, string | undefined> 
 }
 /** Counsel E5(a), verbatim; published only while the model answer path is on. */
 export const CLAUSE_10_MODEL = "10. For x402 questions the answer line is written by an AI model from the confirmed claims only; code checks that it names the question's subject and contains no number or date that is not in those claims. Its wording can differ slightly between requests for the same question. On-chain answers are templated. Claim text is never written by the model.";
-/** DRAFT for Counsel (templated-only build). */
+/** Counsel 10/20 (clause10-clause6 ruling): PASS; shown only while HP_BRIEF_MODEL_ANSWER is off. */
 export const CLAUSE_10_TEMPLATE = "10. The answer line is produced by code from the confirmed claims: for on-chain questions it states the values read, and for x402 questions it is the text of a confirmed claim. No AI model writes any part of the brief.";
 /** Things that must be resolved before the brief can launch (flag flip). */
 export function briefLaunchBlockers(env: Record<string, string | undefined> = process.env): string[] {
-  return briefRefundChoice(env) === "pending" ? ["refund_choice_pending"] : [];
+  const c = briefRefundChoice(env);
+  // Counsel 10/20: option (b) (and e3) refer to the /premium-terms refund line, which must itself be approved (still OPEN).
+  if (c === "pending") return ["refund_choice_pending"];
+  return c === "b" || c === "e3" ? (env.HP_REFUND_LINE_APPROVED === "true" ? [] : ["premium_terms_refund_line_pending"]) : [];
 }
 
 /** §1, published verbatim at /contracts/brief-verified. Clause 6 and 10 follow the switches above. */
