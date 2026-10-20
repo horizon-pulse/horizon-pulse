@@ -77,3 +77,19 @@ describe("round 7 MCP quote tool", () => {
     expect(VERIFIED_BRIEF_TOOL.description.split("; this tool never runs the brief or pays.")[0]).toMatch(/^Returns the payment instructions \(the unpaid HTTP 402\)/);
   });
 });
+
+import { BUYER_TERMS, NOT_ADVICE_TERM } from "@/lib/premium/copy";
+import { ADVICE_DISCLAIMER } from "@/lib/premium/synthesis";
+import { distinctOperators, rpcOperator } from "@/lib/premium/onchain";
+describe("round 7 Counsel N1 + item 3", () => {
+  it("two nodes are two separate providers (operator dedupe)", () => {
+    expect(rpcOperator("https://eth.drpc.org")).toBe(rpcOperator("https://base.drpc.org"));
+    expect(distinctOperators(["https://eth.drpc.org", "https://base.drpc.org", "https://ethereum-rpc.publicnode.com"])).toHaveLength(2);
+  });
+  it("terms carry the no-refund reason verbatim and the PASSed not-advice line; no breach refund", () => {
+    expect(BUYER_TERMS).toContain("Delivered briefs are not refunded because the pass criteria are mechanical and checked before any charge.");
+    expect(NOT_ADVICE_TERM).toBe(ADVICE_DISCLAIMER);
+    expect(BUYER_TERMS).toContain(NOT_ADVICE_TERM);
+    expect(BUYER_TERMS.join(" ")).not.toMatch(/failed clause 3 or 5/);
+  });
+});

@@ -9,6 +9,9 @@
 import { CONTACT_EMAIL, PUBLIC_BASE_URL } from "@/lib/config";
 
 export const PREMIUM_CONTACT = CONTACT_EMAIL;
+/** Same text as ADVICE_DISCLAIMER in synthesis.ts (Counsel-PASSed); duplicated here to avoid a copy<->synthesis import cycle. */
+export const NOT_ADVICE_TERM = "Not financial, investment, tax, legal or health advice. Quotes about tokens, securities or other financial products are not a recommendation to buy, sell or hold anything.";
+
 export const BUYER_TERMS_PATH = "/premium-terms";
 export const BUYER_TERMS_URL = `${PUBLIC_BASE_URL}${BUYER_TERMS_PATH}`;
 
@@ -64,6 +67,11 @@ export const BUYER_TERMS: readonly string[] = [
   "Checks: we may check that use of results follows these terms, and we may refuse or stop service that breaks them.",
   WATCH_TERMS,
   REFUND_LINE,
+  // Counsel round-7 item 3 (PASS 10/20 10:16 AM ET), verbatim. No breach refund (Michael: refunds are v2).
+  "Delivered briefs are not refunded because the pass criteria are mechanical and checked before any charge.",
+  // Counsel round-7 item 3: one-line not-advice statement. Counsel's file gives no new wording, so this reuses the
+  // already-PASSed ADVICE_DISCLAIMER text (synthesis.ts) verbatim; flagged to Counsel/Odin.
+  NOT_ADVICE_TERM,
   "Payment: paid once per call in USDC on Base. We hold no balance or stored value for you. A 4xx answer is never charged. The $1 verified brief is settled only after the brief passes its published contract (/contracts/brief-verified); a brief that does not pass is not charged. The $5 and $10 tiers are settled before the result is built; report and watch purchases (HTTP 202) are settled after the first deliverable is built, except while settlement is temporarily moved to payment verification, as the 202 response will say. If you are charged and we do not deliver, the refund terms below apply.",
   `${PRIVACY_PREMIUM_REPLACEMENT} ${PRIVACY_PREMIUM_ADDITION}`,
   DISCLAIMER,
