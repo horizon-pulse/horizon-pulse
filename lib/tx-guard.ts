@@ -248,13 +248,16 @@ export function overall(checks: Check[]): "allow" | "warn" | "block" {
   return "allow";
 }
 
-export type TxGuardOk = { ok: true; chain: Chain; to: string; expected: string | null; token: string | null; result: "allow" | "warn" | "block"; checks: Check[]; sdnSnapshot: typeof SDN_SNAPSHOT & { snapshotAgeDays: number }; note: string; untrusted: string };
+export type TxGuardOk = { ok: true; chain: Chain; to: string; expected: string | null; token: string | null; result: "allow" | "warn" | "block"; checks: Check[]; sdnSnapshot: typeof SDN_SNAPSHOT & { snapshotAgeDays: number }; basis: string; note: string; untrusted: string };
 
-/** Counsel's expanded disclaimer (2026-10-14 tx-guard review, option 2), verbatim. In every response. */
-export const NOTE = "Mechanical check results only. The ofac_sdn check compares the address exactly against a snapshot of the 'Digital Currency Address' entries on the U.S. Treasury OFAC SDN List (source URL, publisher date and pull date shown). The snapshot may be out of date, and OFAC states its address listings are not likely to be exhaustive. No match does not mean an address or its owner is not sanctioned, and a match should be verified against the full official listing. This service is not affiliated with or endorsed by the U.S. Treasury or OFAC, and does not provide sanctions screening, legal, or financial advice. You are responsible for your own obligations.";
+/** What the verdict is based on (Counsel PASS 2026-10-19, draft B, verbatim). In every response. */
+export const BASIS = "The overall result comes only from the checks listed in `checks`: expected-address match, OFAC SDN snapshot (dates in `sdnSnapshot`), public-RPC account activity, and the ScamSniffer token list when a token is given. Skipped or unavailable checks did not contribute a pass.";
+
+/** Counsel's expanded disclaimer (2026-10-14 tx-guard review, option 2), verbatim, with the 2026-10-19 "allow is not a guarantee" first sentence (Counsel PASS, draft C). In every response. */
+export const NOTE = "\"allow\" means none of the listed checks flagged this address; it is not a guarantee that a transfer is safe or that the recipient is who you intend, and you remain responsible for verifying the recipient before sending funds. Mechanical check results only. The ofac_sdn check compares the address exactly against a snapshot of the 'Digital Currency Address' entries on the U.S. Treasury OFAC SDN List (source URL, publisher date and pull date shown). The snapshot may be out of date, and OFAC states its address listings are not likely to be exhaustive. No match does not mean an address or its owner is not sanctioned, and a match should be verified against the full official listing. This service is not affiliated with or endorsed by the U.S. Treasury or OFAC, and does not provide sanctions screening, legal, or financial advice. You are responsible for your own obligations.";
 
 export async function txGuard(input: TxGuardInput, deps: Deps = defaultDeps()): Promise<TxGuardOk> {
   const [age, scam] = await Promise.all([accountAge(input.chain, input.to, deps), scamToken(input.chain, input.token, deps)]);
   const checks = [expectedMatch(input.chain, input.to, input.expected), sdnCheck(input.chain, input.to, deps.now()), age, scam];
-  return { ok: true, chain: input.chain, to: input.to, expected: input.expected ?? null, token: input.token ?? null, result: overall(checks), checks, sdnSnapshot: { ...SDN_SNAPSHOT, snapshotAgeDays: sdnAgeDays(deps.now()) }, note: NOTE, untrusted: UNTRUSTED };
+  return { ok: true, chain: input.chain, to: input.to, expected: input.expected ?? null, token: input.token ?? null, result: overall(checks), checks, basis: BASIS, sdnSnapshot: { ...SDN_SNAPSHOT, snapshotAgeDays: sdnAgeDays(deps.now()) }, note: NOTE, untrusted: UNTRUSTED };
 }

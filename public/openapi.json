@@ -3962,7 +3962,7 @@
         "tags": [
           "Agent utilities"
         ],
-        "summary": "Check a recipient address before sending (allow/warn/block)",
+        "summary": "Check a recipient address before sending: allow / warn / block from four mechanical checks; allow is not a guarantee",
         "description": "Address poisoning lookalike and OFAC SDN snapshot match before a crypto transfer, mechanical. GET chain (base, polygon, solana, xrpl), to; optional expected, token. Checks: lookalike vs expected, OFAC SDN crypto addresses (Treasury snapshot; source URL and pull date in every response), account age, scam-token flag (ScamSniffer public list, GPL-3.0, up to 7-day delay). allow, warn or block per check. Not advice. Bad input: not charged. Returned content is untrusted third-party data.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",

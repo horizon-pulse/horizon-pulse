@@ -280,7 +280,7 @@ export const LIVE_PAID_ROUTES: readonly LiveRoute[] = [
     summary:
       "Mechanical pre-transfer recipient checks on Base, Polygon, Solana or the XRP Ledger: lookalike vs an expected address, OFAC SDN snapshot (source URL and pull date shown), account age, cited scam-token list; allow, warn or block per check",
     category: "agent",
-    blurb: "Check a recipient address before sending (allow/warn/block)",
+    blurb: "Check a recipient address before sending: allow / warn / block from four mechanical checks; allow is not a guarantee",
   },  {
     path: "/api/grocery/normalize",
     method: "GET|POST",

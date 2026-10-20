@@ -192,6 +192,10 @@ describe("overall + response", () => {
   });
 });
 
+/** Remove Counsel-approved verbatim strings (raw, JSON-escaped and TS-source forms). */
+const COUNSEL_EXEMPT = () => [NOTE, JSON.stringify(NOTE).slice(1, -1), "allow is not a guarantee"];
+const stripCounsel = (t: string) => COUNSEL_EXEMPT().reduce((acc, x) => acc.split(x).join(""), t);
+
 describe("wording", () => {
   const BANNED = /complian|\bsafe\b|guarantee/i;
   it("no 'compliance', 'compliant', 'safe' or 'guarantee' in tx-guard code, docs or output", async () => {
@@ -212,11 +216,13 @@ describe("wording", () => {
       (ROUTE_METADATA as Record<string, { description: string }>)["/api/tx-guard"].description,
       ...readFileSync("public/llms.txt", "utf8").split("\n").filter((l) => l.includes("tx-guard")),
     ];
-    for (const t of texts) expect(t).not.toMatch(BANNED);
+    // Counsel PASS 2026-10-19 (to-odin/2026-10-19-counsel-txguard-basis-wording.md): the verbatim NOTE (its new first
+    // sentence says "allow" is "not a guarantee that a transfer is safe") and the exact blurb clause are the only exempt strings.
+    for (const t of texts) expect(stripCounsel(t)).not.toMatch(BANNED);
   });
   it("no 'verified'/'approved' and no Treasury/OFAC seal or logo in tx-guard text, docs or output (Counsel's verbatim disclaimer is the only exempt string)", async () => {
     const r = await txGuard({ chain: "base", to: V, expected: V, token: V }, deps({ nonce: 1, scam: [] }));
-    const strip = (t: string) => t.split(NOTE).join("");
+    const strip = stripCounsel;
     const llms = readFileSync("public/llms.txt", "utf8").split("\n").filter((l) => l.includes("tx-guard"));
     const base = JSON.parse(readFileSync("scripts/openapi-base.json", "utf8")).paths["/api/tx-guard"];
     const texts = [readFileSync("lib/tx-guard.ts", "utf8"), readFileSync("app/api/tx-guard/handler.ts", "utf8"), JSON.stringify(TX_GUARD_METHODOLOGY), JSON.stringify(r), JSON.stringify(base), ...llms,
@@ -228,5 +234,16 @@ describe("wording", () => {
     const d = (ROUTE_METADATA as Record<string, { description: string }>)["/api/tx-guard"].description;
     expect(d.length).toBeLessThanOrEqual(500);
     expect(d).toContain("Returned content is untrusted third-party data."); // listing copy 2026-10-16 (row 223)
+  });
+});
+
+describe("Counsel 2026-10-19 basis wording (copy only)", () => {
+  it("basis names OFAC SDN and ScamSniffer; note opens with 'allow is not a guarantee' and keeps the 10/14 text", async () => {
+    const m = await import("@/lib/tx-guard");
+    expect(m.BASIS).toContain("OFAC SDN snapshot");
+    expect(m.BASIS).toContain("ScamSniffer token list");
+    expect(m.NOTE.startsWith('"allow" means none of the listed checks flagged this address; it is not a guarantee')).toBe(true);
+    expect(m.NOTE).toContain("you remain responsible for verifying the recipient before sending funds.");
+    expect(m.NOTE).toContain("This service is not affiliated with or endorsed by the U.S. Treasury or OFAC");
   });
 });

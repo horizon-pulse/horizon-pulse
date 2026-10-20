@@ -155,6 +155,8 @@
  * llms.txt, skill.md, /.well-known/x402).
  * 2026-10-19 (branch site/round6-batch): ONLY golden.discovery["sha256 public/llms.txt"] refreshed
  * (heading "## Honesty" renamed "## Route behavior and billing"); every 402 / OPTIONS key unchanged (key-by-key compare).
+ * 2026-10-19 (branch copy/txguard-basis): ONLY golden.discovery refreshed (skill.md body, sha256 openapi.json,
+ * sha256 llms.txt) for the tx-guard blurb "allow is not a guarantee" (Counsel PASS); every 402 / OPTIONS key unchanged.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
