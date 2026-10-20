@@ -26,6 +26,7 @@ import { CALLER_IP_HEADER, platformIp } from "./caller-ip";
 import { scheduleMarkPayer } from "./free-tier";
 import { MMR_DESCRIPTION } from "./money-market-rates";
 import { premiumHandler } from "./premium/handler";
+import { BRIEF_EXAMPLES } from "./premium/source-index";
 import { BRIEF_LISTING } from "./premium/listing";
 import { tierAllowed } from "./premium/tiers";
 import { GET as moneyMarketRatesGET } from "@/app/api/money-market-rates/route";
@@ -494,15 +495,29 @@ export const FREE_TOOLS = [
 ];
 
 export const VERIFIED_BRIEF_TOOL = {
-  name: "verified_brief",
-  description: `${BRIEF_LISTING.priceUsd} verified brief, ${BRIEF_LISTING.rail}. ${BRIEF_LISTING.summary} Not payable over MCP: this tool returns the unpaid HTTP 402 challenge for GET ${PUBLIC_BASE_URL}${BRIEF_LISTING.path}?q=...; pay it over HTTP with x402 (Base USDC). Out-of-scope questions return 422 with nothing charged. Contract: ${PUBLIC_BASE_URL}${BRIEF_LISTING.contract}. Terms: ${PUBLIC_BASE_URL}${BRIEF_LISTING.terms}.`,
-  schema: { q: z.string().describe("Question about Base or Ethereum gas, USDC supply on Ethereum and Base, or an x402 spec fact. No personal data.") },
+  name: "verified_brief_quote",
+  // Round 7 (Claude Q3): first sentence says this only quotes; it never runs the brief or pays.
+  description: `Returns the payment instructions (the unpaid HTTP 402) for the ${BRIEF_LISTING.priceUsd} verified brief; this tool never runs the brief or pays. To get the brief, pay the 402 over HTTP with x402 v2 (${BRIEF_LISTING.rail}) at GET ${PUBLIC_BASE_URL}${BRIEF_LISTING.path}?q=... ${BRIEF_LISTING.summary} Contract: ${PUBLIC_BASE_URL}${BRIEF_LISTING.contract}. Terms: ${PUBLIC_BASE_URL}${BRIEF_LISTING.terms}.`,
+  schema: {
+    q: z.string().describe("Question about Base or Ethereum gas, USDC supply on Ethereum and Base, or an x402 spec fact. No personal data."),
+    type: z.enum(["base_gas", "eth_gas", "usdc_supply", "x402_spec"]).optional().describe("Optional: skip phrase matching and use this question type."),
+  },
   call: async (a: Record<string, unknown>) => {
-    const req = makeRequest(BRIEF_LISTING.path, { q: s(a.q) });
+    const req = makeRequest(BRIEF_LISTING.path, { q: s(a.q), type: s(a.type) });
     const res = await premiumHandler(req, "research", "brief");
     const body = await res.text();
     const pr = res.headers.get("payment-required");
-    const out = { status: res.status, url: req.url, payment_required: pr ? JSON.parse(Buffer.from(pr, "base64").toString("utf8")) : undefined, body: (() => { try { return body ? JSON.parse(body) : undefined; } catch { return body; } })(), how_to_pay: "Send the same GET over HTTP with an x402 v2 PAYMENT-SIGNATURE for the Base accept above. MCP calls never pay." };
+    const out = {
+      status: res.status,
+      note: "Quote only: nothing was run or paid. Pay this 402 over HTTP to get the brief; you are charged only if the brief passes the contract.",
+      url: req.url,
+      curl: `curl -i '${req.url}'`,
+      contract: `${PUBLIC_BASE_URL}${BRIEF_LISTING.contract}`,
+      terms: `${PUBLIC_BASE_URL}${BRIEF_LISTING.terms}`,
+      accepted_types: BRIEF_EXAMPLES,
+      payment_required: pr ? JSON.parse(Buffer.from(pr, "base64").toString("utf8")) : undefined,
+      body: (() => { try { return body ? JSON.parse(body) : undefined; } catch { return body; } })(),
+    };
     return { content: [{ type: "text" as const, text: JSON.stringify(out) }], isError: res.status !== 402 };
   },
 };

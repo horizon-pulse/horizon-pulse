@@ -225,7 +225,7 @@ export default function AgentsPage() {
                 ))}
                 {premium.map((x) => (
                   <tr key={x.path}>
-                    <td className="r">verified_brief</td>
+                    <td className="r">verified_brief_quote</td>
                     <td>
                       <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text-3)" }}>GET</span> <code>{x.path}</code>
                       <br />

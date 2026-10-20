@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
-import { AI_PROVIDER_TERMS, BUYER_TERMS, TECHNICAL_NOTES } from "@/lib/premium/copy";
+import { tierAllowed } from "@/lib/premium/tiers";
+import { AI_PROVIDER_TERMS, BUYER_TERMS, NOT_CURRENTLY_OFFERED, TECHNICAL_NOTES } from "@/lib/premium/copy";
 import { premiumLlmEnabled } from "@/lib/premium/synthesis";
 import { listedTiers } from "@/lib/premium/tiers";
 
@@ -11,6 +12,7 @@ export default function PremiumTermsPage() {
   return (
     <main style={{ maxWidth: 760, margin: "40px auto", padding: "0 20px", lineHeight: 1.6 }}>
       <h1>Horizon Pulse premium terms</h1>
+      {!tierAllowed("standard") && !tierAllowed("extended") && <p><strong>{NOT_CURRENTLY_OFFERED}</strong></p>}
       {BUYER_TERMS.map((p, i) => (
         <p key={i}>{p}</p>
       ))}

@@ -97,3 +97,12 @@ export const TECHNICAL_NOTES: string[] = [
 /** Hardened $1 brief: 402 / Bazaar description (<= 500 chars incl. the handler suffix), schema brief-verified/1. */
 export const BRIEF_DESCRIPTION =
   "Verified brief (schema brief-verified/1), on-chain live values and x402 spec facts only: answer plus 2-8 claims, each with an evidence array (verbatim quote, URL, retrieval time, body hash, offset; or chain, block and block time for on-chain reads). Charged only if >=2 claims are confirmed (2 publishers, 2 nodes, or 2 x402 spec documents) and every quote verifies; otherwise unpaid. Contract: horizonpulse.dev/contracts/brief-verified. Not advice.";
+
+/** Round 7 (Claude Q2), NEW copy for Counsel: per-type claim counts, from code. On-chain types read exactly two fields
+ * (onchain.ts: baseFeePerGas + gasLimit; Ethereum + Base totalSupply()); x402 spec facts yield CONTRACT_MIN_CLAIMS..CONTRACT_MAX_CLAIMS (2-8). */
+export const BRIEF_CLAIMS_PER_TYPE =
+  "Claims per question type: Base gas and Ethereum gas, 2 (base fee and gas limit, each read from two independent nodes); USDC supply, 2 (totalSupply() on Ethereum and on Base, each from two independent nodes); x402 spec facts, 2-8 (each in two separate specification documents). Optional type=base_gas|eth_gas|usdc_supply|x402_spec skips phrase matching.";
+
+/** Round 7 (Claude §3 #3), NEW copy for Counsel: shown at the top of /premium-terms; the verbatim terms below are unchanged. */
+export const NOT_CURRENTLY_OFFERED =
+  "Not currently offered: the $5 standard and $10 extended research tiers (/api/research/report/standard and /api/research/report/extended) and the seller watch (/api/seller-watch/*). Those URLs return 404 and cannot be paid. Terms below that mention them apply only if they are offered later. The only premium product offered now is the $1 verified brief.";

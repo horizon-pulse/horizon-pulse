@@ -107,7 +107,7 @@ Do **not** use the retired address `0xe16A1b12404cB2EbC6e783beCA6E2A9253c3dC7E`.
 | `GET /api/screenshot` | **$0.02** USDC (`20000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
 | `GET /api/search` | **$0.03** USDC (`30000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
 | `GET /api/pdf` | **$0.02** USDC (`20000` atomic) | x402 v2 (Base, Solana, Polygon, XRPL) |
-| `GET /api/research/report/brief?q=…` | **$1** USDC (`1000000` atomic): at least 2 independently confirmed claims, or no charge ([contract](https://horizonpulse.dev/contracts/brief-verified), [terms](https://horizonpulse.dev/premium-terms)) | x402 v2 (Base USDC only) |
+| `GET /api/research/report/brief?q=…` | **$1** USDC (`1000000` atomic): at least 2 claims confirmed in two sources as defined by the contract (two independent nodes, or two separate specification documents), or no charge ([contract](https://horizonpulse.dev/contracts/brief-verified), [terms](https://horizonpulse.dev/premium-terms)) | x402 v2 (Base USDC only) |
 
 **Free (not paid APIs):**
 

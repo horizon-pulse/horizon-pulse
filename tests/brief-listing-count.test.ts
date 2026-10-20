@@ -41,13 +41,13 @@ describe("paid-route count includes the live $1 verified brief everywhere", () =
     on();
     expect(buildSkillMarkdown()).toContain(`${LIVE_PAID_ROUTES.length + 1} paid routes.`);
   });
-  it("hosted MCP: verified_brief only when live; returns the unpaid 402, never pays", async () => {
-    expect(toolNames(buildMcpServer())).not.toContain("verified_brief");
+  it("hosted MCP: verified_brief_quote only when live; returns the unpaid 402, never pays", async () => {
+    expect(toolNames(buildMcpServer())).not.toContain("verified_brief_quote");
     on();
     const names = toolNames(buildMcpServer());
-    expect(names).toContain("verified_brief");
+    expect(names).toContain("verified_brief_quote");
     expect(names.filter((n) => /standard|extended/.test(n))).toEqual([]);
-    expect(VERIFIED_BRIEF_TOOL.description).toContain("Not payable over MCP");
+    expect(VERIFIED_BRIEF_TOOL.description).toContain("this tool never runs the brief or pays");
     expect(VERIFIED_BRIEF_TOOL.description).not.toMatch(/xai|grok/i);
   });
 });

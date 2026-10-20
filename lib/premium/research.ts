@@ -7,7 +7,7 @@ import { BRIEF_VERIFIED_SENTENCE } from "./copy";
  */
 import { toContract } from "./contract";
 import { buildVerified } from "./verified";
-import { classifyQuestion, fetchIndexPages } from "./source-index";
+import { classifyQuestion, fetchIndexPages, stripTypePrefix } from "./source-index";
 import { ParallelError, extractAllowed, parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
 import { onchainTopic, readOnchain, type OnchainFact } from "./onchain";
 import type { Tier } from "./tiers";
@@ -538,8 +538,9 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
  * only -> contract. The handler settles only when contract.status === "pass".
  */
 export const AI_ANSWER_NOTE = "The answer line was written by an AI model provider from the confirmed claims below; code checked that it names the subject and contains no number or date that is not in those claims. Its wording can vary slightly between requests. Claim text is quoted verbatim from the cited pages or read on-chain and was not written by the model.";
-export async function runVerifiedBrief(q: string, deadline: number, capture?: CaptureSink) {
-  const c = classifyQuestion(q);
+export async function runVerifiedBrief(input: string, deadline: number, capture?: CaptureSink) {
+  const c = classifyQuestion(input);
+  const q = stripTypePrefix(input).q;
   if (!c.ok) throw new Error("unsupported_question_type");
   const t = c.type;
   const timing: Record<string, number> = {};
