@@ -70,6 +70,8 @@ const OUT_OF_SCOPE = [
   { re: /\b(where does .* live|home address|phone number|email of)\b/i, reason: "private_person" },
   // Odin ruling A (10/19): no two independent, non-mirrored sources state the same facilitator definition, so it is refused, not answered.
   { re: /\b(what(?:'s| is| are| does)\s+(?:an?\s+|the\s+)?(?:x402\s+)?facilitators?(?:\s+(?:mean|do))?\b|defin\w*\s+(?:of\s+)?(?:an?\s+|the\s+)?(?:x402\s+)?facilitator|facilitators?\s+(?:mean|definition))/i, reason: "facilitator_definition" },
+  // Sentinel LOW-6: "how does/do (an) x402 facilitator(s) work / operate / function", "how is a facilitator used", "explain facilitators".
+  { re: /\b(how\s+(?:does|do|is|are)\s+(?:an?\s+|the\s+)?(?:x402\s+)?facilitators?\b|(?:explain|describe)\s+(?:an?\s+|the\s+)?(?:x402\s+)?facilitators?\b|role\s+of\s+(?:an?\s+|the\s+)?(?:x402\s+)?facilitators?\b)/i, reason: "facilitator_definition" },
   { re: /\b(yesterday|this week|today'?s? (news|announcement)|breaking)\b/i, reason: "breaking_news" },
 ];
 
@@ -112,12 +114,13 @@ export async function fetchIndexPages(t: IndexType, q: string, deadline: number,
   const eip = q.match(/\beip[- ]?(\d{1,5})\b/i)?.[1];
   const query = t.indexQuery ?? (eip ? `EIP-${eip}` : q);
   const key = eip ? `${t.id}:${eip}` : t.id;
-  if (t.urls?.length) return cachedIndex(t.id, now, async () => parallelExtract(t.label, t.urls!, deadline, true));
+  const stamp = (rs: ParallelResult[]) => { const at = new Date().toISOString(); return rs.map((r) => ({ ...r, fetched_at: r.fetched_at ?? at })); };
+  if (t.urls?.length) return cachedIndex(t.id, now, async () => stamp(await parallelExtract(t.label, t.urls!, deadline, true)));
   return cachedIndex(key, now, async () => {
     const found = await parallelSearch(query, [query], 8, deadline, { includeDomains: t.official!.domains });
     const urls = [...new Set(found.map((r) => r.url))].filter((u) => !/\.pdf(\?|$)/i.test(u)).slice(0, INDEX_PAGES);
     if (!urls.length) return [];
     const ex = await parallelExtract(query, urls, deadline, true);
-    return ex.map((r) => ({ ...r, publish_date: r.publish_date ?? found.find((f) => f.url === r.url)?.publish_date ?? null }));
+    return stamp(ex).map((r) => ({ ...r, publish_date: r.publish_date ?? found.find((f) => f.url === r.url)?.publish_date ?? null }));
   });
 }

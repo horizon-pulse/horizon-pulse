@@ -22,15 +22,16 @@ export const OUTCOME_CONTRACT = [
   "1. A brief contains an answer (names the question's subject) and 2–8 claims. Only supported question types are accepted; others are refused before payment.",
   "2. Every claim carries a verbatim quote from a public page, with the URL, the fetch time, the page's body hash, and the quote's offset in the body. Quotes are capped at 300 characters and attributed.",
   "3. A claim is confirmed only when one of these holds:",
-  "   - publisher-confirmed — a second, independent publisher states the same value or date plus a shared topic word (code-checked; wire-syndicated copy rejected by near-duplicate test);",
-  "   - onchain-confirmed — two independent nodes or explorers report the same value at the same block (gas, supply, balances, tx state);",
-  "   - official — the issuing authority's own primary publication plus a second document from the same authority, with the effective date (administered rates, statutes, regulators' notices).",
+  "   - publisher-confirmed — a second, independent publisher states the same value or date plus a shared topic word (code-checked; near-duplicate copy is rejected);",
+  "   - onchain-confirmed — two independent RPC nodes return the same value for the same block (Ethereum and Base base fee and gas limit; USDC totalSupply() on Ethereum and Base);",
+  "   - official — two different documents from the x402 specification publishers (x402.org, docs.x402.org, Coinbase developer documentation, github.com/coinbase/x402) state the same fact; mirrored copies of one page count as one document. Specification pages are undated, so no effective date is required.",
   "4. consistent (two dated sources within tolerance) is shown but never counted as confirmed.",
-  "5. At least 2 independently confirmed claims, or no charge: a brief passes only when at least 2 claims are confirmed and every claim's quote verifies verbatim at its URL at delivery time. A brief that does not pass is not charged (settle after produce).",
-  "6. Refund: if any confirmed claim is later shown to lack its second source, the whole brief is refunded to the payer address on the receipt within 24 hours, and the correction is logged publicly.",
-  "7. Every claim carries its evidence object. Signed receipts are coming later: briefs are not signed yet; the x402 PAYMENT-RESPONSE settlement header is the payment record for now.",
+  "5. At least 2 independently confirmed claims, or no charge: a brief passes only when at least 2 claims are confirmed and every claim's quote is found verbatim in the text of its page as fetched for this brief (fetch time and body hash shown). A brief that does not pass is not charged (settle after produce).",
+  "6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash. If we confirm the error, we refund the full price in USDC on Base to the address that paid, usually within 7 days, under the refund terms at /premium-terms. A page that changes or disappears after delivery is not an error; the fetch time and body hash record what it said when we fetched it.",
+  "7. Every claim carries its evidence object. Briefs are not signed. For a charged brief, the x402 PAYMENT-RESPONSE settlement header (with the transaction hash) is the payment record.",
   "8. No financial, legal or medical recommendations. Briefs describe; they do not advise.",
   `9. Scope: on-chain live values (Ethereum and Base gas, base fee and gas limit; USDC supply on Ethereum and Base) and x402 specification facts only. Out of scope, refused before payment with nothing charged: ${OUT_OF_SCOPE_CATEGORIES.join("; ")}.`,
+  "10. For x402 questions the answer line is written by an AI model from the confirmed claims only; code checks that it names the question's subject and contains no number or date that is not in those claims. Its wording can differ slightly between requests for the same question. On-chain answers are templated. Claim text is never written by the model.",
 ].join("\n");
 
 export type Evidence = { url: string; quote: string; fetched_at: string; body_sha256: string; offset: number; publisher: string };
@@ -170,7 +171,7 @@ export function toContract(q: string, b: any, extracted: ParallelResult[], fetch
   const answer = String(b?.answer?.lines?.[0]?.text ?? b?.onchain?.line ?? "").trim();
   if (!answer) reasons.push("no_answer");
   if (answer.split(/\s+/).length > 60) reasons.push("answer_over_60_words");
-  if (kept.length < CONTRACT_MIN_CLAIMS) reasons.push("fewer_than_3_claims");
+  if (kept.length < CONTRACT_MIN_CLAIMS) reasons.push("fewer_than_2_claims");
   if (counts.confirmed < CONTRACT_MIN_CONFIRMED) reasons.push(`confirmed_${counts.confirmed}_of_${CONTRACT_MIN_CONFIRMED}`);
   if (!verbatimOk) reasons.push("quote_not_verbatim_at_url");
   // Odin checklist 2: every claim must carry evidence; a confirmed claim needs two items (2 publishers / 2 nodes / authority + date).

@@ -36,13 +36,16 @@ export async function buildVerified(q: string, t: IndexType, web: ParallelResult
     });
   }
   const subjQ = subjectTerms(q);
+  const fetchedBy = new Map([...web, ...index].filter((r) => r.fetched_at).map((r) => [r.url, r.fetched_at!] as const));
+  const pageFetched = (u: string) => fetchedBy.get(u) ?? fetchedAt;
   const pair = (a: { url: string; quote: string }, b: { url: string; quote: string }, tier: "official" | "publisher-confirmed") => {
     if (a.quote.length > QUOTE_CAP || b.quote.length > QUOTE_CAP) return;
     // A page claim must name EVERY subject term of the question (e.g. "x402" AND "facilitator"), so the answer can only
     // be written from facts about what was asked, never from adjacent facts.
     if (!namesSubject(a.quote, subjQ) || !coversQuestion(q, a.quote)) return;
-    const p = evidence(a.url, a.quote, pageText, fetchedAt);
-    const s = evidence(b.url, b.quote, pageText, fetchedAt);
+    // Counsel E2: each quote carries ITS page's real fetch time (cached index pages keep their original fetch time).
+    const p = evidence(a.url, a.quote, pageText, pageFetched(a.url));
+    const s = evidence(b.url, b.quote, pageText, pageFetched(b.url));
     if (!p || !s) return; // verbatim at offset or not at all
     const vals = [...factValues(a.quote)].filter((v) => factValues(b.quote).has(v));
     const date = effectiveDate(a.quote) ?? (index.find((r) => r.url === a.url)?.publish_date ?? undefined) ?? undefined;
@@ -61,7 +64,7 @@ export async function buildVerified(q: string, t: IndexType, web: ParallelResult
   const newest = index.map((r) => docDate(r.url)).filter(Boolean).sort().pop() ?? "";
   const live = isLiveValueQuestion(q);
   // Official pairs only among the authority's own domains; other curated ecosystem docs feed publisher pairs.
-  const ownDomain = (u: string) => { try { const h = new URL(u).hostname.toLowerCase(); return !!t.official?.domains.some((d) => h === d || h.endsWith(`.${d}`)); } catch { return false; } };
+  const ownDomain = (u: string) => { try { const x = new URL(u); const h = x.hostname.toLowerCase(); if (h === "github.com" && !/^\/coinbase\/x402(\/|$)/i.test(x.pathname)) return false; /* Counsel E1 hygiene */ return !!t.official?.domains.some((d) => h === d || h.endsWith(`.${d}`)); } catch { return false; } };
   if (t.official) for (const [a, b] of candidatePairs(q, index.filter((r) => ownDomain(r.url)), 12, true)) {
     if (docKey(a.url) === docKey(b.url)) continue;
     if (live && newest && docDate(a.url) !== newest && docDate(b.url) !== newest) continue;

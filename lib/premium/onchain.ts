@@ -42,8 +42,23 @@ export const ONCHAIN_CONFIRM_LAG = 2n; // read 2 blocks behind head so both node
  * Spec §1 onchain-confirmed: two independent nodes report the same value at the same block. Block N = head(node A) - 2;
  * block N's timestamp and the value are read from node A and node B; confirmed only when both agree byte-for-byte.
  */
+/** Counsel E10: node independence is by OPERATOR, not hostname (eth.drpc.org and base.drpc.org are one operator; an env URL
+ * on dRPC must not pair with dRPC). Operator = registrable domain (last two labels; three for known two-part suffixes). */
+export function rpcOperator(u: string): string {
+  try {
+    const parts = new URL(u).hostname.toLowerCase().split(".");
+    const two = /^(co|com|org|net)\.[a-z]{2}$/.test(parts.slice(-2).join("."));
+    return parts.slice(two ? -3 : -2).join(".");
+  } catch {
+    return u;
+  }
+}
+export function distinctOperators(urls: string[]): string[] {
+  const seen = new Set<string>();
+  return urls.filter((u) => { const op = rpcOperator(u); if (seen.has(op)) return false; seen.add(op); return true; });
+}
 async function pinned(deps: RpcDeps, chain: ChainNetwork, deadline: number, read: (url: string, blockHex: string, blk: any) => Promise<string | null>) {
-  const urls = rpcs(chain).slice(0, 3);
+  const urls = distinctOperators(rpcs(chain)).slice(0, 3);
   if (urls.length < 2) return null;
   const headHex = await one(deps, urls[0], "eth_blockNumber", [], deadline);
   const h = hexToBig(headHex);

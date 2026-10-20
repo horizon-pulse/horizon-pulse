@@ -536,7 +536,7 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
  * official index pages (1 h cache per type) and on-chain two-node reads -> code-confirmed claims -> model answer line
  * only -> contract. The handler settles only when contract.status === "pass".
  */
-export const AI_ANSWER_NOTE = "The answer line is written by an AI model provider from the confirmed claims only and checked by code; claim text is quoted verbatim from the cited pages or read on-chain.";
+export const AI_ANSWER_NOTE = "The answer line was written by an AI model provider from the confirmed claims below; code checked that it names the subject and contains no number or date that is not in those claims. Its wording can vary slightly between requests. Claim text is quoted verbatim from the cited pages or read on-chain and was not written by the model.";
 export async function runVerifiedBrief(q: string, deadline: number, capture?: CaptureSink) {
   const c = classifyQuestion(q);
   if (!c.ok) throw new Error("unsupported_question_type");
@@ -548,7 +548,8 @@ export async function runVerifiedBrief(q: string, deadline: number, capture?: Ca
     timed("web_ms", !t.web ? Promise.resolve([] as ParallelResult[]) : (async () => {
       const found = await briefSearch(q, briefQueries(q).slice(0, 2), 6, deadline);
       const urls = briefExtractUrls(found, BRIEF_EXTRACT_N, q);
-      return withSearchDates(urls.length ? await parallelExtract(q, urls, deadline, true).catch(() => [] as ParallelResult[]) : [], found);
+      const at = new Date().toISOString();
+      return withSearchDates(urls.length ? (await parallelExtract(q, urls, deadline, true).catch(() => [] as ParallelResult[])).map((r) => ({ ...r, fetched_at: r.fetched_at ?? at })) : [], found);
     })().catch(() => (upstreamErrors++, [] as ParallelResult[]))),
     timed("index_ms", t.official ? fetchIndexPages(t, q, deadline).catch(() => (upstreamErrors++, [] as ParallelResult[])) : Promise.resolve([] as ParallelResult[])),
     timed("onchain_ms", t.onchain ? readOnchain(t.onchain, deadline) : Promise.resolve(null)),
@@ -559,5 +560,5 @@ export async function runVerifiedBrief(q: string, deadline: number, capture?: Ca
   const s = Date.now();
   const contract = await buildVerified(q, t, web, index, chain, new Date().toISOString(), deadline);
   timing.build_ms = Date.now() - s;
-  return { tier: "brief", question: q, contract, timing, disclaimer: ADVICE_DISCLAIMER, ai_note: AI_ANSWER_NOTE, coverage: t.label };
+  return { tier: "brief", question: q, contract, timing, disclaimer: ADVICE_DISCLAIMER, ...((contract as { answer_by?: string }).answer_by === "model" ? { ai_note: AI_ANSWER_NOTE } : {}), coverage: t.label };
 }

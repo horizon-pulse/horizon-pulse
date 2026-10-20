@@ -29,7 +29,7 @@ import { setParallelForTests } from "@/lib/premium/parallel";
 import { BUYER_TERMS, WATCH_TERMS, TECHNICAL_NOTES, RECONCILE_RETENTION_S, PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT } from "@/lib/premium/copy";
 import { CAP_EXEMPT_OUTCOMES, recordReconcile, RECONCILE_WRITE_CAP_PER_DAY, reconcileWriteStats, flushReconcileForTests, setReconcileForTests, storedFingerprint, type ReconcileLine } from "@/lib/premium/reconcile";
 import { MemoryPremiumStore, premiumPrefix, setPremiumStoreForTests, UpstashPremiumStore, type PremiumStore } from "@/lib/premium/store";
-import { setBriefGateForTests, setPremiumClockForTests } from "@/lib/premium/handler";
+import { BRIEF_RUN_COST_USD, setBriefGateForTests, setPremiumClockForTests, UNSETTLED_DAILY_CAP_USD, unsettledKey } from "@/lib/premium/handler";
 import { setClassifierForTests, TEST_GENERIC_TYPE } from "@/lib/premium/source-index";
 import { settleLanded, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S, AUTH_USED_TOPIC, FIRST_DELIVERABLE_BUDGET_MS, JOB_KEYS, loadJob, runJob, setJobClockForTests, setJobRpcForTests, stopWatch, cronSweep } from "@/lib/premium/jobs";
 import { ARCHIVE_CONTEXT_CHARS, ARCHIVE_TEXT_CAP_BYTES, matchSnippet, noArchive, robotsAllows, setArchiveFetchForTests } from "@/lib/premium/archive";
@@ -919,9 +919,13 @@ describe("delta 3: Sentinel LOW-A..D", () => {
     rpcAnswer = "used";
     logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
     const proof1 = await ACCOUNT.signMessage({ message: first.redeem_message });
-    setParallelForTests({ fetch: (async () => new Response("x", { status: 500 })) as never });
+    // Odin ruling (4): a brief redeem never re-runs; with its cached passing brief gone, the redeem "work" fails.
+    const pk = [...store.kv.keys()].find((k) => k.includes("brief:passed:"))!;
+    const saved = store.kv.get(pk)!;
+    store.kv.delete(pk);
     const r1 = await call("brief", "q=low%20a%20test", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof1 });
     expect(r1.status).toBe(502);
+    store.kv.set(pk, saved);
     const j1 = (await r1.json()) as any;
     expect(j1.reconcile_id).not.toBe(first.reconcile_id);
     expect(j1.redeem_message).not.toBe(first.redeem_message);
@@ -1123,5 +1127,107 @@ describe("delta 6: settle-at-verify claim-hold failure", () => {
     };
     await acceptReport("q=hold%20ok");
     expect(errs.some((l) => l.includes("premium_claim_hold_failed"))).toBe(false);
+  });
+});
+
+
+/** Sentinel 1b4e357 MEDIUM 1-4 + LOW 5-7 (Odin rulings 10/20), one test per fix. */
+describe("delta 7: Sentinel hardened-brief findings", () => {
+  const timeoutSettle = () => new Promise((_r, rej) => rej(Object.assign(new Error("timed out"), { name: "TimeoutError" })));
+  const declines = () => Number([...store.kv.entries()].find(([k]) => k.includes("brief:declines:"))?.[1].v ?? 0);
+  it("M1: a declined brief returns reason codes only (no claims, quotes, URLs, answer)", async () => {
+    on();
+    setBriefGateForTests(null); // real contract gate: the generic brief fails
+    const r = await call("brief", "q=leak%20test", { "payment-signature": await payment() });
+    expect(r.status).toBe(422);
+    const j = (await r.json()) as any;
+    expect(j.brief).toBeUndefined();
+    expect(Object.keys(j).sort()).toEqual(["charged", "contact", "contract", "disclaimer", "error", "message", "reason", "terms"].filter((k) => k in j).sort());
+    const s = JSON.stringify(j);
+    expect(s).not.toContain("example.com");
+    expect(s).not.toContain(EXCERPT.slice(0, 30));
+    expect(j.reason).toMatch(/^[a-z0-9_:,]+$/);
+  });
+  it("M2: global unsettled cap ($3/day): at the cap, 503 + reason code BEFORE any 402, no verify, no research", async () => {
+    on();
+    await store.set(unsettledKey(Date.now()), String(UNSETTLED_DAILY_CAP_USD - BRIEF_RUN_COST_USD / 2), 86_400);
+    const bare = await call("brief", "q=cap%20test");
+    expect(bare.status).toBe(503);
+    expect(bare.headers.get("payment-required")).toBeNull();
+    const j = (await bare.json()) as any;
+    expect(j).toMatchObject({ error: "daily_research_budget_exhausted", reason: "global_unsettled_cap", charged: false });
+    expect((await call("brief", "q=cap%20test", { "payment-signature": await payment() })).status).toBe(503);
+    expect(fac.length).toBe(0);
+    expect(parallelCalls.length).toBe(0);
+  });
+  it("M2: a run reserves against the global cap; a pass that settles releases it; a decline keeps it counted", async () => {
+    on();
+    const k = () => Number(store.kv.get([...store.kv.keys()].find((x) => x.includes("brief:unsettled:"))!)?.v ?? 0);
+    expect((await call("brief", "q=pass%20one", { "payment-signature": await payment() })).status).toBe(200);
+    expect(k()).toBeCloseTo(0);
+    setBriefGateForTests(() => null);
+    expect((await call("brief", "q=decline%20one", { "payment-signature": await payment() })).status).toBe(422);
+    expect(k()).toBeCloseTo(BRIEF_RUN_COST_USD);
+  });
+  it("M3: the decline slot is refunded only after settle succeeds; pass-then-failed settle (cancelled authorization) counts as a decline", async () => {
+    on();
+    expect((await call("brief", "q=pass%20settles", { "payment-signature": await payment() })).status).toBe(200);
+    expect(declines()).toBe(0);
+    settleBehaviour = () => ({ success: false, errorReason: "authorization_cancelled" });
+    expect((await call("brief", "q=pass%20cancelled", { "payment-signature": await payment() })).status).toBe(502);
+    expect(declines()).toBe(1);
+  });
+  it("M4: a brief redeem serves the cached passing brief for that payment: no re-run of research or the model", async () => {
+    on();
+    settleBehaviour = timeoutSettle;
+    const h = await payment();
+    const first = (await (await call("brief", "q=redeem%20cache", { "payment-signature": h })).json()) as any;
+    const proof = await ACCOUNT.signMessage({ message: first.redeem_message });
+    rpcAnswer = "used";
+    logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
+    const pc = parallelCalls.length;
+    const ok = await call("brief", "q=redeem%20cache", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof });
+    expect(ok.status).toBe(200);
+    const j = (await ok.json()) as any;
+    expect(j.verification).toMatchObject({ charged_on_pass: true });
+    expect(j.redeemed.reconcile_id).toBe(first.reconcile_id);
+    expect(parallelCalls.length).toBe(pc);
+  });
+  it("M4: a cached brief that does not pass the gate (or is bound to another payer) is never delivered on redeem", async () => {
+    on();
+    settleBehaviour = timeoutSettle;
+    const h = await payment();
+    const first = (await (await call("brief", "q=redeem%20gate", { "payment-signature": h })).json()) as any;
+    const proof = await ACCOUNT.signMessage({ message: first.redeem_message });
+    rpcAnswer = "used";
+    logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
+    setBriefGateForTests(() => null);
+    const pc = parallelCalls.length;
+    const r = await call("brief", "q=redeem%20gate", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof });
+    expect(r.status).toBe(502);
+    expect(((await r.json()) as any).claims).toBeUndefined();
+    expect(parallelCalls.length).toBe(pc);
+  });
+  it("LOW-7: our outage (Parallel down) -> 503 before settle; authorization reusable and decline slot not consumed", async () => {
+    on();
+    setParallelForTests({ fetch: (async () => new Response("x", { status: 500 })) as never });
+    const h = await payment();
+    const r = await call("brief", "q=outage%20test", { "payment-signature": h });
+    expect(r.status).toBe(503);
+    expect(((await r.json()) as any)).toMatchObject({ error: "research_provider_unavailable", charged: false });
+    expect(declines()).toBe(0);
+    expect(fac.some((c) => c.op === "settle")).toBe(false);
+    setParallelForTests(null);
+    setParallelForTests({ fetch: (async () => new Response(JSON.stringify({ results: [{ url: "https://a.example.com/x402", title: "A", publish_date: null, excerpts: [EXCERPT] }] }))) as never });
+    expect((await call("brief", "q=outage%20test", { "payment-signature": h })).status).toBe(200); // same authorization reused
+  });
+  it("LOW-7: RPC (block) down is checked BEFORE research: 503, no Parallel call, no slot used", async () => {
+    on();
+    blockDown = true;
+    const r = await call("brief", "q=block%20down", { "payment-signature": await payment() });
+    expect(r.status).toBe(503);
+    expect(((await r.json()) as any).message).toBe("Nothing was charged for this request.");
+    expect(parallelCalls.length).toBe(0);
+    expect(declines()).toBe(0);
   });
 });

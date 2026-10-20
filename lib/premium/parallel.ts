@@ -10,7 +10,8 @@
  *   from Parallel output.
  */
 export const PARALLEL_BASE = "https://api.parallel.ai";
-export type ParallelResult = { url: string; title: string | null; publish_date: string | null; excerpts: string[] };
+/** fetched_at: when WE fetched the page (Counsel E2: carried per page, also for cached index pages). */
+export type ParallelResult = { url: string; title: string | null; publish_date: string | null; excerpts: string[]; fetched_at?: string };
 export type ParallelDeps = { fetch: typeof fetch };
 
 let depsOverride: ParallelDeps | null = null;
@@ -94,7 +95,7 @@ export async function parallelSearch(objective: string, queries: string[], maxRe
 // Hardened spec §3 step 1b: never read Etherscan / usdc.org HTML; live values come from on-chain reads (onchain.ts).
 // The live-fetch mechanism stays, with an EMPTY allowlist.
 export const LIVE_FETCH_ALLOWLIST: readonly string[] = [];
-export const EXTRACT_NEVER = ["etherscan.io", "usdc.org"] as const;
+export const EXTRACT_NEVER = ["etherscan.io", "basescan.org", "usdc.org"] as const; // Counsel E10: basescan treated like Etherscan
 export const extractAllowed = (url: string) => {
   try {
     const h = new URL(url).hostname.toLowerCase();

@@ -175,6 +175,13 @@ async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded
   const mine = await moveClaim(store, held, { s: "redeemed" });
   if (!mine) return inProgress();
   try {
+    // Sentinel M4 / Odin ruling (4): a brief redeem serves ONLY the cached passing brief stored for this payment at pass
+    // time (bound to claim key + fingerprint + payer). Never re-run research or the model; never a non-passing brief.
+    if (x.id === "brief") {
+      const cached = await loadPassedBrief(store, held.key, rq, d.from!);
+      if (!cached) throw new Error("no_cached_brief");
+      return okResponse(x, { ...cached, redeemed: { reconcile_id: c.rc } }, null, null);
+    }
     const result = await runResearch(x, input, t0 + SYNC_HARD_LIMIT_S * 1000, undefined, held.key);
     return okResponse(x, { ...(result as object), redeemed: { reconcile_id: c.rc } }, null, null);
   } catch {
@@ -205,9 +212,13 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     if (x.id === "brief") {
       const c = classifyQuestion(v.input);
       if (!c.ok) return jsonError(422, { error: "question_type_not_supported", reason: c.reason, charged: false, message: c.message, contract: CONTRACT_URL });
+      // Sentinel M2 / Odin ruling (2): global daily cap on unsettled (pre-settle) Parallel + LLM spend, all payers.
+      // Checked BEFORE any 402, so nobody signs an authorization we cannot serve. Fails closed.
+      if (!(await unsettledBudgetOpen(premiumStore())))
+        return jsonError(503, { error: "daily_research_budget_exhausted", reason: "global_unsettled_cap", charged: false, message: "Verified briefs are paused until the next UTC day. Nothing was charged; do not sign a payment." }, { "Retry-After": "3600" });
     }
   }
-  if (x.route === "research" && !parallelKeyPresent()) return jsonError(503, { error: "premium_provider_unavailable", charged: false });
+  if (x.route === "research" && !parallelKeyPresent()) return jsonError(503, { error: "premium_provider_unavailable", charged: false, message: "Nothing was charged for this request." });
   if (x.mode === "async" && !(premiumAsyncEnabled() && asyncTierLive(x))) return jsonError(503, { error: "tier_not_available", charged: false, message: "This tier is not live yet." });
   if (x.id === "extended" && projectedSeconds(x, v.input) > WORK_BUDGET_S)
     return jsonError(503, { error: "time_budget_exceeded", charged: false, message: "This question projects past the extended tier's time budget. Split it into fewer sub-questions." });
@@ -227,9 +238,9 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
   if (win && !(await redeemableWithProof(req, x, d))) return challenge(x, description(x), win);
   if (isSmartWalletSignature(d)) return challenge(x, description(x), SMART_WALLET_REASON, 402, SMART_WALLET_MESSAGE);
   if (!(await signatureValid(d))) return challenge(x, description(x), "invalid_signature");
-  if (!hasCdpCredentials()) return jsonError(503, { error: "settlement_unavailable", charged: false });
+  if (!hasCdpCredentials()) return jsonError(503, { error: "settlement_unavailable", charged: false, message: "Nothing was charged for this request." });
   const store = premiumStore();
-  if (!store) return jsonError(503, { error: "store_unavailable", charged: false });
+  if (!store) return jsonError(503, { error: "store_unavailable", charged: false, message: "Nothing was charged for this request." });
 
   let jobId: string | null = null;
   let settleFirst = false;
@@ -267,13 +278,13 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     }
     if (used === "unknown") {
       await releaseClaim(store, held);
-      return jsonError(503, { error: "nonce_check_unavailable", charged: false }, { "Retry-After": "2" });
+      return jsonError(503, { error: "nonce_check_unavailable", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "2" });
     }
 
     const ver = await verifyPayment(d, x);
     if (!ver.ok) {
       await releaseClaim(store, held);
-      return ver.kind === "invalid" ? challenge(x, description(x), ver.reason, 402, undefined, false) : jsonError(503, { error: "facilitator_unavailable", charged: false }, { "Retry-After": "1" });
+      return ver.kind === "invalid" ? challenge(x, description(x), ver.reason, 402, undefined, false) : jsonError(503, { error: "facilitator_unavailable", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "1" });
     }
 
     if (x.mode === "async") {
@@ -281,7 +292,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
       if (blk === null) {
         // Sentinel LOW-D: no recorded block -> settle resolution could never be bounded; refuse before any settle
         await releaseClaim(store, held);
-        return jsonError(503, { error: "chain_unavailable", charged: false }, { "Retry-After": "5" });
+        return jsonError(503, { error: "chain_unavailable", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "5" });
       }
       const { job, token } = await createJob(store, x, d, rq, v.input, held, jobId!, settleFirst, blk);
       accepted = true;
@@ -309,13 +320,13 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     const elapsed = (clock() - t0) / 1000;
     if (elapsed + SETTLE_RESERVE_S + projectedSeconds(x, v.input) > SYNC_HARD_LIMIT_S) {
       await releaseClaim(store, held);
-      return jsonError(503, { error: "time_budget_exceeded", charged: false }, { "Retry-After": "5" });
+      return jsonError(503, { error: "time_budget_exceeded", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "5" });
     }
     const blk = await currentBlock(); // Odin P1: bounds the redeem's AuthorizationUsed log search
     if (blk === null) {
       // Sentinel LOW-D: no block number -> a failed settle could never be redeemed; refuse before settle (uncharged)
       await releaseClaim(store, held);
-      return jsonError(503, { error: "chain_unavailable", charged: false }, { "Retry-After": "5" });
+      return jsonError(503, { error: "chain_unavailable", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "5" });
     }
     const s = await settlePayment(d, x);
     if (!s.ok) {
@@ -345,7 +356,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
       );
     }
   } catch {
-    return jsonError(503, { error: "store_unavailable", charged: false }, { "Retry-After": "2" });
+    return jsonError(503, { error: "store_unavailable", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "2" });
   } finally {
     if (jobId && !accepted) await releaseOpen(store, d.from!, jobId).catch(() => undefined);
   }
@@ -353,16 +364,69 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
 
 export const BRIEF_DECLINE_CAP = 5;
 export const BRIEF_DECLINE_TTL_S = 86_400;
+/** Odin ruling (2) 10/20: global cap on UNSETTLED research spend (Parallel + LLM) across all payers, USD per UTC day. */
+export const UNSETTLED_DAILY_CAP_USD = 3;
+/** Conservative per-brief estimate of Parallel search + extract + one model call (measured ~$0.03 + $0.002). */
+export const BRIEF_RUN_COST_USD = 0.05;
+const UNSETTLED_TTL_S = 2 * 86_400;
+export const unsettledKey = (now: number) => `brief:unsettled:${new Date(now).toISOString().slice(0, 10)}`;
+async function unsettledBudgetOpen(store: PremiumStore | null): Promise<boolean> {
+  if (!store) return false;
+  try {
+    const v = Number((await store.get(unsettledKey(clock()))) ?? 0);
+    return Number.isFinite(v) && v + BRIEF_RUN_COST_USD <= UNSETTLED_DAILY_CAP_USD + 1e-9;
+  } catch {
+    return false;
+  }
+}
+/** Passing brief cached for the redeem path, bound to claim key + request fingerprint + payer; TTL = unconfirmed claim. */
+const passedKey = (claim: string) => `brief:passed:${claim}`;
+async function storePassedBrief(store: PremiumStore, claim: string, rq: string, from: string, brief: unknown) {
+  await store.set(passedKey(claim), JSON.stringify({ rq, from: from.toLowerCase(), brief }), Math.ceil(CLAIM_TTL_MS.unconfirmed / 1000));
+}
+async function loadPassedBrief(store: PremiumStore, claim: string, rq: string, from: string): Promise<Record<string, unknown> | null> {
+  try {
+    const raw = await store.get(passedKey(claim));
+    const o = raw ? JSON.parse(raw) : null;
+    if (!o || o.rq !== rq || o.from !== from.toLowerCase() || !o.brief || briefGate(o.brief) === null) return null;
+    return o.brief;
+  } catch {
+    return null;
+  }
+}
+/** Our own outages (provider/RPC down, not configured): 503 before settle, authorization and decline slot NOT consumed. */
+const OUTAGE = /^(not_configured|upstream_unreachable|upstream_unavailable|upstream_bad_json|upstream_5\d\d|upstream_429|chain_unavailable)$/;
 const declineKey = (from: string) => `brief:declines:${from.toLowerCase()}:${new Date(clock()).toISOString().slice(0, 10)}`;
 async function chargeOnPass(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded, input: string, rq: string, held: Held, t0: number): Promise<NextResponse> {
   const elapsed = (clock() - t0) / 1000;
   if (elapsed + SETTLE_RESERVE_S + projectedSeconds(x, input) > SYNC_HARD_LIMIT_S) {
     await releaseClaim(store, held);
-    return jsonError(503, { error: "time_budget_exceeded", charged: false }, { "Retry-After": "5" });
+    return jsonError(503, { error: "time_budget_exceeded", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "5" });
   }
-  // Reserve one "decline" slot up front (atomic, capped); refunded when the brief passes.
+  // Sentinel LOW-7: read the block BEFORE research, so an RPC outage costs neither research nor the buyer's slot.
+  const blk = await currentBlock();
+  if (blk === null) {
+    await releaseClaim(store, held);
+    return jsonError(503, { error: "chain_unavailable", reason: "chain_unavailable", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "5" });
+  }
+  // Odin ruling (2): reserve this run against the global unsettled cap (atomic, fails closed). Released only on settle.
+  const uk = unsettledKey(clock());
+  if (!(await store.spendReserve(uk, BRIEF_RUN_COST_USD, UNSETTLED_DAILY_CAP_USD, UNSETTLED_TTL_S).catch(() => false))) {
+    await releaseClaim(store, held);
+    return jsonError(503, { error: "daily_research_budget_exhausted", reason: "global_unsettled_cap", charged: false, message: "Verified briefs are paused until the next UTC day. Nothing was charged for this request." }, { "Retry-After": "3600" });
+  }
+  // Reserve one "decline" slot up front (atomic, capped). Odin ruling (3): refunded only after settle SUCCEEDS.
   const dk = declineKey(d.from!);
-  if (!(await store.spendReserve(dk, 1, BRIEF_DECLINE_CAP, BRIEF_DECLINE_TTL_S).catch(() => false))) {
+  let slot: boolean;
+  try {
+    slot = await store.spendReserve(dk, 1, BRIEF_DECLINE_CAP, BRIEF_DECLINE_TTL_S);
+  } catch {
+    await store.spendAdjust(uk, -BRIEF_RUN_COST_USD, UNSETTLED_TTL_S).catch(() => undefined);
+    await releaseClaim(store, held);
+    return jsonError(503, { error: "store_unavailable", reason: "decline_cap_unavailable", charged: false, message: "Nothing was charged for this request." }, { "Retry-After": "2" });
+  }
+  if (!slot) {
+    await store.spendAdjust(uk, -BRIEF_RUN_COST_USD, UNSETTLED_TTL_S).catch(() => undefined);
     await releaseClaim(store, held);
     return jsonError(429, { error: "too_many_unverified_briefs", charged: false, message: `${BRIEF_DECLINE_CAP} briefs from this address did not pass verification today; nothing was charged for them. Retry tomorrow.` }, { "Retry-After": "3600" });
   }
@@ -373,35 +437,42 @@ async function chargeOnPass(store: PremiumStore, req: NextRequest, x: Tier, d: D
   } catch (e) {
     why = researchFailureCode(e);
   }
+  if (!result && OUTAGE.test(why)) {
+    // Sentinel LOW-7: our outage, not the buyer's: authorization reusable, decline slot returned (spend stays counted).
+    await store.spendAdjust(dk, -1, BRIEF_DECLINE_TTL_S).catch(() => undefined);
+    await releaseClaim(store, held);
+    console.error(`[premium] brief provider outage, not charged: ${why} (tier ${x.id})`); // fixed code only
+    return jsonError(503, { error: "research_provider_unavailable", reason: why, charged: false, message: "Our research provider is unavailable. Nothing was charged and your payment authorization was not used; you may retry it." }, { "Retry-After": "30" });
+  }
   const tier = result ? briefGate(result) : null;
   if (!tier) {
     await moveClaim(store, held, { s: "declined" }).catch(() => null);
     console.error(`[premium] brief declined, not charged: ${why} (tier ${x.id})`); // fixed code only
+    // Sentinel M1 / Odin ruling (1): reason CODES only. No claims, quotes, URLs or answer leave unpaid.
+    const codes = ((result as any)?.contract?.fail_reasons ?? []).map(String).filter((r: string) => /^[a-z0-9_:]{1,60}$/.test(r));
     return jsonError(422, {
       error: "brief_not_verified",
       charged: false,
-      reason: (result as any)?.contract?.fail_reasons?.join(",") || why,
+      reason: codes.length ? codes.join(",") : why,
       contract: "https://horizonpulse.dev/contracts/brief-verified",
-      // Spec §3 step 6: the failed brief is returned unpaid, with its reason (per-payer decline cap above limits abuse).
-      brief: (result as any)?.contract ?? null,
       message: "This brief did not meet the published contract (at least 2 independently confirmed claims, every quote verbatim at its URL), so we did not charge you. Your payment authorization was not settled and will expire. See /contracts/brief-verified.",
     });
   }
-  await store.spendAdjust(dk, -1, BRIEF_DECLINE_TTL_S).catch(() => undefined);
-  const blk = await currentBlock();
-  if (blk === null) {
-    await releaseClaim(store, held); // not charged; the same authorization may be retried
-    return jsonError(503, { error: "chain_unavailable", charged: false }, { "Retry-After": "5" });
-  }
+  const delivered = { ...(result as object), verification: { pass_tier: tier, charged_on_pass: true } };
+  // Odin ruling (4): cache the passing brief BEFORE settle, bound to this claim, so a redeem serves exactly this brief.
+  await storePassedBrief(store, held.key, rq, d.from!, delivered).catch(() => undefined);
   const s = await settlePayment(d, x);
   if (!s.ok) {
+    // Odin ruling (3): a pass whose settle fails (e.g. authorization cancelled, funds moved) COUNTS as a decline: slot kept.
     const line = reconcile(s.kind === "timeout" ? "settle_timeout" : "settle_ambiguous", x, d, rq, s.tx);
     await moveClaim(store, held, { s: "unconfirmed", rc: line.reconcile_id, blk }).catch(() => null);
     return jsonError(s.kind === "timeout" ? 504 : 502, unconfirmedBody(line.reconcile_id, false, redeemMessage(line.reconcile_id, rq, d.to!, d.value!)));
   }
   markNonceSettled(d.from!, d.nonce!);
+  await store.spendAdjust(dk, -1, BRIEF_DECLINE_TTL_S).catch(() => undefined);
+  await store.spendAdjust(uk, -BRIEF_RUN_COST_USD, UNSETTLED_TTL_S).catch(() => undefined);
   await moveClaim(store, held, { s: "settled" }).catch(() => null);
-  return okResponse(x, { ...(result as object), verification: { pass_tier: tier, charged_on_pass: true } }, s.tx, s.header);
+  return okResponse(x, delivered, s.tx, s.header);
 }
 
 export function premiumOptions(route: PremiumRoute, seg: string | undefined): NextResponse {

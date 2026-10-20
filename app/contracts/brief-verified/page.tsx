@@ -13,7 +13,7 @@ export default function BriefVerifiedContractPage() {
       <p>Schema: <code>{BRIEF_SCHEMA_VERSION}</code></p>
       <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit" }}>{OUTCOME_CONTRACT}</pre>
       <h2>Why “official” is not single-source</h2>
-      <p>For administered rates, statutes and regulators’ notices, the issuing authority is the source of record. An official claim needs the authority’s own primary publication plus a second document from the same authority, with the effective date.</p>
+      <p>For x402 specification facts, the specification's own publishers are the source of record. An official claim needs two different documents from those publishers stating the same fact (mirrored copies of one page count as one). Specification pages carry no effective date, so none is required.</p>
       <h2>Evidence array (per claim)</h2>
       <p>Quote evidence: <code>{"{ kind: \"quote\", quote, url, retrieved_at, publisher, body_sha256, offset, official_url? }"}</code>. On-chain evidence: <code>{"{ kind: \"onchain\", chain, block, block_timestamp, method, contract?, value, unit, node, retrieved_at }"}</code>, one entry per independent node. body_sha256 and offset are computed over the page text as extracted, markdown-stripped and whitespace-normalised.</p>
     </main>

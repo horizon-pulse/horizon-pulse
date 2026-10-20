@@ -422,14 +422,14 @@ describe("paid sync path", () => {
     expect(j.timeline.length).toBeGreaterThan(0);
     expect(j.sources.find((s: any) => s.pdf).label).toBe("primary_heuristic");
   });
-  it("charge-on-pass (hardened spec, supersedes Sentinel item 3 for the brief): Parallel failure -> 422 brief_not_verified, charged:false, NO settle, claim declined", async () => {
+  it("charge-on-pass + Sentinel LOW-7: Parallel outage -> 503 research_provider_unavailable, charged:false, NO settle, authorization not burned", async () => {
     on();
     setParallelForTests({ fetch: (async () => new Response("x", { status: 500 })) as never });
     const r = await call("brief", input("brief"), { "payment-signature": await payment() });
-    expect(r.status).toBe(422);
+    expect(r.status).toBe(503);
     const j = await r.json();
     expect(j.charged).toBe(false);
-    expect(j.error).toBe("brief_not_verified");
+    expect(j.error).toBe("research_provider_unavailable");
     expect(r.headers.get("payment-response")).toBeNull();
     expect(fac.map((c) => c.op)).toEqual(["verify"]);
     expect(reconciles).toHaveLength(0);

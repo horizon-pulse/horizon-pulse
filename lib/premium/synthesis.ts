@@ -744,7 +744,9 @@ export async function writeAnswer(q: string, facts: string[], deadline: number):
   if (budget < 1_000) return null;
   const reserve = 0.002;
   if (!(await spend.reserve(reserve).catch(() => false))) return null;
-  let actual = 0;
+  // Sentinel LOW-5: keep the full reservation unless the provider returned a metered result (a timed-out or aborted call may
+  // still be billed); only a completed call reconciles to its measured cost.
+  let actual = reserve;
   try {
     const cfg = llmConfig(env);
     const call = deps?.model ?? chatCompletionsCall(cfg.base);

@@ -191,7 +191,7 @@ describe("input cap (Odin: max cost per brief ~ $0.01)", () => {
 
 describe("/premium-terms splice (Counsel X1, X6 line, X7)", () => {
   it("X1 verbatim; names only 'an AI model provider'; no wallet/payment data", () => {
-    expect(AI_PROVIDER_PRIVACY).toBe("For premium briefs we send your question and the text we extracted from the cited public web pages to an AI model provider, which processes it on our behalf only to select and order quotes, does not use it to train its models, and deletes it within one hour of returning the result. We do not send your wallet address or payment details.");
+    expect(AI_PROVIDER_PRIVACY).toBe("For premium briefs we send your question and the text we extracted from the cited public web pages to an AI model provider, which processes it on our behalf only to select and order quotes and, for verified briefs, to write the answer line from the confirmed claims, does not use it to train its models, and deletes it within one hour of returning the result. We do not send your wallet address or payment details.");
     expect(AI_SELECTION_TERM).toMatch(/selected and ordered with the help of an AI model provider/);
     expect(AI_PROVIDER_TERMS).toEqual([AI_PROVIDER_PRIVACY, AI_SELECTION_TERM]);
   });
