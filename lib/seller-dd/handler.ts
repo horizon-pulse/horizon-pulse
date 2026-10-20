@@ -28,6 +28,7 @@ import { DD_AMOUNT, DD_DESCRIPTION, DD_NOTICE, DD_PATH, DD_TIER, SETTLE_FAIL_LIM
 import { runSellerDd, type EngineDeps } from "./engine";
 import { eqAddr, isEvmAddress, screenLists } from "./screen";
 import { testerStatus } from "./testpay";
+import { logReceipt, markSuperseded, getReceipt, rcptKeys, VERDICT_ID_RE } from "./receipts";
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -187,6 +188,13 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
     if (out.reservation) await recordLoss(store, out.reservation, "verdict_cache_unavailable", clockFn()).catch(() => undefined);
     return noCharge(503, "store_unavailable");
   }
+  // Counsel D3: immutable receipt record (hash only) BEFORE settle, so every deliverable verdict id is verifiable.
+  // Log write fails -> no settle (fail closed), same as the verdict cache.
+  if (!(await logReceipt(store, signedVerdict, { expected_payTo: body.expected_payTo, pass: true, origin: "buyer" }, clockFn()))) {
+    await moveClaim(store, held, { s: "declined" }).catch(() => null);
+    if (out.reservation) await recordLoss(store, out.reservation, "receipt_log_unavailable", clockFn()).catch(() => undefined);
+    return noCharge(503, "store_unavailable");
+  }
   const s = await settlePayment(d, DD_TIER);
   if (!s.ok) {
     // Odin #6/B1: settle_unconfirmed, never re-settle, never ask for a new authorization; timeouts/ambiguous count toward
@@ -266,4 +274,49 @@ export async function reconcileUnconfirmed(store: PremiumStore, nowMs: number, l
     else unknown++;
   }
   return { checked: keys.length, closed_not_charged: closed, landed, unknown };
+}
+
+/**
+ * Counsel D3 re-check of a disputed verdict (operator-only; disputes arrive at the D1 contact and are routed by Odin).
+ * Runs the same engine: a NEW test payment inside the same §3 caps (reserveTestPay), at our cost, no buyer charge.
+ * The reissued verdict has a new id and `supersedes: <old id>` inside its signed body; the old id gets a write-once
+ * `superseded_by` marker. The old record and old signature are never edited. The outcome is signed whether it passes
+ * or fails, because a correction must be recorded either way. If the engine never reaches a test payment (caps,
+ * outage), nothing is reissued and the old verdict stays current.
+ */
+export async function runRecheck(store: PremiumStore, oldId: string): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (!VERDICT_ID_RE.test(oldId)) return { status: 400, body: { error: "invalid_id" } };
+  const old = await getReceipt(store, oldId).catch(() => null);
+  if (!old) return { status: 404, body: { error: "unknown_verdict" } };
+  const by = await store.get(rcptKeys.superseded(oldId)).catch(() => undefined);
+  if (by === undefined) return { status: 503, body: { error: "store_unavailable" } };
+  if (by) return { status: 409, body: { error: "already_superseded", superseded_by: by } };
+  if (!testPayEnabled()) return { status: 503, body: { error: "test_pay_disabled" } };
+  const lists = screenLists();
+  if (!lists) return { status: 503, body: { error: "screen_list_unavailable" } };
+  const tester = await testerStatus(process.env, lists);
+  if (!tester.ok) return { status: 503, body: { error: "test_pay_unavailable" } };
+  if (!receiptSignerReady()) return { status: 503, body: { error: "signer_unavailable" } };
+  // one re-check per old id at a time (lock expires so a crashed run can be retried)
+  if (!(await store.setNx(rcptKeys.recheckLock(oldId), "1", 120_000).catch(() => false))) return { status: 409, body: { error: "recheck_in_progress" } };
+  try {
+    const now = clockFn();
+    const requestId = randomBytes(12).toString("hex");
+    const deps: EngineDeps = { net: defaultNetDeps(), continuity: cdpContinuityDeps(), store, lists, env: process.env, now: clockFn, ...(engineDepsOverride ?? {}) };
+    const out = await runSellerDd({ resource: old.resource, expected_payTo: old.expected_payTo, request_id: requestId, deadline: now + SYNC_DEADLINE_MS }, deps);
+    if (!out.test_paid) return { status: 422, body: { error: "recheck_not_completed", reason: out.reason, old_status: "current" } };
+    const body: Record<string, unknown> = { ...out.verdict, pass: out.pass, supersedes: oldId };
+    let sig: ReturnType<typeof signReceipt>;
+    try { sig = signReceipt("seller-dd", body); } catch { alertHigh("seller_dd_recheck_sign_failed"); return { status: 503, body: { error: "signing_failed", old_status: "current" } }; }
+    const signed: Record<string, unknown> = { ...body, sig };
+    if (!(await logReceipt(store, signed, { expected_payTo: old.expected_payTo, pass: out.pass, origin: "recheck" }, clockFn()))) {
+      alertHigh("seller_dd_recheck_log_failed"); return { status: 503, body: { error: "store_unavailable", old_status: "current" } };
+    }
+    if (!(await markSuperseded(store, oldId, String(signed.id), clockFn()))) {
+      alertHigh("seller_dd_supersede_mark_failed", { old: oldId, new: signed.id }); return { status: 503, body: { error: "supersede_mark_failed", new_id: signed.id } };
+    }
+    return { status: 200, body: { status: "reissued", ...signed } };
+  } finally {
+    await store.del(rcptKeys.recheckLock(oldId)).catch(() => undefined);
+  }
 }
