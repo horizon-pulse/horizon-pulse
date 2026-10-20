@@ -16,7 +16,8 @@ export async function POST(req: NextRequest) {
   if (!sellerDdEnabled()) return new NextResponse("Not Found", { status: 404, headers: { "Cache-Control": "no-store" } });
   const secret = process.env.HP_DD_RECHECK_SECRET ?? ""; // Odin V1: dedicated secret; unset/short -> refuse everything
   const got = /^Bearer\s+(.+)$/.exec(req.headers.get("authorization") ?? "")?.[1] ?? "";
-  const ok = secret.length >= 16 && got.length === secret.length && timingSafeEqual(Buffer.from(got), Buffer.from(secret));
+  const sameAsCron = secret !== "" && secret === (process.env.CRON_SECRET ?? ""); // Sentinel INFO-2: shared secret -> refuse all
+  const ok = !sameAsCron && secret.length >= 16 && got.length === secret.length && timingSafeEqual(Buffer.from(got), Buffer.from(secret));
   if (!ok) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   let id = "";
   try { const b = JSON.parse((await req.text()).slice(0, 1024)); id = typeof b?.id === "string" ? b.id : ""; } catch { id = ""; }

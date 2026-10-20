@@ -84,7 +84,7 @@ async function buy(resource = "https://seller.example.com/api") {
 }
 
 describe("seller-dd D3 correction path", () => {
-  beforeEach(() => vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET));
+  beforeEach(() => { vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET); vi.stubEnv("CRON_SECRET", "c".repeat(32)); });
 
   it("flag off -> verify and recheck 404 before any store access", async () => {
     vi.stubEnv("HP_SELLER_DD_ENABLED", "");
@@ -176,7 +176,7 @@ import { DD_PASS_NOTE, DD_RETENTION_TERM, DD_SUPERSEDED_NOTE } from "@/lib/selle
 import PremiumTermsPage from "@/app/premium-terms/page";
 import { renderToStaticMarkup } from "react-dom/server";
 describe("seller-dd D3 Counsel copy (verbatim)", () => {
-  beforeEach(() => vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET));
+  beforeEach(() => { vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET); vi.stubEnv("CRON_SECRET", "c".repeat(32)); });
   it("verify response carries both Counsel lines exactly", async () => {
     expect(DD_SUPERSEDED_NOTE).toBe("A superseded verdict has been replaced after a re-check; rely on the verdict named in superseded_by.");
     expect(DD_PASS_NOTE).toBe("pass means Horizon Pulse's charge criteria were met; it is not a rating of the seller.");
@@ -202,7 +202,7 @@ describe("seller-dd D3 Counsel copy (verbatim)", () => {
 
 import { ddKeys as K } from "@/lib/seller-dd/caps";
 describe("seller-dd D3 Odin round 5 + Sentinel D3", () => {
-  beforeEach(() => vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET));
+  beforeEach(() => { vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET); vi.stubEnv("CRON_SECRET", "c".repeat(32)); });
   const lossEntries = async () => (await store.zrangeByScore(K.loss(NOW), Number.MAX_SAFE_INTEGER, 100)).map((x) => JSON.parse(x));
 
   it("V1: HP_DD_RECHECK_SECRET unset -> every request refused; CRON_SECRET never accepted", async () => {
@@ -268,5 +268,119 @@ describe("seller-dd D3 Odin round 5 + Sentinel D3", () => {
     const r = await recheck(old.id);
     expect(r.status).toBe(429);
     expect((await r.json()).error).toBe("recheck_daily_limit");
+  });
+});
+
+import { RECHECK_CTX_TTL_S, RECEIPT_TTL_S } from "@/lib/seller-dd/receipts";
+describe("seller-dd D3 Odin round 6: 3-year record hashes/ids only, 90-day re-check context", () => {
+  beforeEach(() => { vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET); vi.stubEnv("CRON_SECRET", "c".repeat(32)); });
+  it("3-year record holds no URL and no 0x address; URL + expected payTo only in the 90-day entry", async () => {
+    const ttls: Record<string, number> = {};
+    const os = store.set.bind(store), on = store.setNx.bind(store);
+    store.set = async (k: string, v: string, t: number) => { ttls[k] = t; return os(k, v, t); };
+    store.setNx = async (k: string, v: string, t: number) => { ttls[k] = t / 1000; return on(k, v, t); };
+    const v = await buy();
+    const raw = (await store.get(rcptKeys.rec(v.id)))!;
+    expect(raw).not.toMatch(/https?:|seller\.example|0x[0-9a-fA-F]/);
+    expect(Object.keys(JSON.parse(raw)).sort()).toEqual(["id", "issued_at", "kid", "origin", "pass", "resource_sha256", "supersedes", "verdict_sha256"]);
+    expect(ttls[rcptKeys.rec(v.id)]).toBe(RECEIPT_TTL_S);
+    const ctx = JSON.parse((await store.get(rcptKeys.ctx(v.id)))!);
+    expect(ctx).toEqual({ resource: "https://seller.example.com/api", expected_payTo: "0x" + "4e".repeat(20) });
+    expect(ttls[rcptKeys.ctx(v.id)]).toBe(RECHECK_CTX_TTL_S);
+    expect(RECHECK_CTX_TTL_S).toBe(90 * 86_400);
+  });
+  it("re-check within 90 days works (uses the 90-day entry)", async () => {
+    const v = await buy();
+    const r = await recheck(v.id);
+    expect(r.status).toBe(200);
+    expect((await r.json()).resource).toBe("https://seller.example.com/api");
+  });
+  it("re-check after the 90-day entry expired -> 410 recheck_window_expired, no test pay, old stays current", async () => {
+    const v = await buy();
+    await store.del(rcptKeys.ctx(v.id)); // expiry
+    engineRan.mockClear();
+    const r = await recheck(v.id);
+    expect(r.status).toBe(410);
+    expect((await r.json()).error).toBe("recheck_window_expired");
+    expect(engineRan).not.toHaveBeenCalled();
+    expect((await (await verify(v.id)).json()).status).toBe("current");
+  });
+});
+
+describe("seller-dd D3 Sentinel INFO-2", () => {
+  it("HP_DD_RECHECK_SECRET equal to CRON_SECRET -> every re-check 401, no test pay", async () => {
+    vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET);
+    const v = await buy();
+    vi.stubEnv("CRON_SECRET", SECRET);
+    engineRan.mockClear();
+    expect((await recheck(v.id)).status).toBe(401);
+    expect(engineRan).not.toHaveBeenCalled();
+    vi.stubEnv("CRON_SECRET", "c".repeat(32));
+    expect((await recheck(v.id)).status).toBe(200);
+  });
+});
+
+import { POST as DISPUTE } from "@/app/api/seller-dd/dispute/route";
+import { DD_DISPUTE_TERM } from "@/lib/seller-dd/config";
+import { openDispute, resolveDispute } from "@/lib/seller-dd/receipts";
+describe("seller-dd D3 Counsel retention: 90-day window, real purge, dispute hold", () => {
+  beforeEach(() => { vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET); vi.stubEnv("CRON_SECRET", "c".repeat(32)); });
+  const DAY = 86_400_000;
+  const dispute = (id: string, action: string, auth = `Bearer ${SECRET}`) => DISPUTE(new NextRequest("https://horizonpulse.dev/api/seller-dd/dispute", { method: "POST", body: JSON.stringify({ id, action }), headers: { authorization: auth } }));
+
+  it("/premium-terms carries Counsel's dispute-window sentence verbatim", () => {
+    vi.stubEnv("HP_PREMIUM_TIERS", "brief");
+    const s = "To handle disputes, the checked URL and payment address are kept in readable form for 90 days after a verdict and then deleted; after that, only hashes are kept, for 3 years. Disputes must be raised within 90 days of the verdict's checked_at time.";
+    expect(DD_DISPUTE_TERM).toBe(s);
+    expect(renderToStaticMarkup(PremiumTermsPage())).toContain(s.replace("verdict's", "verdict&#x27;s"));
+  });
+
+  it("purge actually happens at 90 days (store TTL), while the hashes-only record remains", async () => {
+    const v = await buy();
+    store.now = () => NOW + 89 * DAY;
+    expect(await store.get(rcptKeys.ctx(v.id))).toBeTruthy();
+    store.now = () => NOW + 90 * DAY + 1000;
+    expect(await store.get(rcptKeys.ctx(v.id))).toBeNull(); // deleted
+    expect(await store.get(rcptKeys.rec(v.id))).toBeTruthy(); // 3-year hashes-only record kept
+    setSellerDdClockForTests(() => NOW + 90 * DAY + 1000);
+    expect((await recheck(v.id)).status).toBe(410);
+    expect((await openDispute(store, v.id, NOW + 90 * DAY + 1000))).toMatchObject({ ok: false, status: 410, error: "dispute_window_expired" });
+  });
+
+  it("an open dispute holds the entry past 90 days until resolved; resolve after the window deletes it", async () => {
+    const v = await buy();
+    store.now = () => NOW + 80 * DAY;
+    expect(await openDispute(store, v.id, NOW + 80 * DAY)).toMatchObject({ ok: true, state: "open" });
+    store.now = () => NOW + 200 * DAY;
+    expect(await store.get(rcptKeys.ctx(v.id))).toBeTruthy(); // held
+    expect(await resolveDispute(store, v.id, NOW + 200 * DAY)).toMatchObject({ ok: true, state: "resolved", ctx_expires_at: null });
+    expect(await store.get(rcptKeys.ctx(v.id))).toBeNull(); // deleted on resolve
+    const log = await store.zrangeByScore(rcptKeys.log(), Number.MAX_SAFE_INTEGER, 50);
+    expect(log.some((x) => x.startsWith(`dispute_open:${v.id}`))).toBe(true);
+    expect(log.some((x) => x.startsWith(`dispute_resolved:${v.id}`))).toBe(true);
+  });
+
+  it("resolve inside the window restores the remaining 90-day TTL (not longer)", async () => {
+    const v = await buy();
+    await openDispute(store, v.id, NOW + 10 * DAY);
+    const r = await resolveDispute(store, v.id, NOW + 20 * DAY);
+    expect(r).toMatchObject({ ok: true, ctx_expires_at: new Date(NOW + 90 * DAY).toISOString() });
+    store.now = () => NOW + 90 * DAY + 2000;
+    expect(await store.get(rcptKeys.ctx(v.id))).toBeNull();
+  });
+
+  it("dispute route: auth rules match recheck (401), flag off 404, bad action 400, open -> 200", async () => {
+    const v = await buy();
+    expect((await dispute(v.id, "open", "Bearer nope")).status).toBe(401);
+    expect((await dispute(v.id, "delete")).status).toBe(400);
+    const r = await dispute(v.id, "open");
+    expect(r.status).toBe(200);
+    expect((await r.json()).state).toBe("open");
+    expect((await dispute(v.id, "resolve")).status).toBe(200);
+    expect((await dispute(v.id, "resolve")).status).toBe(409);
+    vi.stubEnv("CRON_SECRET", SECRET);
+    expect((await dispute(v.id, "open")).status).toBe(401);
+    vi.stubEnv("HP_SELLER_DD_ENABLED", "");
+    expect((await dispute(v.id, "open")).status).toBe(404);
   });
 });

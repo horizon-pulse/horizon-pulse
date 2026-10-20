@@ -28,7 +28,7 @@ import { DD_AMOUNT, DD_DESCRIPTION, DD_NOTICE, DD_PATH, DD_TIER, SETTLE_FAIL_LIM
 import { runSellerDd, type EngineDeps } from "./engine";
 import { eqAddr, isEvmAddress, screenLists } from "./screen";
 import { testerStatus } from "./testpay";
-import { logReceipt, markSuperseded, getReceipt, rcptKeys, VERDICT_ID_RE } from "./receipts";
+import { logReceipt, markSuperseded, getReceipt, getRecheckContext, rcptKeys, VERDICT_ID_RE } from "./receipts";
 
 const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -291,6 +291,10 @@ export async function runRecheck(store: PremiumStore, oldId: string): Promise<{ 
   const by = await store.get(rcptKeys.superseded(oldId)).catch(() => undefined);
   if (by === undefined) return { status: 503, body: { error: "store_unavailable" } };
   if (by) return { status: 409, body: { error: "already_superseded", superseded_by: by } };
+  // Odin round 6: re-check input (plain URL, expected payTo) is kept 90 days only; after that, refuse clearly.
+  const ctx = await getRecheckContext(store, oldId).catch(() => undefined);
+  if (ctx === undefined) return { status: 503, body: { error: "store_unavailable" } };
+  if (!ctx) return { status: 410, body: { error: "recheck_window_expired", message: "Re-check is available for 90 days after a verdict is issued; this verdict's re-check inputs have expired. The receipt (hashes only) is still verifiable." } };
   if (!testPayEnabled()) return { status: 503, body: { error: "test_pay_disabled" } };
   const lists = screenLists();
   if (!lists) return { status: 503, body: { error: "screen_list_unavailable" } };
@@ -313,7 +317,7 @@ export async function runRecheck(store: PremiumStore, oldId: string): Promise<{ 
       if (!(await store.setNx(dayKey, "1", 2 * 86_400_000).catch(() => false))) return { status: 429, body: { error: "recheck_daily_limit", old_status: "current" } };
       const requestId = randomBytes(12).toString("hex");
       const deps: EngineDeps = { net: defaultNetDeps(), continuity: cdpContinuityDeps(), store, lists, env: process.env, now: clockFn, ...(engineDepsOverride ?? {}) };
-      const out = await runSellerDd({ resource: old.resource, expected_payTo: old.expected_payTo, request_id: requestId, deadline: now + SYNC_DEADLINE_MS, loss_tag: "recheck" }, deps);
+      const out = await runSellerDd({ resource: ctx.resource, expected_payTo: ctx.expected_payTo, request_id: requestId, deadline: now + SYNC_DEADLINE_MS, loss_tag: "recheck" }, deps);
       if (!out.test_paid) return { status: 422, body: { error: "recheck_not_completed", reason: out.reason, old_status: "current" } };
       // Odin R1 / Sentinel LOW-1: every re-check test pay is our cost -> ledger entry tagged "recheck" (fail path: engine tags it)
       if (out.pass && out.reservation) await recordLoss(store, out.reservation, "recheck", clockFn()).catch(() => undefined);
@@ -324,7 +328,7 @@ export async function runRecheck(store: PremiumStore, oldId: string): Promise<{ 
     let sig: ReturnType<typeof signReceipt>;
     try { sig = signReceipt("seller-dd", body); } catch { alertHigh("seller_dd_recheck_sign_failed"); return { status: 503, body: { error: "signing_failed", old_status: "current", retry: "resumes_without_new_test_pay" } }; }
     const signed: Record<string, unknown> = { ...body, sig };
-    if (!(await logReceipt(store, signed, { expected_payTo: old.expected_payTo, pass, origin: "recheck" }, clockFn()))) {
+    if (!(await logReceipt(store, signed, { expected_payTo: ctx.expected_payTo, pass, origin: "recheck" }, clockFn()))) {
       alertHigh("seller_dd_recheck_log_failed"); return { status: 503, body: { error: "store_unavailable", old_status: "current", retry: "resumes_without_new_test_pay" } };
     }
     if (!(await markSuperseded(store, oldId, String(signed.id), clockFn()))) {

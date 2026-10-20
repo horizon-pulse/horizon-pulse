@@ -3,7 +3,7 @@ import { tierAllowed } from "@/lib/premium/tiers";
 import { AI_PROVIDER_TERMS, BUYER_TERMS, NOT_CURRENTLY_OFFERED, TECHNICAL_NOTES } from "@/lib/premium/copy";
 import { premiumLlmEnabled } from "@/lib/premium/synthesis";
 import { listedTiers } from "@/lib/premium/tiers";
-import { DD_PASS_NOTE, DD_RETENTION_TERM, sellerDdEnabled } from "@/lib/seller-dd/config";
+import { DD_DISPUTE_TERM, DD_PASS_NOTE, DD_RETENTION_TERM, sellerDdEnabled } from "@/lib/seller-dd/config";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +30,7 @@ export default function PremiumTermsPage() {
           <h2>Seller due-diligence verdicts</h2>
           <p>{DD_PASS_NOTE}</p>
           <p>{DD_RETENTION_TERM}</p>
+          <p>{DD_DISPUTE_TERM}</p>
         </>
       )}
       <h2>How the status link and redeem work</h2>
