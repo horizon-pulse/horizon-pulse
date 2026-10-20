@@ -453,6 +453,15 @@ describe("paid sync path", () => {
     expect(fac.some((c) => c.op === "settle")).toBe(false);
     expect(j.contract).toBe("https://horizonpulse.dev/contracts/brief-verified");
   });
+  it("a 422 never attempts settlement: out-of-scope question with a signed payment -> 422, charged:false, no verify, no settle", async () => {
+    on();
+    setClassifierForTests(null); // real scope rules
+    const r = await call("brief", "q=" + encodeURIComponent("What is an x402 facilitator?"), { "payment-signature": await payment() });
+    expect(r.status).toBe(422);
+    expect((await r.json()).charged).toBe(false);
+    expect(fac.some((c) => c.op === "settle")).toBe(false);
+    expect(fac.some((c) => c.op === "verify")).toBe(false);
+  });
   it("verify invalid -> 402 for the tier; verify error -> 503; neither settles", async () => {
     on();
     fac = installFacilitatorMock({ verify: () => ({ isValid: false, invalidReason: "insufficient_funds" }) });

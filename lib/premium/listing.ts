@@ -4,6 +4,10 @@
  * Kept separate from LIVE_PAID_ROUTES because premium tiers are Base USDC only (the multi-network
  * catalog copy does not apply). Gated by the same switch as the route (tierAllowed), so a tier that
  * 404s is never listed. $5/$10 tiers are not listed.
+ *
+ * COUNSEL CONDITION (item 8, PASS 10/20 on 6619952): no AI-provider line is in these listings because model calls are
+ * off in prod. Before ANY model call goes live for briefs (HP_BRIEF_MODEL_ANSWER / HP_PREMIUM_LLM_ENABLED), add the
+ * provider line (name only "an AI model provider") to every surface here, llms.txt and openapi, and get a Counsel review.
  */
 import { BRIEF_DESCRIPTION } from "./copy";
 import { tierAllowed } from "./tiers";
