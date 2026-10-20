@@ -641,7 +641,7 @@ describe("discovery (T3.2 / T3a.4) and N1 (no MCP)", () => {
     expect(sec).toContain("`GET /api/research/report/brief?q=…` — $1");
     expect(sec).not.toMatch(/\?tier=|solana|xrpl|polygon/i);
   });
-  it("N1 (amended 10/20 listing-count change): no premium payment over MCP. Local mcp/ has no premium path; hosted /mcp only has verified_brief, which returns the unpaid 402 and never wraps a payment", () => {
+  it("N1 (amended 10/20 listing-count change): no premium payment over MCP. Local mcp/ has no premium path; hosted /mcp only has verified_brief_quote, which returns the unpaid 402 and never wraps a payment", () => {
     for (const f of ["mcp/src/catalog.ts", "mcp/src/index.ts", "app/mcp/route.ts"]) {
       expect(readFileSync(path.join(ROOT, f), "utf8")).not.toMatch(/research\/report|seller-watch|premium/i);
     }

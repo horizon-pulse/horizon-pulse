@@ -23,7 +23,7 @@ import { after, NextRequest, NextResponse } from "next/server";
 import { hasCdpCredentials } from "@/lib/config";
 import { requestFingerprint } from "@/lib/request-fingerprint";
 import { claimKey, parseClaim, tryClaim, moveClaim, newOwner, releaseClaim, type Claim, type Held } from "./claim";
-import { legalBlock, BRIEF_DESCRIPTION, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
+import { legalBlock, BRIEF_DESCRIPTION, BRIEF_CLAIMS_PER_TYPE, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
 import { createJob, runJob, settleLanded } from "./jobs";
 import {
   ASYNC_MIN_REMAINING_S,
@@ -54,7 +54,7 @@ import { questionRefusal } from "./synthesis";
 import type { CaptureSink } from "./research";
 import { newReconcileId, recordReconcile, type ReconcileOutcome } from "./reconcile";
 import { briefPassTier, runResearch } from "./research";
-import { classifyQuestion } from "./source-index";
+import { classifyQuestion, BRIEF_TYPE_VALUES, BRIEF_EXAMPLES, withTypePrefix } from "./source-index";
 import { CONTRACT_URL } from "./contract";
 import { premiumStore, type PremiumStore } from "./store";
 import { asyncTierLive, routeHasAllowedTier, tierAllowed, premiumAsyncEnabled, premiumEnabled, projectedSeconds, ROUTE_BASE, SETTLE_RESERVE_S, tierFor, WORK_BUDGET_S, type PremiumRoute, type Tier } from "./tiers";
@@ -76,7 +76,7 @@ export function bareRouteResponse(route: PremiumRoute): NextResponse {
 }
 
 function description(x: Tier) {
-  if (x.id === "brief") return `${BRIEF_DESCRIPTION} No personal data in q.`;
+  if (x.id === "brief") return `${BRIEF_DESCRIPTION} ${BRIEF_CLAIMS_PER_TYPE} No personal data in q.`;
   return `${x.route === "research" ? R1_DESCRIPTION : R2_DESCRIPTION} Tier ${x.id} ${x.priceUsd}.${x.route === "research" ? " Do not include personal data (private names, contact details, health or account information) in q." : ""}`;
 }
 
@@ -84,7 +84,11 @@ function validateInput(route: PremiumRoute, url: URL): { ok: true; input: string
   if (route === "research") {
     const q = (url.searchParams.get("q") ?? "").trim();
     if (q.length < 3 || q.length > Q_MAX_CHARS) return { ok: false, res: jsonError(400, { error: "invalid_q", message: `q is required, 3-${Q_MAX_CHARS} characters.` }) };
-    return { ok: true, input: q };
+    // Round 7: optional type= bypasses phrase classification; bound into the paid input so it is part of what is signed.
+    const type = url.searchParams.get("type");
+    if (type !== null && !BRIEF_TYPE_VALUES.includes(type))
+      return { ok: false, res: jsonError(400, { error: "invalid_type", charged: false, message: `type must be one of ${BRIEF_TYPE_VALUES.join(", ")}. Nothing was charged.` }) };
+    return { ok: true, input: withTypePrefix(q, type) };
   }
   const target = (url.searchParams.get("target") ?? "").trim();
   let ok = false;
@@ -218,7 +222,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     // before any 402 / payment step, so nothing is authorised or charged.
     if (x.id === "brief") {
       const c = classifyQuestion(v.input);
-      if (!c.ok) return jsonError(422, { error: "question_type_not_supported", reason: c.reason, charged: false, message: c.message, contract: CONTRACT_URL });
+      if (!c.ok) return jsonError(422, { error: "question_type_not_supported", reason: c.reason, charged: false, message: c.message, examples: BRIEF_EXAMPLES, contract: CONTRACT_URL });
       // Sentinel M2 / Odin ruling (2): global daily cap on unsettled (pre-settle) Parallel + LLM spend, all payers.
       // Checked BEFORE any 402, so nobody signs an authorization we cannot serve. Fails closed.
       if (!(await unsettledBudgetOpen(premiumStore())) && (await capTripped(premiumStore(), "pre_402"), true))

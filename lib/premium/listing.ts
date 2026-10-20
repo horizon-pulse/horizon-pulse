@@ -35,7 +35,7 @@ export const BRIEF_LISTING: PremiumListing = {
   priceUsd: "$1",
   amount: "1000000",
   rail: "Base USDC only",
-  summary: "Verified brief, three question types only: Base or Ethereum gas (on-chain read), USDC supply on Ethereum and Base (on-chain totalSupply), or an x402 spec fact. Charged only if at least 2 claims are independently confirmed; otherwise a 422, unpaid.",
+  summary: "Verified brief, three question types only: Base or Ethereum gas (on-chain read), USDC supply on Ethereum and Base (on-chain totalSupply), or an x402 spec fact. Charged only if at least 2 claims are confirmed in two sources as defined by the contract (two independent nodes, or two separate specification documents); otherwise a 422, unpaid.",
   description: BRIEF_DESCRIPTION,
   contract: "/contracts/brief-verified",
   terms: "/premium-terms",

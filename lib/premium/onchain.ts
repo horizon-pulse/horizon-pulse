@@ -44,6 +44,9 @@ export const ONCHAIN_CONFIRM_LAG = 2n; // read 2 blocks behind head so both node
  */
 /** Counsel E10: node independence is by OPERATOR, not hostname (eth.drpc.org and base.drpc.org are one operator; an env URL
  * on dRPC must not pair with dRPC). Operator = registrable domain (last two labels; three for known two-part suffixes). */
+/** Counsel round-7 N1: this operator dedupe (used in pinned() below, which needs >= 2 distinct operators and confirms only
+ * when 2 of them agree) is what makes the published "two independent nodes" wording true: separate providers, not two
+ * endpoints of one provider. */
 export function rpcOperator(u: string): string {
   try {
     const parts = new URL(u).hostname.toLowerCase().split(".");

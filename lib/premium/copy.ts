@@ -9,6 +9,9 @@
 import { CONTACT_EMAIL, PUBLIC_BASE_URL } from "@/lib/config";
 
 export const PREMIUM_CONTACT = CONTACT_EMAIL;
+/** Same text as ADVICE_DISCLAIMER in synthesis.ts (Counsel-PASSed); duplicated here to avoid a copy<->synthesis import cycle. */
+export const NOT_ADVICE_TERM = "Not financial, investment, tax, legal or health advice. Quotes about tokens, securities or other financial products are not a recommendation to buy, sell or hold anything.";
+
 export const BUYER_TERMS_PATH = "/premium-terms";
 export const BUYER_TERMS_URL = `${PUBLIC_BASE_URL}${BUYER_TERMS_PATH}`;
 
@@ -64,6 +67,11 @@ export const BUYER_TERMS: readonly string[] = [
   "Checks: we may check that use of results follows these terms, and we may refuse or stop service that breaks them.",
   WATCH_TERMS,
   REFUND_LINE,
+  // Counsel round-7 item 3 (PASS 10/20 10:16 AM ET), verbatim. No breach refund (Michael: refunds are v2).
+  "Delivered briefs are not refunded because the pass criteria are mechanical and checked before any charge.",
+  // Counsel round-7 item 3: one-line not-advice statement. Counsel's file gives no new wording, so this reuses the
+  // already-PASSed ADVICE_DISCLAIMER text (synthesis.ts) verbatim; flagged to Counsel/Odin.
+  NOT_ADVICE_TERM,
   "Payment: paid once per call in USDC on Base. We hold no balance or stored value for you. A 4xx answer is never charged. The $1 verified brief is settled only after the brief passes its published contract (/contracts/brief-verified); a brief that does not pass is not charged. The $5 and $10 tiers are settled before the result is built; report and watch purchases (HTTP 202) are settled after the first deliverable is built, except while settlement is temporarily moved to payment verification, as the 202 response will say. If you are charged and we do not deliver, the refund terms below apply.",
   `${PRIVACY_PREMIUM_REPLACEMENT} ${PRIVACY_PREMIUM_ADDITION}`,
   DISCLAIMER,
@@ -97,3 +105,12 @@ export const TECHNICAL_NOTES: string[] = [
 /** Hardened $1 brief: 402 / Bazaar description (<= 500 chars incl. the handler suffix), schema brief-verified/1. */
 export const BRIEF_DESCRIPTION =
   "Verified brief (schema brief-verified/1), on-chain live values and x402 spec facts only: answer plus 2-8 claims, each with an evidence array (verbatim quote, URL, retrieval time, body hash, offset; or chain, block and block time for on-chain reads). Charged only if >=2 claims are confirmed (2 publishers, 2 nodes, or 2 x402 spec documents) and every quote verifies; otherwise unpaid. Contract: horizonpulse.dev/contracts/brief-verified. Not advice.";
+
+/** Round 7 (Claude Q2), NEW copy for Counsel: per-type claim counts, from code. On-chain types read exactly two fields
+ * (onchain.ts: baseFeePerGas + gasLimit; Ethereum + Base totalSupply()); x402 spec facts yield CONTRACT_MIN_CLAIMS..CONTRACT_MAX_CLAIMS (2-8). */
+export const BRIEF_CLAIMS_PER_TYPE =
+  "Claims per question type: Base gas and Ethereum gas, 2 (base fee and gas limit, each read from two independent nodes); USDC supply, 2 (totalSupply() on Ethereum and on Base, each from two independent nodes); x402 spec facts, 2-8 (each in two separate specification documents). Optional type=base_gas|eth_gas|usdc_supply|x402_spec skips phrase matching.";
+
+/** Round 7 (Claude §3 #3), NEW copy for Counsel: shown at the top of /premium-terms; the verbatim terms below are unchanged. */
+export const NOT_CURRENTLY_OFFERED =
+  "Not currently offered: the $5 standard and $10 extended research tiers (/api/research/report/standard and /api/research/report/extended) and the seller watch (/api/seller-watch/*). Those URLs return 404 and cannot be paid. Terms below that mention them apply only if they are offered later. The only premium product offered now is the $1 verified brief.";

@@ -25,10 +25,10 @@ export type IndexType = {
 
 // Odin ruling 11:40 PM: launch narrow - on-chain live values + x402 spec facts ONLY.
 export const SOURCE_INDEX: IndexType[] = [
-  { id: "base_gas", label: "Base network gas / fees (on-chain read)", match: [/\b(on|the) base\b|\bbase (network|chain|l2|mainnet)\b/i, /\b(gas|fee|fees|gwei|cost|gas limit)\b/i], official: null, indexQuery: null, onchain: "base_gas", web: false },
-  { id: "eth_gas", label: "Ethereum mainnet gas / base fee / gas limit (on-chain read)", match: [/\b(ethereum|eth|mainnet)\b/i, /\b(gas|base fee|basefee|gwei|gas limit)\b/i], official: null, indexQuery: null, onchain: "eth_gas", web: false },
+  { id: "base_gas", label: "Base network gas / fees (on-chain read)", match: [/\bbase\b/i, /\b(gas|fee|fees|gwei|gas limit)\b/i], official: null, indexQuery: null, onchain: "base_gas", web: false },
+  { id: "eth_gas", label: "Ethereum mainnet gas / base fee / gas limit (on-chain read)", match: [/\b(ethereum|eth)\b|(?<!\bbase )\bmainnet\b/i, /\b(gas|fee|fees|base fee|basefee|gwei|gas limit)\b/i], official: null, indexQuery: null, onchain: "eth_gas", web: false },
   { id: "usdc_supply", label: "USDC supply on Ethereum and Base (on-chain totalSupply)", match: [/\busdc\b/i, /\b(supply|circulation|circulating|outstanding|minted|exists?|issued)\b/i], official: null, indexQuery: null, onchain: "usdc_supply", web: false },
-  { id: "x402", label: "x402 payment protocol (specification facts)", match: [/\bx402\b/i, /^\s*(what|how|which)\b/i], official: { authority: "x402 specification publishers (x402.org, Coinbase developer docs)", domains: ["x402.org", "docs.x402.org", "coinbase.com", "docs.cdp.coinbase.com", "github.com"] }, indexQuery: null, onchain: null, web: true, undated: true,
+  { id: "x402", label: "x402 payment protocol (specification facts)", match: [/\bx402\b/i, /^\s*(what|how|which)\b|\b(headers?|status( code)?|402|schemes?|payment-required|payment-signature|payment-response)\b/i], official: { authority: "x402 specification publishers (x402.org, Coinbase developer docs)", domains: ["x402.org", "docs.x402.org", "coinbase.com", "docs.cdp.coinbase.com", "github.com"] }, indexQuery: null, onchain: null, web: true, undated: true,
     urls: [
       "https://docs.x402.org/introduction",
       "https://docs.x402.org/core-concepts/http-402",
@@ -83,12 +83,38 @@ export function setClassifierForTests(fn: ((q: string) => Classified) | null) {
   classifierOverride = fn;
 }
 export const TEST_GENERIC_TYPE: IndexType = { id: "test_generic", label: "test", match: [], official: null, indexQuery: null, onchain: null, web: true };
-export function classifyQuestion(q: string): Classified {
-  if (classifierOverride) return classifierOverride(q);
+/** Round 7: optional ?type= bypasses the phrase rules (never the out-of-scope refusals). */
+export const BRIEF_TYPE_PARAM: Record<string, string> = { base_gas: "base_gas", eth_gas: "eth_gas", usdc_supply: "usdc_supply", x402_spec: "x402" };
+export const BRIEF_TYPE_VALUES = Object.keys(BRIEF_TYPE_PARAM);
+const TYPE_PREFIX = /^\[type:([a-z0-9_]+)\]\s*/;
+/** The handler binds an explicit type into the paid input as "[type:x] q", so the type is part of what is signed for. */
+export function withTypePrefix(q: string, type: string | null): string { return type ? `[type:${type}] ${q}` : q; }
+export function stripTypePrefix(input: string): { q: string; type: string | null } {
+  const m = input.match(TYPE_PREFIX);
+  return m ? { q: input.slice(m[0].length), type: m[1] } : { q: input, type: null };
+}
+/** Three example questions per type, published in the 422 and on the contract page. */
+export const BRIEF_EXAMPLES: Record<string, string[]> = {
+  base_gas: ["Base gas price", "What is the base fee on Base right now?", "Current gas fees on Base network"],
+  eth_gas: ["Ethereum gas price now", "Ethereum mainnet base fee", "What is the gas limit on Ethereum?"],
+  usdc_supply: ["How much USDC is in circulation", "What is the total supply of USDC on Base?", "USDC supply on Ethereum"],
+  x402_spec: ["What is x402?", "Which HTTP status code does x402 use?", "x402 PAYMENT-REQUIRED header"],
+};
+export const EXAMPLES_LINE = Object.entries(BRIEF_EXAMPLES).map(([k, v]) => `${k}: ${v.map((e) => `"${e}"`).join(", ")}`).join("; ");
+
+export function classifyQuestion(input: string): Classified {
+  if (classifierOverride) return classifierOverride(input);
+  const { q, type } = stripTypePrefix(input);
   const oos = OUT_OF_SCOPE.find((o) => o.re.test(q));
   if (oos) return { ok: false, reason: `out_of_scope:${oos.reason}`, message: `Out of scope (${oos.reason}). Verified briefs cover only on-chain live values and x402 specification facts. Nothing was charged.` };
-  const t = SOURCE_INDEX.find((x) => x.match.every((r) => r.test(q)));
-  if (!t) return { ok: false, reason: "unsupported_question_type", message: `Verified briefs currently cover only: ${SOURCE_INDEX.map((x) => x.label).join("; ")}. Nothing was charged.` };
+  if (type) {
+    const t = SOURCE_INDEX.find((x) => x.id === BRIEF_TYPE_PARAM[type]);
+    if (t) return { ok: true, type: t };
+  }
+  // "base fee" names a field, not the Base chain: Ethereum wins whenever it is named; Base must be named outside "base fee".
+  const baseNamed = /\bbase\b/i.test(q.replace(/\bbase ?fee\b/gi, ""));
+  const t = SOURCE_INDEX.find((x) => x.match.every((r) => r.test(q)) && (x.id !== "base_gas" || (baseNamed && !SOURCE_INDEX[1].match[0].test(q))));
+  if (!t) return { ok: false, reason: "unsupported_question_type", message: `Verified briefs currently cover only: ${SOURCE_INDEX.map((x) => x.label).join("; ")}. Examples: ${EXAMPLES_LINE}. Or pass type=${BRIEF_TYPE_VALUES.join("|")}. Nothing was charged.` };
   return { ok: true, type: t };
 }
 

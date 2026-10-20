@@ -1,3 +1,4 @@
+import { PULSE_PRICE_USD } from "@/lib/config";
 /** Copy-paste client snippets shared by the homepage terminal and /docs. */
 export const CODE: Record<string, { title: string; code: string }> = {
   curl: {
@@ -33,7 +34,7 @@ const r1 = await fetch(url); // 402 + PAYMENT-REQUIRED
 const req = http.getPaymentRequiredResponse((h) => r1.headers.get(h), await r1.json());
 const payload = await http.createPaymentPayload(req); // throws if payTo or cap don't match
 const r2 = await fetch(url, { headers: http.encodePaymentSignatureHeader(payload) });
-console.log(r2.status, (await r2.json()).assets.BTC.priceUsd); // 200, $0.005 USDC on Base`,
+console.log(r2.status, (await r2.json()).assets.BTC.priceUsd); // 200, ${PULSE_PRICE_USD} USDC on Base`,
   },
   python: {
     title: "agent.py",
@@ -50,7 +51,7 @@ register_exact_evm_client(client, EthAccountSigner(Account.from_key(os.environ["
 
 session = x402_requests(client)  # pays the 402 and retries automatically
 r = session.get("https://horizonpulse.dev/api/pulse")
-print(r.status_code, r.json()["assets"]["BTC"]["priceUsd"])  # 200, $0.005 USDC on Base`,
+print(r.status_code, r.json()["assets"]["BTC"]["priceUsd"])  # 200, ${PULSE_PRICE_USD} USDC on Base`,
   },
   mcp: {
     title: "mcp config",
