@@ -119,6 +119,23 @@ describe("L-5 watch", () => {
     const r4 = await runWatch(mk(), TESTER, rpcWith({ balance: 10_000_000n }), env);
     expect(r4.alerts).toEqual([]);
   });
+  it("Odin round 4: first run (no cursor) starts at DD_WATCH_START_BLOCK and counts Michael's 3.000000 USDC deposit at 52869933", async () => {
+    const { DD_WATCH_START_BLOCK } = await import("@/lib/seller-dd/config");
+    expect(DD_WATCH_START_BLOCK).toBe(52_869_932);
+    const s = mk();
+    const head = 52_870_100;
+    const ranges: number[] = [];
+    const base = rpcWith({ head, in: [{ transactionHash: "0x1dd1", blockNumber: `0x${(52_869_933).toString(16)}`, topics: [TRANSFER_TOPIC, pad(FUNDER), pad(TESTER)], data: `0x${(3_000_000).toString(16)}` }] });
+    const rpc: Rpc = async (m, p: any) => { if (m === "eth_getLogs" && p[0].topics[0] === AUTH_USED_TOPIC) ranges.push(parseInt(p[0].fromBlock, 16)); return base(m, p); };
+    const r = await runWatch(s, TESTER, rpc, env);
+    expect(ranges[0]).toBe(52_869_932);
+    expect(r.alerts).toEqual([]);
+    expect(Number(await s.get(watchKeys.inboundUsd()))).toBeCloseTo(3);
+    expect(await s.get(watchKeys.cursor())).toBe(String(head));
+    // a second run resumes from the cursor and does not count the deposit again
+    await runWatch(s, TESTER, rpcWith({ head: head + 10 }), env);
+    expect(Number(await s.get(watchKeys.inboundUsd()))).toBeCloseTo(3);
+  });
   it("RPC down -> HIGH rpc_unavailable, cursor unchanged", async () => {
     const s = mk();
     await s.set(watchKeys.cursor(), "100", 100);

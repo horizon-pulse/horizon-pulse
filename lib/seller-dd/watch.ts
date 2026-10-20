@@ -15,6 +15,7 @@ import { USDC_BASE } from "@/lib/config";
 import { defaultRpcDeps, hexToBig, rpcs, type RpcDeps } from "@/lib/chain-rpc";
 import type { PremiumStore } from "@/lib/premium/store";
 import { ddKeys } from "./caps";
+import { DD_WATCH_START_BLOCK } from "./config";
 import { isEvmAddress } from "./screen";
 
 export const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
@@ -49,7 +50,7 @@ export function defaultWatchRpc(deps: RpcDeps = defaultRpcDeps()): Rpc {
 
 export const watchKeys = { cursor: () => "dd:watch:cursor", killSwitch: () => "dd:watch:testpay", inboundUsd: () => "dd:watch:inbound_usd" };
 
-export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, env: Record<string, string | undefined> = process.env, now: () => number = () => Date.now()): Promise<WatchResult> {
+export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, env: Record<string, string | undefined> = process.env, now: () => number = () => Date.now(), startBlock: bigint = BigInt(DD_WATCH_START_BLOCK)): Promise<WatchResult> {
   const alerts: WatchAlert[] = [];
   // kill-switch flip (independent of RPC)
   const ks = env.HP_DD_TESTPAY === "on" ? "on" : "off";
@@ -63,7 +64,7 @@ export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, en
     const head = hexToBig(await rpc("eth_blockNumber", []));
     if (head === null) throw new Error("head");
     const cur = await store.get(watchKeys.cursor());
-    let from = cur && /^\d+$/.test(cur) ? BigInt(cur) + 1n : head - BigInt(WATCH_MAX_BLOCKS) + 1n;
+    let from = cur && /^\d+$/.test(cur) ? BigInt(cur) + 1n : startBlock <= head ? startBlock : head - BigInt(WATCH_MAX_BLOCKS) + 1n;
     if (from < head - BigInt(WATCH_MAX_BLOCKS) * BigInt(WATCH_MAX_CHUNKS)) alerts.push({ kind: "seller_dd_watch_gap", severity: "high", detail: `cursor ${cur} more than ${WATCH_MAX_CHUNKS} chunks behind head` });
     const t = pad(tester);
     const deadline = now() + WATCH_TIME_BUDGET_MS;

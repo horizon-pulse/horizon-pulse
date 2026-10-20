@@ -58,9 +58,11 @@ const names = (list.json.result?.tools || []).map((t) => t.name).sort();
 const EXPECTED = ["balance","batch","bazaar_check","chain_head","discourse_split","extract","fetch","funding","gas","grocery_ingredient","grocery_normalize","http","market_quote","market_search","name_resolve","pdf","portfolio","pulse","screenshot","search","signals","token_meta","tokenized_stock","tx_guard","tx_status","watch","x402_check","x402_check_deep","yield"];
 // FREE tools (no x402 wrapper): listed, never challenged; not part of the paid count.
 const FREE = ["money_market_rates"];
-EXPECTED.push(...FREE);
+// QUOTE tools (no x402 wrapper): return the premium route's unpaid 402 as data; never run or pay (lib/mcp-server VERIFIED_BRIEF_TOOL).
+const QUOTE = { verified_brief_quote: { args: { q: "What is the current Base gas price?", type: "base_gas" }, rest: "/api/research/report/brief?q=What%20is%20the%20current%20Base%20gas%20price%3F&type=base_gas" } };
+EXPECTED.push(...FREE, ...Object.keys(QUOTE));
 const missing = EXPECTED.filter((n) => !names.includes(n)), extra = names.filter((n) => !EXPECTED.includes(n));
-ok(!missing.length && !extra.length, `tools/list free, ${EXPECTED.length} tools expected (${EXPECTED.length - FREE.length} paid + ${FREE.length} free), got ${names.length}${missing.length ? `; missing ${missing}` : ""}${extra.length ? `; not in this script (stale copy? update ARGS/Q/EXPECTED): ${extra}` : ""}`);
+ok(!missing.length && !extra.length, `tools/list free, ${EXPECTED.length} tools expected (${EXPECTED.length - FREE.length - Object.keys(QUOTE).length} paid + ${Object.keys(QUOTE).length} quote + ${FREE.length} free), got ${names.length}${missing.length ? `; missing ${missing}` : ""}${extra.length ? `; not in this script (stale copy? update ARGS/Q/EXPECTED): ${extra}` : ""}`);
 const schemas = Object.fromEntries((list.json.result?.tools || []).map((t) => [t.name, t.inputSchema || {}]));
 
 for (const name of names) {
@@ -68,6 +70,19 @@ for (const name of names) {
     const r = await rpc("tools/call", { name, arguments: { rates: "SOFR" } });
     const text = ((r.json.result || {}).content || []).map((c) => c.text).join("");
     ok(!/"x402Version"/.test(text) && !/"accepts"/.test(text), `${name}: free tool returns no x402 challenge`);
+    continue;
+  }
+  if (QUOTE[name]) {
+    const r = await rpc("tools/call", { name, arguments: QUOTE[name].args });
+    const text = ((r.json.result || {}).content || []).map((c) => c.text).join("");
+    let o = {}; try { o = JSON.parse(text); } catch {}
+    const a = o.payment_required?.accepts?.[0] || {};
+    const rr = await fetch(`${BASE}${QUOTE[name].rest}`);
+    const h = rr.headers.get("payment-required");
+    const b = h ? JSON.parse(Buffer.from(h, "base64").toString()).accepts?.[0] || {} : {};
+    ok(o.status === 402 && !!o.payment_required && o.body?.verification === undefined && o.body?.sources === undefined, `${name}: quote only (unpaid 402 as data, no brief content)`);
+    ok(rr.status === 402 && a.amount === b.amount && a.payTo === b.payTo && a.network === b.network && a.asset === b.asset && a.scheme === b.scheme,
+       `${name}: quote matches REST (amount ${a.amount}/${b.amount}, payTo ${String(a.payTo).slice(-6)}, ${a.network})`);
     continue;
   }
   const need = (schemas[name].required || []).filter((k) => !(ARGS[name] && k in ARGS[name]));

@@ -44,3 +44,9 @@ export const DD_NOTICE =
 export const EXCERPT_MAX = 200;
 export const FETCH_MAX_BYTES = 200_000;
 export const FETCH_TIMEOUT_MS = 8_000;
+
+/**
+ * L-5 watch start (non-secret). With no stored cursor, the first scan starts here, so the first funding of dd-tester
+ * (Michael's 3.000000 USDC, Base block 52869933) is counted naturally by the LOW-2 inbound total. Odin round 4, 10/20.
+ */
+export const DD_WATCH_START_BLOCK = 52_869_932;
