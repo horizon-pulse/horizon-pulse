@@ -37,15 +37,18 @@ describe("Counsel E1-E10 (verbatim copy)", () => {
     expect(JSON.stringify(b.claims)).not.toContain("BUILD_TIME");
   });
   it("E3 (Odin 7:22 AM): clause 6 is behind HP_BRIEF_REFUND_CHOICE, default pending (no refund promise); (a), (b) and E3 texts ready; launch blocked while pending", () => {
-    expect(briefRefundChoice({})).toBe("pending");
-    expect(OUTCOME_CONTRACT).toContain(CLAUSE_6.pending);
+    expect(briefRefundChoice({})).toBe("a"); // Michael 10/20 7:59 AM ET
+    expect(OUTCOME_CONTRACT).toContain(CLAUSE_6.a);
+    expect(OUTCOME_CONTRACT).toContain("6. No refund promise: a brief is charged only when it passes clause 5; a brief that does not pass is not charged. Delivered briefs are final, except as the refund terms at /premium-terms provide for a charge without delivery.");
+    expect(BUYER_TERMS.join(" ")).toContain("If you were charged and we did not deliver"); // (a) reference target kept
     expect(outcomeContract({})).not.toMatch(/refund the full price|usually within 7 days|24 hours|logged publicly/);
     expect(outcomeContract({ HP_BRIEF_REFUND_CHOICE: "a" })).toContain("6. No refund promise: a brief is charged only when it passes clause 5");
     const b = outcomeContract({ HP_BRIEF_REFUND_CHOICE: "b" });
     expect(b).toContain("we refund the full price in USDC on Base");
     expect(b).not.toContain("usually within 7 days");
     expect(outcomeContract({ HP_BRIEF_REFUND_CHOICE: "e3" })).toContain("6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash.");
-    expect(briefLaunchBlockers({})).toEqual(["refund_choice_pending"]);
+    expect(briefLaunchBlockers({})).toEqual([]);
+    expect(briefLaunchBlockers({ HP_BRIEF_REFUND_CHOICE: "pending" })).toEqual(["refund_choice_pending"]);
     expect(briefLaunchBlockers({ HP_BRIEF_REFUND_CHOICE: "a" })).toEqual([]);
     expect(briefLaunchBlockers({ HP_BRIEF_REFUND_CHOICE: "b" })).toEqual(["premium_terms_refund_line_pending"]);
     expect(briefLaunchBlockers({ HP_BRIEF_REFUND_CHOICE: "b", HP_REFUND_LINE_APPROVED: "true" })).toEqual([]);
@@ -54,6 +57,7 @@ describe("Counsel E1-E10 (verbatim copy)", () => {
     const copy = readFileSync("lib/premium/copy.ts", "utf8");
     expect(copy).not.toMatch(/Michael-approved \[M\]|\[M\] approved/);
     expect(copy).toContain("[M] items: OPEN, pending Michael");
+    expect(copy).toContain("APPROVED (Michael, 10/20 7:59 AM ET)");
   });
   it("E4: clause 7 has no forward promise", () => {
     expect(OUTCOME_CONTRACT).not.toMatch(/coming later/);

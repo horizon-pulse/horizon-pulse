@@ -18,18 +18,19 @@ export const QUOTE_CAP = 300;
 export const BRIEF_SCHEMA_VERSION = "brief-verified/1";
 
 /**
- * Odin 10/20 7:22 AM: the refund line is OPEN (his 10/19 3:20 PM ruling is current). Clause 6 is NOT approved. It is
- * selected by HP_BRIEF_REFUND_CHOICE, default "pending" (no refund promise published). Michael picks (a) or (b); "e3" is
+ * Clause 6: option (a) APPROVED (Michael, 10/20 7:59 AM ET) and the default. HP_BRIEF_REFUND_CHOICE can select the
+ * unapproved drafts (pending, b) for review only; "e3" is
  * Counsel's 10/20 E3 text, kept for reference. Launch is blocked while pending (briefLaunchBlockers).
  */
 export type RefundChoice = "pending" | "a" | "b" | "e3";
 export function briefRefundChoice(env: Record<string, string | undefined> = process.env): RefundChoice {
   const v = env.HP_BRIEF_REFUND_CHOICE;
-  return v === "a" || v === "b" || v === "e3" ? v : "pending";
+  // Michael picked (a), 10/20 7:59 AM ET (relayed by Odin): (a) is the default; the env can only select a draft for review.
+  return v === "pending" || v === "b" || v === "e3" ? v : "a";
 }
 export const CLAUSE_6: Record<RefundChoice, string> = {
   pending: "6. Refunds and corrections for delivered briefs: terms pending; none are offered until they are published here. This does not affect the refund terms at /premium-terms for a charge without delivery.",
-  // (a) no refund promise: charged only on pass. DRAFT for Michael + Counsel.
+  // (a) no refund promise: charged only on pass. APPROVED (Michael, 10/20 7:59 AM ET); Counsel wording verbatim.
   a: "6. No refund promise: a brief is charged only when it passes clause 5; a brief that does not pass is not charged. Delivered briefs are final, except as the refund terms at /premium-terms provide for a charge without delivery. If you believe a claim we marked confirmed did not meet clause 3, tell us at horizonpulse.co@proton.me with the transaction hash; any correction is at our discretion.",
   // (b) refunds on request, no time promise. DRAFT for Michael + Counsel (E3 without "usually within 7 days").
   b: "6. Corrections: if a claim we marked confirmed did not meet clause 3 when the brief was delivered, tell us at horizonpulse.co@proton.me within 30 days with the transaction hash. If we confirm the error, we refund the full price in USDC on Base to the address that paid, under the refund terms at /premium-terms. A page that changes or disappears after delivery is not an error; the fetch time and body hash record what it said when we fetched it.",
