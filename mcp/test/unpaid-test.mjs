@@ -53,7 +53,7 @@ if (LIVE !== "skip") {
   ok(tools.find((t) => t.name === "http")?.inputSchema?.properties?.headers, "http tool uses POST body schema (headers)");
 
   const cat = JSON.parse((await c.callTool({ name: "catalog", arguments: {} })).content[0].text);
-  ok(cat.routes.length === 17 && cat.payment.mode.startsWith("quote-only") && cat.payment.buyerWallet === null, `catalog: 17 routes, quote-only, no wallet (source ${cat.catalogSource})`);
+  ok(cat.routes.length >= 29 && cat.payment.mode.startsWith("quote-only") && cat.payment.buyerWallet === null, `catalog: ${cat.routes.length} routes (>= 29 multi-network as of 2026-10-20), quote-only, no wallet (source ${cat.catalogSource})`);
 
   const r = await c.callTool({ name: "pulse", arguments: {} });
   const m = meta(r);
