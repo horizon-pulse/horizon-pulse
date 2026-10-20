@@ -12,7 +12,8 @@ vi.mock("@/lib/premium/payment", async (orig) => {
 });
 
 import { GET, POST, OPTIONS } from "@/app/api/seller-dd/single/route";
-import { setSellerDdClockForTests, setSellerDdDepsForTests } from "@/lib/seller-dd/handler";
+import { reconcileUnconfirmed, setSellerDdBuyerNonceForTests, setSellerDdClockForTests, setSellerDdDepsForTests } from "@/lib/seller-dd/handler";
+import { resetSettleFailureLatchForTests } from "@/lib/seller-dd/caps";
 import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store";
 import { TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_BASE_DOMAIN } from "@/lib/premium/payment";
 import { ddKeys } from "@/lib/seller-dd/caps";
@@ -68,7 +69,7 @@ beforeEach(() => {
   engineRan.mockReset();
   setEngine(true);
 });
-afterEach(() => { vi.unstubAllEnvs(); setPremiumStoreForTests(undefined); setSellerDdDepsForTests(null); setSellerDdClockForTests(null); });
+afterEach(() => { resetSettleFailureLatchForTests(); setSellerDdBuyerNonceForTests(null); vi.unstubAllEnvs(); setPremiumStoreForTests(undefined); setSellerDdDepsForTests(null); setSellerDdClockForTests(null); });
 
 describe("seller-dd route", () => {
   it("flag off -> 404 on every verb (either flag)", async () => {
@@ -134,15 +135,83 @@ describe("seller-dd route", () => {
     expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeGreaterThan(0);
     expect(JSON.stringify(b)).not.toMatch(/"evidence"|excerpt|"history"|"sig"|"listed"/);
   });
-  it("C4: buyer settle fails after test pay -> loss recorded, not charged; 3 failures -> route fails closed before verify", async () => {
-    h.settle.mockResolvedValue({ ok: false, kind: "ambiguous", tx: null });
+  it("B1: 3 settle timeouts -> settle_unconfirmed each (no loss yet, never re-settled); route closed before verify", async () => {
+    h.settle.mockResolvedValue({ ok: false, kind: "timeout", tx: null });
     for (let k = 0; k < 3; k++) {
       const r = await POST(req("POST", { resource: `https://seller${k}.example.com/api` }, await paymentHeader()));
-      expect((await r.json()).reason).toBe("buyer_settle_ambiguous");
+      expect(r.status).toBe(504);
+      const b = await r.json();
+      expect(b).toMatchObject({ status: "settle_unconfirmed", reason: "buyer_settle_timeout", notice: DD_NOTICE });
+      expect(b.redeem_message).toContain(b.reconcile_id);
     }
-    expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeCloseTo(0.03);
+    expect(h.settle).toHaveBeenCalledTimes(3);
+    expect(await store.get(ddKeys.lossUsd(NOW))).toBeNull(); // no loss until confirmed not landed
     h.verify.mockClear();
     const r = await POST(req("POST", { resource: "https://seller9.example.com/api" }, await paymentHeader()));
+    expect((await r.json()).reason).toBe("route_paused_settle_failures");
+    expect(h.verify).not.toHaveBeenCalled();
+  });
+  it("B1: timeout where the settle landed -> redeem with payer proof delivers the cached signed verdict, no re-settle, no new test pay", async () => {
+    h.settle.mockResolvedValue({ ok: false, kind: "timeout", tx: null });
+    const pay = await paymentHeader();
+    const body = { resource: "https://seller.example.com/api" };
+    const b1 = await (await POST(req("POST", body, pay))).json();
+    expect(b1.status).toBe("settle_unconfirmed");
+    // resend without proof: no re-settle, no new authorization asked
+    expect((await POST(req("POST", body, pay))).status).toBe(409);
+    engineRan.mockClear(); h.settle.mockClear(); h.verify.mockClear();
+    setSellerDdBuyerNonceForTests(async () => "used");
+    const proof = await buyer.signMessage({ message: b1.redeem_message });
+    const r = await POST(new NextRequest(URL_, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "payment-signature": pay, "x-hp-payer-proof": proof } }));
+    const b = await r.json();
+    expect(r.status).toBe(200);
+    expect(b).toMatchObject({ status: "delivered", redeemed: true, notice: DD_NOTICE });
+    const { sig, status, charged, redeemed, ...verdict } = b;
+    expect(verifyReceipt("seller-dd", verdict, sig, receiptPublicKeys()!.keys[0]!.x)).toBe(true);
+    expect(h.settle).not.toHaveBeenCalled();
+    expect(h.verify).not.toHaveBeenCalled();
+    expect(engineRan).not.toHaveBeenCalled();
+    expect(await store.get(ddKeys.lossUsd(NOW))).toBeNull();
+    // bad proof refused
+    const bad = await POST(new NextRequest(URL_, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "payment-signature": pay, "x-hp-payer-proof": "0x" + "11".repeat(65) } }));
+    expect(bad.status).toBeGreaterThanOrEqual(400);
+  });
+  it("B1: timeout where it did not land -> closed as not charged after validBefore; loss written exactly once (redeem + cron)", async () => {
+    h.settle.mockResolvedValue({ ok: false, kind: "ambiguous", tx: null });
+    const pay = await paymentHeader();
+    const body = { resource: "https://seller.example.com/api" };
+    const b1 = await (await POST(req("POST", body, pay))).json();
+    expect(b1.status).toBe("settle_unconfirmed");
+    setSellerDdBuyerNonceForTests(async () => "unused");
+    const proof = await buyer.signMessage({ message: b1.redeem_message });
+    const redeem = () => POST(new NextRequest(URL_, { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", "payment-signature": pay, "x-hp-payer-proof": proof } }));
+    expect((await (await redeem()).json()).reason).toBe("authorization_still_open"); // before validBefore: nothing closed
+    expect(await store.get(ddKeys.lossUsd(NOW))).toBeNull();
+    setSellerDdClockForTests(() => NOW + 400_000);
+    const r = await redeem();
+    expect(r.status).toBe(410);
+    expect((await r.json()).reason).toBe("payment_did_not_land");
+    await reconcileUnconfirmed(store, NOW + 400_000);
+    expect(Number(await store.get(ddKeys.lossUsd(NOW + 400_000)))).toBeCloseTo(0.01);
+    expect(h.settle).toHaveBeenCalledTimes(1);
+  });
+  it("B1: cron closes an unconfirmed claim not landed (loss once), leaves a landed one for redeem", async () => {
+    h.settle.mockResolvedValue({ ok: false, kind: "timeout", tx: null });
+    await POST(req("POST", { resource: "https://a.example.com/api" }, await paymentHeader()));
+    setSellerDdBuyerNonceForTests(async () => "unused");
+    const r1 = await reconcileUnconfirmed(store, NOW + 400_000);
+    const r2 = await reconcileUnconfirmed(store, NOW + 400_000);
+    expect(r1).toMatchObject({ checked: 1, closed_not_charged: 1 });
+    expect(r2).toMatchObject({ checked: 0 });
+    expect(Number(await store.get(ddKeys.lossUsd(NOW + 400_000)))).toBeCloseTo(0.01);
+  });
+  it("B2: settle-failure counter write fails -> route fails closed for the day", async () => {
+    h.settle.mockResolvedValue({ ok: false, kind: "timeout", tx: null });
+    const orig = store.spendAdjust.bind(store);
+    store.spendAdjust = async (k: string, dlt: number, t: number) => { if (k.startsWith("dd:settlefail:")) throw new Error("down"); return orig(k, dlt, t); };
+    await POST(req("POST", { resource: "https://a.example.com/api" }, await paymentHeader()));
+    h.verify.mockClear();
+    const r = await POST(req("POST", { resource: "https://b.example.com/api" }, await paymentHeader()));
     expect((await r.json()).reason).toBe("route_paused_settle_failures");
     expect(h.verify).not.toHaveBeenCalled();
   });

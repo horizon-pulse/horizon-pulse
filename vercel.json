@@ -5,6 +5,10 @@
     {
       "path": "/api/premium/cron",
       "schedule": "17 13 * * *"
+    },
+    {
+      "path": "/api/seller-dd/cron",
+      "schedule": "41 13 * * *"
     }
   ]
 }

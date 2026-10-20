@@ -20,8 +20,8 @@ const TESTER = privateKeyToAccount(key).address;
 const env = { HP_DD_TESTER_KEY: key, HP_DD_TESTER_ADDRESS: TESTER, HP_DD_DENYLIST: "0x" + "de".repeat(20), HP_DD_OWN_ADDRESSES: TESTER };
 
 const ok = (status: number, body: unknown, headers: Record<string, string> = {}): FetchOut => ({ ok: true, status, headers: { "content-type": "application/json", ...headers }, body: typeof body === "string" ? body : JSON.stringify(body), truncated: false, ip: "93.184.216.34", fetched_at: "2026-10-20T12:00:00.000Z" });
-const pr = (o: { amount?: string; payTo?: string; network?: string; schema?: unknown; extra?: unknown; terms?: string } = {}) =>
-  ok(402, { x402Version: 2, resource: { url: "x", mimeType: "application/json", ...(o.terms ? { terms: o.terms } : {}) }, accepts: [{ scheme: "exact", network: o.network ?? "eip155:8453", asset: USDC_BASE, amount: o.amount ?? "10000", payTo: o.payTo ?? PAYTO, maxTimeoutSeconds: 60, extra: o.extra ?? { name: "USD Coin", version: "2" }, outputSchema: o.schema ?? { type: "object", properties: { price: { type: "number" }, symbol: { type: "string" } }, required: ["price", "symbol"] } }] });
+const pr = (o: { v?: number; amount?: string; payTo?: string; network?: string; schema?: unknown; extra?: unknown; terms?: string } = {}) =>
+  ok(402, { x402Version: o.v ?? 2, resource: { url: "x", mimeType: "application/json", ...(o.terms ? { terms: o.terms } : {}) }, accepts: [{ scheme: "exact", network: o.network ?? "eip155:8453", asset: USDC_BASE, amount: o.amount ?? "10000", payTo: o.payTo ?? PAYTO, maxTimeoutSeconds: 60, extra: o.extra ?? { name: "USD Coin", version: "2" }, outputSchema: o.schema ?? { type: "object", properties: { price: { type: "number" }, symbol: { type: "string" } }, required: ["price", "symbol"] } }] });
 
 type Fx = {
   name: string; f402: FetchOut; paid?: FetchOut; listing?: string | null; landed?: "used" | "unused" | "unknown"; expected_payTo?: string; resource?: string; terms?: FetchOut;
@@ -41,6 +41,7 @@ const FIXTURES: Fx[] = [
   { name: "domain in 402 extra disagrees", f402: pr({ extra: { name: "Fake USDC", version: "9" } }), listing: PAYTO, expect: { pass: false, reason: /sign_domain_mismatch/, paid: false } },
   { name: "seller fakes settle headers but our nonce never lands", f402: pr(), paid: ok(200, { price: 1, symbol: "X" }, { "x-payment-response": "eyJzdWNjZXNzIjp0cnVlLCJ0cmFuc2FjdGlvbiI6IjB4ZmFrZSJ9", "payment-response": "fake" }), listing: PAYTO, landed: "unused", expect: { pass: false, reason: /test_pay_not_confirmed_unused/, paid: true } },
   { name: "rebinding between 402 and paid call", f402: pr(), paid: { ok: false, code: "dns_changed" }, listing: PAYTO, landed: "unused", expect: { pass: false, reason: /test_pay_not_confirmed/, paid: true } },
+  { name: "x402 v1 seller -> no pay, no charge (B3)", f402: pr({ v: 1, network: "base" }), listing: PAYTO, landed: "used", expect: { pass: false, reason: /x402_v1_seller_not_supported/, paid: false } },
   { name: "http resource", f402: pr(), resource: "http://seller.example.com/api", expect: { pass: false, reason: /resource_not_https/, paid: false } },
   { name: "terms bar redistribution -> hash only, no excerpt/diff", f402: pr({ terms: "https://seller.example.com/terms" }), terms: ok(200, "You may not redistribute or benchmark this data."), paid: ok(200, { price: 1, symbol: "X" }), listing: PAYTO, landed: "used", expect: { pass: true, paid: true } },
 ];
@@ -80,6 +81,15 @@ describe("seller-dd replay (100% expected outcomes)", () => {
       expect((out.verdict.checks as any[]).find((c) => c.name === "schema_match").evidence.diff).toBeUndefined();
     }
     if (fx.expect.pass) expect(tp.evidence.nonce).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+  it("B5: history wording never claims 30 days; window reported honestly", async () => {
+    const store = new MemoryPremiumStore(); store.now = () => NOW;
+    const out = await runSellerDd({ resource: "https://seller.example.com/api", request_id: "w", deadline: NOW + 45_000 }, deps(FIXTURES[0]!, store, { paid: 0, signed: 0 }));
+    const hst = out.verdict.history as any;
+    expect(hst.window_blocks).toBe(9000);
+    expect(hst.window_note).toContain("not a full history");
+    const { DD_DESCRIPTION } = await import("@/lib/seller-dd/config");
+    expect(`${JSON.stringify(out.verdict)} ${DD_DESCRIPTION}`).not.toMatch(/30[ -]?day/i);
   });
   it("replay set has >= 10 sellers", () => expect(FIXTURES.length).toBeGreaterThanOrEqual(10));
   it("per-host cap: 4th request to the same host in a day is not paid", async () => {

@@ -23,9 +23,13 @@ export const ddKeys = {
   ip: (ip: string, now: number) => `dd:ip:${ip}:${day(now)}`,
   res: (requestId: string) => `dd:res:${requestId}`,
   open: () => "dd:open",
+  nonce: (nonce: string) => `dd:nonce:${nonce.toLowerCase()}`,
   loss: (now: number) => `dd:loss:${day(now)}`,
   lossUsd: (now: number) => `dd:lossusd:${day(now)}`,
   settleFail: (now: number) => `dd:settlefail:${day(now)}`,
+  settleClosed: (now: number) => `dd:settleclosed:${day(now)}`,
+  verdict: (claimKey: string) => `dd:verdict:${claimKey}`,
+  unconfirmed: () => "dd:unconfirmed",
   decline: (from: string, now: number) => `brief:declines:${from.toLowerCase()}:${day(now)}`,
 };
 
@@ -54,6 +58,8 @@ export async function reserveTestPay(store: PremiumStore, r: Reservation, now: n
       undo.push(() => store.spendAdjust(k, -amt, ttl));
     }
     await store.set(ddKeys.res(r.request_id), JSON.stringify(r), DAY_TTL_S);
+    // L-5: nonce index so the on-chain watch can match every outbound transfer to a reservation (kept 40 days)
+    await store.set(ddKeys.nonce(r.nonce), r.request_id, 40 * 86_400);
     await store.zadd(ddKeys.open(), r.validBefore, r.request_id, DAY_TTL_S);
     return { ok: true };
   } catch {
@@ -99,17 +105,33 @@ export async function recordLoss(store: PremiumStore, r: Reservation, reason: st
 }
 
 /** Odin C4: settle failures per UTC day; >= SETTLE_FAIL_LIMIT -> route fails closed. Unreadable -> closed. */
+/** B2: days on which a settle-failure counter WRITE failed: the route is closed for that UTC day on this instance. */
+const writeFailedDays = new Set<string>();
+export function resetSettleFailureLatchForTests() { writeFailedDays.clear(); }
 export async function routeClosedBySettleFailures(store: PremiumStore, now: number): Promise<boolean> {
+  if (writeFailedDays.has(day(now))) return true;
   try {
+    if (await store.get(ddKeys.settleClosed(now))) return true;
     const v = Number((await store.get(ddKeys.settleFail(now))) ?? 0);
     return !Number.isFinite(v) || v >= SETTLE_FAIL_LIMIT;
   } catch {
     return true;
   }
 }
-export async function recordSettleFailure(store: PremiumStore, now: number): Promise<number> {
-  await store.spendAdjust(ddKeys.settleFail(now), 1, DAY_TTL_S);
-  return Number((await store.get(ddKeys.settleFail(now)).catch(() => null)) ?? SETTLE_FAIL_LIMIT);
+/**
+ * B2 (Odin): a failed counter write must never leave the route open. On a write error the day is latched closed on this
+ * instance, a best-effort closed marker is written, and the caller treats it as the limit (HIGH alert).
+ */
+export async function recordSettleFailure(store: PremiumStore, now: number): Promise<{ count: number; write_failed: boolean }> {
+  try {
+    await store.spendAdjust(ddKeys.settleFail(now), 1, DAY_TTL_S);
+  } catch {
+    writeFailedDays.add(day(now));
+    await store.set(ddKeys.settleClosed(now), "1", DAY_TTL_S).catch(() => undefined);
+    return { count: SETTLE_FAIL_LIMIT, write_failed: true };
+  }
+  const v = Number((await store.get(ddKeys.settleFail(now)).catch(() => null)) ?? SETTLE_FAIL_LIMIT);
+  return { count: Number.isFinite(v) ? v : SETTLE_FAIL_LIMIT, write_failed: false };
 }
 
 /** Odin C4: reuse the brief's per-payer decline cap; the buyer's request takes one slot, refunded only after settle succeeds. */

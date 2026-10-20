@@ -12,17 +12,18 @@ import { encodePaymentRequiredHeader } from "@x402/core/http";
 import { NextRequest, NextResponse } from "next/server";
 import { BASE_CAIP2, DEFAULT_PAY_TO, PUBLIC_BASE_URL, USDC_BASE, hasCdpCredentials } from "@/lib/config";
 import { persistAlert } from "@/lib/alert-persist";
-import { moveClaim, newOwner, releaseClaim, tryClaim } from "@/lib/premium/claim";
+import { CLAIM_TTL_MS, claimKey, moveClaim, newOwner, parseClaim, releaseClaim, tryClaim } from "@/lib/premium/claim";
+import { newReconcileId } from "@/lib/premium/reconcile";
 import { BUYER_TERMS_URL } from "@/lib/premium/copy";
 import {
   decodePayment, isBaseUsdcExact, isSmartWalletSignature, markNonceSettled, nonceUsed, paymentHeader, priceBindingError,
-  settlePayment, signatureValid, SYNC_MIN_REMAINING_S, verifyPayment, windowError,
+  PAYER_PROOF_HEADER, payerProofValid, redeemMessage, settlePayment, signatureValid, SYNC_MIN_REMAINING_S, verifyPayment, windowError,
 } from "@/lib/premium/payment";
 import { premiumStore, type PremiumStore } from "@/lib/premium/store";
 import { receiptSignerReady, signReceipt } from "@/lib/receipt-signer";
 import { requestFingerprint } from "@/lib/request-fingerprint";
-import { recordLoss, recordSettleFailure, refundDeclineSlot, routeClosedBySettleFailures, takeDeclineSlot } from "./caps";
-import { cdpContinuityDeps, defaultNetDeps } from "./checks";
+import { ddKeys, recordLoss, recordSettleFailure, type NonceState, type Reservation, refundDeclineSlot, routeClosedBySettleFailures, takeDeclineSlot } from "./caps";
+import { cdpContinuityDeps, defaultNetDeps, testPayLanded } from "./checks";
 import { DD_AMOUNT, DD_DESCRIPTION, DD_NOTICE, DD_PATH, DD_TIER, SETTLE_FAIL_LIMIT, sellerDdEnabled, testPayEnabled } from "./config";
 import { runSellerDd, type EngineDeps } from "./engine";
 import { eqAddr, isEvmAddress, screenLists } from "./screen";
@@ -90,12 +91,24 @@ export async function sellerDdHandler(req: NextRequest): Promise<NextResponse> {
   if (req.method === "GET") return challenge(); // unpaid probe / discovery: 402 only, nothing runs
   if (req.method !== "POST") return NextResponse.json({ error: "method_not_allowed", notice: DD_NOTICE }, { status: 405, headers: { ...CORS, Allow: "POST, GET, OPTIONS" } });
 
+  // fingerprint BEFORE the body is consumed (it clones the request)
+  let rq: string | null = null;
+  try { rq = await requestFingerprint(req); } catch { rq = null; }
   let rawBody: unknown = null;
   try { rawBody = JSON.parse((await req.text()).slice(0, 8_192)); } catch { rawBody = null; }
   const header = paymentHeader(req);
   const b = parseBody(rawBody);
   if (!b.ok) return header ? noCharge(400, b.reason) : challenge(b.reason, 402);
   if (!header) return challenge();
+
+  // B1 redeem path (delivery only: no verify, no settle, no test pay). Runs before the kill switch / route gates.
+  if (req.headers.get(PAYER_PROOF_HEADER)) {
+    const d0 = decodePayment(header);
+    const st = premiumStore();
+    if (!d0 || !d0.from || !d0.nonce || !st) return noCharge(d0 ? 503 : 402, d0 ? "store_unavailable" : "invalid_payment");
+    if (!rq) return noCharge(503, "fingerprint_unavailable");
+    return await redeemFlow(req, st, d0, rq);
+  }
 
   // Kill switch / tester / signer / screen readiness: refused BEFORE the buyer's payment is touched.
   if (!testPayEnabled()) return noCharge(503, "test_pay_disabled", {}, { "Retry-After": "3600" });
@@ -121,13 +134,12 @@ export async function sellerDdHandler(req: NextRequest): Promise<NextResponse> {
   if (!store) return noCharge(503, "store_unavailable");
   if (await routeClosedBySettleFailures(store, clockFn())) return noCharge(503, "route_paused_settle_failures", {}, { "Retry-After": "3600" });
 
-  return await paidFlow(req, store, d, b.v, lists);
+  if (!rq) return noCharge(503, "fingerprint_unavailable");
+  return await paidFlow(req, store, d, b.v, lists, rq);
 }
 
-async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<ReturnType<typeof decodePayment>>, body: DdBody, lists: NonNullable<ReturnType<typeof screenLists>>): Promise<NextResponse> {
+async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<ReturnType<typeof decodePayment>>, body: DdBody, lists: NonNullable<ReturnType<typeof screenLists>>, rq: string): Promise<NextResponse> {
   const now = clockFn();
-  let rq: string;
-  try { rq = await requestFingerprint(req); } catch { rq = randomBytes(8).toString("hex"); }
   const got = await tryClaim(store, d.from!, d.nonce!, { s: "inflight", o: newOwner(), rq, at: now, tier: "seller-dd" }).catch(() => null);
   if (!got) return noCharge(503, "store_unavailable");
   if (!got.ok) return noCharge(409, "authorization_already_used_or_in_progress");
@@ -166,19 +178,92 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
     return noCharge(422, out.pass ? "signing_failed" : out.reason ?? "no_charge", { checks_evidenced: out.checks_evidenced, checks: (out.verdict.checks as { name: string; result: string }[]).map((c) => ({ name: c.name, result: c.result })) });
   }
 
-  // (4) settle buyer on PASS only
+  // (4) settle buyer on PASS only. Cache the signed verdict BEFORE settle, keyed by buyer+nonce (claim key), so a
+  // settle_unconfirmed can be redeemed with exactly this verdict. Cache write fails -> no settle (fail closed).
+  const signedVerdict = { ...out.verdict, sig };
+  const cached = await store.set(ddKeys.verdict(held.key), JSON.stringify({ rq, from: d.from!.toLowerCase(), verdict: signedVerdict, reservation: out.reservation, validBefore: Number(d.validBefore) }), Math.ceil(CLAIM_TTL_MS.unconfirmed / 1000)).then(() => true, () => false);
+  if (!cached) {
+    await moveClaim(store, held, { s: "declined" }).catch(() => null);
+    if (out.reservation) await recordLoss(store, out.reservation, "verdict_cache_unavailable", clockFn()).catch(() => undefined);
+    return noCharge(503, "store_unavailable");
+  }
   const s = await settlePayment(d, DD_TIER);
   if (!s.ok) {
-    const n = await recordSettleFailure(store, clockFn()).catch(() => SETTLE_FAIL_LIMIT);
-    if (n >= SETTLE_FAIL_LIMIT) alertHigh("seller_dd_route_closed_settle_failures", { count: n });
-    await moveClaim(store, held, { s: "declined" }).catch(() => null);
-    // Odin C4: our test pay is absorbed under the $5/day cap and recorded in the loss ledger
-    if (out.reservation) await recordLoss(store, out.reservation, `buyer_settle_${s.kind}`, clockFn()).catch(() => undefined);
-    return noCharge(502, `buyer_settle_${s.kind}`, { message: "The verdict was not delivered because your payment did not settle. If your wallet shows a charge for this request, contact horizonpulse.co@proton.me with the time of the request." });
+    // Odin #6/B1: settle_unconfirmed, never re-settle, never ask for a new authorization; timeouts/ambiguous count toward
+    // the 3/day kill switch (B2: a failed counter write closes the route). Loss is written only once the buyer nonce is
+    // confirmed unused after validBefore (redeem or cron), never here.
+    const f = await recordSettleFailure(store, clockFn());
+    if (f.write_failed) alertHigh("seller_dd_settle_counter_write_failed");
+    if (f.count >= SETTLE_FAIL_LIMIT) alertHigh("seller_dd_route_closed_settle_failures", { count: f.count });
+    const rc = newReconcileId();
+    await moveClaim(store, held, { s: "unconfirmed", rc }).catch(() => null);
+    await store.zadd(ddKeys.unconfirmed(), Number(d.validBefore), held.key, Math.ceil(CLAIM_TTL_MS.unconfirmed / 1000)).catch(() => undefined);
+    return NextResponse.json(
+      { status: "settle_unconfirmed", charged: "unknown", reason: `buyer_settle_${s.kind}`, reconcile_id: rc, redeem_message: redeemMessage(rc, rq, d.to!, d.value!), redeem_header: PAYER_PROOF_HEADER,
+        message: "Your payment's settlement could not be confirmed. Do not sign a new payment. Resend this exact request with the same payment header plus the redeem header (personal_sign of redeem_message by the paying wallet): if the payment landed on-chain the signed verdict is delivered; if it did not land it is closed as not charged.", notice: DD_NOTICE },
+      { status: s.kind === "timeout" ? 504 : 502, headers: CORS },
+    );
   }
   markNonceSettled(d.from!, d.nonce!);
   await refundDeclineSlot(store, d.from!, clockFn());
   await moveClaim(store, held, { s: "settled" }).catch(() => null);
-  const signed = { ...out.verdict, sig };
-  return NextResponse.json({ status: "delivered", charged: true, tx: s.tx, ...signed }, { status: 200, headers: { ...CORS, "PAYMENT-RESPONSE": s.header } });
+  return NextResponse.json({ status: "delivered", charged: true, tx: s.tx, ...signedVerdict }, { status: 200, headers: { ...CORS, "PAYMENT-RESPONSE": s.header } });
+}
+
+let buyerNonceOverride: ((from: string, nonce: string) => Promise<NonceState>) | null = null;
+export function setSellerDdBuyerNonceForTests(f: typeof buyerNonceOverride) { buyerNonceOverride = f; }
+export async function buyerNonceState(from: string, nonce: string): Promise<NonceState> {
+  if (buyerNonceOverride) return buyerNonceOverride(from, nonce);
+  return (await testPayLanded(from, nonce, Date.now() + 10_000)).state;
+}
+
+/** Close an unconfirmed claim as not charged (nonce unused after validBefore): loss written exactly once (setNx). */
+async function closeNotCharged(store: PremiumStore, ck: string, cached: { reservation?: Reservation | null } | null) {
+  if (await store.setNx(`dd:closed:${ck}`, "1", CLAIM_TTL_MS.unconfirmed).catch(() => false)) {
+    if (cached?.reservation) await recordLoss(store, cached.reservation, "buyer_settle_not_landed", clockFn()).catch(() => undefined);
+  }
+  await store.zrem(ddKeys.unconfirmed(), ck).catch(() => undefined);
+}
+
+async function redeemFlow(req: NextRequest, store: PremiumStore, d: NonNullable<ReturnType<typeof decodePayment>>, rq: string): Promise<NextResponse> {
+  const ck = claimKey(d.from!, d.nonce!);
+  const raw = await store.get(ck).catch(() => null);
+  const c = parseClaim(raw);
+  if (!c || c.s !== "unconfirmed" || !c.rc) return noCharge(409, "nothing_to_redeem");
+    const vraw = await store.get(ddKeys.verdict(ck)).catch(() => null);
+  const v = vraw ? (JSON.parse(vraw) as { rq: string; from: string; verdict: Record<string, unknown>; reservation: Reservation | null; validBefore: number }) : null;
+  if (!v || v.from !== d.from!.toLowerCase()) return noCharge(409, "nothing_to_redeem");
+  if (rq !== c.rq || rq !== v.rq) return noCharge(409, "redeem_request_mismatch");
+  if (!(await payerProofValid(d.from!, req.headers.get(PAYER_PROOF_HEADER), redeemMessage(c.rc, rq, d.to!, d.value!)))) return noCharge(401, "invalid_payer_proof");
+  const state = await buyerNonceState(d.from!, d.nonce!);
+  if (state === "used") {
+    // landed: deliver the cached signed verdict; never settle again
+    markNonceSettled(d.from!, d.nonce!);
+    await store.cas(ck, raw!, JSON.stringify({ ...c, s: "redeemed" }), CLAIM_TTL_MS.redeemed).catch(() => false);
+    await store.zrem(ddKeys.unconfirmed(), ck).catch(() => undefined);
+    await refundDeclineSlot(store, d.from!, clockFn());
+    return NextResponse.json({ status: "delivered", charged: true, redeemed: true, ...v.verdict }, { status: 200, headers: CORS });
+  }
+  if (state === "unused" && Math.floor(clockFn() / 1000) > v.validBefore) {
+    await closeNotCharged(store, ck, v);
+    await store.cas(ck, raw!, JSON.stringify({ ...c, s: "declined" }), CLAIM_TTL_MS.declined).catch(() => false);
+    return noCharge(410, "payment_did_not_land", { message: "Your payment did not settle on-chain and its authorization has expired. Nothing was charged; the verdict is not delivered." });
+  }
+  return NextResponse.json({ status: "settle_unconfirmed", charged: "unknown", reason: state === "unused" ? "authorization_still_open" : "nonce_check_unavailable", notice: DD_NOTICE }, { status: 409, headers: { ...CORS, "Retry-After": "60" } });
+}
+
+/** Cron (C3 + B1 d): unconfirmed claims past validBefore -> used: left for redeem; unused: closed not charged, loss once. */
+export async function reconcileUnconfirmed(store: PremiumStore, nowMs: number, limit = 50) {
+  const keys = await store.zrangeByScore(ddKeys.unconfirmed(), Math.floor(nowMs / 1000) - 1, limit);
+  let closed = 0, landed = 0, unknown = 0;
+  for (const ck of keys) {
+    const m = /^claim:(0x[0-9a-f]{40}):(0x[0-9a-f]{64})$/.exec(ck);
+    if (!m) { await store.zrem(ddKeys.unconfirmed(), ck).catch(() => undefined); continue; }
+    const st = await buyerNonceState(m[1]!, m[2]!);
+    const vraw = await store.get(ddKeys.verdict(ck)).catch(() => null);
+    if (st === "unused") { await closeNotCharged(store, ck, vraw ? JSON.parse(vraw) : null); closed++; }
+    else if (st === "used") { await store.zrem(ddKeys.unconfirmed(), ck).catch(() => undefined); landed++; }
+    else unknown++;
+  }
+  return { checked: keys.length, closed_not_charged: closed, landed, unknown };
 }
