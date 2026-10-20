@@ -67,6 +67,8 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
   let blocked: string | null = null;
   let testPaid = false;
   let reservation: Reservation | null = null;
+  let ref: Awaited<ReturnType<ContinuityDeps["lookup"]>> = null;
+  let landState: "used" | "unused" | "unknown" | null = null;
 
   const url = httpsUrl(inp.resource);
   if (!url) blocked = "resource_not_https";
@@ -102,7 +104,7 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
 
   // 4. payTo continuity (expected_payTo AND listing/snapshot must both match the live 402 payTo)
   if (listed) {
-    const ref = await deps.continuity.lookup(url!.toString(), inp.deadline).catch(() => null);
+    ref = await deps.continuity.lookup(url!.toString(), inp.deadline).catch(() => null);
     const buyerMismatch = inp.expected_payTo != null && !eqAddr(inp.expected_payTo, listed.payTo);
     if (ref) {
       const same = eqAddr(ref.payTo, listed.payTo);
@@ -144,15 +146,17 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
     else if (value <= 0n) blocked = "price_zero";
     else if (!tester.ok) blocked = tester.code;
     else if (!f402.ip) blocked = "ip_not_pinned";
+    else if (!ref || !eqAddr(ref.payTo, listed.payTo)) blocked = "payto_not_pinned";
+    else if (!registrableDomain(url!.hostname)) blocked = "host_invalid";
     else {
       const nowS = Math.floor(now() / 1000);
       const nonce = freshNonce();
       const validBefore = nowS + 240;
-      reservation = { request_id: inp.request_id, seller: url!.host.toLowerCase(), domain: registrableDomain(url!.hostname), ip: f402.ip, payTo: listed.payTo, value_usd: Number(value) / 1e6, nonce, validBefore, at: now() };
+      reservation = { request_id: inp.request_id, seller: url!.host.toLowerCase(), domain: registrableDomain(url!.hostname)!, ip: f402.ip, payTo: listed.payTo, value_usd: Number(value) / 1e6, nonce, validBefore, at: now() };
       const rsv = await reserveTestPay(deps.store, reservation, now());
       if (!rsv.ok) { blocked = `reserve_${rsv.code}`; reservation = null; }
       else {
-        const req: SignRequest = { kind: ALLOWED_SIGN_KIND, requestedDomain: listed.extra, network: listed.network, asset: listed.asset, to: listed.payTo, pinnedPayTo: listed.payTo, value, remainingAtomic: PER_CALL_MAX_ATOMIC, validAfter: 0n, validBefore: BigInt(validBefore) };
+        const req: SignRequest = { kind: ALLOWED_SIGN_KIND, requestedDomain: listed.extra, network: listed.network, asset: listed.asset, to: listed.payTo, pinnedPayTo: ref.payTo, value, remainingAtomic: value, validAfter: 0n, validBefore: BigInt(validBefore) };
         const s = await (deps.sign ?? ((r, n) => signTestAuthorization(r, n, deps.env)))(req, nonce);
         if (!s.ok) blocked = `sign_${s.code}`; // reservation stays until the cron confirms the nonce unused
         else {
@@ -166,6 +170,7 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
             if (land.state === "used") break;
             await sleep(2_000);
           }
+          landState = land.state;
           const respSha = paid.ok ? sha256(paid.body) : null;
           if (land.state === "used") {
             const tx = await (deps.authTx ?? ((t, n, d) => authorizationTx(t, n, d, deps.rpc)))(tester.address, nonce, inp.deadline).catch(() => null);
@@ -197,7 +202,7 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
   const n = list.filter(evidenced).length;
   const reason = pass ? null : blocked ?? (testOk ? `only_${others}_of_4_other_checks_evidenced` : "test_pay_not_evidenced");
 
-  if (!pass && testPaid && reservation) await recordLoss(deps.store, reservation, reason ?? "no_charge", now()).catch(() => undefined);
+  if (!pass && testPaid && reservation) await recordLoss(deps.store, reservation, reason ?? "no_charge", now(), landState === "used" ? "confirmed" : "unconfirmed").catch(() => undefined);
 
   const verdict: Record<string, unknown> = {
     v: 1,

@@ -7,6 +7,7 @@
  *     approved-addresses.md; unset = every inbound transfer alerts)
  *   - the tester's account nonce > 0 (it must never send its own transaction; it only signs EIP-3009 authorizations)
  *   - the HP_DD_TESTPAY kill switch value changed since the last run
+ *   - LOW-2: cumulative inbound USDC > $25 (lifetime funding cap) or balance > $10 (float)
  * Scans from a stored block cursor in WATCH_MAX_BLOCKS chunks until head (W1), saving the cursor after each chunk; an RPC failure leaves the cursor unchanged (retry next run)
  * and reports `rpc_unavailable` (an alert itself, so a blind watch is never silent).
  */
@@ -23,6 +24,10 @@ export const WATCH_MAX_BLOCKS = 9_000;
 /** W1: per-run bounds (maxDuration 60 s). 12 chunks = 108k blocks (~2.5 days of Base) per run; a day is ~43.2k. */
 export const WATCH_MAX_CHUNKS = 12;
 export const WATCH_TIME_BUDGET_MS = 40_000;
+/** LOW-2 (Sentinel): the approved-addresses row's limits, enforced by alert: lifetime inbound funding and float. */
+export const FUNDING_CAP_USD = 25;
+export const FLOAT_CAP_USD = 10;
+const BALANCE_OF = "0x70a08231";
 const CURSOR_TTL_S = 400 * 86_400;
 const pad = (a: string) => `0x${a.toLowerCase().replace(/^0x/, "").padStart(64, "0")}`;
 const addrOf = (topic: unknown) => (typeof topic === "string" ? `0x${topic.slice(-40)}`.toLowerCase() : "");
@@ -42,7 +47,7 @@ export function defaultWatchRpc(deps: RpcDeps = defaultRpcDeps()): Rpc {
   };
 }
 
-export const watchKeys = { cursor: () => "dd:watch:cursor", killSwitch: () => "dd:watch:testpay" };
+export const watchKeys = { cursor: () => "dd:watch:cursor", killSwitch: () => "dd:watch:testpay", inboundUsd: () => "dd:watch:inbound_usd" };
 
 export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, env: Record<string, string | undefined> = process.env, now: () => number = () => Date.now()): Promise<WatchResult> {
   const alerts: WatchAlert[] = [];
@@ -81,6 +86,10 @@ export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, en
         if (!matched) alerts.push({ kind: "seller_dd_outbound_without_reservation", severity: "high", tx: l.transactionHash, block: Number(hexToBig(l.blockNumber) ?? 0n) });
       }
       for (const l of apprLogs as any[]) alerts.push({ kind: "seller_dd_approval_event", severity: "high", tx: l.transactionHash, block: Number(hexToBig(l.blockNumber) ?? 0n) });
+      // LOW-2: total ALL inbound USDC (allowlisted or not) into a lifetime counter
+      let inAtomic = 0n;
+      for (const l of inLogs as any[]) inAtomic += hexToBig(l.data) ?? 0n;
+      if (inAtomic > 0n) await store.spendAdjust(watchKeys.inboundUsd(), Number(inAtomic) / 1e6, CURSOR_TTL_S);
       for (const l of inLogs as any[]) if (!allow.has(addrOf(l.topics?.[1]))) alerts.push({ kind: "seller_dd_inbound_from_unapproved", severity: "high", tx: l.transactionHash, block: Number(hexToBig(l.blockNumber) ?? 0n) });
       await store.set(watchKeys.cursor(), to.toString(), CURSOR_TTL_S);
       firstFrom ??= from;
@@ -88,6 +97,10 @@ export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, en
       from = to + 1n;
     }
     if (from <= head) alerts.push({ kind: "seller_dd_watch_behind", severity: "high", detail: `${(head - from + 1n).toString()} blocks behind head after this run` });
+    const inbound = Number((await store.get(watchKeys.inboundUsd())) ?? 0);
+    if (!Number.isFinite(inbound) || inbound > FUNDING_CAP_USD) alerts.push({ kind: "seller_dd_funding_over_cap", severity: "high", detail: `cumulative inbound ${inbound} USDC > ${FUNDING_CAP_USD}` });
+    const bal = hexToBig(await rpc("eth_call", [{ to: USDC_BASE, data: BALANCE_OF + tester.toLowerCase().replace(/^0x/, "").padStart(64, "0") }, "latest"]));
+    if (bal === null || bal > BigInt(FLOAT_CAP_USD * 1_000_000)) alerts.push({ kind: "seller_dd_balance_over_float", severity: "high", detail: `balance ${bal === null ? "unreadable" : (Number(bal) / 1e6).toString()} USDC > ${FLOAT_CAP_USD}` });
     const n = hexToBig(await rpc("eth_getTransactionCount", [tester, "latest"]));
     if (n === null || n > 0n) alerts.push({ kind: "seller_dd_tester_sent_own_tx", severity: "high", detail: `account nonce ${n === null ? "unreadable" : n.toString()}` });
     return { ok: true, from_block: firstFrom === null ? null : Number(firstFrom), to_block: lastTo === null ? null : Number(lastTo), alerts };

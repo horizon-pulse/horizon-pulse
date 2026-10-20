@@ -26,6 +26,7 @@ export const ddKeys = {
   nonce: (nonce: string) => `dd:nonce:${nonce.toLowerCase()}`,
   loss: (now: number) => `dd:loss:${day(now)}`,
   lossUsd: (now: number) => `dd:lossusd:${day(now)}`,
+  lossRec: (requestId: string) => `dd:lossrec:${requestId}`,
   settleFail: (now: number) => `dd:settlefail:${day(now)}`,
   settleClosed: (now: number) => `dd:settleclosed:${day(now)}`,
   verdict: (claimKey: string) => `dd:verdict:${claimKey}`,
@@ -79,6 +80,7 @@ export async function releaseIfConfirmedUnused(store: PremiumStore, r: Reservati
   await store.spendAdjust(unsettledKey(at), -r.value_usd, 2 * 86_400);
   await store.zrem(ddKeys.open(), r.request_id);
   await store.del(ddKeys.res(r.request_id));
+  await releaseLoss(store, r, nowMs);
   return true;
 }
 
@@ -99,9 +101,22 @@ export async function reconcileOpen(store: PremiumStore, nonceState: (nonce: str
 }
 
 /** C3 loss ledger: every test pay that ends in no_charge (or an absorbed buyer-settle failure) is an unrecovered loss. */
-export async function recordLoss(store: PremiumStore, r: Reservation, reason: string, now: number): Promise<void> {
-  await store.zadd(ddKeys.loss(now), now, JSON.stringify({ request_id: r.request_id, value_usd: r.value_usd, reason, nonce: r.nonce }), 40 * 86_400);
+/**
+ * INFO-2 (Sentinel): every entry carries status "confirmed" (our nonce read used) or "unconfirmed". An unconfirmed loss whose
+ * reservation the cron later releases (nonce unused after validBefore) gets a "released" entry and is taken off the day's total.
+ */
+export type LossStatus = "confirmed" | "unconfirmed";
+export async function recordLoss(store: PremiumStore, r: Reservation, reason: string, now: number, status: LossStatus = "confirmed"): Promise<void> {
+  await store.zadd(ddKeys.loss(now), now, JSON.stringify({ request_id: r.request_id, value_usd: r.value_usd, reason, nonce: r.nonce, status }), 40 * 86_400);
   await store.spendAdjust(ddKeys.lossUsd(now), r.value_usd, 40 * 86_400);
+  if (status === "unconfirmed") await store.set(ddKeys.lossRec(r.request_id), String(now), 40 * 86_400);
+}
+async function releaseLoss(store: PremiumStore, r: Reservation, nowMs: number): Promise<void> {
+  const at = Number((await store.get(ddKeys.lossRec(r.request_id)).catch(() => null)) ?? NaN);
+  if (!Number.isFinite(at)) return;
+  await store.zadd(ddKeys.loss(at), nowMs, JSON.stringify({ request_id: r.request_id, value_usd: -r.value_usd, reason: "released_nonce_unused", nonce: r.nonce, status: "released" }), 40 * 86_400);
+  await store.spendAdjust(ddKeys.lossUsd(at), -r.value_usd, 40 * 86_400);
+  await store.del(ddKeys.lossRec(r.request_id));
 }
 
 /** Odin C4: settle failures per UTC day; >= SETTLE_FAIL_LIMIT -> route fails closed. Unreadable -> closed. */

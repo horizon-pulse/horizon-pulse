@@ -51,6 +51,14 @@ describe("screen (exact strings + L-4 similarity)", () => {
     const p = `0x${DEFAULT_PAY_TO.slice(2, 6)}${"7".repeat(36)}`;
     expect(screenPayTo(p, lists).pay_allowed).toBe(true);
   });
+  it("LOW-3: IP-literal hosts key by the full IP; empty labels refused", () => {
+    expect(registrableDomain("1.2.3.4")).toBe("1.2.3.4");
+    expect(registrableDomain("5.6.3.4")).toBe("5.6.3.4");
+    expect(registrableDomain("[2001:db8::1]")).toBe("2001:db8::1");
+    expect(registrableDomain("example.com..")).toBeNull();
+    expect(registrableDomain("a..example.com")).toBeNull();
+    expect(registrableDomain("example.com.")).toBe("example.com");
+  });
   it("L-2 registrable domain", () => {
     expect(registrableDomain("api.a.example.com")).toBe("example.com");
     expect(registrableDomain("x.y.example.co.uk")).toBe("example.co.uk");

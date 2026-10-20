@@ -13,12 +13,13 @@ const TESTER = privateKeyToAccount(key).address;
 const pad = (a: string) => `0x${a.toLowerCase().slice(2).padStart(64, "0")}`;
 const FUNDER = "0x" + "f1".repeat(20);
 const NONCE = "0x" + "ab".repeat(32);
-type Logs = { head?: number; out?: any[]; in?: any[]; appr?: any[]; auth?: any[]; txCount?: string };
+type Logs = { balance?: bigint; head?: number; out?: any[]; in?: any[]; appr?: any[]; auth?: any[]; txCount?: string };
 function rpcWith(l: Logs, calls: string[] = []): Rpc {
   return async (m, p: any) => {
     calls.push(m);
     if (m === "eth_blockNumber") return `0x${(l.head ?? 0x10000).toString(16)}`;
     if (m === "eth_getTransactionCount") return l.txCount ?? "0x0";
+    if (m === "eth_call") return `0x${(l.balance ?? 3_000_000n).toString(16).padStart(64, "0")}`;
     const t = p[0].topics;
     if (t[0] === TRANSFER_TOPIC && t[1]) return l.out ?? [];
     if (t[0] === TRANSFER_TOPIC) return l.in ?? [];
@@ -27,7 +28,7 @@ function rpcWith(l: Logs, calls: string[] = []): Rpc {
     return [];
   };
 }
-const log = (tx: string, topics: string[]) => ({ transactionHash: tx, blockNumber: "0xff00", topics });
+const log = (tx: string, topics: string[], data = "0x0") => ({ transactionHash: tx, blockNumber: "0xff00", topics, data });
 const mk = () => new MemoryPremiumStore();
 const env = { HP_DD_TESTPAY: "on", HP_DD_FUNDING_ALLOWLIST: FUNDER };
 
@@ -104,6 +105,19 @@ describe("L-5 watch", () => {
     const r2 = await runWatch(s2, TESTER, rpcWith({}), env, () => (t += 30_000));
     expect(r2.alerts.map((a) => a.kind)).toContain("seller_dd_watch_behind");
     expect(Number(await s2.get(watchKeys.cursor()))).toBeGreaterThan(0x10000 - 43_000);
+  });
+  it("LOW-2: cumulative inbound > $25 -> HIGH (across runs); balance > $10 -> HIGH; under both -> none", async () => {
+    const s = mk();
+    const fund = (usd: number) => log("0xf", [TRANSFER_TOPIC, pad(FUNDER), pad(TESTER)], `0x${(usd * 1_000_000).toString(16)}`);
+    const r1 = await runWatch(s, TESTER, rpcWith({ in: [fund(10), fund(10)] }), env);
+    expect(r1.alerts).toEqual([]);
+    await s.del(watchKeys.cursor());
+    const r2 = await runWatch(s, TESTER, rpcWith({ in: [fund(6)] }), env);
+    expect(r2.alerts.map((a) => a.kind)).toEqual(["seller_dd_funding_over_cap"]);
+    const r3 = await runWatch(mk(), TESTER, rpcWith({ balance: 10_000_001n }), env);
+    expect(r3.alerts.map((a) => a.kind)).toEqual(["seller_dd_balance_over_float"]);
+    const r4 = await runWatch(mk(), TESTER, rpcWith({ balance: 10_000_000n }), env);
+    expect(r4.alerts).toEqual([]);
   });
   it("RPC down -> HIGH rpc_unavailable, cursor unchanged", async () => {
     const s = mk();

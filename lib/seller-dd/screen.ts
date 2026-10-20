@@ -9,6 +9,7 @@
  *   HP_DD_OWN_ADDRESSES  comma list of our own wallets (premium test wallet, burner, dd-tester, other payTos)
  * Either list unset/empty or containing a malformed entry -> screen unavailable -> no test pay (fail closed).
  */
+import { isIP } from "node:net";
 import { DEFAULT_PAY_TO } from "@/lib/config";
 
 type Env = Record<string, string | undefined>;
@@ -46,8 +47,12 @@ export function screenPayTo(payTo: string, lists: ScreenLists): ScreenResult {
 }
 
 /** Registrable domain (eTLD+1, simplified like lib/premium/onchain rpcOperator: two labels; three for co.uk-style). */
-export function registrableDomain(host: string): string {
-  const parts = host.toLowerCase().replace(/\.$/, "").split(".");
+/** LOW-3 (Sentinel): IP-literal hosts key by the full IP; an empty label (e.g. "example.com..") -> null (refused). */
+export function registrableDomain(host: string): string | null {
+  const h = host.toLowerCase().replace(/^\[|\]$/g, "");
+  if (isIP(h)) return h;
+  const parts = h.replace(/\.$/, "").split(".");
+  if (!parts.length || parts.some((p) => p.length === 0)) return null;
   if (parts.length <= 2) return parts.join(".");
   const two = /^(co|com|org|net|gov|ac|edu)\.[a-z]{2}$/.test(parts.slice(-2).join("."));
   return parts.slice(two ? -3 : -2).join(".");

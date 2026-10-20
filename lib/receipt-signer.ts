@@ -3,7 +3,7 @@
  *
  *  - ed25519 key material in its own env var (HP_RECEIPT_SIGNING_KEY: 32-byte seed as 64 hex chars). It is never derived
  *    from, shared with or reused as any payment key (payTo, premium test, burner, dd-tester, any Solana payer). This module
- *    is the ONLY place that env var is read (static check: tests/seller-dd-sentinel.test.ts).
+ *    is the ONLY place that env var is read (static check: tests/seller-dd-unit.test.ts, "static: receipt key env read only ...").
  *  - Signs only a domain-separated message: "hp-receipt-v1\n" + kind + "\n" + sha256(canonical body) (hex).
  *    `kind` must be on the allowlist; raw caller bytes are never signed.
  *  - The key is never printed, logged or written anywhere. Errors carry fixed codes only.

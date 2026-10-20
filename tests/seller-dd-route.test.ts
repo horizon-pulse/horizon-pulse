@@ -205,6 +205,23 @@ describe("seller-dd route", () => {
     expect(r2).toMatchObject({ checked: 0 });
     expect(Number(await store.get(ddKeys.lossUsd(NOW + 400_000)))).toBeCloseTo(0.01);
   });
+  it("LOW-1: buyer auth spent/cancelled after our test pay -> settle fails, buyer NOT charged, our test pay recorded as loss once", async () => {
+    h.settle.mockResolvedValue({ ok: false, kind: "ambiguous", tx: null }); // e.g. buyer used the nonce elsewhere / cancelled it
+    const pay = await paymentHeader();
+    const body = { resource: "https://seller.example.com/api" };
+    const r1 = await POST(req("POST", body, pay));
+    const b1 = await r1.json();
+    expect(r1.status).toBe(502);
+    expect(b1).toMatchObject({ status: "settle_unconfirmed", charged: "unknown", notice: DD_NOTICE });
+    expect(b1.sig).toBeUndefined(); // verdict not delivered
+    setSellerDdBuyerNonceForTests(async () => "unused");
+    setSellerDdClockForTests(() => NOW + 400_000);
+    const r = await reconcileUnconfirmed(store, NOW + 400_000);
+    expect(r).toMatchObject({ closed_not_charged: 1 });
+    await reconcileUnconfirmed(store, NOW + 400_000);
+    expect(Number(await store.get(ddKeys.lossUsd(NOW + 400_000)))).toBeCloseTo(0.01);
+    expect(h.settle).toHaveBeenCalledTimes(1);
+  });
   it("B2: settle-failure counter write fails -> route fails closed for the day", async () => {
     h.settle.mockResolvedValue({ ok: false, kind: "timeout", tx: null });
     const orig = store.spendAdjust.bind(store);

@@ -115,6 +115,45 @@ describe("seller-dd replay (100% expected outcomes)", () => {
     expect((await termsAllowExcerpt(null, net)).allowed).toBe(true);
     expect((await termsAllowExcerpt("https://s.example.com/terms", net)).allowed).toBe(false);
   });
+  it("LOW-1: seller fake settle headers + fake tx hash in body are ignored; evidence tx is OUR AuthorizationUsed read", async () => {
+    const store = new MemoryPremiumStore(); store.now = () => NOW;
+    const FAKE = "0x" + "fe".repeat(32);
+    const fake = (landed: "used" | "unused"): Fx => ({ name: "fake", f402: pr(), listing: PAYTO, landed, expect: { pass: landed === "used", paid: true },
+      paid: ok(200, { price: 1, symbol: "X", transaction: FAKE }, { "payment-response": Buffer.from(JSON.stringify({ success: true, transaction: FAKE })).toString("base64"), "x-payment-response": Buffer.from(JSON.stringify({ success: true, transaction: FAKE })).toString("base64"), "x-tx-hash": FAKE }) });
+    const used = await runSellerDd({ resource: "https://seller.example.com/api", request_id: "f1", deadline: NOW + 45_000 }, deps(fake("used"), store, { paid: 0, signed: 0 }));
+    const tp = (used.verdict.checks as any[]).find((c) => c.name === "test_pay");
+    expect(tp.evidence.tx_hash).toBe("0x" + "ab".repeat(32));
+    expect(JSON.stringify(tp)).not.toContain(FAKE);
+    const unused = await runSellerDd({ resource: "https://seller2.example.com/api", request_id: "f2", deadline: NOW + 45_000 }, deps(fake("unused"), store, { paid: 0, signed: 0 }));
+    expect(unused.pass).toBe(false);
+    expect(unused.reason).toBe("test_pay_not_confirmed_unused");
+  });
+  it("INFO-1: signer gets the continuity-confirmed payTo and the reserved value as the remaining cap", async () => {
+    const store = new MemoryPremiumStore(); store.now = () => NOW;
+    const seen: any[] = [];
+    const d = deps(FIXTURES[0]!, store, { paid: 0, signed: 0 });
+    const inner = d.sign!;
+    d.sign = async (r, n) => { seen.push(r); return inner(r, n); };
+    await runSellerDd({ resource: "https://seller.example.com/api", request_id: "i1", deadline: NOW + 45_000 }, d);
+    expect(seen[0].pinnedPayTo).toBe(PAYTO);
+    expect(seen[0].remainingAtomic).toBe(10_000n);
+    expect(seen[0].value).toBe(10_000n);
+  });
+  it("INFO-2: unconfirmed loss is tagged and released (with a 'released' entry) when the cron confirms the nonce unused", async () => {
+    const store = new MemoryPremiumStore(); store.now = () => NOW;
+    const fx: Fx = { ...FIXTURES[0]!, landed: "unknown" };
+    const out = await runSellerDd({ resource: "https://seller.example.com/api", request_id: "u1", deadline: NOW + 45_000 }, deps(fx, store, { paid: 0, signed: 0 }));
+    expect(out.pass).toBe(false);
+    expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeCloseTo(0.01);
+    const entries = await store.zrangeByScore(ddKeys.loss(NOW), Number.MAX_SAFE_INTEGER, 10);
+    expect(JSON.parse(entries[0]!).status).toBe("unconfirmed");
+    const { reconcileOpen } = await import("@/lib/seller-dd/caps");
+    const later = NOW + 600_000; store.now = () => later;
+    expect(await reconcileOpen(store, async () => "unused", later)).toMatchObject({ released: 1 });
+    expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeCloseTo(0);
+    const all = (await store.zrangeByScore(ddKeys.loss(NOW), Number.MAX_SAFE_INTEGER, 10)).map((e) => JSON.parse(e).status);
+    expect(all).toEqual(["unconfirmed", "released"]);
+  });
   it("replay set has >= 10 sellers", () => expect(FIXTURES.length).toBeGreaterThanOrEqual(10));
   it("per-host cap: 4th request to the same host in a day is not paid", async () => {
     const store = new MemoryPremiumStore(); store.now = () => NOW;
