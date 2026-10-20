@@ -848,7 +848,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Paid success: tokenized stock status JSON (no price) with notAdvice line"
+            "description": "Paid success: tokenized stock status JSON (no price) with notAdvice and usPersons lines"
           },
           "402": {
             "description": "Payment Required (x402 v2)"
