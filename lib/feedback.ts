@@ -29,6 +29,24 @@ export const FEEDBACK_IP_PER_HOUR = 5;
 export const FEEDBACK_IP_PER_DAY = 20;
 export const FEEDBACK_GLOBAL_PER_DAY = 500;
 export const FEEDBACK_KEY_PREFIX = "fb:v1:";
+/**
+ * Known prod test rows (2026-10-21; Odin note oversight/to-pulse-feedback-test-ids.md). Review-only: tagged [TEST] by
+ * scripts/feedback-review.ts. NEVER deleted (they expire with the 90-day TTL); the route never reads these.
+ * - fb_mviibn098eaf490cbb93: Odin flag-on probe, ~3:30 PM ET.
+ */
+export const FEEDBACK_TEST_IDS: ReadonlySet<string> = new Set(["fb_mviibn098eaf490cbb93"]);
+/** Pulse probe miss ~3:41 PM ET (id unknown): exact type + text, created in [19:40Z, 19:42Z]. */
+export const FEEDBACK_TEST_RULES = [
+  { type: "coin", text: "Please add funding for PEPE", fromIso: "2026-10-21T19:40:00.000Z", toIso: "2026-10-21T19:42:00.000Z" },
+] as const;
+
+export function isFeedbackTestRow(rec: { id?: unknown; type?: unknown; text?: unknown; ts?: unknown }): boolean {
+  if (typeof rec.id === "string" && FEEDBACK_TEST_IDS.has(rec.id)) return true;
+  if (typeof rec.ts !== "string") return false;
+  const t = Date.parse(rec.ts);
+  if (!Number.isFinite(t)) return false;
+  return FEEDBACK_TEST_RULES.some((r) => rec.type === r.type && rec.text === r.text && t >= Date.parse(r.fromIso) && t <= Date.parse(r.toIso));
+}
 export const FEEDBACK_IP_DOMAIN = "hp-feedback-ip-v1:";
 const ALLOWED_KEYS = new Set(["type", "text", "symbol", "route"]);
 

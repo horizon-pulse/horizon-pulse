@@ -256,3 +256,30 @@ describe("listing (feat/feedback-listing): openapi + llms.txt match the code", (
     expect(added).not.toMatch(/anonym|payer|"message"|grok|xai/i);
   });
 });
+
+describe("test-row tagging (review only; nothing deleted, route unchanged)", async () => {
+  const { isFeedbackTestRow, FEEDBACK_TEST_IDS } = await import("@/lib/feedback");
+  const pepe = { id: "fb_x", type: "coin", text: "Please add funding for PEPE", ts: "2026-10-21T19:41:03.000Z" };
+  it("id rule: Odin probe matches; near-miss id does not", () => {
+    expect(FEEDBACK_TEST_IDS.has("fb_mviibn098eaf490cbb93")).toBe(true);
+    expect(isFeedbackTestRow({ id: "fb_mviibn098eaf490cbb93", type: "other", text: "x", ts: "2026-10-21T19:30:00Z" })).toBe(true);
+    expect(isFeedbackTestRow({ id: "fb_mviibn098eaf490cbb94", type: "other", text: "x", ts: "2026-10-21T19:30:00Z" })).toBe(false);
+  });
+  it("content rule: exact type+text inside 19:40-19:42Z matches (edges inclusive)", () => {
+    expect(isFeedbackTestRow(pepe)).toBe(true);
+    expect(isFeedbackTestRow({ ...pepe, ts: "2026-10-21T19:40:00.000Z" })).toBe(true);
+    expect(isFeedbackTestRow({ ...pepe, ts: "2026-10-21T19:42:00.000Z" })).toBe(true);
+  });
+  it.each([
+    ["type", { type: "data" }], ["text case", { text: "please add funding for PEPE" }], ["text suffix", { text: "Please add funding for PEPE!" }],
+    ["text space", { text: "Please add funding for PEPE " }], ["before window", { ts: "2026-10-21T19:39:59.999Z" }],
+    ["after window", { ts: "2026-10-21T19:42:00.001Z" }], ["other day", { ts: "2026-10-22T19:41:00.000Z" }], ["bad ts", { ts: "nope" }],
+  ])("near-miss %s does not match", (_n, d) => {
+    expect(isFeedbackTestRow({ ...pepe, ...(d as object) })).toBe(false);
+  });
+  it("route code does not consult the test rules", async () => {
+    const src = (await import("node:fs")).readFileSync("lib/feedback.ts", "utf8");
+    const handler = src.slice(src.indexOf("export async function handleFeedback"));
+    expect(handler).not.toMatch(/isFeedbackTestRow|FEEDBACK_TEST_/);
+  });
+});
