@@ -3,7 +3,9 @@ import {
   crowdingHintFromFunding,
   fetchAllFunding,
   FUNDING_METHODOLOGY,
+  fundingMethodologyFor,
 } from "@/lib/okx";
+import { parseSymbolParam, unsupportedSymbolResponse } from "@/lib/market-symbols";
 import {
   FUNDING_PRICE_ATOMIC,
   FUNDING_PRICE_USD,
@@ -17,9 +19,12 @@ export const paymentOpts = {
   description: ROUTE_METADATA["/api/funding"].description,
 } as const;
 
-export async function fundingHandler(_req: NextRequest): Promise<NextResponse> {
+export async function fundingHandler(req: NextRequest): Promise<NextResponse> {
+  const sym = parseSymbolParam(req.url);
+  if (!sym.ok) return unsupportedSymbolResponse("/api/funding", sym.error);
+  const methodology = fundingMethodologyFor(sym.symbols);
   try {
-    const fundingList = await fetchAllFunding(["BTC", "ETH", "SOL"]);
+    const fundingList = await fetchAllFunding(sym.symbols ?? ["BTC", "ETH", "SOL"]);
 
     const assets = Object.fromEntries(
       fundingList.map((f) => {
@@ -44,7 +49,7 @@ export async function fundingHandler(_req: NextRequest): Promise<NextResponse> {
       priced: pricedBlock(FUNDING_PRICE_USD, FUNDING_PRICE_ATOMIC),
       asOf: new Date().toISOString(),
       assets,
-      methodology: FUNDING_METHODOLOGY,
+      methodology,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "funding failed";
@@ -52,7 +57,7 @@ export async function fundingHandler(_req: NextRequest): Promise<NextResponse> {
       {
         ok: false,
         error: message,
-        methodology: FUNDING_METHODOLOGY,
+        methodology,
       },
       { status: 502 },
     );

@@ -10,8 +10,9 @@ import {
 import { pricedBlock } from "@/lib/paid-rail";
 import { isMissing, upstreamUnavailable } from "@/lib/upstream-guard";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
+import { parseSymbolParam, unsupportedSymbolResponse } from "@/lib/market-symbols";
 
-const SYMBOLS: AssetSymbol[] = ["BTC", "ETH", "SOL"];
+const DEFAULT_SYMBOLS: AssetSymbol[] = ["BTC", "ETH", "SOL"];
 
 export const paymentOpts = {
   maxAmountRequired: SIGNALS_PRICE_ATOMIC,
@@ -19,10 +20,13 @@ export const paymentOpts = {
   description: ROUTE_METADATA["/api/signals"].description,
 } as const;
 
-export async function signalsHandler(_req: NextRequest): Promise<NextResponse> {
+export async function signalsHandler(req: NextRequest): Promise<NextResponse> {
+  const sym = parseSymbolParam(req.url);
+  if (!sym.ok) return unsupportedSymbolResponse("/api/signals", sym.error);
+  const SYMBOLS: AssetSymbol[] = sym.symbols ?? DEFAULT_SYMBOLS;
   try {
     const [fundingList, ...ohlcResults] = await Promise.all([
-      fetchAllFunding(["BTC", "ETH", "SOL"]),
+      fetchAllFunding(SYMBOLS),
       ...SYMBOLS.map((s) => fetchClosesWithFallback(s, 90)),
     ]);
     const ohlcCloses = ohlcResults.map((r) => r.closes);

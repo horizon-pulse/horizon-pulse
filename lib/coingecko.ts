@@ -1,13 +1,14 @@
 const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
 import { vendorFetch } from "@/lib/no-brotli";
 
-const ID_MAP = {
-  BTC: "bitcoin",
-  ETH: "ethereum",
-  SOL: "solana",
-} as const;
+import { MARKET_SYMBOLS, type MarketSymbol } from "@/lib/market-symbols";
 
-export type AssetSymbol = keyof typeof ID_MAP;
+/** Ticker -> CoinGecko id (one table for all market routes: lib/market-symbols.ts). */
+const ID_MAP = Object.fromEntries(
+  Object.entries(MARKET_SYMBOLS).map(([k, v]) => [k, v.coingecko]),
+) as { [K in MarketSymbol]: (typeof MARKET_SYMBOLS)[K]["coingecko"] };
+
+export type AssetSymbol = MarketSymbol;
 
 export type SpotPrice = {
   symbol: AssetSymbol;

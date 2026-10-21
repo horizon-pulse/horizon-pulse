@@ -48,7 +48,7 @@
           "Crypto market data"
         ],
         "summary": "BTC, ETH and SOL spot prices with 24h momentum (Coinbase Exchange, CoinGecko fallback)",
-        "description": "Crypto price API: BTC, ETH and SOL spot prices in USD in one GET, no parameters. Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat), avgChange24hPct and asOf. Prices from Coinbase Exchange with CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Crypto price API: BTC, ETH and SOL spot prices in USD in one GET, or one coin via symbol= (bad symbol: 400, no charge). Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat), avgChange24hPct and asOf. Prices from Coinbase Exchange with CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -64,6 +64,39 @@
           "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
           "discovery": "https://horizonpulse.dev/.well-known/x402"
         },
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": false,
+            "description": "Optional single coin ticker (case-insensitive). Omit for the default BTC, ETH and SOL set. Supported: BTC, ETH, SOL, LINK, QNT, XRP, DOGE, ADA, AVAX, DOT, LTC, BCH, UNI, AAVE, ATOM, NEAR, XLM, SUI, HBAR. Unsupported symbols get a 400 before payment (no charge).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "BTC",
+                "ETH",
+                "SOL",
+                "LINK",
+                "QNT",
+                "XRP",
+                "DOGE",
+                "ADA",
+                "AVAX",
+                "DOT",
+                "LTC",
+                "BCH",
+                "UNI",
+                "AAVE",
+                "ATOM",
+                "NEAR",
+                "XLM",
+                "SUI",
+                "HBAR"
+              ]
+            },
+            "example": "LINK"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
@@ -146,7 +179,7 @@
           "Crypto market data"
         ],
         "summary": "RSI, MACD and Bollinger bands plus perpetual funding (CoinGecko, OKX)",
-        "description": "Crypto technical indicators API: RSI-14, MACD and Bollinger Bands for BTC, ETH and SOL in one GET, no parameters. Returns JSON per asset: rsi14, macd {macd, signal, histogram} (null when there are too few candles), bollinger {upper, middle, lower, period}, lastClose and OKX perpetual funding {fundingRate, fundingTime}. Computed from CoinGecko OHLC closes (Coinbase candles fallback); methodology included. Descriptive only, not advice. Errors are not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Crypto technical indicators API: RSI-14, MACD and Bollinger Bands for BTC, ETH and SOL in one GET, or one coin via symbol= (bad symbol: 400, no charge). Returns JSON per asset: rsi14, macd {macd, signal, histogram} (null when there are too few candles), bollinger {upper, middle, lower, period}, lastClose and OKX perpetual funding {fundingRate, fundingTime}. Computed from CoinGecko OHLC closes (Coinbase candles fallback); methodology included. Descriptive only, not advice. Errors are not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -162,6 +195,39 @@
           "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
           "discovery": "https://horizonpulse.dev/.well-known/x402"
         },
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": false,
+            "description": "Optional single coin ticker (case-insensitive). Omit for the default BTC, ETH and SOL set. Supported: BTC, ETH, SOL, LINK, QNT, XRP, DOGE, ADA, AVAX, DOT, LTC, BCH, UNI, AAVE, ATOM, NEAR, XLM, SUI, HBAR. Unsupported symbols get a 400 before payment (no charge).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "BTC",
+                "ETH",
+                "SOL",
+                "LINK",
+                "QNT",
+                "XRP",
+                "DOGE",
+                "ADA",
+                "AVAX",
+                "DOT",
+                "LTC",
+                "BCH",
+                "UNI",
+                "AAVE",
+                "ATOM",
+                "NEAR",
+                "XLM",
+                "SUI",
+                "HBAR"
+              ]
+            },
+            "example": "LINK"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
@@ -191,7 +257,7 @@
                       "lastClose": 84442,
                       "funding": {
                         "instId": "BTC-USDT-SWAP",
-                        "fundingRate": 0.0000850403758528,
+                        "fundingRate": 8.50403758528e-05,
                         "fundingTime": "1790870400000",
                         "venue": "okx"
                       }
@@ -208,7 +274,7 @@
                       "lastClose": 2686.91,
                       "funding": {
                         "instId": "ETH-USDT-SWAP",
-                        "fundingRate": 0.0000642085539106,
+                        "fundingRate": 6.42085539106e-05,
                         "fundingTime": "1790870400000",
                         "venue": "okx"
                       }
@@ -493,7 +559,7 @@
                       "note": "Coinbase Wrapped BTC — Base has no BitGo WBTC; used as BTC exposure",
                       "priceUsd": 81519,
                       "valueUsd": 0.26493675,
-                      "weight": 0.000010213635939124969
+                      "weight": 1.0213635939124969e-05
                     },
                     {
                       "network": "ethereum",
@@ -753,7 +819,7 @@
           "Crypto market data"
         ],
         "summary": "BTC, ETH and SOL perpetual funding with a crowding hint (OKX)",
-        "description": "Perpetual funding rates API: current BTC, ETH and SOL perp funding from OKX USDT swaps in one GET, no parameters. Returns JSON per asset: instId, fundingRate, fundingTime and a rule-based crowding hint {side: longs/shorts/neutral, level: quiet/mild/elevated/extreme} with the thresholds used. OKX public data only. The hint is not a forecast or advice. Errors are not charged.\n\nPrice: $0.003 USDC per call (3000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Perpetual funding rates API: current BTC, ETH and SOL perp funding from OKX USDT swaps in one GET, or one coin via symbol= (bad symbol: 400, no charge). Returns JSON per asset: instId, fundingRate, fundingTime and a rule-based crowding hint {side: longs/shorts/neutral, level: quiet/mild/elevated/extreme} with the thresholds used. OKX public data only. The hint is not a forecast or advice. Errors are not charged.\n\nPrice: $0.003 USDC per call (3000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -769,6 +835,39 @@
           "facilitator": "https://api.cdp.coinbase.com/platform/v2/x402",
           "discovery": "https://horizonpulse.dev/.well-known/x402"
         },
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "query",
+            "required": false,
+            "description": "Optional single coin ticker (case-insensitive). Omit for the default BTC, ETH and SOL set. Supported: BTC, ETH, SOL, LINK, QNT, XRP, DOGE, ADA, AVAX, DOT, LTC, BCH, UNI, AAVE, ATOM, NEAR, XLM, SUI, HBAR. Unsupported symbols get a 400 before payment (no charge).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "BTC",
+                "ETH",
+                "SOL",
+                "LINK",
+                "QNT",
+                "XRP",
+                "DOGE",
+                "ADA",
+                "AVAX",
+                "DOT",
+                "LTC",
+                "BCH",
+                "UNI",
+                "AAVE",
+                "ATOM",
+                "NEAR",
+                "XLM",
+                "SUI",
+                "HBAR"
+              ]
+            },
+            "example": "LINK"
+          }
+        ],
         "responses": {
           "200": {
             "description": "Paid success. The settlement receipt is in the PAYMENT-RESPONSE header.",
@@ -796,40 +895,40 @@
                   "assets": {
                     "BTC": {
                       "instId": "BTC-USDT-SWAP",
-                      "fundingRate": 0.0000437943538326,
+                      "fundingRate": 4.37943538326e-05,
                       "nextFundingRate": 0,
                       "fundingTime": "1792166400000",
                       "venue": "okx",
                       "crowding": {
                         "side": "neutral",
                         "level": "quiet",
-                        "absRate": 0.0000437943538326,
+                        "absRate": 4.37943538326e-05,
                         "rule": "|rate|<0.00005 → quiet/neutral"
                       }
                     },
                     "ETH": {
                       "instId": "ETH-USDT-SWAP",
-                      "fundingRate": 0.0000202049356428,
+                      "fundingRate": 2.02049356428e-05,
                       "nextFundingRate": 0,
                       "fundingTime": "1792166400000",
                       "venue": "okx",
                       "crowding": {
                         "side": "neutral",
                         "level": "quiet",
-                        "absRate": 0.0000202049356428,
+                        "absRate": 2.02049356428e-05,
                         "rule": "|rate|<0.00005 → quiet/neutral"
                       }
                     },
                     "SOL": {
                       "instId": "SOL-USDT-SWAP",
-                      "fundingRate": 0.0000322363122435,
+                      "fundingRate": 3.22363122435e-05,
                       "nextFundingRate": 0,
                       "fundingTime": "1792166400000",
                       "venue": "okx",
                       "crowding": {
                         "side": "neutral",
                         "level": "quiet",
-                        "absRate": 0.0000322363122435,
+                        "absRate": 3.22363122435e-05,
                         "rule": "|rate|<0.00005 → quiet/neutral"
                       }
                     }

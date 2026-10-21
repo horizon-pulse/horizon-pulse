@@ -6,13 +6,14 @@
 const OKX_BASE = "https://www.okx.com/api/v5";
 import { vendorFetch } from "@/lib/no-brotli";
 
-const INST_MAP = {
-  BTC: "BTC-USDT-SWAP",
-  ETH: "ETH-USDT-SWAP",
-  SOL: "SOL-USDT-SWAP",
-} as const;
+import { MARKET_SYMBOLS, type MarketSymbol } from "@/lib/market-symbols";
 
-export type OkxSymbol = keyof typeof INST_MAP;
+/** Every supported ticker has a live OKX <SYM>-USDT-SWAP perp (lib/market-symbols.ts). */
+const INST_MAP = Object.fromEntries(
+  Object.entries(MARKET_SYMBOLS).map(([k, v]) => [k, v.okx]),
+) as Record<MarketSymbol, string>;
+
+export type OkxSymbol = MarketSymbol;
 
 export type FundingSnapshot = {
   symbol: OkxSymbol;
@@ -117,6 +118,15 @@ export function crowdingHintFromFunding(fundingRate: number): CrowdingHint {
         : `rate<0 & |rate| ${level} → crowded shorts (shorts pay longs)`;
 
   return { side, level, absRate, rule };
+}
+
+/** Methodology for a ?symbol= request: same text, source names that one perp. */
+export function fundingMethodologyFor(symbols: OkxSymbol[] | null) {
+  if (!symbols) return FUNDING_METHODOLOGY;
+  return {
+    ...FUNDING_METHODOLOGY,
+    source: `OKX public /api/v5/public/funding-rate (${symbols.map((s) => INST_MAP[s]).join(", ")})`,
+  };
 }
 
 export const FUNDING_METHODOLOGY = {

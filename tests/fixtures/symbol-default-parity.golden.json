@@ -1,0 +1,67 @@
+{
+  "pulse coinbase": {
+    "status": 200,
+    "body": "{\"ok\":true,\"source\":\"coinbase\",\"priced\":{\"amountUsd\":\"$0.002\",\"amountAtomic\":\"2000\",\"asset\":\"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\",\"network\":\"base\",\"payTo\":\"0x5b32c973596078a967562ca652761404f19be0e9\"},\"asOf\":\"2026-10-21T12:00:00.000Z\",\"assets\":{\"BTC\":{\"id\":\"bitcoin\",\"priceUsd\":116,\"change24hPct\":-9.375,\"momentum\":\"bearish\"},\"ETH\":{\"id\":\"ethereum\",\"priceUsd\":154,\"change24hPct\":32.758620689655174,\"momentum\":\"bullish\"},\"SOL\":{\"id\":\"solana\",\"priceUsd\":119,\"change24hPct\":0,\"momentum\":\"neutral\"}},\"overall\":{\"momentum\":\"bullish\",\"sentiment\":\"risk-on\",\"direction\":\"up\",\"avgChange24hPct\":7.794540229885058}}",
+    "calls": [
+      "https://api.exchange.coinbase.com/products/BTC-USD/stats",
+      "https://api.exchange.coinbase.com/products/ETH-USD/stats",
+      "https://api.exchange.coinbase.com/products/SOL-USD/stats"
+    ]
+  },
+  "pulse coingecko fallback": {
+    "status": 200,
+    "body": "{\"ok\":true,\"source\":\"coingecko\",\"priceWarnings\":[\"Coinbase primary failed: Coinbase 503 for BTC-USD: {\\\"message\\\":\\\"down\\\"}\"],\"priced\":{\"amountUsd\":\"$0.002\",\"amountAtomic\":\"2000\",\"asset\":\"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\",\"network\":\"base\",\"payTo\":\"0x5b32c973596078a967562ca652761404f19be0e9\"},\"asOf\":\"2026-10-21T12:00:00.000Z\",\"assets\":{\"BTC\":{\"id\":\"bitcoin\",\"priceUsd\":119,\"change24hPct\":-1,\"momentum\":\"neutral\"},\"ETH\":{\"id\":\"ethereum\",\"priceUsd\":794,\"change24hPct\":-1.5,\"momentum\":\"neutral\"},\"SOL\":{\"id\":\"solana\",\"priceUsd\":413,\"change24hPct\":1.5,\"momentum\":\"neutral\"}},\"overall\":{\"momentum\":\"neutral\",\"sentiment\":\"neutral\",\"direction\":\"flat\",\"avgChange24hPct\":-0.3333333333333333}}",
+    "calls": [
+      "https://api.exchange.coinbase.com/products/BTC-USD/stats",
+      "https://api.exchange.coinbase.com/products/ETH-USD/stats",
+      "https://api.exchange.coinbase.com/products/SOL-USD/stats",
+      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true"
+    ]
+  },
+  "pulse all down": {
+    "status": 502,
+    "body": "{\"ok\":false,\"error\":\"All price sources failed. Coinbase primary failed: Coinbase 503 for BTC-USD: {\\\"message\\\":\\\"down\\\"} | CoinGecko fallback failed: CoinGecko 429 for /simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true: {\\\"error\\\":\\\"rate\\\"}\"}",
+    "calls": [
+      "https://api.exchange.coinbase.com/products/BTC-USD/stats",
+      "https://api.exchange.coinbase.com/products/ETH-USD/stats",
+      "https://api.exchange.coinbase.com/products/SOL-USD/stats",
+      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana&vs_currencies=usd&include_24hr_change=true"
+    ]
+  },
+  "signals coingecko": {
+    "status": 200,
+    "body": "{\"ok\":true,\"priced\":{\"amountUsd\":\"$0.005\",\"amountAtomic\":\"5000\",\"asset\":\"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\",\"network\":\"base\",\"payTo\":\"0x5b32c973596078a967562ca652761404f19be0e9\"},\"asOf\":\"2026-10-21T12:00:00.000Z\",\"assets\":{\"BTC\":{\"closesUsed\":23,\"rsi14\":50.26288370962248,\"macd\":null,\"bollinger\":{\"upper\":70.61703332930009,\"middle\":53.95,\"lower\":37.28296667069991,\"period\":20},\"funding\":{\"instId\":\"BTC-USDT-SWAP\",\"fundingRate\":-0.0002,\"nextFundingRate\":0,\"fundingTime\":\"1792627200000\",\"venue\":\"okx\"},\"lastClose\":60},\"ETH\":{\"closesUsed\":23,\"rsi14\":50.26288370962248,\"macd\":null,\"bollinger\":{\"upper\":71.07105910918189,\"middle\":54.5,\"lower\":37.92894089081811,\"period\":20},\"funding\":{\"instId\":\"ETH-USDT-SWAP\",\"fundingRate\":-0.0003,\"nextFundingRate\":0,\"fundingTime\":\"1792627200000\",\"venue\":\"okx\"},\"lastClose\":62},\"SOL\":{\"closesUsed\":23,\"rsi14\":48.64313282883574,\"macd\":null,\"bollinger\":{\"upper\":71.21703332930008,\"middle\":54.55,\"lower\":37.88296667069991,\"period\":20},\"funding\":{\"instId\":\"SOL-USDT-SWAP\",\"fundingRate\":0.0004,\"nextFundingRate\":0,\"fundingTime\":\"1792627200000\",\"venue\":\"okx\"},\"lastClose\":49}},\"methodology\":{\"prices\":\"CoinGecko public API OHLC closes (USD)\",\"indicators\":\"RSI(14) Wilder, MACD(12,26,9), Bollinger(period≤20, 2σ)\",\"funding\":\"OKX public perpetual funding-rate endpoint (not Binance/Bybit)\",\"note\":\"Indicators are derived from real OHLC; null means insufficient candles for that window.\"}}",
+    "calls": [
+      "https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP",
+      "https://www.okx.com/api/v5/public/funding-rate?instId=ETH-USDT-SWAP",
+      "https://www.okx.com/api/v5/public/funding-rate?instId=SOL-USDT-SWAP",
+      "https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=90",
+      "https://api.coingecko.com/api/v3/coins/ethereum/ohlc?vs_currency=usd&days=90",
+      "https://api.coingecko.com/api/v3/coins/solana/ohlc?vs_currency=usd&days=90"
+    ]
+  },
+  "signals coinbase fallback": {
+    "status": 200,
+    "body": "{\"ok\":true,\"priced\":{\"amountUsd\":\"$0.005\",\"amountAtomic\":\"5000\",\"asset\":\"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\",\"network\":\"base\",\"payTo\":\"0x5b32c973596078a967562ca652761404f19be0e9\"},\"asOf\":\"2026-10-21T12:00:00.000Z\",\"assets\":{\"BTC\":{\"closesUsed\":23,\"rsi14\":52.38655215894027,\"macd\":null,\"bollinger\":{\"upper\":74.98442480805267,\"middle\":61.75,\"lower\":48.51557519194733,\"period\":20},\"funding\":{\"instId\":\"BTC-USDT-SWAP\",\"fundingRate\":-0.0002,\"nextFundingRate\":0,\"fundingTime\":\"1792627200000\",\"venue\":\"okx\"},\"lastClose\":66},\"ETH\":{\"closesUsed\":23,\"rsi14\":50.11179536701096,\"macd\":null,\"bollinger\":{\"upper\":73.90337793781993,\"middle\":60.95,\"lower\":47.99662206218008,\"period\":20},\"funding\":{\"instId\":\"ETH-USDT-SWAP\",\"fundingRate\":-0.0003,\"nextFundingRate\":0,\"fundingTime\":\"1792627200000\",\"venue\":\"okx\"},\"lastClose\":56},\"SOL\":{\"closesUsed\":23,\"rsi14\":51.89372102342309,\"macd\":null,\"bollinger\":{\"upper\":74.84449690022753,\"middle\":61.9,\"lower\":48.95550309977247,\"period\":20},\"funding\":{\"instId\":\"SOL-USDT-SWAP\",\"fundingRate\":0.0004,\"nextFundingRate\":0,\"fundingTime\":\"1792627200000\",\"venue\":\"okx\"},\"lastClose\":65}},\"methodology\":{\"prices\":\"OHLC closes (USD) from coinbase; Coinbase = Exchange daily closes sampled every 4 days (CoinGecko fallback)\",\"indicators\":\"RSI(14) Wilder, MACD(12,26,9), Bollinger(period≤20, 2σ)\",\"funding\":\"OKX public perpetual funding-rate endpoint (not Binance/Bybit)\",\"note\":\"Indicators are derived from real OHLC; null means insufficient candles for that window.\"}}",
+    "calls": [
+      "https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP",
+      "https://www.okx.com/api/v5/public/funding-rate?instId=ETH-USDT-SWAP",
+      "https://www.okx.com/api/v5/public/funding-rate?instId=SOL-USDT-SWAP",
+      "https://api.coingecko.com/api/v3/coins/bitcoin/ohlc?vs_currency=usd&days=90",
+      "https://api.coingecko.com/api/v3/coins/ethereum/ohlc?vs_currency=usd&days=90",
+      "https://api.coingecko.com/api/v3/coins/solana/ohlc?vs_currency=usd&days=90",
+      "https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=86400",
+      "https://api.exchange.coinbase.com/products/ETH-USD/candles?granularity=86400",
+      "https://api.exchange.coinbase.com/products/SOL-USD/candles?granularity=86400"
+    ]
+  },
+  "funding": {
+    "status": 200,
+    "body": "{\"ok\":true,\"source\":\"okx\",\"priced\":{\"amountUsd\":\"$0.003\",\"amountAtomic\":\"3000\",\"asset\":\"0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913\",\"network\":\"base\",\"payTo\":\"0x5b32c973596078a967562ca652761404f19be0e9\"},\"asOf\":\"2026-10-21T12:00:00.000Z\",\"assets\":{\"BTC\":{\"instId\":\"BTC-USDT-SWAP\",\"fundingRate\":-0.0002,\"nextFundingRate\":0,\"fundingTime\":\"1792627200000\",\"venue\":\"okx\",\"crowding\":{\"side\":\"shorts\",\"level\":\"mild\",\"absRate\":0.0002,\"rule\":\"rate<0 & |rate| mild → crowded shorts (shorts pay longs)\"}},\"ETH\":{\"instId\":\"ETH-USDT-SWAP\",\"fundingRate\":-0.0003,\"nextFundingRate\":0,\"fundingTime\":\"1792627200000\",\"venue\":\"okx\",\"crowding\":{\"side\":\"shorts\",\"level\":\"elevated\",\"absRate\":0.0003,\"rule\":\"rate<0 & |rate| elevated → crowded shorts (shorts pay longs)\"}},\"SOL\":{\"instId\":\"SOL-USDT-SWAP\",\"fundingRate\":0.0004,\"nextFundingRate\":0,\"fundingTime\":\"1792627200000\",\"venue\":\"okx\",\"crowding\":{\"side\":\"longs\",\"level\":\"elevated\",\"absRate\":0.0004,\"rule\":\"rate>0 & |rate| elevated → crowded longs (longs pay shorts)\"}}},\"methodology\":{\"source\":\"OKX public /api/v5/public/funding-rate (BTC/ETH/SOL-USDT-SWAP)\",\"venue\":\"okx\",\"note\":\"Real OKX data only — not Binance/Bybit (often geo-blocked on Vercel egress).\",\"crowding\":\"Optional rule-based hint from funding sign + |rate| thresholds (quiet/mild/elevated/extreme). Not a forecast.\",\"thresholds\":{\"quiet\":\"|rate| < 0.00005\",\"mild\":\"0.00005 <= |rate| < 0.0003\",\"elevated\":\"0.0003 <= |rate| < 0.001\",\"extreme\":\"|rate| >= 0.001\",\"side\":\"positive → longs; negative → shorts; quiet → neutral\"}}}",
+    "calls": [
+      "https://www.okx.com/api/v5/public/funding-rate?instId=BTC-USDT-SWAP",
+      "https://www.okx.com/api/v5/public/funding-rate?instId=ETH-USDT-SWAP",
+      "https://www.okx.com/api/v5/public/funding-rate?instId=SOL-USDT-SWAP"
+    ]
+  }
+}

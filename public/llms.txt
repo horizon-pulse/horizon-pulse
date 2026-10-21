@@ -24,12 +24,12 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 | Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |
 | --- | --- | --- | --- | --- |
-| GET | /api/pulse | $0.002 | 2000 | BTC/ETH/SOL spot + momentum (Coinbase Exchange, CoinGecko fallback) |
-| GET | /api/signals | $0.005 | 5000 | RSI/MACD/Bollinger + OKX funding |
+| GET | /api/pulse | $0.002 | 2000 | BTC/ETH/SOL spot + momentum (Coinbase Exchange, CoinGecko fallback); optional `symbol=` for one coin |
+| GET | /api/signals | $0.005 | 5000 | RSI/MACD/Bollinger + OKX funding; optional `symbol=` for one coin |
 | GET | /api/yield | $0.02 | 20000 | DefiLlama yields (TVL ≥ $10M) |
 | GET | /api/portfolio?address=0x… | $0.04 | 40000 | Base + Ethereum balances, concentration score, rule findings vs fixed thresholds |
 | GET | /api/gas | $0.002 | 2000 | Base + Ethereum fee snapshot + timingHint |
-| GET | /api/funding | $0.003 | 3000 | OKX BTC/ETH/SOL perpetual funding + crowding hint |
+| GET | /api/funding | $0.003 | 3000 | OKX BTC/ETH/SOL perpetual funding + crowding hint; optional `symbol=` for one coin |
 | GET | /api/fetch?url=https://… | $0.02 | 20000 | Fetch public URL → clean text/markdown (SSRF-safe, capped) |
 | GET/POST | /api/http | $0.01 | 10000 | Universal HTTP proxy (url/method/headers/body) → status + body (SSRF-safe; volume price) |
 | GET/POST | /api/extract | $0.015 | 15000 | URL or HTML → structured fields (title, links, images, headings, json-ld, text sample), plus optional CSS-selector `fields` |
@@ -115,6 +115,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 - About to pay an x402 seller and want its live price, payTo and a verdict first: `/api/market/quote?url=…`
 - Need a quick crypto market read: `/api/pulse` (spot + momentum), `/api/signals` (indicators + funding)
 - Need DeFi yields, gas timing, or perp funding: `/api/yield`, `/api/gas`, `/api/funding`
+- One coin instead of BTC/ETH/SOL: add `?symbol=` to `/api/pulse`, `/api/signals` or `/api/funding`. Supported: BTC, ETH, SOL, LINK, QNT, XRP, DOGE, ADA, AVAX, DOT, LTC, BCH, UNI, AAVE, ATOM, NEAR, XLM, SUI, HBAR (case-insensitive). Any other value gets a 400 before payment, so nothing is charged.
 - Need a wallet risk snapshot: `/api/portfolio?address=0x…`
 - Need the current block, slot or ledger height and finality gap (Base, Polygon, Ethereum, Solana, XRPL): `/api/chain/head?network=…`
 - Need a token's name, symbol, decimals and supply from chain state (ERC-20, SPL mint, XRPL issued currency): `/api/token/meta?network=…&token=…`

@@ -10,6 +10,7 @@ import {
 } from "@/lib/config";
 import { pricedBlock } from "@/lib/paid-rail";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
+import { parseSymbolParam, unsupportedSymbolResponse } from "@/lib/market-symbols";
 
 export const paymentOpts = {
   maxAmountRequired: PULSE_PRICE_ATOMIC,
@@ -17,9 +18,12 @@ export const paymentOpts = {
   description: ROUTE_METADATA["/api/pulse"].description,
 } as const;
 
-export async function pulseHandler(_req: NextRequest): Promise<NextResponse> {
+export async function pulseHandler(req: NextRequest): Promise<NextResponse> {
+  // route.ts gates ?symbol= before payment; re-checked here so the handler never runs on a bad one.
+  const sym = parseSymbolParam(req.url);
+  if (!sym.ok) return unsupportedSymbolResponse("/api/pulse", sym.error);
   try {
-    const { spots, source, warnings } = await fetchSpotPricesWithFallback(["BTC", "ETH", "SOL"]);
+    const { spots, source, warnings } = await fetchSpotPricesWithFallback(sym.symbols ?? ["BTC", "ETH", "SOL"]);
     const assets = Object.fromEntries(
       spots.map((s) => [
         s.symbol,

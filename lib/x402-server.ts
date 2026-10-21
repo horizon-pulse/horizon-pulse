@@ -1,3 +1,4 @@
+import { MARKET_SYMBOL_LIST, SYMBOL_PARAM_DESCRIPTION } from "./market-symbols";
 import { withPaidCallMeta } from "./paid-call-meta";
 import { logRouteRequest } from "./route-log";
 import { withRelatedRoutes } from "./route-hints";
@@ -332,13 +333,22 @@ function declareChargedDiscovery(config: DiscoveryDecl): ReturnType<typeof decla
   return ext;
 }
 
-function discoveryExt(path: string, what: string) {
+/** Optional ?symbol= on /api/pulse, /api/signals, /api/funding (lib/market-symbols.ts). */
+const SYMBOL_QUERY_PROPS = {
+  symbol: {
+    type: "string",
+    enum: MARKET_SYMBOL_LIST,
+    description: SYMBOL_PARAM_DESCRIPTION,
+  },
+};
+
+function discoveryExt(path: string, what: string, queryProps: Record<string, unknown> = {}) {
   return {
     ...declareChargedDiscovery({
       method: "GET",
       input: {},
       inputSchema: {
-        properties: {},
+        properties: queryProps,
         required: [],
       },
       output: outputOf(path, what),
@@ -362,7 +372,7 @@ export function pulseRouteConfig(): RoutesConfig {
       description: routeDescription("/api/pulse"),
       mimeType: "application/json",
       ...serviceMetadata("/api/pulse"),
-      extensions: discoveryExt("/api/pulse", "Horizon Pulse market snapshot"),
+      extensions: discoveryExt("/api/pulse", "Horizon Pulse market snapshot", SYMBOL_QUERY_PROPS),
     },
   });
 }
@@ -383,7 +393,7 @@ export function signalsRouteConfig(): RoutesConfig {
       description: routeDescription("/api/signals"),
       mimeType: "application/json",
       ...serviceMetadata("/api/signals"),
-      extensions: discoveryExt("/api/signals", "Horizon Pulse crypto market data (technical indicators)"),
+      extensions: discoveryExt("/api/signals", "Horizon Pulse crypto market data (technical indicators)", SYMBOL_QUERY_PROPS),
     },
   });
 }
@@ -483,7 +493,7 @@ export function fundingRouteConfig(): RoutesConfig {
       description: routeDescription("/api/funding"),
       mimeType: "application/json",
       ...serviceMetadata("/api/funding"),
-      extensions: discoveryExt("/api/funding", "Horizon Pulse funding snapshot"),
+      extensions: discoveryExt("/api/funding", "Horizon Pulse funding snapshot", SYMBOL_QUERY_PROPS),
     },
   });
 }

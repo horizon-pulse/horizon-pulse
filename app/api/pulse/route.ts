@@ -3,6 +3,7 @@ import {
   discoveryOptionsResponse,
   pulseRouteConfig,
 } from "@/lib/x402-server";
+import { withSymbolGate } from "@/lib/market-symbols";
 import { pulseHandler, paymentOpts } from "./handler";
 
 export const runtime = "nodejs";
@@ -13,11 +14,12 @@ export const dynamic = "force-dynamic";
  * Paid GET with CDP → withX402 verify+settle (lazy-init).
  * Paid GET without CDP → 503.
  */
-export const GET = createX402GetHandler(
+// Bad ?symbol= -> 400 here, before any 402 / verify / settle (no charge).
+export const GET = withSymbolGate("/api/pulse", createX402GetHandler(
   pulseHandler,
   pulseRouteConfig(),
   paymentOpts,
-);
+));
 
 /** Free OPTIONS / discovery hint — some agents probe without payment first via GET 402 */
 export async function OPTIONS() {

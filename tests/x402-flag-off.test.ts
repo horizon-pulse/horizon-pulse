@@ -171,6 +171,12 @@
  * 2026-10-19 (copy/txguard-basis, Counsel PASS): the six cdp/local tx-guard keys (GET json, GET browser, OPTIONS) refreshed
  * for the 492-char description ONLY (decoded and compared with the description masked: identical; payTo/amount/asset unchanged),
  * plus discovery sha256 openapi.json (note + methodology appended to the tx-guard description). No other key changed.
+ * 2026-10-21 (branch feat/symbol-param, off main ca4ab07): UPDATE_GOLDEN=1 after adding optional ?symbol= to
+ * /api/pulse, /api/signals, /api/funding. ONLY the nine keys per mode for those three routes changed (GET json, GET
+ * browser, OPTIONS): bazaar queryParams schema gained `symbol` (enum + description) and the description's
+ * "no parameters" became the symbol= clause. Decoded PAYMENT-REQUIRED accepts arrays (amount, asset, payTo, network)
+ * identical; statuses identical; the other 79 keys per mode byte-identical. discovery: skill.md body, sha256 llms.txt,
+ * sha256 openapi.json. Paid-response parity (no ?symbol=) is pinned separately by symbol-default-parity.golden.json (never refreshed).
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

@@ -10,17 +10,15 @@ import { vendorFetch } from "@/lib/no-brotli";
 
 export type SpotSource = "coinbase" | "coingecko";
 
-const COINBASE_PRODUCT: Record<AssetSymbol, string> = {
-  BTC: "BTC-USD",
-  ETH: "ETH-USD",
-  SOL: "SOL-USD",
-};
-const CG_ID: Record<AssetSymbol, string> = { BTC: "bitcoin", ETH: "ethereum", SOL: "solana" };
+import { MARKET_SYMBOLS } from "@/lib/market-symbols";
+
+const COINBASE_PRODUCT = (s: AssetSymbol): string => MARKET_SYMBOLS[s].coinbase;
+const CG_ID = (s: AssetSymbol): string => MARKET_SYMBOLS[s].coingecko;
 
 const UA = "horizon-pulse/1.0 (+https://github.com/horizon-pulse/horizon-pulse)";
 
 async function coinbaseStats(symbol: AssetSymbol): Promise<SpotPrice> {
-  const product = COINBASE_PRODUCT[symbol];
+  const product = COINBASE_PRODUCT(symbol);
   const res = await vendorFetch(`https://api.exchange.coinbase.com/products/${product}/stats`, {
     headers: { Accept: "application/json", "User-Agent": UA },
     next: { revalidate: 30 },
@@ -34,7 +32,7 @@ async function coinbaseStats(symbol: AssetSymbol): Promise<SpotPrice> {
   const open = Number(d.open);
   if (!Number.isFinite(last) || last <= 0) throw new Error(`Coinbase missing last price for ${product}`);
   const change24hPct = Number.isFinite(open) && open > 0 ? ((last - open) / open) * 100 : null;
-  return { symbol, id: CG_ID[symbol], priceUsd: last, change24hPct };
+  return { symbol, id: CG_ID(symbol), priceUsd: last, change24hPct };
 }
 
 export async function fetchSpotPricesWithFallback(
@@ -106,7 +104,7 @@ export async function fetchClosesWithFallback(
   } catch (err) {
     cgErr = (err instanceof Error ? err.message : String(err)).slice(0, 160);
   }
-  const product = COINBASE_PRODUCT[symbol];
+  const product = COINBASE_PRODUCT(symbol);
   const res = await vendorFetch(`https://api.exchange.coinbase.com/products/${product}/candles?granularity=86400`, {
     headers: { Accept: "application/json", "User-Agent": UA },
     next: { revalidate: 300 },
