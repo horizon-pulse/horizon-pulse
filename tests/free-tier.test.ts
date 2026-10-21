@@ -38,7 +38,7 @@ import {
 } from "@/lib/free-tier";
 import { freeIpHmacKey, payerMarkTtlDays } from "@/lib/free-tier-mode";
 import { freeTierPrivacySentences, NO_IP_SENTENCE, privacyLine, ROUTE_LOG_PRIVACY_LINE } from "@/lib/privacy-copy";
-import { freeTierRewrites } from "@/lib/free-tier-mode";
+import { docRewrites as freeTierRewrites } from "@/lib/doc-rewrites"; // Sentinel L2: freeTierRewrites replaced by docRewrites
 import { createX402GetHandler, discoveryOptionsResponse, pulseRouteConfig, signalsRouteConfig } from "@/lib/x402-server";
 import { paymentOpts as pulseOpts } from "@/app/api/pulse/handler";
 import { paymentOpts as signalsOpts } from "@/app/api/signals/handler";
