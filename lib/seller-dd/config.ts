@@ -61,3 +61,7 @@ export const DD_PASS_NOTE = "pass means Horizon Pulse's charge criteria were met
 export const DD_RETENTION_TERM = "Verdict receipts (hashes only) are kept for 3 years.";
 /** Counsel retention ruling (team-room/03-exchange/to-odin/2026-10-20-counsel-tokenized-stocks.md §d), verbatim. */
 export const DD_DISPUTE_TERM = "To handle disputes, the checked URL and payment address are kept in readable form for 90 days after a verdict and then deleted; after that, only hashes are kept, for 3 years. Disputes must be raised within 90 days of the verdict's checked_at time. If a dispute is open, they are kept until it is resolved, then deleted.";
+
+/** Counsel PASS-with-edit E1 10/21 (team-room/03-exchange/to-pulse/2026-10-21-counsel-pass-seller-dd-not-applicable.md), verbatim.
+ * Field description for completeness "not_applicable"; carried as completeness_note on those no_charge bodies. */
+export const DD_NOT_APPLICABLE_NOTE = "not_applicable = we stopped before the remaining checks because of a stated policy reason (see reason); no verdict was issued and you are not charged.";

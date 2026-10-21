@@ -24,7 +24,7 @@ import { receiptSignerReady, signReceipt } from "@/lib/receipt-signer";
 import { requestFingerprint } from "@/lib/request-fingerprint";
 import { ddKeys, recordLoss, recordSettleFailure, type NonceState, type Reservation, refundDeclineSlot, routeClosedBySettleFailures, takeDeclineSlot } from "./caps";
 import { cdpContinuityDeps, defaultNetDeps, testPayLanded } from "./checks";
-import { DD_AMOUNT, DD_DESCRIPTION, DD_INCOMPLETE_NOTE, DD_NOTICE, DD_PATH, DD_TIER, SETTLE_FAIL_LIMIT, sellerDdEnabled, testPayEnabled } from "./config";
+import { DD_AMOUNT, DD_DESCRIPTION, DD_INCOMPLETE_NOTE, DD_NOT_APPLICABLE_NOTE, DD_NOTICE, DD_PATH, DD_TIER, SETTLE_FAIL_LIMIT, sellerDdEnabled, testPayEnabled } from "./config";
 import { runSellerDd, type EngineDeps } from "./engine";
 import { eqAddr, isEvmAddress, screenLists } from "./screen";
 import { testerStatus } from "./testpay";
@@ -182,7 +182,7 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
     if (!out.pass && out.reason === "incomplete") {
       return NextResponse.json({ status: "incomplete", charged: false, reason: out.reason ?? "incomplete", ...(out.cause ? { cause: out.cause } : {}), completeness: "incomplete", missing_checks: out.verdict.missing_checks, summary_flags: out.verdict.summary_flags, message: DD_INCOMPLETE_NOTE, checks_evidenced: out.checks_evidenced, checks: checksOut, notice: DD_NOTICE }, { status: 422, headers: CORS });
     }
-    return noCharge(422, out.pass ? "signing_failed" : out.reason ?? "no_charge", { checks_evidenced: out.checks_evidenced, completeness: out.verdict.completeness, missing_checks: out.verdict.missing_checks, checks: checksOut });
+    return noCharge(422, out.pass ? "signing_failed" : out.reason ?? "no_charge", { checks_evidenced: out.checks_evidenced, completeness: out.verdict.completeness, ...(out.verdict.completeness === "not_applicable" ? { completeness_note: DD_NOT_APPLICABLE_NOTE } : {}), missing_checks: out.verdict.missing_checks, checks: checksOut });
   }
 
   // (4) settle buyer on PASS only. Cache the signed verdict BEFORE settle, keyed by buyer+nonce (claim key), so a
