@@ -26,7 +26,17 @@ const PAUSE_TTL_S = 400 * 86_400;
 export type PauseCause = "outflow_not_ours" | "tester_nonce_above_zero";
 export type PauseLatch = { cause: PauseCause; at: number; detail?: string; seen_off?: boolean };
 
+/**
+ * Sentinel LOW-1: if the pause-marker WRITE fails, this instance latches itself paused in memory (same rule as the
+ * settle-fail B2 latch) and refuses every test pay (no_charge) until it is recycled (a redeploy, e.g. the kill-switch
+ * cycle). Other instances still see the HIGH alert seller_dd_auto_pause_write_failed.
+ */
+let memLatch: PauseLatch | null = null;
+export function resetPauseLatchForTests() { memLatch = null; }
+export function pauseMemLatched(): boolean { return memLatch !== null; }
+
 export async function readPause(store: PremiumStore): Promise<{ paused: boolean; latch: PauseLatch | null; readable: boolean }> {
+  if (memLatch) return { paused: true, latch: memLatch, readable: true };
   try {
     const raw = await store.get(PAUSE_KEY);
     if (!raw) return { paused: false, latch: null, readable: true };
@@ -39,7 +49,7 @@ export async function readPause(store: PremiumStore): Promise<{ paused: boolean;
 /** Set (or re-arm) the latch. A new trigger always re-arms: seen_off goes back to false, so a fresh cycle is needed. */
 export async function setPause(store: PremiumStore, cause: PauseCause, now: number, detail?: string): Promise<boolean> {
   const latch: PauseLatch = { cause, at: now, ...(detail ? { detail: detail.slice(0, 120) } : {}), seen_off: false };
-  try { await store.set(PAUSE_KEY, JSON.stringify(latch), PAUSE_TTL_S); return true; } catch { return false; }
+  try { await store.set(PAUSE_KEY, JSON.stringify(latch), PAUSE_TTL_S); return true; } catch { memLatch = latch; return false; }
 }
 
 /**
