@@ -1,5 +1,16 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildPaidSettleRecord, evalCommand, sendRouteLog, resetRouteLogState } from "@/lib/route-log";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { HTTPFacilitatorClient } from "@x402/core/server";
+
+// Strict: replace only logPaidSettle with a mock so every call site's route tag is observable.
+vi.mock("@/lib/route-log", async (orig) => ({ ...(await orig<typeof import("@/lib/route-log")>()), logPaidSettle: vi.fn() }));
+
+import { buildPaidSettleRecord, evalCommand, logPaidSettle, sendRouteLog, resetRouteLogState } from "@/lib/route-log";
+import { logMcpPaidSettle } from "@/lib/mcp-server";
+import { resetPremiumFacilitatorForTests, settlePayment, type Decoded } from "@/lib/premium/payment";
+import { PREMIUM_TIERS, tierPath } from "@/lib/premium/tiers";
+import { DD_PATH, DD_TIER } from "@/lib/seller-dd/config";
+
+const tagged = vi.mocked(logPaidSettle);
 
 describe("route tag at payment", () => {
   afterEach(() => {
@@ -43,19 +54,55 @@ describe("route tag at payment", () => {
   });
 });
 
-describe("MCP paid settle hook", () => {
-  it("records only on a successful settlement and never throws", async () => {
-    const rl = await import("@/lib/route-log");
-    const spy = vi.spyOn(rl, "logPaidSettle");
-    const { logMcpPaidSettle } = await import("@/lib/mcp-server");
-    const opts = { maxAmountRequired: "5000", resource: "https://horizonpulse.dev/api/pulse", description: "d" };
+describe("MCP paid settle hook (strict)", () => {
+  const opts = { maxAmountRequired: "5000", resource: "https://horizonpulse.dev/api/pulse", description: "d" };
+  beforeEach(() => tagged.mockClear());
+
+  it("tags the paid tool's route path on a successful settle", () => {
+    logMcpPaidSettle(opts, { success: true, transaction: "0x1", network: "eip155:8453", payer: "0x2" });
+    expect(tagged).toHaveBeenCalledTimes(1);
+    expect(tagged.mock.calls[0][0]).toEqual({ route: "/api/pulse", method: "MCP", rail: "eip155:8453", amountAtomic: "5000", tx: "0x1", payer: "0x2" });
+  });
+
+  it("writes no tag on a failed or missing settlement, and never throws", () => {
     expect(() => logMcpPaidSettle(opts, { success: false, transaction: "0x1" })).not.toThrow();
     expect(() => logMcpPaidSettle(opts, undefined)).not.toThrow();
-    expect(() => logMcpPaidSettle(opts, { success: true, transaction: "0x1", network: "eip155:8453", payer: "0x2" })).not.toThrow();
-    // ESM bindings may not be spy-able; when they are, assert the route path and that failures did not log.
-    if (spy.mock.calls.length) {
-      expect(spy).toHaveBeenCalledTimes(1);
-      expect(spy.mock.calls[0][0]).toMatchObject({ route: "/api/pulse", method: "MCP", tx: "0x1", payer: "0x2", amountAtomic: "5000" });
-    }
+    expect(tagged).not.toHaveBeenCalled();
+  });
+});
+
+describe("premium / seller DD settle tag", () => {
+  const brief = PREMIUM_TIERS.find((t) => t.id === "brief")!;
+  const d = { raw: {}, from: "0xpayer" } as unknown as Decoded;
+  beforeEach(() => {
+    tagged.mockClear();
+    resetPremiumFacilitatorForTests();
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it("tags the tier path on a successful premium settle", async () => {
+    vi.spyOn(HTTPFacilitatorClient.prototype, "settle").mockResolvedValue({ success: true, transaction: "0xt", network: "eip155:8453", payer: "0xp" } as never);
+    const r = await settlePayment(d, brief);
+    expect(r.ok).toBe(true);
+    expect(tagged).toHaveBeenCalledTimes(1);
+    expect(tagged.mock.calls[0][0]).toMatchObject({ route: tierPath(brief), method: "POST", tx: "0xt", payer: "0xp", amountAtomic: brief.amount });
+  });
+
+  it("tags the seller DD path when passed", async () => {
+    vi.spyOn(HTTPFacilitatorClient.prototype, "settle").mockResolvedValue({ success: true, transaction: "0xd", network: "eip155:8453", payer: "0xp" } as never);
+    await settlePayment(d, DD_TIER, DD_PATH);
+    expect(tagged.mock.calls[0][0]).toMatchObject({ route: "/api/seller-dd/single", tx: "0xd" });
+  });
+
+  it("writes no tag when the settle fails, has no tx, or throws (premium and seller DD)", async () => {
+    const settle = vi.spyOn(HTTPFacilitatorClient.prototype, "settle");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    settle.mockResolvedValueOnce({ success: false, errorReason: "x" } as never);
+    expect((await settlePayment(d, brief)).ok).toBe(false);
+    settle.mockResolvedValueOnce({ success: true, transaction: "" } as never);
+    expect((await settlePayment(d, DD_TIER, DD_PATH)).ok).toBe(false);
+    settle.mockRejectedValueOnce(new Error("boom"));
+    expect((await settlePayment(d, DD_TIER, DD_PATH)).ok).toBe(false);
+    expect(tagged).not.toHaveBeenCalled();
   });
 });
