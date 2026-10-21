@@ -14,6 +14,7 @@ import { guardedGet, type GuardedGetOk } from "./guarded-get";
 import { guardedNetConnect } from "./net-guard";
 import { assertSafePublicUrl } from "./fetch-url";
 import { BodyTooLargeError, CRTSH_ATTRIBUTION, DATA_USER_AGENT, isOptedOut, readTextCapped, REDIRECT_COPY, upstashCache, upstashLimiter, type SharedCache, type SharedLimiter } from "./dark-checks-shared";
+import { vendorFetch } from "@/lib/no-brotli"; // TEMP no-br; remove once node_patched is yes
 
 export const AUDIT_TIER_ORDER = ["quick", "standard", "extended", "report", "full", "history", "deep"] as const;
 export type AuditTier = (typeof AUDIT_TIER_ORDER)[number];
@@ -117,7 +118,7 @@ export const CRTSH_GLOBAL_PER_MINUTE = 10;
 /** Newest certificates kept (same cap live and cached, so both give the same summary). */
 const CT_KEEP = 300;
 
-export async function crtShFetch(host: string, fetchFn: typeof fetch = (...a) => fetch(...a)): Promise<CtResult> {
+export async function crtShFetch(host: string, fetchFn: typeof fetch = (...a) => vendorFetch(a[0] as string, a[1])): Promise<CtResult> {
   try {
     const res = await fetchFn(`https://crt.sh/?q=${encodeURIComponent(`%.${host}`)}&output=json&exclude=expired`, { headers: { "user-agent": DATA_USER_AGENT }, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {

@@ -9,6 +9,7 @@
  */
 import { CONTACT_EMAIL } from "./config";
 import { resolveSharedReplayStoreEnv } from "./xrpl-replay-store";
+import { vendorFetch } from "@/lib/no-brotli"; // TEMP no-br; remove once node_patched is yes
 
 type Env = Record<string, string | undefined>;
 
@@ -111,7 +112,7 @@ async function upstash(env: Env, fetchFn: typeof fetch, cmd: (string | number)[]
   return j.result;
 }
 
-export function upstashLimiter(env: Env = process.env, fetchFn: typeof fetch = (...a) => fetch(...a), now: () => number = () => Date.now()): SharedLimiter {
+export function upstashLimiter(env: Env = process.env, fetchFn: typeof fetch = (...a) => vendorFetch(a[0] as string, a[1]), now: () => number = () => Date.now()): SharedLimiter {
   return async (key, perMinute) => {
     const t = now();
     const win = Math.floor(t / 60_000);
@@ -131,7 +132,7 @@ export function upstashLimiter(env: Env = process.env, fetchFn: typeof fetch = (
 export type SharedCache = { get(key: string): Promise<string | null>; set(key: string, value: string, ttlSeconds: number): Promise<void> };
 export const CACHE_VALUE_CAP = 256_000;
 
-export function upstashCache(env: Env = process.env, fetchFn: typeof fetch = (...a) => fetch(...a), now: () => number = () => Date.now()): SharedCache {
+export function upstashCache(env: Env = process.env, fetchFn: typeof fetch = (...a) => vendorFetch(a[0] as string, a[1]), now: () => number = () => Date.now()): SharedCache {
   const mem = new Map<string, { v: string; exp: number }>();
   return {
     async get(key) {
