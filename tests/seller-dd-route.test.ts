@@ -18,7 +18,7 @@ import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store
 import { TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_BASE_DOMAIN } from "@/lib/premium/payment";
 import { ddKeys } from "@/lib/seller-dd/caps";
 import { DD_NOTICE } from "@/lib/seller-dd/config";
-import { PAUSE_KEY, readPause, setPause } from "@/lib/seller-dd/pause";
+import { PAUSE_KEY, readPause, resetPauseLatchForTests, setPause } from "@/lib/seller-dd/pause";
 import { receiptPublicKeys, verifyReceipt } from "@/lib/receipt-signer";
 
 const APPROVED_PAYTO = "0x5b32c973596078a967562ca652761404f19be0e9"; // full approved string (security/approved-addresses.md)
@@ -70,7 +70,7 @@ beforeEach(() => {
   engineRan.mockReset();
   setEngine(true);
 });
-afterEach(() => { resetSettleFailureLatchForTests(); setSellerDdBuyerNonceForTests(null); vi.unstubAllEnvs(); setPremiumStoreForTests(undefined); setSellerDdDepsForTests(null); setSellerDdClockForTests(null); });
+afterEach(() => { resetPauseLatchForTests(); resetSettleFailureLatchForTests(); setSellerDdBuyerNonceForTests(null); vi.unstubAllEnvs(); setPremiumStoreForTests(undefined); setSellerDdDepsForTests(null); setSellerDdClockForTests(null); });
 
 describe("seller-dd route", () => {
   it("flag off -> 404 on every verb (either flag)", async () => {
@@ -138,6 +138,17 @@ describe("seller-dd route", () => {
     expect(r2.status).toBe(503);
     expect((await r2.json()).reason).toBe("test_pay_auto_paused");
     expect(h.verify).not.toHaveBeenCalled(); expect(engineRan).not.toHaveBeenCalled();
+  });
+  it("Sentinel LOW-1: pause-marker write fails -> in-memory latch; this instance refuses (no_charge) with an empty store", async () => {
+    setEngine(true, async () => ({ ok: false, code: "preflight_nonce_nonzero" }));
+    const realSet = store.set.bind(store);
+    store.set = async (k: string, v: string, t: number) => { if (k === PAUSE_KEY) throw new Error("down"); return realSet(k, v, t); };
+    await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
+    expect(await store.get(PAUSE_KEY)).toBeNull();
+    setEngine(true); h.verify.mockClear();
+    const b = await (await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()))).json();
+    expect(b).toMatchObject({ status: "no_charge", charged: false, reason: "test_pay_auto_paused" });
+    expect(h.verify).not.toHaveBeenCalled();
   });
   it("Odin #5 pre-flight unreadable -> no_charge, no spend", async () => {
     setEngine(true, async () => { throw new Error("rpc down"); });

@@ -6,7 +6,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store";
 import { ddKeys, reserveTestPay } from "@/lib/seller-dd/caps";
 import { APPROVAL_TOPIC, AUTH_USED_TOPIC, TRANSFER_TOPIC, runWatch, watchKeys, type Rpc } from "@/lib/seller-dd/watch";
-import { PAUSE_KEY, readPause, judgePreflight, observeKillSwitch, setPause } from "@/lib/seller-dd/pause";
+import { PAUSE_KEY, pauseMemLatched, readPause, judgePreflight, observeKillSwitch, resetPauseLatchForTests, setPause } from "@/lib/seller-dd/pause";
 import { GET, setSellerDdCronForTests } from "@/app/api/seller-dd/cron/route";
 
 const key = generatePrivateKey();
@@ -241,6 +241,18 @@ describe("Odin 10/21 #5: auto-pause", () => {
     const p = await readPause(s);
     expect(p.paused).toBe(true);
     expect(p.latch).toMatchObject({ cause: "tester_nonce_above_zero", seen_off: false });
+  });
+  it("Sentinel LOW-1: watch pause write fails -> write_failed alert + in-memory latch (kill-switch cycle on the store cannot clear it)", async () => {
+    resetPauseLatchForTests();
+    const s = mk();
+    const realSet = s.set.bind(s);
+    s.set = async (k: string, v: string, t: number) => { if (k === PAUSE_KEY) throw new Error("down"); return realSet(k, v, t); };
+    const r = await runWatch(s, TESTER, rpcWith({ out: [log("0x2", [TRANSFER_TOPIC, pad(TESTER)])] }), env);
+    expect(r.alerts.map((a) => a.kind)).toContain("seller_dd_auto_pause_write_failed");
+    expect(pauseMemLatched()).toBe(true);
+    expect((await readPause(mk())).paused).toBe(true);
+    resetPauseLatchForTests();
+    expect((await readPause(mk())).paused).toBe(false);
   });
   it("unreadable latch -> treated as paused", async () => {
     const s = mk();

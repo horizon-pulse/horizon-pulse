@@ -90,6 +90,14 @@ export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, en
       if (![outLogs, inLogs, apprLogs, authLogs].every(Array.isArray)) throw new Error("logs");
       const authByTx = new Map<string, string[]>();
       for (const l of authLogs as any[]) { const a = authByTx.get(l.transactionHash) ?? []; a.push(String(l.topics?.[2] ?? "")); authByTx.set(l.transactionHash, a); }
+      /**
+       * Reservation-nonce match (Sentinel LOW-1 doc): an outbound Transfer is "ours" only if the SAME tx emitted
+       * AuthorizationUsed(authorizer = tester, nonce = N) AND N is a nonce WE reserved (dd:nonce:<N>, written by
+       * reserveTestPay before signing, kept 40 days). Anything else (no AuthorizationUsed in the tx, a nonce we never
+       * reserved, or the index expired/unreadable) counts as an outflow we did not make -> alert + auto-pause. A store
+       * read error therefore fails toward pausing. The match does not check amount or recipient; the per-pay caps and
+       * the pinned payTo bound those at signing time.
+       */
       for (const l of outLogs as any[]) {
         let matched = false;
         for (const n of authByTx.get(l.transactionHash) ?? []) if (await store.get(ddKeys.nonce(n)).catch(() => null)) matched = true;
