@@ -53,7 +53,7 @@
     "xrpl": "4.7.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": "24.x"
   },
   "overrides": {
     "tinypool": "^2.1.2"
