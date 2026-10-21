@@ -29,6 +29,8 @@ export const PER_CALL_MAX_USD = 0.1;
 export const PER_CALL_MAX_ATOMIC = 100_000n;
 export const PER_HOST_DAILY = 3;
 export const SETTLE_FAIL_LIMIT = 3;
+/** Odin 10/21 #4: per seller registrable domain per UTC day; below the global 3 so one seller cannot use up the route's budget. */
+export const SELLER_SETTLE_FAIL_LIMIT = 2;
 export const VALID_BEFORE_MAX_S = 300;
 
 /** 402/Bazaar description. 10/20 copy recheck (Odin Class A on 173cb97): "dated snapshots" -> CDP discovery listing (#4),
