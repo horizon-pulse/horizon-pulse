@@ -240,14 +240,19 @@ export async function handleFeedback(req: Request, deps: FeedbackDeps = {}): Pro
   const kd = `${P}rl:d:${ipHash.slice(0, 32)}:${day}`;
   const kg = `${P}rl:g:${day}`;
   try {
-    const r = await kv.pipeline([["INCR", kh], ["EXPIRE", kh, 3700], ["INCR", kd], ["EXPIRE", kd, 90_000], ["INCR", kg], ["EXPIRE", kg, 90_000]]);
-    const [h, d, g] = [Number(r[0]), Number(r[2]), Number(r[4])];
-    if (g > FEEDBACK_GLOBAL_PER_DAY) {
-      if (g === FEEDBACK_GLOBAL_PER_DAY + 1) console.log(JSON.stringify({ evt: "feedback_global_cap_hit", day }));
-      return json(429, { ok: false, error: "rate_limited", retry_after_s: (day + 1) * 86_400 - Math.floor(now / 1000) }, { "retry-after": String((day + 1) * 86_400 - Math.floor(now / 1000)) });
-    }
+    // Sentinel LOW-1 (0a40692 review): per-IP check FIRST; the global counter is only INCR'd for an IP that is
+    // under its own limit, so one IP flooding cannot burn the shared daily cap for everyone else.
+    const r = await kv.pipeline([["INCR", kh], ["EXPIRE", kh, 3700], ["INCR", kd], ["EXPIRE", kd, 90_000]]);
+    const [h, d] = [Number(r[0]), Number(r[2])];
     if (h > FEEDBACK_IP_PER_HOUR || d > FEEDBACK_IP_PER_DAY) {
       const retry = d > FEEDBACK_IP_PER_DAY ? (day + 1) * 86_400 - Math.floor(now / 1000) : (hour + 1) * 3600 - Math.floor(now / 1000);
+      return json(429, { ok: false, error: "rate_limited", retry_after_s: retry }, { "retry-after": String(retry) });
+    }
+    const gr = await kv.pipeline([["INCR", kg], ["EXPIRE", kg, 90_000]]);
+    const g = Number(gr[0]);
+    if (g > FEEDBACK_GLOBAL_PER_DAY) {
+      if (g === FEEDBACK_GLOBAL_PER_DAY + 1) console.log(JSON.stringify({ evt: "feedback_global_cap_hit", day }));
+      const retry = (day + 1) * 86_400 - Math.floor(now / 1000);
       return json(429, { ok: false, error: "rate_limited", retry_after_s: retry }, { "retry-after": String(retry) });
     }
     const id = deps.newId ? deps.newId() : newFeedbackId(now);
@@ -278,4 +283,4 @@ export async function handleFeedback(req: Request, deps: FeedbackDeps = {}): Pro
 }
 
 export const FEEDBACK_MCP_DESCRIPTION =
-  "FREE (no payment). Tell Horizon Pulse about a missing coin, data field or route. Fields: type (coin, data, route or other), text (1-500 characters, plain text; links are not followed and are stored masked), optional symbol and route. Stored for human review only; nothing ships automatically and there is no reply. Do not include personal data, secrets or keys. Limit: 5 per hour and 20 per day per caller.";
+  "FREE (no payment). Tell Horizon Pulse about a missing coin, data field or route. Fields: type (coin, data, route or other), text (1-500 characters, plain text; links are not followed and are stored masked), optional symbol and route. Stored for human review only, for up to 90 days; nothing ships automatically and there is no reply. We may use what you send to improve Horizon Pulse, with no obligation or payment. Do not include personal data, secrets or keys. Limit: 5 per hour and 20 per day per caller IP address, plus a shared daily cap. Limits use a keyed hash (HMAC) of the caller's IP address; the IP address itself is not stored. The limit counters expire within 25 hours, and each stored entry keeps that hash for up to 90 days so repeat submissions can be reviewed.";
