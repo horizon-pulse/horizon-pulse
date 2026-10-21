@@ -1,6 +1,6 @@
 /** Outside review #1: history source order, chunking, retry, caps, reasons; authorizationTx no longer silent. */
 import { describe, expect, it } from "vitest";
-import { authorizationTxDetailed, baseLogRpcs, HISTORY_MAX_CALLS, LOG_CHUNK_BLOCKS, readHistoryDetailed } from "@/lib/seller-dd/history";
+import { safeReason, HISTORY_REASON_TOKENS, authorizationTxDetailed, baseLogRpcs, HISTORY_MAX_CALLS, LOG_CHUNK_BLOCKS, readHistoryDetailed } from "@/lib/seller-dd/history";
 import { USDC_BASE } from "@/lib/config";
 
 const PAYTO = "0x" + "4e".repeat(20);
@@ -85,7 +85,8 @@ describe("readHistoryDetailed", () => {
     const r = await readHistoryDetailed(PAYTO, 1_000_000 + 30_000, deps, 1_000);
     expect(r.ok).toBe(true);
     expect(calls.filter((c) => c.host === "base-rpc.publicnode.com")).toHaveLength(1);
-    if (r.ok) expect(r.attempts.map((a) => a.reason)).toContain("head:http_400:ranges over 10000 blocks are not supported on free plan");
+    if (r.ok) expect(r.attempts.map((a) => a.reason)).toContain("head:http_400");
+    if (r.ok) expect(JSON.stringify(r.attempts)).not.toMatch(/ranges|free plan/); // Sentinel LOW-1
   });
   it("every source fails -> ok:false with a reason per source; never more than 12 calls", async () => {
     const { calls, deps } = fakeFetch((c) => (c.host === "base.blockscout.com" ? json(403, "x") : json(503, {})));
@@ -122,5 +123,41 @@ describe("authorizationTxDetailed (was silent)", () => {
     const r = await authorizationTxDetailed("0x" + "20".repeat(20), "0x" + "11".repeat(32), 1_000_000 + 30_000, deps);
     expect(r.tx).toBeNull();
     expect(r.attempts.length).toBeGreaterThan(0);
+  });
+});
+
+describe("Sentinel LOW-1: reasons are HTTP code + fixed tokens only", () => {
+  it("HTTP error body text and JSON-RPC error messages never appear in reasons", async () => {
+    const { deps } = fakeFetch((c) => (c.host === "base.blockscout.com" ? json(500, { message: "internal: db host 10.0.0.5 down" }) : json(200, { jsonrpc: "2.0", id: 1, error: { code: -32000, message: "API key abc123 rate limited" } })));
+    const r = await readHistoryDetailed(PAYTO, 1_000_000 + 30_000, deps);
+    expect(r.ok).toBe(false);
+    const txt = JSON.stringify(r.attempts);
+    expect(txt).not.toMatch(/db host|10\.0\.0\.5|abc123|rate limited|internal/);
+    expect(r.attempts[0]).toEqual({ source: "base.blockscout.com", reason: "http_500;retry:http_500" });
+    for (const a of r.attempts) expect(a.reason).toMatch(/^(head:|getLogs \d+-\d+:)?(http_\d{3}|[a-z_A-Z]+)(;retry:(http_\d{3}|[a-z_A-Z]+))?$/);
+    expect(r.attempts.some((a) => a.reason === "head:rpc_error")).toBe(true);
+  });
+  it("safeReason maps anything off the list to 'other'", () => {
+    expect(safeReason("http_403")).toBe("http_403");
+    expect(safeReason("head:timeout;retry:http_503")).toBe("head:timeout;retry:http_503");
+    expect(safeReason("http_400:some provider text")).toBe("other");
+    expect(safeReason("getLogs 1-2:rpc_error:secret")).toBe("getLogs 1-2:other");
+    for (const t of HISTORY_REASON_TOKENS) expect(safeReason(t)).toBe(t);
+  });
+});
+
+describe("Sentinel LOW-2: window label by source", () => {
+  it("Blockscout -> window_kind newest_transfers; RPC -> blocks", async () => {
+    const bs = fakeFetch(() => json(200, { items: [{ token: { address_hash: USDC_BASE }, to: { hash: PAYTO }, from: { hash: "0x" + "ab".repeat(20) }, total: { value: "1" }, block_number: 5 }] }));
+    const a = await readHistoryDetailed(PAYTO, 1_000_000 + 30_000, bs.deps);
+    expect(a.ok && a.history.window_kind).toBe("newest_transfers");
+    const rp = fakeFetch((c) => (c.host === "base.blockscout.com" ? json(403, "x") : rpcOk(c)));
+    const b = await readHistoryDetailed(PAYTO, 1_000_000 + 30_000, rp.deps);
+    expect(b.ok && b.history.window_kind).toBe("blocks");
+  });
+  it("labels: 'newest 50 transfers' vs '9000 Base blocks'", async () => {
+    const { historyWindowNote } = await import("@/lib/seller-dd/engine");
+    expect(historyWindowNote({ from_block: 1, to_block: 100, window_kind: "newest_transfers" })).toBe("recent window only: newest 50 transfers, not a full history");
+    expect(historyWindowNote({ from_block: 1, to_block: 9000, window_kind: "blocks" })).toBe("recent window only: last 9000 Base blocks (about 5 hours), not a full history");
   });
 });
