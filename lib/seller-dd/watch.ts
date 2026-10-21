@@ -17,6 +17,7 @@ import type { PremiumStore } from "@/lib/premium/store";
 import { ddKeys } from "./caps";
 import { DD_WATCH_START_BLOCK } from "./config";
 import { isEvmAddress } from "./screen";
+import { observeKillSwitch, setPause } from "./pause";
 
 export const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
 export const APPROVAL_TOPIC = "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925";
@@ -57,6 +58,14 @@ export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, en
   const prevKs = await store.get(watchKeys.killSwitch()).catch(() => null);
   if (prevKs !== null && prevKs !== ks) alerts.push({ kind: "seller_dd_kill_switch_flipped", severity: "high", detail: `${prevKs}->${ks}` });
   await store.set(watchKeys.killSwitch(), ks, CURSOR_TTL_S).catch(() => undefined);
+  // Odin 10/21 #5: kill-switch cycle (off, then on) clears an auto-pause latch. Runs before this scan, so a NEW trigger
+  // found below re-arms the latch in the same run.
+  const ksObs = await observeKillSwitch(store, ks).catch(() => "none" as const);
+  if (ksObs === "cleared") alerts.push({ kind: "seller_dd_auto_pause_cleared", severity: "high", detail: "kill switch cycled off->on" });
+  const pause = async (cause: "outflow_not_ours" | "tester_nonce_above_zero", detail: string) => {
+    const ok = await setPause(store, cause, now(), detail);
+    alerts.push({ kind: ok ? "seller_dd_auto_paused" : "seller_dd_auto_pause_write_failed", severity: "high", detail: `${cause}: ${detail}` });
+  };
 
   const allow = new Set((env.HP_DD_FUNDING_ALLOWLIST ?? "").split(",").map((s) => s.trim().toLowerCase()).filter(isEvmAddress));
   let firstFrom: bigint | null = null, lastTo: bigint | null = null;
@@ -84,7 +93,10 @@ export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, en
       for (const l of outLogs as any[]) {
         let matched = false;
         for (const n of authByTx.get(l.transactionHash) ?? []) if (await store.get(ddKeys.nonce(n)).catch(() => null)) matched = true;
-        if (!matched) alerts.push({ kind: "seller_dd_outbound_without_reservation", severity: "high", tx: l.transactionHash, block: Number(hexToBig(l.blockNumber) ?? 0n) });
+        if (!matched) {
+          alerts.push({ kind: "seller_dd_outbound_without_reservation", severity: "high", tx: l.transactionHash, block: Number(hexToBig(l.blockNumber) ?? 0n) });
+          await pause("outflow_not_ours", `tx ${String(l.transactionHash).slice(0, 66)}`);
+        }
       }
       for (const l of apprLogs as any[]) alerts.push({ kind: "seller_dd_approval_event", severity: "high", tx: l.transactionHash, block: Number(hexToBig(l.blockNumber) ?? 0n) });
       // LOW-2: total ALL inbound USDC (allowlisted or not) into a lifetime counter
@@ -104,6 +116,9 @@ export async function runWatch(store: PremiumStore, tester: string, rpc: Rpc, en
     if (bal === null || bal > BigInt(FLOAT_CAP_USD * 1_000_000)) alerts.push({ kind: "seller_dd_balance_over_float", severity: "high", detail: `balance ${bal === null ? "unreadable" : (Number(bal) / 1e6).toString()} USDC > ${FLOAT_CAP_USD}` });
     const n = hexToBig(await rpc("eth_getTransactionCount", [tester, "latest"]));
     if (n === null || n > 0n) alerts.push({ kind: "seller_dd_tester_sent_own_tx", severity: "high", detail: `account nonce ${n === null ? "unreadable" : n.toString()}` });
+    // pause only on a READ nonce above 0 (unreadable alerts above; the per-pay pre-flight refuses on unreadable anyway)
+    if (n !== null && n > 0n) await pause("tester_nonce_above_zero", `account nonce ${n.toString()}`);
+    // inflows (any source, any size), funding over cap and balance over float never pause: alerts only
     return { ok: true, from_block: firstFrom === null ? null : Number(firstFrom), to_block: lastTo === null ? null : Number(lastTo), alerts };
   } catch {
     alerts.push({ kind: "seller_dd_watch_rpc_unavailable", severity: "high" });

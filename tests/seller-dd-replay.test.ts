@@ -56,7 +56,7 @@ function deps(fx: Fx, store: MemoryPremiumStore, calls: { paid: number; signed: 
     continuity: { lookup: async () => (fx.listing ? { payTo: fx.listing, source_url: "https://api.cdp.coinbase.com/platform/v2/x402/discovery/search?query=seller.example.com", fetched_at: "2026-10-20T12:00:00.000Z" } : null) },
     store, lists: screenLists(env), env, now: () => NOW,
     history: async () => ({ window_blocks: 9000, window_days: 0.21, unique_payers: 4, repeat_payers: 1, first_seen_block: 100, volume_usdc: "0.040000", from_block: 100, to_block: 9100, source: "base.drpc.org" }),
-    landed: async () => ({ state: fx.landed ?? "unknown", nodes: ["base.drpc.org", "mainnet.base.org"] }),
+    preflight: async () => ({ ok: true, balance_atomic: "3000000", nonce: 0 }), landed: async () => ({ state: fx.landed ?? "unknown", nodes: ["base.drpc.org", "mainnet.base.org"] }),
     authTx: async () => "0x" + "ab".repeat(32),
     sleep: async () => undefined,
     sign: async (r, n) => { calls.signed++; const { signTestAuthorization } = await import("@/lib/seller-dd/testpay"); return signTestAuthorization(r, n, env, BigInt(Math.floor(NOW / 1000))); },
