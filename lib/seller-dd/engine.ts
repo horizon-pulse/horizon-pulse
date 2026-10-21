@@ -19,6 +19,7 @@ import { authorizationTxDetailed, BLOCKSCOUT_PAGE_TRANSFERS, readHistoryDetailed
 import { eqAddr, isEvmAddress, registrableDomain, screenPayTo, type ScreenLists } from "./screen";
 import { ALLOWED_SIGN_KIND, freshNonce, signTestAuthorization, testerStatus, type SignRequest, type SignResult } from "./testpay";
 import { canonicalJson } from "@/lib/receipt-signer";
+import { defaultPreflight, setPause, type PreflightFn } from "./pause";
 
 /** Base block time ~2 s. Counsel 10/20 item 2: unit from the ACTUAL blocks read; hours under 2 days, never "about 0 days". */
 export const BASE_BLOCK_S = 2;
@@ -51,6 +52,8 @@ export type EngineDeps = {
   lists: ScreenLists | null;
   env: Record<string, string | undefined>;
   rpc?: RpcDeps;
+  /** Odin 10/21 #5: tester balance >= needed and nonce == 0 before each test pay. */
+  preflight?: PreflightFn;
   now: () => number;
   sign?: (r: SignRequest, nonce: string) => Promise<SignResult>;
   landed?: (tester: string, nonce: string, deadline: number) => Promise<{ state: "used" | "unused" | "unknown"; nodes: string[] }>;
@@ -175,6 +178,14 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
     else if (!ref || !eqAddr(ref.payTo, listed.payTo)) blocked = "payto_not_pinned";
     else if (!registrableDomain(url!.hostname)) blocked = "host_invalid";
     else {
+      // Odin 10/21 #5 pre-flight: no reservation, no signature unless balance >= value and account nonce == 0
+      const pf = await (deps.preflight ?? defaultPreflight(deps.rpc ?? defaultRpcDeps()))(tester.address, value, inp.deadline).catch(() => ({ ok: false as const, code: "preflight_unavailable" as const }));
+      if (!pf.ok) {
+        blocked = pf.code;
+        if (pf.code === "preflight_nonce_nonzero") await setPause(deps.store, "tester_nonce_above_zero", now(), "seen at pre-flight").catch(() => false);
+      }
+    }
+    if (!blocked && tester.ok) {
       const nowS = Math.floor(now() / 1000);
       const nonce = freshNonce();
       const validBefore = nowS + 240;
@@ -182,7 +193,7 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
       const rsv = await reserveTestPay(deps.store, reservation, now());
       if (!rsv.ok) { blocked = `reserve_${rsv.code}`; reservation = null; }
       else {
-        const req: SignRequest = { kind: ALLOWED_SIGN_KIND, requestedDomain: listed.extra, network: listed.network, asset: listed.asset, to: listed.payTo, pinnedPayTo: ref.payTo, value, remainingAtomic: value, validAfter: 0n, validBefore: BigInt(validBefore) };
+        const req: SignRequest = { kind: ALLOWED_SIGN_KIND, requestedDomain: listed.extra, network: listed.network, asset: listed.asset, to: listed.payTo, pinnedPayTo: ref!.payTo, value, remainingAtomic: value, validAfter: 0n, validBefore: BigInt(validBefore) };
         const s = await (deps.sign ?? ((r, n) => signTestAuthorization(r, n, deps.env)))(req, nonce);
         if (!s.ok) {
           // Odin 10/21 #3: no signature exists on a refusal/failure, so nothing can settle: release the reservation now.
