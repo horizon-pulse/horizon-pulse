@@ -333,7 +333,7 @@ describe("seller-dd completeness (required checks)", () => {
       const r = await POST(req("POST", body, await paymentHeader()));
       expect(r.status).toBe(422);
       const b = await r.json();
-      expect(b).toMatchObject({ status: "no_charge", charged: false, reason, notice: DD_NOTICE });
+      expect(b).toMatchObject({ status: "no_charge", charged: false, reason, notice: DD_NOTICE, completeness: "not_applicable" });
       expect(b.message).toBeUndefined();
       expect(JSON.stringify(b)).not.toContain("could not be evidenced");
       expect(h.settle).not.toHaveBeenCalled();
@@ -346,7 +346,7 @@ describe("seller-dd completeness (required checks)", () => {
     const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
     expect(r.status).toBe(422);
     const b = await r.json();
-    expect(b).toMatchObject({ status: "incomplete", charged: false, reason: "incomplete", cause: "fetch_timeout" });
+    expect(b).toMatchObject({ status: "incomplete", charged: false, reason: "incomplete", cause: "fetch_timeout", completeness: "incomplete" });
     expect(b.message).toBe("Incomplete: one or more checks could not be evidenced (see missing_checks), so no verdict was issued and you were not charged. You may retry later with a new payment authorization.");
     expect(h.settle).not.toHaveBeenCalled();
     expect(getPaid).not.toHaveBeenCalled();

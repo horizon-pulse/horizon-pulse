@@ -86,6 +86,7 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
   const flags: string[] = [];
   let listed: Listed | null = null;
   let history: History | null = null;
+  let historyReadFailed = false;
   let blocked: string | null = null;
   let testPaid = false;
   let reservation: Reservation | null = null;
@@ -147,7 +148,7 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
     const hr = asHistoryRead(await (deps.history ?? ((p, d) => readHistoryDetailed(p, d, { ...(deps.rpc ?? defaultRpcDeps()), env: deps.env, sleep: deps.sleep })))(listed.payTo, inp.deadline).catch(() => null));
     history = hr.ok ? hr.history : null;
     // Outside review #1: no history -> the required check cannot run -> do NOT spend a test payment (result is incomplete anyway)
-    if (!hr.ok) blocked ??= "history_unavailable";
+    if (!hr.ok) { blocked ??= "history_unavailable"; historyReadFailed = true; }
     if (history && screen) {
       checks.history_and_lookalike = {
         name: "history_and_lookalike",
@@ -248,7 +249,8 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
     checked_at: checkedAt,
     resource: inp.resource,
     listed: listed ? { price: listed.price_atomic, network: listed.network, asset: listed.asset, payTo: listed.payTo } : null,
-    completeness: complete ? "complete" : "incomplete",
+    // Odin 10/21: a deliberate policy refusal is not an evidence gap -> "not_applicable"; read failures stay "incomplete"
+    completeness: complete ? "complete" : readFailure || historyReadFailed ? "incomplete" : "not_applicable",
     missing_checks: missing,
     checks_run: list.filter((c) => c.state !== "not_run").map((c) => c.name),
     checks_not_run: list.filter((c) => c.state === "not_run").map((c) => ({ name: c.name, reason: c.note })),

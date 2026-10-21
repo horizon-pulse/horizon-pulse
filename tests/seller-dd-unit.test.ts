@@ -143,3 +143,10 @@ describe("C5 receipt signer", () => {
     expect(hits("HP_DD_TESTER_KEY")).toEqual([join("lib", "seller-dd", "testpay.ts")]);
   });
 });
+
+import { EVIDENCE_READ_FAILURES } from "@/lib/seller-dd/engine";
+describe("Odin 10/21: completeness not_applicable vs incomplete", () => {
+  it("read-failure set is unchanged (these stay incomplete; everything else blocked = not_applicable)", () => {
+    expect([...EVIDENCE_READ_FAILURES].sort()).toEqual(["fetch_timeout", "fetch_upstream", "history_unavailable", "paid_response_timeout", "paid_response_upstream"]);
+  });
+});
