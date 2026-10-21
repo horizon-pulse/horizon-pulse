@@ -6,6 +6,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store";
 import { ddKeys, reserveTestPay } from "@/lib/seller-dd/caps";
 import { APPROVAL_TOPIC, AUTH_USED_TOPIC, TRANSFER_TOPIC, runWatch, watchKeys, type Rpc } from "@/lib/seller-dd/watch";
+import { PAUSE_KEY, readPause, judgePreflight, observeKillSwitch, setPause } from "@/lib/seller-dd/pause";
 import { GET, setSellerDdCronForTests } from "@/app/api/seller-dd/cron/route";
 
 const key = generatePrivateKey();
@@ -46,7 +47,7 @@ describe("L-5 watch", () => {
     const ok = await runWatch(s, TESTER, rpcWith({ out: [log("0x1", [TRANSFER_TOPIC, pad(TESTER)])], auth: [log("0x1", [AUTH_USED_TOPIC, pad(TESTER), NONCE])] }), env);
     expect(ok.alerts).toEqual([]);
     const bad = await runWatch(mk(), TESTER, rpcWith({ out: [log("0x2", [TRANSFER_TOPIC, pad(TESTER)])] }), env);
-    expect(bad.alerts.map((a) => a.kind)).toEqual(["seller_dd_outbound_without_reservation"]);
+    expect(bad.alerts.map((a) => a.kind)).toEqual(["seller_dd_outbound_without_reservation", "seller_dd_auto_paused"]);
   });
   it("approve/permit (Approval event) -> HIGH", async () => {
     const r = await runWatch(mk(), TESTER, rpcWith({ appr: [log("0x3", [APPROVAL_TOPIC, pad(TESTER)])] }), env);
@@ -62,7 +63,7 @@ describe("L-5 watch", () => {
   });
   it("tester sent its own tx (account nonce > 0) -> HIGH", async () => {
     const r = await runWatch(mk(), TESTER, rpcWith({ txCount: "0x1" }), env);
-    expect(r.alerts.map((a) => a.kind)).toEqual(["seller_dd_tester_sent_own_tx"]);
+    expect(r.alerts.map((a) => a.kind)).toEqual(["seller_dd_tester_sent_own_tx", "seller_dd_auto_paused"]);
   });
   it("kill switch flip -> HIGH (both directions)", async () => {
     const s = mk();
@@ -187,5 +188,72 @@ describe("seller-dd cron route", () => {
     const v = JSON.parse(readFileSync("vercel.json", "utf8"));
     expect(v.crons).toContainEqual({ path: "/api/seller-dd/cron", schedule: "41 13 * * *" });
     expect(v.crons).toContainEqual({ path: "/api/premium/cron", schedule: "17 13 * * *" });
+  });
+});
+
+describe("Odin 10/21 #5: auto-pause", () => {
+  it("outflow we did not make -> latch set (cause outflow_not_ours)", async () => {
+    const s = mk();
+    await runWatch(s, TESTER, rpcWith({ out: [log("0x2", [TRANSFER_TOPIC, pad(TESTER)])] }), env);
+    const p = await readPause(s);
+    expect(p.paused).toBe(true);
+    expect(p.latch?.cause).toBe("outflow_not_ours");
+  });
+  it("our own reserved outflow -> no pause", async () => {
+    const s = mk();
+    await reserveTestPay(s, { request_id: "r1", seller: "a.com", domain: "a.com", ip: "1.1.1.1", payTo: "0x" + "4e".repeat(20), value_usd: 0.01, nonce: NONCE, validBefore: 9e9, at: Date.now() }, Date.now());
+    await runWatch(s, TESTER, rpcWith({ out: [log("0x1", [TRANSFER_TOPIC, pad(TESTER)])], auth: [log("0x1", [AUTH_USED_TOPIC, pad(TESTER), NONCE])] }), env);
+    expect((await readPause(s)).paused).toBe(false);
+  });
+  it("nonce above 0 -> pause (tester_nonce_above_zero); nonce unreadable -> alert only, no pause", async () => {
+    const s = mk();
+    await runWatch(s, TESTER, rpcWith({ txCount: "0x1" }), env);
+    expect((await readPause(s)).latch?.cause).toBe("tester_nonce_above_zero");
+    const u = mk();
+    const r = await runWatch(u, TESTER, async (m, p) => (m === "eth_getTransactionCount" ? "zz" : rpcWith({})(m, p)), env);
+    expect(r.alerts.map((a) => a.kind)).toContain("seller_dd_tester_sent_own_tx");
+    expect((await readPause(u)).paused).toBe(false);
+  });
+  it("INFLOWS NEVER PAUSE: approved, unapproved, over funding cap, over float", async () => {
+    const s = mk();
+    const big = "0x" + (30_000_000).toString(16);
+    const r = await runWatch(s, TESTER, rpcWith({ balance: 50_000_000n, in: [log("0x4", [TRANSFER_TOPIC, pad(FUNDER), pad(TESTER)], big), log("0x5", [TRANSFER_TOPIC, pad("0x" + "99".repeat(20)), pad(TESTER)], big)] }), env);
+    expect(r.alerts.map((a) => a.kind)).toEqual(expect.arrayContaining(["seller_dd_inbound_from_unapproved", "seller_dd_funding_over_cap", "seller_dd_balance_over_float"]));
+    expect(r.alerts.map((a) => a.kind)).not.toContain("seller_dd_auto_paused");
+    expect(await s.get(PAUSE_KEY)).toBeNull();
+  });
+  it("recovery = kill switch cycle only: on (still paused) -> off (marked) -> on (cleared + HIGH alert)", async () => {
+    const s = mk();
+    await setPause(s, "outflow_not_ours", 1);
+    expect(await observeKillSwitch(s, "on")).toBe("still_paused"); // never seen off
+    const off = await runWatch(s, TESTER, rpcWith({}), { ...env, HP_DD_TESTPAY: "off" });
+    expect(off.alerts.map((a) => a.kind)).not.toContain("seller_dd_auto_pause_cleared");
+    expect((await readPause(s)).latch?.seen_off).toBe(true);
+    const on = await runWatch(s, TESTER, rpcWith({}), env);
+    expect(on.alerts.map((a) => a.kind)).toContain("seller_dd_auto_pause_cleared");
+    expect((await readPause(s)).paused).toBe(false);
+  });
+  it("a new trigger in the same run re-arms the latch after a clear", async () => {
+    const s = mk();
+    await setPause(s, "outflow_not_ours", 1);
+    await observeKillSwitch(s, "off");
+    await runWatch(s, TESTER, rpcWith({ txCount: "0x2" }), env);
+    const p = await readPause(s);
+    expect(p.paused).toBe(true);
+    expect(p.latch).toMatchObject({ cause: "tester_nonce_above_zero", seen_off: false });
+  });
+  it("unreadable latch -> treated as paused", async () => {
+    const s = mk();
+    s.get = async () => { throw new Error("down"); };
+    expect((await readPause(s)).paused).toBe(true);
+  });
+});
+
+describe("Odin 10/21 #5: pre-flight", () => {
+  it("balance >= needed and nonce 0 -> ok; low balance / nonce > 0 / no answers -> refused", () => {
+    expect(judgePreflight([{ bal: 10_000n, nonce: 0n }, { bal: 20_000n, nonce: 0n }], 10_000n)).toMatchObject({ ok: true, balance_atomic: "10000" });
+    expect(judgePreflight([{ bal: 9_999n, nonce: 0n }, { bal: 20_000n, nonce: 0n }], 10_000n)).toEqual({ ok: false, code: "preflight_balance_low" });
+    expect(judgePreflight([{ bal: 1_000_000n, nonce: 0n }, { bal: 1_000_000n, nonce: 1n }], 10_000n)).toEqual({ ok: false, code: "preflight_nonce_nonzero" });
+    expect(judgePreflight([], 10_000n)).toEqual({ ok: false, code: "preflight_unavailable" });
   });
 });
