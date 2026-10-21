@@ -214,9 +214,34 @@ describe("Sentinel LOW-B: releaseUnsigned atomic + idempotent", () => {
     const u = new UpstashPremiumStore("https://example.invalid", "t", "p:", f);
     const r = res();
     expect(await releaseUnsigned(u, r, NOW)).toBe(true);
-    expect(bodies).toHaveLength(1);
-    expect(bodies[0][0][0]).toBe("EVAL");
-    expect(bodies[0][0][1]).toBe(ADJUST_ONCE_LUA);
-    expect(bodies[0][0][3]).toBe(`p:${ddKeys.released(r.request_id)}`);
+    const evals = bodies.filter((b) => b[0][0] === "EVAL"); // the legacy seed (MEDIUM-1) does plain GETs first
+    expect(evals).toHaveLength(1);
+    expect(evals[0][0][1]).toBe(ADJUST_ONCE_LUA);
+    expect(evals[0][0][3]).toBe(`p:${ddKeys.released(r.request_id)}`);
+  });
+});
+
+describe("Sentinel MEDIUM-1: legacy seed also runs before releases", () => {
+  it("releaseUnsigned before any reserve: micro keys seeded from legacy float spend, minus only this release", async () => {
+    const s = mk();
+    await s.set(ddKeys.legacyLife(), "24.9", 100);
+    await s.set(ddKeys.legacyDay(NOW), "1", 100);
+    const r = res();
+    await releaseUnsigned(s, r, NOW);
+    expect(Number(await s.get(ddKeys.life()))).toBe(24_800_000);
+    expect(Number(await s.get(ddKeys.day(NOW)))).toBe(900_000);
+    // caps remember the legacy spend: $0.10 fits up to exactly 25.000000, then refused
+    expect((await reserveTestPay(s, res(), NOW)).ok).toBe(true);
+    expect((await reserveTestPay(s, res(), NOW)).ok).toBe(true);
+    expect(await reserveTestPay(s, res(), NOW)).toEqual({ ok: false, code: "lifetime_cap" });
+  });
+  it("cron release (releaseIfConfirmedUnused) before any reserve also seeds first", async () => {
+    const s = mk();
+    await s.set(ddKeys.legacyLife(), "24.95", 100);
+    const r = res();
+    expect(await releaseIfConfirmedUnused(s, r, async () => "unused", (r.validBefore + 5) * 1000)).toBe(true);
+    expect(Number(await s.get(ddKeys.life()))).toBe(24_850_000);
+    expect(await reserveTestPay(s, res({ value_usd: 0.1 }), NOW)).toEqual({ ok: true });
+    expect(await reserveTestPay(s, res({ value_usd: 0.1 }), NOW)).toEqual({ ok: false, code: "lifetime_cap" });
   });
 });

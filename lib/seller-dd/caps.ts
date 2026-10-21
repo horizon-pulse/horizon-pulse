@@ -111,6 +111,8 @@ export async function reserveTestPay(store: PremiumStore, r: Reservation, now: n
  * path waits for releaseIfConfirmedUnused (validBefore passed AND nonce unused on-chain).
  */
 export async function releaseUnsigned(store: PremiumStore, r: Reservation, now: number): Promise<boolean> {
+  // Sentinel MEDIUM-1: seed first, or a release on an unseeded day would create the micro key below the legacy spend
+  await seedMicroFromLegacy(store, now);
   // Sentinel LOW-B: ONE Lua call, once per reservation id (marker dd:released:<id>); a retry cannot double-refund.
   const steps = capSteps(r, now);
   return store.adjustOnce(ddKeys.released(r.request_id), DAY_TTL_S, steps.map((x) => x[0]), steps.map((x) => -x[1]), steps.map((x) => x[3]), steps.map((x) => x[4]), ddKeys.open(), r.request_id, [ddKeys.res(r.request_id), ddKeys.nonce(r.nonce), ddKeys.idem(r.request_id, r.seller)]);
@@ -122,6 +124,7 @@ export async function releaseIfConfirmedUnused(store: PremiumStore, r: Reservati
   if (Math.floor(nowMs / 1000) <= r.validBefore) return false;
   if ((await nonceState(r.nonce)) !== "unused") return false;
   const at = r.at;
+  await seedMicroFromLegacy(store, at); // Sentinel MEDIUM-1 (same reason as releaseUnsigned)
   // LOW-B: same once-per-reservation marker as releaseUnsigned, so the two release paths can never both refund.
   const released = await store.adjustOnce(ddKeys.released(r.request_id), DAY_TTL_S, [ddKeys.day(at), ddKeys.life(), unsettledKey(at)], [-microOf(r), -microOf(r), -r.value_usd], [DAY_TTL_S, LIFE_TTL_S, 2 * 86_400], ["int", "int", "float"], ddKeys.open(), r.request_id, [ddKeys.res(r.request_id)]);
   if (!released) { await store.zrem(ddKeys.open(), r.request_id).catch(() => undefined); return false; }
