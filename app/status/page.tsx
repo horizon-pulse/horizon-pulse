@@ -14,6 +14,14 @@ import { AlertCounts } from "@/components/AlertCounts";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+// True when the runtime Node is >= 24.22.1 (Brotli/TLS fixes). Exact version not disclosed.
+function nodePatched(): boolean {
+  const [maj, min, pat] = process.version.replace(/^v/, "").split(".").map((n) => parseInt(n, 10));
+  if (maj !== 24) return maj > 24;
+  if (min !== 22) return min > 22;
+  return pat >= 1;
+}
+
 /**
  * Odin 11:44 (e): non-secret post-deploy smoke field. <meta name="hp-xrpl-replay-eval" content="ok|unavailable|not_applicable">
  * = whether this instance's shared replay store answers a trivial EVAL (the XRPL rail's atomic cas needs it).
@@ -76,8 +84,8 @@ export default async function StatusPage() {
             <p className="hp-sub">
               The Base payTo balance below is a live <code>balanceOf</code> read on Base each time this page loads. Nothing is cached or estimated.
             </p>
-            <p className="hp-sub" data-runtime-node={process.version}>
-              Server runtime: Node <code>{process.version}</code>
+            <p className="hp-sub" data-node-patched={nodePatched() ? "yes" : "no"}>
+              node_patched: <code>{nodePatched() ? "yes" : "no"}</code>
             </p>
             <p className="hp-proof">
               <a href={`https://basescan.org/address/${DEFAULT_PAY_TO}`} target="_blank" rel="noreferrer">Base payTo on Basescan ↗</a>
