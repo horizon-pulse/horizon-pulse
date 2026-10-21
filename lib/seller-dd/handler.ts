@@ -177,9 +177,10 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
     // unpaid: check names + results only (no evidence, excerpt, history or payTo facts leave without a charge)
     await moveClaim(store, held, { s: "declined" }).catch(() => null);
     const checksOut = (out.verdict.checks as { name: string; result: string; state?: string }[]).map((c) => ({ name: c.name, result: c.result, state: c.state }));
-    // Outside review #1 / Counsel PASS 10/21: any required check not run -> "incomplete", 422, nothing settled.
-    if (!out.pass && out.verdict.completeness === "incomplete") {
-      return NextResponse.json({ status: "incomplete", charged: false, reason: out.reason ?? "incomplete", completeness: "incomplete", missing_checks: out.verdict.missing_checks, summary_flags: out.verdict.summary_flags, message: DD_INCOMPLETE_NOTE, checks_evidenced: out.checks_evidenced, checks: checksOut, notice: DD_NOTICE }, { status: 422, headers: CORS });
+    // Outside review #1 / Counsel PASS 10/21 / Odin 10/21: evidence READ failure -> "incomplete" + Counsel note, 422, nothing settled.
+    // Policy refusals fall through to no_charge with their specific reason (no note).
+    if (!out.pass && out.reason === "incomplete") {
+      return NextResponse.json({ status: "incomplete", charged: false, reason: out.reason ?? "incomplete", ...(out.cause ? { cause: out.cause } : {}), completeness: "incomplete", missing_checks: out.verdict.missing_checks, summary_flags: out.verdict.summary_flags, message: DD_INCOMPLETE_NOTE, checks_evidenced: out.checks_evidenced, checks: checksOut, notice: DD_NOTICE }, { status: 422, headers: CORS });
     }
     return noCharge(422, out.pass ? "signing_failed" : out.reason ?? "no_charge", { checks_evidenced: out.checks_evidenced, completeness: out.verdict.completeness, missing_checks: out.verdict.missing_checks, checks: checksOut });
   }

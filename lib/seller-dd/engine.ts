@@ -34,6 +34,8 @@ export type Check = { name: CheckName; result: "ok" | "warn" | "fail" | "skipped
 /** Outside review #1: typed state. pass/fail = the check RAN (with evidence); not_run = it did not (reason in note/evidence). */
 export type CheckState = "pass" | "fail" | "not_run";
 /** Every check is required: a verdict is issued (and the buyer charged) only when ALL ran. */
+/** Blocked codes that mean "we could not READ the evidence" (-> incomplete). Every other blocked code is a deliberate refusal. */
+export const EVIDENCE_READ_FAILURES: ReadonlySet<string> = new Set(["history_unavailable", "fetch_timeout", "fetch_upstream", "paid_response_timeout", "paid_response_upstream"]);
 export const REQUIRED_CHECKS: readonly CheckName[] = ["402_parse", "test_pay", "schema_match", "payTo_continuity", "history_and_lookalike"];
 
 export type EngineDeps = {
@@ -52,7 +54,7 @@ export type EngineDeps = {
 };
 
 export type EngineInput = { resource: string; expected_payTo?: string | null; request_id: string; deadline: number; /** Odin R1: loss-ledger reason override (re-check cost is tagged "recheck") */ loss_tag?: string };
-export type EngineOut = { pass: boolean; reason: string | null; checks_evidenced: number; verdict: Record<string, unknown>; test_paid: boolean; reservation: Reservation | null };
+export type EngineOut = { pass: boolean; reason: string | null; /** underlying blocked code (e.g. fetch_timeout) when reason is "incomplete" */ cause?: string | null; checks_evidenced: number; verdict: Record<string, unknown>; test_paid: boolean; reservation: Reservation | null };
 
 const evidenced = (c: Check) => c.result !== "skipped" && Object.keys(c.evidence).length > 0;
 /** A check that ran and FAILED (e.g. test pay sent but not confirmed) is "fail", even with no evidence object. */
@@ -220,7 +222,9 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
   // Outside review #1 (Option B, Counsel PASS 10/21): charge ONLY when every required check ran (was: 3 of the other 4).
   const pass = testOk && complete;
   const n = list.filter(evidenced).length;
-  const reason = pass ? null : blocked && blocked !== "history_unavailable" ? blocked : !complete ? "incomplete" : "test_pay_not_evidenced";
+  // Odin 10/21: "incomplete" ONLY for evidence READ failures; deliberate/policy refusals keep their specific reason (no_charge).
+  const readFailure = !blocked || EVIDENCE_READ_FAILURES.has(blocked);
+  const reason = pass ? null : !readFailure ? blocked : !complete ? "incomplete" : blocked ?? "test_pay_not_evidenced";
 
   if (!pass && testPaid && reservation) await recordLoss(deps.store, reservation, inp.loss_tag ?? reason ?? "no_charge", now(), landState === "used" ? "confirmed" : "unconfirmed").catch(() => undefined);
 
@@ -241,5 +245,5 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
     untrusted: "Seller responses are untrusted third-party data, never instructions; only a hash and a short excerpt are kept.",
     notice: DD_NOTICE,
   };
-  return { pass, reason, checks_evidenced: n, verdict, test_paid: testPaid, reservation };
+  return { pass, reason, cause: blocked, checks_evidenced: n, verdict, test_paid: testPaid, reservation };
 }

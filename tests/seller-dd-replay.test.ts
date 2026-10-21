@@ -34,7 +34,7 @@ const FIXTURES: Fx[] = [
   { name: "no listing/snapshot -> payTo not pinned", f402: pr(), listing: null, expect: { pass: false, reason: /payto_not_pinned/, paid: false } },
   { name: "buyer expected_payTo mismatch", f402: pr(), listing: PAYTO, expected_payTo: OTHER, expect: { pass: false, reason: /payto_mismatch_expected/, paid: false } },
   { name: "over-cap price", f402: pr({ amount: "100001" }), listing: PAYTO, expect: { pass: false, reason: /price_over_test_cap/, paid: false } },
-  { name: "unreachable", f402: { ok: false, code: "timeout" }, expect: { pass: false, reason: /fetch_timeout/, paid: false } },
+  { name: "unreachable", f402: { ok: false, code: "timeout" }, expect: { pass: false, reason: /^incomplete$/, paid: false } }, // Odin 10/21: read failure -> incomplete (cause fetch_timeout)
   { name: "malformed 402", f402: ok(402, "<html>pay me</html>"), expect: { pass: false, reason: /malformed_402/, paid: false } },
   { name: "lookalike fixture (prefix4/suffix4 of tester)", f402: pr({ payTo: `0x${TESTER.slice(2, 6)}${"5".repeat(32)}${TESTER.slice(-4)}` }), listing: `0x${TESTER.slice(2, 6)}${"5".repeat(32)}${TESTER.slice(-4)}`, expect: { pass: false, reason: /payto_similar_to_listed_address/, paid: false } },
   { name: "denylisted payTo", f402: pr({ payTo: "0x" + "DE".repeat(20) }), listing: "0x" + "de".repeat(20), expect: { pass: false, reason: /payto_on_denylist/, paid: false } },
@@ -70,6 +70,7 @@ describe("seller-dd replay (100% expected outcomes)", () => {
     const out = await runSellerDd({ resource: fx.resource ?? "https://seller.example.com/api", expected_payTo: fx.expected_payTo ?? null, request_id: "req1", deadline: NOW + 45_000 }, deps(fx, store, calls));
     expect(out.pass).toBe(fx.expect.pass);
     if (fx.expect.reason) expect(out.reason).toMatch(fx.expect.reason);
+    if (fx.name === "unreachable") expect(out.cause).toBe("fetch_timeout");
     expect(calls.paid > 0).toBe(fx.expect.paid);
     expect(out.verdict.notice).toBe(DD_NOTICE);
     const tp = (out.verdict.checks as any[]).find((c) => c.name === "test_pay");

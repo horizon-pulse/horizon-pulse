@@ -254,14 +254,14 @@ describe("seller-dd route", () => {
 /* ---- Outside review #1 (Option B, Counsel PASS 10/21): required checks, "incomplete" = 422 and NO settlement ---- */
 describe("seller-dd completeness (required checks)", () => {
   const getPaid = vi.fn();
-  function engineWith(o: { history?: unknown; paidOk?: boolean }) {
+  function engineWith(o: { history?: unknown; paidOk?: boolean; sellerPayTo?: string; listing?: boolean }) {
     getPaid.mockReset().mockImplementation(async () => (o.paidOk === false ? { ok: false, code: "timeout" } : { ok: true, status: 200, headers: { "content-type": "application/json" }, body: "{}", truncated: false, ip: "93.184.216.34", fetched_at: "t" }));
     setSellerDdDepsForTests({
       net: {
-        get402: async () => ({ ok: true, status: 402, headers: { "content-type": "application/json" }, body: JSON.stringify({ x402Version: 2, accepts: [{ scheme: "exact", network: "eip155:8453", asset: USDC_BASE, amount: "10000", payTo: "0x" + "4e".repeat(20), extra: { name: "USD Coin", version: "2" } }] }), truncated: false, ip: "93.184.216.34", fetched_at: "t" }),
+        get402: async () => ({ ok: true, status: 402, headers: { "content-type": "application/json" }, body: JSON.stringify({ x402Version: 2, accepts: [{ scheme: "exact", network: "eip155:8453", asset: USDC_BASE, amount: "10000", payTo: o.sellerPayTo ?? "0x" + "4e".repeat(20), extra: { name: "USD Coin", version: "2" } }] }), truncated: false, ip: "93.184.216.34", fetched_at: "t" }),
         getPaid,
       },
-      continuity: { lookup: async () => ({ payTo: "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
+      continuity: { lookup: async () => (o.listing === false ? null : { payTo: o.sellerPayTo ?? "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
       history: async () => (o.history === undefined ? { window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.01", from_block: 1, to_block: 2, source: "x" } : o.history),
       landed: async () => ({ state: "used", nodes: ["a", "b"] }),
       authTx: async () => ({ tx: null, attempts: [{ source: "base-rpc.publicnode.com", reason: "http_429;retry:http_429" }] }),
@@ -320,5 +320,35 @@ describe("seller-dd completeness (required checks)", () => {
     expect(c.note).toContain("base.blockscout.com http_403");
     expect(out.pass).toBe(false);
     expect(out.verdict.completeness).toBe("incomplete");
+  });
+  const DENY = "0x" + "de".repeat(20);
+  for (const [label, o, body, reason] of [
+    ["denylisted payTo", { sellerPayTo: DENY }, { resource: "https://seller.example.com/api" }, "payto_on_denylist"],
+    ["own payTo (tester)", { sellerPayTo: TESTER }, { resource: "https://seller.example.com/api" }, "payto_is_own_address"],
+    ["payTo mismatch vs expected_payTo", {}, { resource: "https://seller.example.com/api", expected_payTo: "0x" + "77".repeat(20) }, "payto_mismatch_expected"],
+    ["no CDP listing", { listing: false }, { resource: "https://seller.example.com/api" }, "payto_not_pinned"],
+  ] as const) {
+    it(`policy refusal (${label}) -> no_charge + "${reason}", NO incomplete note, NO settle, no test pay`, async () => {
+      engineWith(o as never);
+      const r = await POST(req("POST", body, await paymentHeader()));
+      expect(r.status).toBe(422);
+      const b = await r.json();
+      expect(b).toMatchObject({ status: "no_charge", charged: false, reason, notice: DD_NOTICE });
+      expect(b.message).toBeUndefined();
+      expect(JSON.stringify(b)).not.toContain("could not be evidenced");
+      expect(h.settle).not.toHaveBeenCalled();
+      expect(getPaid).not.toHaveBeenCalled();
+    });
+  }
+  it("read failure (402 fetch timeout) -> 422 incomplete WITH the note, NO settle", async () => {
+    setSellerDdDepsForTests({ net: { get402: async () => ({ ok: false, code: "timeout" }), getPaid }, continuity: { lookup: async () => null }, history: async () => null, landed: async () => ({ state: "used", nodes: ["a", "b"] }), authTx: async () => null, sleep: async () => undefined } as never);
+    getPaid.mockReset();
+    const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
+    expect(r.status).toBe(422);
+    const b = await r.json();
+    expect(b).toMatchObject({ status: "incomplete", charged: false, reason: "incomplete", cause: "fetch_timeout" });
+    expect(b.message).toBe("Incomplete: one or more checks could not be evidenced (see missing_checks), so no verdict was issued and you were not charged. You may retry later with a new payment authorization.");
+    expect(h.settle).not.toHaveBeenCalled();
+    expect(getPaid).not.toHaveBeenCalled();
   });
 });
