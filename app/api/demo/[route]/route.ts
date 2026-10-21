@@ -1,3 +1,4 @@
+import { tierAllowed } from "@/lib/premium/tiers";
 import { getSolanaRailConfig } from "@/lib/solana-config";
 import { getXrplRailConfig } from "@/lib/xrpl-config";
 import { getPolygonRailConfig } from "@/lib/polygon-config";
@@ -112,7 +113,8 @@ export async function GET(
       {
         ok: false,
         error: "Unknown demo route",
-        available: DEMO_ROUTES.map((d) => `/api/demo/${d.route}`),
+        // brief-verified is its own static route (app/api/demo/brief-verified), listed only while the brief tier is live (it 404s otherwise).
+        available: [...DEMO_ROUTES.map((d) => `/api/demo/${d.route}`), ...(tierAllowed("brief") ? ["/api/demo/brief-verified"] : [])],
       },
       { status: 404 },
     );
