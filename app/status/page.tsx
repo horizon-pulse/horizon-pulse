@@ -12,14 +12,11 @@ import { cachedAlertSummary } from "@/lib/alert-persist";
 import { AlertCounts } from "@/components/AlertCounts";
 
 export const runtime = "nodejs";
+import { nodePatchedFor } from "@/lib/node-patched";
 export const dynamic = "force-dynamic";
 
-// True when the runtime Node is >= 24.22.1 (Brotli/TLS fixes). Exact version not disclosed.
 function nodePatched(): boolean {
-  const [maj, min, pat] = process.version.replace(/^v/, "").split(".").map((n) => parseInt(n, 10));
-  if (maj !== 24) return maj > 24;
-  if (min !== 22) return min > 22;
-  return pat >= 1;
+  return nodePatchedFor(process.version);
 }
 
 /**

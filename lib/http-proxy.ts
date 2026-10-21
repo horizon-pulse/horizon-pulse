@@ -14,6 +14,7 @@ import {
   type FetchUrlError,
 } from "./fetch-url";
 import { guardedFetch, isSsrfBlockedError } from "./net-guard";
+import { BROTLI_REFUSED_CODE, BROTLI_REFUSED_ERROR, SAFE_ACCEPT_ENCODING, discardBody, findEncodingRefusedError, isBrotliEncoded } from "./no-brotli";
 
 /**
  * Caller credentials we never forward once a redirect has left the origin the
@@ -158,7 +159,8 @@ export type HttpProxyError = {
     | "timeout"
     | "too_large"
     | "upstream"
-    | "redirects";
+    | "redirects"
+    | typeof BROTLI_REFUSED_CODE;
   status: number;
   elapsedMs: number;
 };
@@ -436,6 +438,10 @@ export async function proxyPublicHttp(
     // Normalize: drop lowercase dupes if we set canonical keys
     delete outbound["user-agent"];
     delete outbound["accept"];
+    // TEMP Brotli mitigation; remove once node_patched is yes. Client
+    // accept-encoding is already blocked from forwarding; force no br.
+    for (const k of Object.keys(outbound)) if (k.toLowerCase() === "accept-encoding") delete outbound[k];
+    outbound["Accept-Encoding"] = SAFE_ACCEPT_ENCODING;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), remaining);
@@ -462,6 +468,10 @@ export async function proxyPublicHttp(
           elapsedMs: elapsed(),
         };
       }
+      // TEMP Brotli mitigation; remove once node_patched is yes.
+      if (findEncodingRefusedError(err)) {
+        return { ok: false, error: BROTLI_REFUSED_ERROR, code: BROTLI_REFUSED_CODE, status: 502, elapsedMs: elapsed() };
+      }
       if (isSsrfBlockedError(err)) {
         return { ok: false, error: err.message, code: "host_blocked", status: 400, elapsedMs: elapsed() };
       }
@@ -475,6 +485,12 @@ export async function proxyPublicHttp(
       };
     } finally {
       clearTimeout(timer);
+    }
+
+    // TEMP Brotli mitigation; remove once node_patched is yes.
+    if (isBrotliEncoded(res)) {
+      await discardBody(res);
+      return { ok: false, error: BROTLI_REFUSED_ERROR, code: BROTLI_REFUSED_CODE, status: 502, elapsedMs: elapsed() };
     }
 
     if (res.status >= 300 && res.status < 400) {

@@ -5,6 +5,7 @@
 
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { BROTLI_REFUSED_CODE, BROTLI_REFUSED_ERROR, SAFE_ACCEPT_ENCODING, discardBody, findEncodingRefusedError, isBrotliEncoded } from "@/lib/no-brotli";
 import { guardedFetch, isBlockedIp, isSsrfBlockedError, stripBrackets } from "@/lib/net-guard";
 
 export const FETCH_MAX_BYTES = 200_000; // ~200KB raw before trim
@@ -57,7 +58,8 @@ export type FetchUrlError = {
     | "timeout"
     | "too_large"
     | "upstream"
-    | "redirects";
+    | "redirects"
+    | typeof BROTLI_REFUSED_CODE;
   status: number;
 };
 
@@ -337,6 +339,8 @@ export async function fetchPublicUrl(
         headers: {
           Accept: "text/html, text/plain, application/json, text/markdown;q=0.9, */*;q=0.1",
           "User-Agent": "HorizonPulseFetch/1.0 (+https://horizonpulse.dev)",
+          // TEMP Brotli mitigation; remove once node_patched is yes.
+          "Accept-Encoding": SAFE_ACCEPT_ENCODING,
         },
       });
     } catch (err) {
@@ -348,6 +352,10 @@ export async function fetchPublicUrl(
           code: "timeout",
           status: 504,
         };
+      }
+      // TEMP Brotli mitigation; remove once node_patched is yes.
+      if (findEncodingRefusedError(err)) {
+        return { ok: false, error: BROTLI_REFUSED_ERROR, code: BROTLI_REFUSED_CODE, status: 502 };
       }
       if (isSsrfBlockedError(err)) {
         return { ok: false, error: err.message, code: "host_blocked", status: 400 };
@@ -361,6 +369,12 @@ export async function fetchPublicUrl(
       };
     } finally {
       clearTimeout(timer);
+    }
+
+    // TEMP Brotli mitigation; remove once node_patched is yes.
+    if (isBrotliEncoded(res)) {
+      await discardBody(res);
+      return { ok: false, error: BROTLI_REFUSED_ERROR, code: BROTLI_REFUSED_CODE, status: 502 };
     }
 
     // Redirects

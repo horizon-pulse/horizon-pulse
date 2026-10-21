@@ -22,6 +22,7 @@
 import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import { isIP, connect as netConnect, type Socket } from "node:net";
 import { Agent, buildConnector, fetch as undiciFetch } from "undici";
+import { EncodingGuardDispatcher, findEncodingRefusedError, withSafeAcceptEncoding } from "./no-brotli";
 
 /** Thrown (as fetch's cause) when a connection would reach a blocked address. */
 export class SsrfBlockedError extends Error {
@@ -320,10 +321,14 @@ export function guardedDispatcher(): Agent {
 export async function guardedFetch(input: string | URL, init: RequestInit = {}, dispatcher: Agent = guardedDispatcher()): Promise<Response> {
   try {
     const f = await fetchForGuard();
-    return await f(input, { ...init, dispatcher } as RequestInit);
+    // TEMP Brotli mitigation (CVE-2026-111497); remove once node_patched is yes.
+    const guarded = new EncodingGuardDispatcher(dispatcher);
+    return await f(input, { ...withSafeAcceptEncoding(init), dispatcher: guarded } as RequestInit);
   } catch (err) {
     const blocked = findSsrfBlockedError(err);
     if (blocked) throw blocked;
+    const refused = findEncodingRefusedError(err);
+    if (refused) throw refused;
     throw err;
   }
 }

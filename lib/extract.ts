@@ -17,6 +17,7 @@ import {
   type FetchUrlError,
 } from "./fetch-url";
 import { guardedFetch, isSsrfBlockedError } from "./net-guard";
+import { BROTLI_REFUSED_CODE, BROTLI_REFUSED_ERROR, SAFE_ACCEPT_ENCODING, discardBody, findEncodingRefusedError, isBrotliEncoded } from "./no-brotli";
 import { evaluateFields, type FieldSpecs, type FieldsResult } from "./extract-fields";
 
 /** Same raw body band as /api/fetch. */
@@ -88,7 +89,8 @@ export type ExtractError = {
     | "redirects"
     | "html_too_large"
     | "bad_html"
-    | "no_fields_matched";
+    | "no_fields_matched"
+    | typeof BROTLI_REFUSED_CODE;
   status: number;
   elapsedMs: number;
   fieldErrors?: FieldsResult["fieldErrors"];
@@ -385,6 +387,8 @@ export async function fetchHtmlForExtract(
         headers: {
           Accept: "text/html, application/xhtml+xml;q=0.9, */*;q=0.1",
           "User-Agent": "HorizonPulseExtract/1.0 (+https://horizonpulse.dev)",
+          // TEMP Brotli mitigation; remove once node_patched is yes.
+          "Accept-Encoding": SAFE_ACCEPT_ENCODING,
         },
         // No cookie jar — fetch default has no credentials store here
       });
@@ -399,6 +403,10 @@ export async function fetchHtmlForExtract(
           elapsedMs: elapsed(),
         };
       }
+      // TEMP Brotli mitigation; remove once node_patched is yes.
+      if (findEncodingRefusedError(err)) {
+        return { ok: false, error: BROTLI_REFUSED_ERROR, code: BROTLI_REFUSED_CODE, status: 502, elapsedMs: elapsed() };
+      }
       if (isSsrfBlockedError(err)) {
         return { ok: false, error: err.message, code: "host_blocked", status: 400, elapsedMs: elapsed() };
       }
@@ -412,6 +420,12 @@ export async function fetchHtmlForExtract(
       };
     } finally {
       clearTimeout(timer);
+    }
+
+    // TEMP Brotli mitigation; remove once node_patched is yes.
+    if (isBrotliEncoded(res)) {
+      await discardBody(res);
+      return { ok: false, error: BROTLI_REFUSED_ERROR, code: BROTLI_REFUSED_CODE, status: 502, elapsedMs: elapsed() };
     }
 
     if (res.status >= 300 && res.status < 400) {
