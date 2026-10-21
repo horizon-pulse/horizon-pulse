@@ -10,7 +10,7 @@
  */
 
 import { DEMO_ROUTES } from "./demo-catalog";
-import { premiumListings } from "./premium/listing";
+import { livePremiumListings } from "./premium/listing";
 import {
   PULSE_PRICE_USD,
   PULSE_PRICE_ATOMIC,
@@ -429,21 +429,33 @@ const usd = (p: string) => Number(p.replace(/[^0-9.]/g, ""));
 export function catalogStats() {
   const prices = LIVE_PAID_ROUTES.map((r) => usd(r.priceUsd));
   const fmt = (n: number) => `$${n}`;
-  const premium = premiumListings();
+  /** Every live premium product (brief + Seller DD when its flag is on), same gates as the routes. */
+  const premium = livePremiumListings();
+  const premiumNoDemo = premium.filter((x) => !x.demo).map((x) => x.path);
   return {
     routes: LIVE_PAID_ROUTES.length,
-    /** Live premium tiers (Base USDC only), listed apart from the multi-network catalog. */
+    /** Live premium products (Base USDC only), listed apart from the multi-network catalog. */
     premium,
-    /** Every live paid route: the multi-network catalog plus live premium tiers. Use this for any public count. */
+    /** Every live paid route: the multi-network catalog plus live premium products. Use this for any public count. */
     paidRoutes: LIVE_PAID_ROUTES.length + premium.length,
-    /** Unpaid samples: /api/demo/{route} twins plus each premium tier's demo. */
-    demoSamples: DEMO_ROUTES.length + premium.length,
+    /** Unpaid samples: /api/demo/{route} twins plus each premium product that has a demo. */
+    demoSamples: DEMO_ROUTES.length + premium.filter((x) => x.demo).length,
+    /** Free samples counted against paid routes (twins of live routes + premium demos). */
+    freeSamples: LIVE_PAID_ROUTES.filter((r) => DEMO_SLUGS.has(routeName(r))).length + premium.filter((x) => x.demo).length,
     endpoints: LIVE_PAID_ROUTES.reduce((n, r) => n + (r.method === "GET|POST" ? 2 : 1), 0),
+    /** Paid operations (method + path), multi-network and premium: the "endpoints/operations" count on public pages. */
+    paidOperations: LIVE_PAID_ROUTES.reduce((n, r) => n + (r.method === "GET|POST" ? 2 : 1), 0) + premium.length,
     minPrice: fmt(Math.min(...prices)),
     maxPrice: fmt(Math.max(...prices)),
+    /** Premium prices in listing order, e.g. ["$1", "$5"]. */
+    premiumPrices: premium.map((x) => x.priceUsd),
     postRoutes: LIVE_PAID_ROUTES.filter((r) => r.method === "GET|POST").length,
+    /** Paid routes that accept POST: GET|POST catalog routes plus POST premium products. */
+    postAccepting: LIVE_PAID_ROUTES.filter((r) => r.method === "GET|POST").length + premium.filter((x) => x.method === "POST").length,
     demoTwins: LIVE_PAID_ROUTES.filter((r) => DEMO_SLUGS.has(routeName(r))).length,
     noDemo: LIVE_PAID_ROUTES.filter((r) => !DEMO_SLUGS.has(routeName(r))).map(routePath),
+    /** Every paid route without a free sample: catalog routes without a twin plus premium products without a demo. */
+    noSample: [...LIVE_PAID_ROUTES.filter((r) => !DEMO_SLUGS.has(routeName(r))).map(routePath), ...premiumNoDemo],
     bySiteGroup: SITE_GROUPS.map((g) => ({
       category: g.key,
       label: g.label,
@@ -456,4 +468,20 @@ export function catalogStats() {
       routes: LIVE_PAID_ROUTES.filter((r) => r.category === c),
     })),
   };
+}
+
+/** The free (no x402) route shown on the homepage and in skill.md. Not a paid route; never counted as one. */
+export const FREE_ROUTE = {
+  path: "/api/money-market-rates",
+  method: "GET",
+  blurb: "NY Fed reference rates as published",
+} as const;
+
+/** "a, b or c" */
+export function orList(xs: readonly string[]): string {
+  return xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} or ${xs[xs.length - 1]}`;
+}
+/** "a, b and c" */
+export function andList(xs: readonly string[]): string {
+  return xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
 }

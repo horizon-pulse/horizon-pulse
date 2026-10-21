@@ -1,4 +1,5 @@
-import { premiumListings } from "@/lib/premium/listing";
+import { livePremiumListings } from "@/lib/premium/listing";
+import { andList } from "@/lib/live-catalog";
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -19,7 +20,9 @@ export const metadata: Metadata = {
 };
 
 const routes = loadSkillRoutes();
-const premium = premiumListings();
+const premium = livePremiumListings();
+/** Premium products with an MCP quote tool (the brief only; Seller DD is HTTP-only with no MCP tool). */
+const premiumMcp = premium.filter((x) => x.id === "brief");
 
 const FLOW = `# 1. Unpaid call: HTTP 402, challenge in the PAYMENT-REQUIRED header
 curl -si ${PUBLIC_BASE_URL}/api/pulse | grep -i '^payment-required' | cut -d' ' -f2 | base64 -d
@@ -43,7 +46,7 @@ export default function AgentsPage() {
               <span>call it.</span>
             </h1>
             <p className="hp-sub">
-              {routes.length + premium.length} paid routes. No signup or API key: each call is paid on its own in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, at the same price{premium.length ? <> (except the {premium[0].priceUsd} <a href={premium[0].contract}>verified brief</a>: {premium[0].rail})</> : null}. Give your agent the skill file, or plug in the MCP
+              {routes.length + premium.length} paid routes. No signup or API key: each call is paid on its own in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, at the same price{premium.length === 1 ? <> (except the {premium[0].priceUsd} <a href={premium[0].contract ?? "/docs"}>{premium[0].label}</a>: {premium[0].rail})</> : null}{premium.length > 1 ? <> (except {andList(premium.map((x) => `the ${x.priceUsd} ${x.label}`))}: Base USDC only)</> : null}. Give your agent the skill file, or plug in the MCP
               server and set a spend cap.
             </p>
             <div className="hp-raw">
@@ -104,7 +107,7 @@ export default function AgentsPage() {
                 Every route as a tool, <span>paid with a cap.</span>
               </h2>
               <p className="hp-lead">
-                The local MCP server (stdio, Node) exposes each multi-network route as a tool (the {premium.length ? "$1 verified brief is HTTP-only" : "premium tiers are HTTP-only"}) plus free <code>catalog</code>, <code>quote</code> and <code>demo</code> tools, and pays
+                The local MCP server (stdio, Node) exposes each multi-network route as a tool (the {premium.length === 1 ? "$1 verified brief is HTTP-only" : premium.length > 1 ? `${andList(premium.map((x) => `${x.priceUsd} ${x.label}`))} are HTTP-only` : "premium tiers are HTTP-only"}) plus free <code>catalog</code>, <code>quote</code> and <code>demo</code> tools, and pays
                 the x402 challenge with the official x402 client from a wallet you configure.
               </p>
             </div>
@@ -223,14 +226,14 @@ export default function AgentsPage() {
                     <td className="p">{r.priceUsd}</td>
                   </tr>
                 ))}
-                {premium.map((x) => (
+                {premiumMcp.map((x) => (
                   <tr key={x.path}>
                     <td className="r">verified_brief_quote</td>
                     <td>
                       <span style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text-3)" }}>GET</span> <code>{x.path}</code>
                       <br />
                       <span style={{ fontSize: 13 }}>
-                        {x.summary} {x.rail}; not payable over MCP (the hosted MCP tool returns the same unpaid 402). <a href={x.contract}>Contract</a> · <a href={x.terms}>Terms</a>
+                        {x.summary} {x.rail}; not payable over MCP (the hosted MCP tool returns the same unpaid 402). <a href={x.contract ?? undefined}>Contract</a> · <a href={x.terms}>Terms</a>
                       </span>
                     </td>
                     <td className="m">q*</td>

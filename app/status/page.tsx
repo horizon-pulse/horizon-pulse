@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { BASE_PAY_TO_BASENAME, DEFAULT_PAY_TO, USDC_BASE, CDP_FACILITATOR_URL, BASE_CAIP2, PUBLIC_BASE_URL } from "@/lib/config";
 import { fetchTreasuryUsdcBalance } from "@/lib/treasury";
 import { PAYAI_FACILITATOR_URL, SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
-import { catalogStats, routeName, routePath, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
+import { andList, catalogStats, routeName, routePath, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -101,12 +101,12 @@ export default async function StatusPage() {
               <div className="hp-stat">
                 <div className="k">Paid routes</div>
                 <div className="v">{s.paidRoutes}</div>
-                <div className="d">{s.endpoints + s.premium.length} endpoints in /.well-known/x402</div>
+                <div className="d">{s.paidOperations} endpoints in /.well-known/x402</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Price per call</div>
                 <div className="v">{s.minPrice}–{s.maxPrice}</div>
-                <div className="d">USDC, exact amount in the 402</div>
+                <div className="d">USDC, exact amount in the 402{s.premium.length ? ` · premium ${andList(s.premiumPrices)} (Base USDC only)` : ""}</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Networks</div>
@@ -125,8 +125,7 @@ export default async function StatusPage() {
                 One address per network. <span>One host.</span>
               </h2>
               <p className="hp-lead">
-                Agents should only pay through {PUBLIC_BASE_URL.replace("https://", "")}, to the payTo below for the network they pay on. Same price on Base and
-                Solana.
+                Agents should only pay through {PUBLIC_BASE_URL.replace("https://", "")}, to the payTo below for the network they pay on. Same price on all four rails{s.premium.length ? " (premium checks: Base USDC only)" : ""}.
               </p>
             </div>
             <div className="hp-grid two">
@@ -218,18 +217,18 @@ export default async function StatusPage() {
                 ])}
                 {s.premium.length ? (
                   <tr className="grp" key="premium">
-                    <td colSpan={5}>Verified brief ({s.premium[0].rail})</td>
+                    <td colSpan={5}>{s.premium.length > 1 ? "Premium" : "Verified brief"} ({s.premium[0].rail})</td>
                   </tr>
                 ) : null}
                 {s.premium.map((x) => (
                   <tr key={x.path}>
                     <td className="r">{x.path}</td>
-                    <td className="m">GET</td>
+                    <td className="m">{x.method}</td>
                     <td className="b">
-                      {x.summary} <a href={x.contract}>Contract</a> · <a href={x.terms}>Terms</a>
+                      {x.summary} {x.contract ? <><a href={x.contract}>Contract</a> · </> : null}<a href={x.terms}>Terms</a>
                     </td>
                     <td className="p">{x.priceUsd}</td>
-                    <td className="s"><a href={x.demo}>Sample →</a></td>
+                    <td className="s">{x.demo ? <a href={x.demo}>Sample →</a> : null}</td>
                   </tr>
                 ))}
               </tbody>

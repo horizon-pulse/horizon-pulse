@@ -2,7 +2,7 @@
 
 ## `reference-agent.mjs`
 
-Minimal Node agent for the live paid catalog (six crypto frozen + `/api/fetch` + `/api/http` + `/api/extract`) on **https://horizonpulse.dev**.
+Minimal Node agent for the live paid catalog on **https://horizonpulse.dev**. It reads the catalog (paths, prices, example inputs) from `/openapi.json` at runtime, so it never carries a stale route list or price.
 
 ### Unpaid discovery (default — no wallet, no spend)
 
@@ -11,14 +11,14 @@ cd horizon-pulse
 node examples/reference-agent.mjs
 ```
 
-Probes each live route with a plain `GET`, expects **HTTP 402**, decodes the x402 v2 **`PAYMENT-REQUIRED`** header (via `@x402/core` + `@x402/evm` already in `package.json`), and checks:
+Probes every multi-network paid route listed in `/openapi.json` with a plain `GET` (required inputs from the OpenAPI examples), expects **HTTP 402**, decodes the x402 v2 **`PAYMENT-REQUIRED`** header (via `@x402/core` + `@x402/evm` already in `package.json`), and checks the Base entry:
 
 - `payTo` = `0x5b32c973596078a967562ca652761404f19be0e9`
 - USDC on Base (`0x8335…2913`)
 - network `eip155:8453`
-- exact atomic amount for that route
+- exact atomic amount = that operation's `x-payment-info.amount` in `/openapi.json`
 
-`/api/portfolio` is probed with a demo `?address=` (the interim `payTo`); swap in any EVM address when you pay for real.
+Premium routes (Base USDC only, `x-premium-payment-info`) are listed but not probed or paid by this script.
 
 ### Optional paid single-route
 
@@ -27,7 +27,7 @@ Spends real Base USDC. Export the key only in your local shell — **never** com
 ```bash
 SMOKE_PRIVATE_KEY=0x... node examples/reference-agent.mjs
 # optional:
-SMOKE_ROUTE=/api/pulse          # default; any live paid path (incl. /api/fetch?url=…, /api/http?url=…, /api/extract?url=…)
+SMOKE_ROUTE=/api/pulse          # default; any multi-network paid path from /openapi.json
 SMOKE_BASE_URL=https://horizonpulse.dev
 ```
 

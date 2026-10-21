@@ -26,6 +26,7 @@ import { ddKeys, recordLoss, recordSellerSettleFailure, recordSettleFailure, sel
 import { cdpContinuityDeps, defaultNetDeps, testPayLanded } from "./checks";
 import { DD_AMOUNT, DD_DESCRIPTION, DD_INCOMPLETE_NOTE, DD_NOT_APPLICABLE_NOTE, DD_NOTICE, DD_PATH, DD_TIER, SELLER_SETTLE_FAIL_LIMIT, SETTLE_FAIL_LIMIT, sellerDdEnabled, testPayEnabled } from "./config";
 import { runSellerDd, type EngineDeps } from "./engine";
+import { sellerDdBazaarExtension } from "./bazaar";
 import { eqAddr, isEvmAddress, registrableDomain, screenLists } from "./screen";
 import { testerStatus } from "./testpay";
 import { observeKillSwitch, readPause } from "./pause";
@@ -55,6 +56,8 @@ export function ddPaymentRequired(error?: string) {
     ...(error ? { error } : {}),
     resource: { url: `${PUBLIC_BASE_URL}${DD_PATH}`, description: DD_DESCRIPTION, mimeType: "application/json", terms: BUYER_TERMS_URL },
     accepts: [ddRequirement()],
+    // Bazaar discovery (site accuracy finding 5): lets the next CDP-facilitated settle index this route.
+    extensions: sellerDdBazaarExtension(),
     notice: DD_NOTICE,
   };
 }

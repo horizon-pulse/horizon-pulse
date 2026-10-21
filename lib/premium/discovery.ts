@@ -8,6 +8,7 @@
 import { BASE_CAIP2, DEFAULT_PAY_TO, PUBLIC_BASE_URL, USDC_BASE } from "@/lib/config";
 import { BUYER_TERMS_URL, DISCLAIMER, PREMIUM_CONTACT, REFUND_LINE } from "./copy";
 import { listedTiers, tierPath } from "./tiers";
+import { DD_AMOUNT, DD_DESCRIPTION, DD_PATH, DD_PRICE_USD, sellerDdEnabled } from "@/lib/seller-dd/config";
 
 export function premiumResources(env: Record<string, string | undefined> = process.env): string[] {
   return listedTiers(env).map((x) => `${PUBLIC_BASE_URL}${tierPath(x)}`);
@@ -23,7 +24,12 @@ export function premiumWellKnownBlock(env: Record<string, string | undefined> = 
     payTo: DEFAULT_PAY_TO,
     terms: BUYER_TERMS_URL,
     contact: PREMIUM_CONTACT,
-    tiers: tiers.map((x) => ({ url: `${PUBLIC_BASE_URL}${tierPath(x)}`, method: "GET", price: x.priceUsd, amount: x.amount, mode: x.mode })),
+    tiers: [
+      ...tiers.map((x) => ({ url: `${PUBLIC_BASE_URL}${tierPath(x)}`, method: "GET", price: x.priceUsd, amount: x.amount, mode: x.mode })),
+      // Site accuracy fix 10/21 (scan finding 5): Seller DD as a second premium entry, same gate as its route. The
+      // top-level `sellerDd` block stays for compatibility.
+      ...(sellerDdEnabled(env) ? [{ url: `${PUBLIC_BASE_URL}${DD_PATH}`, method: "POST", price: `$${DD_PRICE_USD}`, amount: DD_AMOUNT, mode: "sync" }] : []),
+    ],
   };
 }
 
@@ -31,6 +37,7 @@ export function premiumSkillSection(env: Record<string, string | undefined> = pr
   const tiers = listedTiers(env);
   if (tiers.length === 0) return "";
   const lines = tiers.map((x) => `- \`GET ${tierPath(x)}?${x.route === "research" ? "q=…" : "target=<https x402 URL>"}\` — ${x.priceUsd} (${x.mode})`);
+  if (sellerDdEnabled(env)) lines.push(`- \`POST ${DD_PATH}\` with JSON \`{"resource": "<https x402 URL>", "expected_payTo": "<optional EVM address>"}\` — $${DD_PRICE_USD} (sync). ${DD_DESCRIPTION}`);
   return [
     "",
     "## Premium tiers (Base USDC only)",

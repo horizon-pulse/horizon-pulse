@@ -5,6 +5,8 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { CopyBlock } from "@/components/CopyBlock";
 import { CODE } from "@/lib/client-snippets";
+import { openApiWithSellerDd } from "@/lib/seller-dd/discovery";
+import { livePremiumListings } from "@/lib/premium/listing";
 import { BASE_PAY_TO_BASENAME } from "@/lib/config";
 import { SOLANA_MAINNET_CAIP2, SOLANA_PAYTO } from "@/lib/solana-config";
 
@@ -17,7 +19,8 @@ export const metadata: Metadata = {
 };
 
 type Json = any; // eslint-disable-line @typescript-eslint/no-explicit-any
-const spec: Json = JSON.parse(fs.readFileSync(path.join(process.cwd(), "public", "openapi.json"), "utf8"));
+// Same document /openapi.json serves: the static file, plus the Seller DD path when its flag is on (lib/seller-dd/discovery.ts).
+const spec: Json = openApiWithSellerDd(JSON.parse(fs.readFileSync(path.join(process.cwd(), "public", "openapi.json"), "utf8")));
 const BASE = spec.servers[0].url as string;
 
 type Op = { id: string; method: string; path: string; op: Json };
@@ -230,7 +233,7 @@ export default function DocsPage() {
             <div className="hp-wrap">
               <div>
                 <div className="hp-label">Premium</div>
-                <h2>Verified brief (Base USDC only)</h2>
+                <h2>{premiumOps.length > 1 ? "Premium checks" : "Verified brief"} (Base USDC only)</h2>
                 <p className="hp-lead">Same 402 flow, but paid in USDC on Base only; other networks are refused before payment.</p>
               </div>
               {premiumOps.map((o) => (
@@ -240,7 +243,16 @@ export default function DocsPage() {
                   </h3>
                   <p>{o.op.description}</p>
                   <p>
-                    <a href="/contracts/brief-verified">Contract</a> · <a href="/premium-terms">Terms</a> · <a href="/api/demo/brief-verified">Unpaid sample</a>
+                    {(() => {
+                      const l = livePremiumListings().find((x) => x.path === o.path);
+                      return (
+                        <>
+                          {l?.contract ? <><a href={l.contract}>Contract</a> · </> : null}
+                          <a href={l?.terms ?? "/premium-terms"}>Terms</a>
+                          {l?.demo ? <> · <a href={l.demo}>Unpaid sample</a></> : null}
+                        </>
+                      );
+                    })()}
                   </p>
                 </div>
               ))}

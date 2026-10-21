@@ -11,6 +11,7 @@
  */
 import { BRIEF_DESCRIPTION } from "./copy";
 import { tierAllowed } from "./tiers";
+import { DD_AMOUNT, DD_DESCRIPTION, DD_PATH, DD_PRICE_USD, sellerDdEnabled } from "../seller-dd/config";
 
 export type PremiumListing = {
   id: "brief";
@@ -42,9 +43,58 @@ export const BRIEF_LISTING: PremiumListing = {
   demo: "/api/demo/brief-verified",
 };
 
+/**
+ * Site listing shape shared by every premium product shown on the human pages (homepage, /status, /agents, /docs,
+ * skill.md). `label` is the plain name used in count lines ("the $1 verified brief", "the $5 seller due-diligence check").
+ */
+export type SiteListing = {
+  id: "brief" | "seller-dd";
+  label: string;
+  path: string;
+  method: "GET" | "POST";
+  priceUsd: string;
+  amount: string;
+  rail: string;
+  summary: string;
+  description: string;
+  contract: string | null;
+  terms: string;
+  demo: string | null;
+};
+
+/**
+ * $5 seller due-diligence check (site accuracy fix, 10/21). summary/description are DD_DESCRIPTION from
+ * lib/seller-dd/config.ts VERBATIM (Odin rule: Seller DD wording word-for-word from config). Price/amount/path from config.
+ * No demo yet (/api/demo/seller-dd is 404), no contract page. NOT in ALL_PREMIUM_LISTINGS: gen-openapi bakes those into
+ * the static public/openapi.json, while Seller DD is served only behind its own flag (lib/seller-dd/discovery.ts).
+ */
+export const SELLER_DD_LISTING: SiteListing = {
+  id: "seller-dd",
+  label: "seller due-diligence check",
+  path: DD_PATH,
+  method: "POST",
+  priceUsd: `$${DD_PRICE_USD}`,
+  amount: DD_AMOUNT,
+  rail: "Base USDC only",
+  summary: DD_DESCRIPTION,
+  description: DD_DESCRIPTION,
+  contract: null,
+  terms: "/premium-terms",
+  demo: null,
+};
+
 export const ALL_PREMIUM_LISTINGS: readonly PremiumListing[] = [BRIEF_LISTING];
 
 /** Premium tiers listed right now (same gate as the route itself). */
 export function premiumListings(env: Record<string, string | undefined> = process.env): PremiumListing[] {
   return ALL_PREMIUM_LISTINGS.filter((x) => tierAllowed(x.id, env));
+}
+
+/**
+ * Every premium product live right now, for public counts and site rows: the gated tiers (brief) plus Seller DD when
+ * sellerDdEnabled() (the route's own gate, so a 404 route is never listed). Flag off -> same as premiumListings().
+ */
+export function livePremiumListings(env: Record<string, string | undefined> = process.env): SiteListing[] {
+  const tiers: SiteListing[] = premiumListings(env).map((x) => ({ ...x, label: "verified brief" }));
+  return sellerDdEnabled(env) ? [...tiers, SELLER_DD_LISTING] : tiers;
 }

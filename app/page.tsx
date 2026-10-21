@@ -3,7 +3,7 @@ import { BASE_PAY_TO_BASENAME, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, USDC_
 import { SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
 import { USDC_POLYGON } from "@/lib/polygon-config";
 import { XRPL_PAYTO, RLUSD_MAINNET_ISSUER } from "@/lib/xrpl-config";
-import { catalogStats, routeName, routePath, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
+import { andList, catalogStats, FREE_ROUTE, orList, routeName, routePath, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
@@ -52,7 +52,18 @@ export default function HomePage() {
             <p className="hp-sub">
               {s.paidRoutes} paid services for market data, onchain checks, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
               {s.minPrice}–{s.maxPrice} per call in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, and gets JSON back.
-              {s.premium.length ? <> Plus a {s.premium[0].priceUsd} <a href={s.premium[0].contract}>verified brief</a> ({s.premium[0].rail}).</> : null}
+              {s.premium.length === 1 ? <> Plus a {s.premium[0].priceUsd} <a href={s.premium[0].contract ?? "#catalog"}>{s.premium[0].label}</a> ({s.premium[0].rail}).</> : null}
+              {s.premium.length > 1 ? (
+                <>
+                  {" "}Plus {s.premium.length === 2 ? "two" : s.premium.length} premium checks in Base USDC:{" "}
+                  {s.premium.map((x, i) => (
+                    <span key={x.id}>
+                      {i ? (i === s.premium.length - 1 ? " and " : ", ") : ""}a <strong>{x.priceUsd} {x.label}</strong>
+                    </span>
+                  ))}
+                  .
+                </>
+              ) : null}
             </p>
             <div className="hp-ctas">
               <a className="hp-btn primary" href="/try">Try a free sample</a>
@@ -69,22 +80,22 @@ export default function HomePage() {
               <div className="hp-stat">
                 <div className="k">Paid routes</div>
                 <div className="v">{s.paidRoutes}</div>
-                <div className="d">{[...s.bySiteGroup.map((g) => `${g.short} ${g.routes.length}`), ...(s.premium.length ? [`verified brief ${s.premium.length}`] : [])].join(" · ")}</div>
+                <div className="d">{[...s.bySiteGroup.map((g) => `${g.short} ${g.routes.length}`), ...(s.premium.length === 1 ? [`${s.premium[0].label} 1`] : s.premium.length ? [`premium ${s.premium.length}`] : [])].join(" · ")}</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Price per call</div>
                 <div className="v">{s.minPrice}–{s.maxPrice}</div>
-                <div className="d">USDC, exact amount in the 402</div>
+                <div className="d">USDC, exact amount in the 402{s.premium.length > 1 ? ` · premium ${andList(s.premiumPrices)}` : ""}</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Free samples</div>
-                <div className="v">{s.demoTwins + s.premium.length}</div>
-                <div className="d">{s.demoTwins + s.premium.length} of {s.paidRoutes} paid routes have a free demo twin{s.noDemo.length ? ` (none for ${s.noDemo.join(", ")})` : ""}</div>
+                <div className="v">{s.freeSamples}</div>
+                <div className="d">{s.freeSamples} of {s.paidRoutes} paid routes have a free demo twin{s.noSample.length ? ` (none for ${orList(s.noSample)})` : ""}</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Discovery</div>
                 <div className="v">{s.paidRoutes}</div>
-                <div className="d">URLs in /.well-known/x402 · {s.postRoutes} also accept POST</div>
+                <div className="d">URLs in /.well-known/x402 · {s.postAccepting} {s.premium.some((x) => x.method === "POST") ? "accept" : "also accept"} POST</div>
               </div>
             </div>
           </div>
@@ -98,7 +109,7 @@ export default function HomePage() {
                 {WORDS[s.paidRoutes] ?? s.paidRoutes} routes. <span>One protocol.</span>
               </h2>
               <p className="hp-lead">
-                Every route works the same way: request, get a 402, pay in USDC, get JSON. {s.demoTwins + s.premium.length} of {s.paidRoutes} have a free twin at{" "}
+                Every route works the same way: request, get a 402, pay in USDC, get JSON. {s.freeSamples} of {s.paidRoutes} have a free twin at{" "}
                 <code>/api/demo/&lt;route&gt;</code> that runs the route on a fixed input (discourse/split: a stored recording, not re-run).
               </p>
             </div>
@@ -150,20 +161,30 @@ export default function HomePage() {
                 ])}
                 {s.premium.length ? (
                   <tr className="grp" key="premium">
-                    <td colSpan={5}>Verified brief ({s.premium[0].rail})</td>
+                    <td colSpan={5}>{s.premium.length > 1 ? "Premium" : "Verified brief"} ({s.premium[0].rail})</td>
                   </tr>
                 ) : null}
                 {s.premium.map((x) => (
                   <tr key={x.path}>
                     <td className="r">{x.path}</td>
-                    <td className="m">GET</td>
+                    <td className="m">{x.method}</td>
                     <td className="b">
-                      {x.summary} <a href={x.contract}>Contract</a> · <a href={x.terms}>Terms</a>
+                      {x.summary} {x.contract ? <><a href={x.contract}>Contract</a> · </> : null}<a href={x.terms}>Terms</a>
                     </td>
                     <td className="p">{x.priceUsd}</td>
-                    <td className="s"><a href={x.demo}>Sample →</a></td>
+                    <td className="s">{x.demo ? <a href={x.demo}>Sample →</a> : null}</td>
                   </tr>
                 ))}
+                <tr className="grp" key="free">
+                  <td colSpan={5}>Free</td>
+                </tr>
+                <tr key={FREE_ROUTE.path}>
+                  <td className="r">{FREE_ROUTE.path}</td>
+                  <td className="m">{FREE_ROUTE.method}</td>
+                  <td className="b">{FREE_ROUTE.blurb}</td>
+                  <td className="p">no payment</td>
+                  <td className="s" />
+                </tr>
               </tbody>
             </table>
           </div>

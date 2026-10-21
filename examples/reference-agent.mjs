@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
  * Horizon Pulse reference agent (x402 v2 / Base).
- * Default: unpaid 402 discovery for all nine live paid routes on horizonpulse.dev.
+ * Default: reads the live catalog from /openapi.json at runtime, then makes an unpaid 402 discovery probe of every
+ * multi-network paid route (GET, required inputs from the OpenAPI examples) and checks the Base entry against the
+ * OpenAPI price. Nothing is hard-coded except the pinned payTo and Base USDC, so prices cannot go stale.
+ * Premium routes (x-premium-payment-info, Base USDC only) are listed, not probed or paid here.
  * Optional paid one-route: SMOKE_PRIVATE_KEY=0x... [SMOKE_ROUTE=/api/pulse]
  * Never paste private keys into chat, commits, or screenshots.
  */
@@ -13,20 +16,39 @@ import { privateKeyToAccount } from "viem/accounts";
 const EXPECTED_PAY_TO = "0x5b32c973596078a967562ca652761404f19be0e9";
 const USDC_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const BASE_URL = (process.env.SMOKE_BASE_URL?.trim() || "https://horizonpulse.dev").replace(/\/$/, "");
-const PORTFOLIO_DEMO = "0x5b32c973596078a967562ca652761404f19be0e9";
 
-/** Live catalog — six crypto frozen + /api/fetch + /api/http + /api/extract LIVE. */
-const ROUTES = [
-  { path: "/api/pulse", priceUsd: "$0.005", atomic: "5000" },
-  { path: "/api/signals", priceUsd: "$0.015", atomic: "15000" },
-  { path: "/api/yield", priceUsd: "$0.02", atomic: "20000" },
-  { path: `/api/portfolio?address=${PORTFOLIO_DEMO}`, priceUsd: "$0.04", atomic: "40000", label: "/api/portfolio" },
-  { path: "/api/gas", priceUsd: "$0.01", atomic: "10000" },
-  { path: "/api/funding", priceUsd: "$0.01", atomic: "10000" },
-  { path: "/api/fetch?url=https://example.com", priceUsd: "$0.02", atomic: "20000", label: "/api/fetch" },
-  { path: "/api/http?url=https://example.com", priceUsd: "$0.01", atomic: "10000", label: "/api/http" },
-  { path: "/api/extract?url=https://example.com", priceUsd: "$0.015", atomic: "15000", label: "/api/extract" },
-];
+/** Example value for a required query parameter, from the OpenAPI document. */
+function paramExample(p) {
+  return p.example ?? p.schema?.example ?? p.schema?.default ?? (Array.isArray(p.schema?.enum) ? p.schema.enum[0] : undefined);
+}
+
+/** Live catalog from /openapi.json: one GET probe per paid path (every multi-network route answers GET). */
+async function loadCatalog() {
+  const res = await fetch(`${BASE_URL}/openapi.json`, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`GET /openapi.json -> ${res.status}`);
+  const spec = await res.json();
+  const routes = [];
+  const premium = [];
+  for (const [path, item] of Object.entries(spec.paths ?? {})) {
+    for (const [method, op] of Object.entries(item)) {
+      if (op?.["x-premium-payment-info"]) premium.push({ method: method.toUpperCase(), path, priceUsd: op["x-premium-payment-info"].priceUsd });
+    }
+    const op = item.get;
+    const pay = op?.["x-payment-info"];
+    if (!pay) continue;
+    const qs = new URLSearchParams();
+    for (const p of op.parameters ?? []) {
+      if (p.in !== "query" || !p.required) continue;
+      const v = paramExample(p);
+      if (v !== undefined) qs.set(p.name, typeof v === "string" ? v : JSON.stringify(v));
+    }
+    const q = qs.toString();
+    routes.push({ path: q ? `${path}?${q}` : path, label: path, priceUsd: pay.priceUsd, atomic: String(pay.amount) });
+  }
+  return { routes, premium };
+}
+
+let ROUTES = [];
 
 function norm(a) {
   return (a || "").trim().toLowerCase();
@@ -63,8 +85,9 @@ async function unpaidProbe(route) {
   } catch (e) {
     return { label, ok: false, status: 402, error: `decode failed: ${e?.message || e}` };
   }
-  const acc = paymentRequired?.accepts?.[0];
-  if (!acc) return { label, ok: false, status: 402, error: "missing accepts[0]" };
+  // The 402 lists one entry per network; check the Base USDC entry.
+  const acc = (paymentRequired?.accepts ?? []).find((a) => String(a.network) === "eip155:8453") ?? paymentRequired?.accepts?.[0];
+  if (!acc) return { label, ok: false, status: 402, error: "missing Base accepts entry" };
   const amount = String(acc.maxAmountRequired ?? acc.amount ?? acc.maxAmount ?? "");
   const payTo = norm(acc.payTo);
   const asset = norm(acc.asset);
@@ -150,8 +173,12 @@ async function paidOne(routePath, pk) {
 async function main() {
   console.log("=== Horizon Pulse reference agent ===");
   console.log(`host:  ${BASE_URL}`);
-  console.log(`payTo: ${EXPECTED_PAY_TO} (interim Coinbase-custodial)`);
+  console.log(`payTo: ${EXPECTED_PAY_TO} (Base; pinned, compared with every 402)`);
   console.log(`USDC:  ${USDC_BASE} · network eip155:8453`);
+  const catalog = await loadCatalog();
+  ROUTES = catalog.routes;
+  console.log(`catalog: ${ROUTES.length} multi-network routes from ${BASE_URL}/openapi.json`);
+  for (const p of catalog.premium) console.log(`premium (Base USDC only, not probed here): ${p.method} ${p.path} ${p.priceUsd}`);
   console.log(`mode:  unpaid × ${ROUTES.length}` + (process.env.SMOKE_PRIVATE_KEY ? " + paid" : " (set SMOKE_PRIVATE_KEY to pay)"));
   const results = [];
   for (const route of ROUTES) {
@@ -173,17 +200,17 @@ async function main() {
 
   console.log("\n--- Discovery summary ---");
   console.log(
-    `${"route".padEnd(16)} ${"status".padEnd(8)} ${"amount".padEnd(10)} ${"payTo".padEnd(12)} ok`,
+    `${"route".padEnd(24)} ${"status".padEnd(8)} ${"amount".padEnd(10)} ${"payTo".padEnd(12)} ok`,
   );
   for (const r of results) {
     const amt = r.amount ?? "-";
     const pt = r.payTo ? `${String(r.payTo).slice(0, 8)}…` : "-";
     console.log(
-      `${String(r.label).padEnd(16)} ${String(r.status ?? "err").padEnd(8)} ${String(amt).padEnd(10)} ${pt.padEnd(12)} ${r.ok ? "yes" : "NO"}`,
+      `${String(r.label).padEnd(24)} ${String(r.status ?? "err").padEnd(8)} ${String(amt).padEnd(10)} ${pt.padEnd(12)} ${r.ok ? "yes" : "NO"}`,
     );
   }
   const allOk = results.every((r) => r.ok);
-  console.log(allOk ? "\nDISCOVERY PASS — all nine routes return matching 402" : "\nDISCOVERY FAIL — see probes above");
+  console.log(allOk ? `\nDISCOVERY PASS — all ${results.length} routes return a 402 matching /openapi.json` : "\nDISCOVERY FAIL — see probes above");
 
   const pk = process.env.SMOKE_PRIVATE_KEY?.trim();
   if (pk) {

@@ -5,7 +5,8 @@
  * route configs, so this never drifts from what the 402s charge.
  * Docs only: no payment logic.
  */
-import { premiumListings } from "./premium/listing";
+import { livePremiumListings } from "./premium/listing";
+import { andList } from "./live-catalog";
 import fs from "node:fs";
 import path from "node:path";
 import { BASE_CAIP2, BASE_PAY_TO_BASENAME, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, PUBLIC_BASE_URL, USDC_BASE } from "./config";
@@ -103,7 +104,7 @@ description: Call Horizon Pulse pay-per-call APIs at ${PUBLIC_BASE_URL} and pay 
 
 # Horizon Pulse: pay-per-call APIs for agents (x402 v2, USDC on Base, Solana or Polygon, RLUSD on the XRP Ledger)
 
-${premiumListings().length ? `${routes.length + premiumListings().length} paid routes. ${routes.length} of them cost ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call, and every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet, Solana mainnet or Polygon PoS mainnet, or RLUSD on XRP Ledger mainnet, at the same price on each.${premiumListings().map((x) => ` Plus the ${x.priceUsd} verified brief (\`${x.path}\`, ${x.rail}; see Premium tiers below).`).join("")} ` : `${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call. Every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet, Solana mainnet or Polygon PoS mainnet, or RLUSD on XRP Ledger mainnet, at the same price on each. `}No account, no API key.
+${livePremiumListings().length ? `${routes.length + livePremiumListings().length} paid routes. ${routes.length} of them cost ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call, and every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet, Solana mainnet or Polygon PoS mainnet, or RLUSD on XRP Ledger mainnet, at the same price on each.${` Plus ${andList(livePremiumListings().map((x) => `the ${x.priceUsd} ${x.label} (\`${x.method === "POST" ? "POST " : ""}${x.path}\`, ${x.rail}; see Premium tiers below)`))}.`} ` : `${routes.length} paid routes, ${fmt(Math.min(...prices))} to ${fmt(Math.max(...prices))} per call. Every call is paid individually with an x402 v2 \`exact\` payment in USDC on Base mainnet, Solana mainnet or Polygon PoS mainnet, or RLUSD on XRP Ledger mainnet, at the same price on each. `}No account, no API key.
 
 - Base URL: ${PUBLIC_BASE_URL} (call and pay this host only)
 - Amounts: USDC, 6 decimals on Base, Solana and Polygon (10000 atomic = $0.01); RLUSD on the XRP Ledger as a decimal value (0.01 = $0.01)
@@ -123,6 +124,7 @@ Each facilitator verifies the payment first and settles it only after the route 
 - \`GET ${PUBLIC_BASE_URL}/openapi.json\`: OpenAPI 3.1, typed inputs, response examples, per-operation \`x-payment-info\` (price, asset, network, payTo of the Base entry; the Solana entry is in the 402 and the table above)
 - \`GET ${PUBLIC_BASE_URL}/llms.txt\`: plain-text catalog and rules
 - \`GET ${PUBLIC_BASE_URL}/api/demo/{route}\`: free sample of a route on a fixed input (no payment; discourse/split returns a stored recording, not re-run; no free sample for \`/api/batch\`)
+- \`GET ${PUBLIC_BASE_URL}/api/money-market-rates\`: FREE route, no x402 and no payment: NY Fed reference rates (SOFR, EFFR, OBFR, TGCR, BGCR) as published. Not counted as a paid route
 
 ## 2. Pick a route
 
