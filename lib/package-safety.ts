@@ -10,6 +10,7 @@
  * pypistats cached 24 h per package.
  */
 import { DATA_USER_AGENT, OSV_ATTRIBUTION, readTextCapped, BodyTooLargeError, upstashCache, type SharedCache } from "./dark-checks-shared";
+import { vendorFetch } from "@/lib/no-brotli";
 
 export type Ecosystem = "npm" | "pypi";
 export type Deps = {
@@ -26,7 +27,7 @@ export const PACKAGE_DEADLINE_MS = 20_000;
 function reqSignal(deps: Deps, ms: number): AbortSignal {
   return deps.signal ? AbortSignal.any([AbortSignal.timeout(ms), deps.signal]) : AbortSignal.timeout(ms);
 }
-export const defaultDeps = (): Deps => ({ fetch: (...a) => fetch(...a), now: () => Date.now(), cache: upstashCache() });
+export const defaultDeps = (): Deps => ({ fetch: (...a: Parameters<typeof fetch>) => vendorFetch(a[0] as string, a[1]), now: () => Date.now(), cache: upstashCache() });
 
 const UA = { "user-agent": DATA_USER_AGENT };
 export const PYPISTATS_CACHE_TTL_S = 24 * 3600;

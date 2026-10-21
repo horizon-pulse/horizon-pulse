@@ -7,6 +7,7 @@
 
 export const MMR_SCOPE =
   "Published NY Fed reference rates as released; market data only, not a forecast, not a recommendation.";
+import { vendorFetch } from "@/lib/no-brotli";
 export const MMR_RATES = ["SOFR", "EFFR", "OBFR", "TGCR", "BGCR"] as const;
 export type MmrRate = (typeof MMR_RATES)[number];
 const SECURED = new Set<MmrRate>(["SOFR", "TGCR", "BGCR"]);
@@ -429,7 +430,7 @@ export async function moneyMarketRates(query: MmrQuery, deps: Deps) {
 
 export function defaultMmrDeps(): Deps {
   const go = async (url: string, ms: number) => {
-    const res = await fetch(url, { signal: AbortSignal.timeout(ms), headers: { "user-agent": "HorizonPulse/1.0 (+https://horizonpulse.dev)" } });
+    const res = await vendorFetch(url, { signal: AbortSignal.timeout(ms), headers: { "user-agent": "HorizonPulse/1.0 (+https://horizonpulse.dev)" } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res;
   };

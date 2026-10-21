@@ -135,6 +135,7 @@ import {
 import { ReplaySelfTestError, createReplayStore, encodeReplayValue, parseReplayValue, type ReplayState, type ReplayStore } from "./xrpl-replay-store";
 import { requestFingerprint } from "./request-fingerprint";
 import { runOnPaidRail, xrplRail } from "./paid-rail";
+import { vendorFetch } from "@/lib/no-brotli";
 
 const LOG = "[xrpl-rail]";
 /** Confirmed absence (facilitator answered without the kind / pinned constants disagree): re-check after this long. */
@@ -255,7 +256,7 @@ export function __setXrplModuleLoaderForTests(fn: (() => Promise<XrplModules>) |
 export type XrplRpc = (url: string, method: string, params: Record<string, unknown>, timeoutMs: number) => Promise<unknown>;
 
 async function defaultRpc(url: string, method: string, params: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
-  const res = await fetch(url, {
+  const res = await vendorFetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ method, params: [params] }),

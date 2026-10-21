@@ -11,6 +11,7 @@
  * query, provider not configured, provider error/timeout, zero results.
  */
 import { fetchPublicUrl } from "@/lib/fetch-url";
+import { vendorFetch } from "@/lib/no-brotli";
 
 export const SEARCH_MAX_RESULTS = 5;
 export const SEARCH_DEFAULT_RESULTS = 3;
@@ -60,7 +61,7 @@ function serper(key: string): Provider {
     async search(q, n) {
       let res: Response;
       try {
-        res = await fetch("https://google.serper.dev/search", {
+        res = await vendorFetch("https://google.serper.dev/search", {
           method: "POST",
           headers: { "X-API-KEY": key, "content-type": "application/json" },
           body: JSON.stringify({ q, num: Math.min(10, n + 3) }),

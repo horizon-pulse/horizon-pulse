@@ -144,3 +144,12 @@ export function withSafeAcceptEncoding(init: RequestInit): RequestInit {
   out["Accept-Encoding"] = SAFE_ACCEPT_ENCODING;
   return { ...init, headers: out };
 }
+
+/**
+ * fetch() for fixed vendor/RPC hosts (Sentinel LOW-2): same as global fetch but
+ * never advertises br. Resolves globalThis.fetch at call time so test stubs work.
+ * TEMP; remove once node_patched is yes.
+ */
+export function vendorFetch(input: string | URL | Request, init: RequestInit = {}): Promise<Response> {
+  return globalThis.fetch(input, withSafeAcceptEncoding(init));
+}

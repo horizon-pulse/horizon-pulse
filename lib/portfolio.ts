@@ -14,6 +14,7 @@ import {
   type PublicClient,
 } from "viem";
 import { base, mainnet } from "viem/chains";
+import { vendorFetch } from "@/lib/no-brotli";
 
 export const PORTFOLIO_METHODOLOGY = {
   balances:
@@ -310,7 +311,7 @@ async function fetchCoinGeckoUsdPrices(
   const unique = [...new Set(ids)];
   const url = `https://api.coingecko.com/api/v3/simple/price?ids=${unique.join(",")}&vs_currencies=usd`;
   try {
-    const res = await fetch(url, {
+    const res = await vendorFetch(url, {
       headers: {
         Accept: "application/json",
         "User-Agent":

@@ -15,6 +15,7 @@
  * down (502): not charged.
  */
 import { decodeFunctionResult, encodeFunctionData, parseAbi, type Hex } from "viem";
+import { vendorFetch } from "@/lib/no-brotli";
 
 export const NOT_ADVICE =
   "Not financial, investment, tax, legal or health advice. Quotes about tokens, securities or other financial products are not a recommendation to buy, sell or hold anything. Price differences are observed technical values that may be stale (reference feeds freeze outside market hours and during corporate actions) and are not a trading signal.";
@@ -83,7 +84,7 @@ const RPCS = () => [process.env.BASE_RPC_URL ?? "", "https://base.drpc.org", "ht
 const RPC_TIMEOUT_MS = 6_000;
 
 export type Deps = { fetch: typeof fetch; now: () => number };
-export const defaultDeps = (): Deps => ({ fetch: (...a) => fetch(...a), now: () => Date.now() });
+export const defaultDeps = (): Deps => ({ fetch: (...a: Parameters<typeof fetch>) => vendorFetch(a[0] as string, a[1]), now: () => Date.now() });
 
 export type ParseResult = { ok: true; tickers: string[] } | { ok: false; status: 400 | 404; code: string; error: string };
 

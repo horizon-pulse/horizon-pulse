@@ -120,6 +120,7 @@ import {
   isValidSolanaPubkey,
   type SolanaRailConfig,
 } from "./solana-config";
+import { vendorFetch } from "@/lib/no-brotli";
 
 const LOG = "[solana-rail]";
 const RETRY_AFTER_MS = 60_000;
@@ -213,7 +214,7 @@ async function defaultLoader(): Promise<SolanaModules> {
 export type SolanaRpc = (url: string, method: string, params: unknown[], timeoutMs: number) => Promise<unknown>;
 
 async function defaultRpc(url: string, method: string, params: unknown[], timeoutMs: number): Promise<unknown> {
-  const res = await fetch(url, {
+  const res = await vendorFetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),

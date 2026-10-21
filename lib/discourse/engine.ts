@@ -16,6 +16,7 @@
  * >= 400 with charged:false. Only a 200 answer is billed.
  */
 import { classifierFromEnv } from "./llm";
+import { vendorFetch } from "@/lib/no-brotli";
 
 export const DISCOURSE_LABEL = "online discourse sample, NOT a poll" as const;
 
@@ -339,7 +340,7 @@ export function cacheKey(input: SplitInput): string {
 const err = (status: number, code: string, error: string, extra: Partial<SplitError> = {}): SplitError => ({ ok: false, status, code, error, label: DISCOURSE_LABEL, ...extra });
 
 export type Deps = { fetch: Fetcher; now: () => number };
-export const defaultDeps = (): Deps => ({ fetch: (u, i) => fetch(u, { ...i, headers: { "user-agent": "HorizonPulse/1.0 (+https://horizonpulse.dev)" } }), now: () => Date.now() });
+export const defaultDeps = (): Deps => ({ fetch: (u, i) => vendorFetch(u, { ...i, headers: { "user-agent": "HorizonPulse/1.0 (+https://horizonpulse.dev)" } }), now: () => Date.now() });
 
 const FAIL_REASONS = new Set(["not_configured", "model_budget_reached", "llm_network", "llm_bad_output", "llm_unavailable"]);
 /** Known ClassifierError code, else "store_or_other" (e.g. spend store unreachable). Never echoes error text. */

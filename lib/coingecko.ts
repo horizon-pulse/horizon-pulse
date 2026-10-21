@@ -1,4 +1,5 @@
 const COINGECKO_BASE = "https://api.coingecko.com/api/v3";
+import { vendorFetch } from "@/lib/no-brotli";
 
 const ID_MAP = {
   BTC: "bitcoin",
@@ -17,7 +18,7 @@ export type SpotPrice = {
 
 async function cgFetch<T>(path: string): Promise<T> {
   const url = `${COINGECKO_BASE}${path}`;
-  const res = await fetch(url, {
+  const res = await vendorFetch(url, {
     headers: {
       Accept: "application/json",
       "User-Agent": "horizon-pulse/1.0 (+https://github.com/horizon-pulse/horizon-pulse)",

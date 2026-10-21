@@ -17,6 +17,7 @@
 import { assertSafePublicUrl } from "@/lib/fetch-url";
 import { guardedFetch, isSsrfBlockedError } from "@/lib/net-guard";
 import { RLUSD_CURRENCY_HEX, RLUSD_MAINNET_ISSUER, RLUSD_TESTNET_ISSUER, XRPL_MAINNET_CAIP2, XRPL_TESTNET_CAIP2 } from "@/lib/xrpl-config";
+import { vendorFetch } from "@/lib/no-brotli";
 
 export const CHECK_TIMEOUT_MS = 8_000;
 export const CHECK_MAX_REDIRECTS = 3;
@@ -164,7 +165,7 @@ async function getCodeType(
 ): Promise<{ type: "eoa" | "eoa_7702" | "contract" | "unknown"; delegate: string | null }> {
   for (const rpc of RPCS[chain]!) {
     try {
-      const res = await fetch(rpc, {
+      const res = await vendorFetch(rpc, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getCode", params: [address, "latest"] }),

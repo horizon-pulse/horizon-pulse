@@ -4,6 +4,7 @@
  */
 
 const OKX_BASE = "https://www.okx.com/api/v5";
+import { vendorFetch } from "@/lib/no-brotli";
 
 const INST_MAP = {
   BTC: "BTC-USDT-SWAP",
@@ -26,7 +27,7 @@ export async function fetchFundingRate(
 ): Promise<FundingSnapshot> {
   const instId = INST_MAP[symbol];
   const url = `${OKX_BASE}/public/funding-rate?instId=${instId}`;
-  const res = await fetch(url, {
+  const res = await vendorFetch(url, {
     headers: {
       Accept: "application/json",
       "User-Agent": "horizon-pulse/1.0",

@@ -17,6 +17,7 @@ import {
   dateValues, factValues, isDateline, isHeadlineLike, isOpinion, isSelfContained, publisherOf, questionKind, sentences, stripMarkdown,
   UNCONFIRMED_EMPTY_NOTE, domainOf, capWords, SNIPPET_MAX_WORDS, EXCERPT_SOURCE,
 } from "./research";
+import { vendorFetch } from "@/lib/no-brotli";
 
 type Env = Record<string, string | undefined>;
 export const LLM_TIMEOUT_MS = 12_000;
@@ -135,7 +136,7 @@ export function llmConfig(env: Env = process.env) {
 }
 export const chatCompletionsCall = (base: string): ModelCall => async ({ system, user, schema, model, key, signal }) => {
   if (!/^https:\/\//.test(base)) throw new Error("llm_base_not_https");
-  const res = await fetch(`${base}/chat/completions`, {
+  const res = await vendorFetch(`${base}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify({

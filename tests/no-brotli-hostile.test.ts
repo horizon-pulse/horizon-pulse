@@ -51,6 +51,25 @@ describe("control: spies observe fetch's decoder", () => {
   });
 });
 
+describe("control (Sentinel LOW-1): built-in globalThis.fetch is observable", () => {
+  it("unguarded globalThis.fetch DOES call zlib.createBrotliDecompress on /br", async () => {
+    const spy = vi.spyOn(zlib, "createBrotliDecompress");
+    const res = await globalThis.fetch(`${base}/br`);
+    await res.text();
+    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("vendorFetch (Sentinel LOW-2)", () => {
+  it("never advertises br, even if the caller asks for it", async () => {
+    const { vendorFetch } = await import("@/lib/no-brotli");
+    seen.length = 0;
+    const res = await vendorFetch(`${base}/ok`, { headers: { "Accept-Encoding": "br" } });
+    expect(await res.text()).toBe("<p>ok</p>");
+    expect(seen.at(-1)).toBe(SAFE_ACCEPT_ENCODING);
+  });
+});
+
 describe.each([
   ["global fetch", true],
   ["undici fetch fallback", false],

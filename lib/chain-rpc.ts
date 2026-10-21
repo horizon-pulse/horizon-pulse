@@ -8,9 +8,10 @@
  */
 
 export type ChainNetwork = "base" | "polygon" | "ethereum" | "solana" | "xrpl";
+import { vendorFetch } from "@/lib/no-brotli";
 export type Json = Record<string, unknown>;
 export type RpcDeps = { fetch: typeof fetch; now: () => number };
-export const defaultRpcDeps = (): RpcDeps => ({ fetch: (...a) => fetch(...a), now: () => Date.now() });
+export const defaultRpcDeps = (): RpcDeps => ({ fetch: (...a: Parameters<typeof fetch>) => vendorFetch(a[0] as string, a[1]), now: () => Date.now() });
 
 export const CHAIN_NETWORKS: Record<ChainNetwork, { caip2: string; native: string; decimals: number; unit: "block" | "slot" | "ledger" }> = {
   base: { caip2: "eip155:8453", native: "ETH", decimals: 18, unit: "block" },

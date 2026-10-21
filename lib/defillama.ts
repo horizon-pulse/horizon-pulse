@@ -4,6 +4,7 @@
  */
 
 const DEFILLAMA_YIELDS_URL = "https://yields.llama.fi/pools";
+import { vendorFetch } from "@/lib/no-brotli";
 
 /** Minimum TVL hard filter */
 export const MIN_TVL_USD = 10_000_000;
@@ -75,7 +76,7 @@ type PoolsResponse = {
 };
 
 async function fetchRawPools(): Promise<DefiLlamaRawPool[]> {
-  const res = await fetch(DEFILLAMA_YIELDS_URL, {
+  const res = await vendorFetch(DEFILLAMA_YIELDS_URL, {
     headers: {
       Accept: "application/json",
       "User-Agent":

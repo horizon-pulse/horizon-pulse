@@ -6,6 +6,7 @@
  * Errors from each source are surfaced, never hidden or invented.
  */
 import { fetchSpotPrices as fetchCoinGeckoSpot, type AssetSymbol, type SpotPrice } from "./coingecko";
+import { vendorFetch } from "@/lib/no-brotli";
 
 export type SpotSource = "coinbase" | "coingecko";
 
@@ -20,7 +21,7 @@ const UA = "horizon-pulse/1.0 (+https://github.com/horizon-pulse/horizon-pulse)"
 
 async function coinbaseStats(symbol: AssetSymbol): Promise<SpotPrice> {
   const product = COINBASE_PRODUCT[symbol];
-  const res = await fetch(`https://api.exchange.coinbase.com/products/${product}/stats`, {
+  const res = await vendorFetch(`https://api.exchange.coinbase.com/products/${product}/stats`, {
     headers: { Accept: "application/json", "User-Agent": UA },
     next: { revalidate: 30 },
   });
@@ -72,7 +73,7 @@ export async function fetchCoinbaseUsdMarks(
   const wanted = ids.filter((id) => COINBASE_RATE_SYMBOL[id]);
   if (wanted.length === 0) return { prices };
   try {
-    const res = await fetch("https://api.coinbase.com/v2/exchange-rates?currency=USD", {
+    const res = await vendorFetch("https://api.coinbase.com/v2/exchange-rates?currency=USD", {
       headers: { Accept: "application/json", "User-Agent": UA },
       next: { revalidate: 30 },
     });
@@ -106,7 +107,7 @@ export async function fetchClosesWithFallback(
     cgErr = (err instanceof Error ? err.message : String(err)).slice(0, 160);
   }
   const product = COINBASE_PRODUCT[symbol];
-  const res = await fetch(`https://api.exchange.coinbase.com/products/${product}/candles?granularity=86400`, {
+  const res = await vendorFetch(`https://api.exchange.coinbase.com/products/${product}/candles?granularity=86400`, {
     headers: { Accept: "application/json", "User-Agent": UA },
     next: { revalidate: 300 },
   });

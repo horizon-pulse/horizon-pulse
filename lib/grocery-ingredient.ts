@@ -21,6 +21,7 @@
  */
 import FDC from "@/lib/data/fdc-snapshot.json";
 import { CONTACT_EMAIL } from "@/lib/config";
+import { vendorFetch } from "@/lib/no-brotli";
 
 export const GI_MAX_Q_CHARS = 100;
 export const GI_MAX_ITEMS = 10;
@@ -201,7 +202,7 @@ export async function offProduct(code: string, now = Date.now()): Promise<OffPro
   reads.push(now);
   let res: Response;
   try {
-    res = await fetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`, {
+    res = await vendorFetch(`https://world.openfoodfacts.org/api/v2/product/${code}.json?fields=${OFF_FIELDS}`, {
       headers: { "User-Agent": OFF_USER_AGENT, Accept: "application/json" },
       signal: AbortSignal.timeout(OFF_TIMEOUT_MS),
       redirect: "error",
