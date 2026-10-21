@@ -9,7 +9,7 @@
  */
 import { BRIEF_DECLINE_CAP, BRIEF_DECLINE_TTL_S, UNSETTLED_DAILY_CAP_USD, unsettledKey } from "@/lib/premium/handler";
 import type { CounterKind, PremiumStore } from "@/lib/premium/store";
-import { DAILY_CAP_USD, LIFETIME_CAP_USD, PER_HOST_DAILY, SETTLE_FAIL_LIMIT } from "./config";
+import { DAILY_CAP_USD, LIFETIME_CAP_USD, PER_HOST_DAILY, SELLER_SETTLE_FAIL_LIMIT, SETTLE_FAIL_LIMIT } from "./config";
 
 const DAY_TTL_S = 3 * 86_400;
 const LIFE_TTL_S = 400 * 86_400;
@@ -35,6 +35,8 @@ export const ddKeys = {
   lossRec: (requestId: string) => `dd:lossrec:${requestId}`,
   settleFail: (now: number) => `dd:settlefail:${day(now)}`,
   settleClosed: (now: number) => `dd:settleclosed:${day(now)}`,
+  sellerSettleFail: (domain: string, now: number) => `dd:settlefail:seller:${domain.toLowerCase()}:${day(now)}`,
+  sellerSettleClosed: (domain: string, now: number) => `dd:settleclosed:seller:${domain.toLowerCase()}:${day(now)}`,
   verdict: (claimKey: string) => `dd:verdict:${claimKey}`,
   unconfirmed: () => "dd:unconfirmed",
   decline: (from: string, now: number) => `brief:declines:${from.toLowerCase()}:${day(now)}`,
@@ -170,7 +172,8 @@ async function releaseLoss(store: PremiumStore, r: Reservation, nowMs: number): 
 /** Odin C4: settle failures per UTC day; >= SETTLE_FAIL_LIMIT -> route fails closed. Unreadable -> closed. */
 /** B2: days on which a settle-failure counter WRITE failed: the route is closed for that UTC day on this instance. */
 const writeFailedDays = new Set<string>();
-export function resetSettleFailureLatchForTests() { writeFailedDays.clear(); }
+const sellerWriteFailed = new Set<string>();
+export function resetSettleFailureLatchForTests() { writeFailedDays.clear(); sellerWriteFailed.clear(); }
 export async function routeClosedBySettleFailures(store: PremiumStore, now: number): Promise<boolean> {
   if (writeFailedDays.has(day(now))) return true;
   try {
@@ -195,6 +198,35 @@ export async function recordSettleFailure(store: PremiumStore, now: number): Pro
   }
   const v = Number((await store.get(ddKeys.settleFail(now)).catch(() => null)) ?? SETTLE_FAIL_LIMIT);
   return { count: Number.isFinite(v) ? v : SETTLE_FAIL_LIMIT, write_failed: false };
+}
+
+/**
+ * Odin 10/21 #4: settle failures per seller (registrable domain) per UTC day. >= SELLER_SETTLE_FAIL_LIMIT -> that seller
+ * is refused (no_charge, seller_paused_settle_failures) before the buyer's payment is verified. Unreadable -> refused.
+ */
+export async function sellerClosedBySettleFailures(store: PremiumStore, domain: string, now: number): Promise<boolean> {
+  const d = domain.toLowerCase();
+  if (sellerWriteFailed.has(`${d}|${day(now)}`)) return true;
+  try {
+    if (await store.get(ddKeys.sellerSettleClosed(d, now))) return true;
+    const v = Number((await store.get(ddKeys.sellerSettleFail(d, now))) ?? 0);
+    return !Number.isFinite(v) || v >= SELLER_SETTLE_FAIL_LIMIT;
+  } catch {
+    return true;
+  }
+}
+/** Same B2 rule as the global counter: a failed write latches that seller closed for the day on this instance. */
+export async function recordSellerSettleFailure(store: PremiumStore, domain: string, now: number): Promise<{ count: number; write_failed: boolean }> {
+  const d = domain.toLowerCase();
+  try {
+    await store.spendAdjust(ddKeys.sellerSettleFail(d, now), 1, DAY_TTL_S);
+  } catch {
+    sellerWriteFailed.add(`${d}|${day(now)}`);
+    await store.set(ddKeys.sellerSettleClosed(d, now), "1", DAY_TTL_S).catch(() => undefined);
+    return { count: SELLER_SETTLE_FAIL_LIMIT, write_failed: true };
+  }
+  const v = Number((await store.get(ddKeys.sellerSettleFail(d, now)).catch(() => null)) ?? SELLER_SETTLE_FAIL_LIMIT);
+  return { count: Number.isFinite(v) ? v : SELLER_SETTLE_FAIL_LIMIT, write_failed: false };
 }
 
 /** Odin C4: reuse the brief's per-payer decline cap; the buyer's request takes one slot, refunded only after settle succeeds. */

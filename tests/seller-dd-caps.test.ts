@@ -245,3 +245,19 @@ describe("Sentinel MEDIUM-1: legacy seed also runs before releases", () => {
     expect(await reserveTestPay(s, res({ value_usd: 0.1 }), NOW)).toEqual({ ok: false, code: "lifetime_cap" });
   });
 });
+
+import { recordSellerSettleFailure, sellerClosedBySettleFailures, resetSettleFailureLatchForTests } from "@/lib/seller-dd/caps";
+describe("Odin 10/21 #4: per-seller settle-fail counter", () => {
+  it("counts per seller domain per UTC day, case-insensitive; limit 2 closes only that seller", async () => {
+    resetSettleFailureLatchForTests();
+    const s = new MemoryPremiumStore(); s.now = () => NOW;
+    expect(await sellerClosedBySettleFailures(s, "A.com", NOW)).toBe(false);
+    expect((await recordSellerSettleFailure(s, "A.com", NOW)).count).toBe(1);
+    expect(await sellerClosedBySettleFailures(s, "a.com", NOW)).toBe(false);
+    expect((await recordSellerSettleFailure(s, "a.com", NOW)).count).toBe(2);
+    expect(await sellerClosedBySettleFailures(s, "a.com", NOW)).toBe(true);
+    expect(await sellerClosedBySettleFailures(s, "b.com", NOW)).toBe(false);
+    expect(await sellerClosedBySettleFailures(s, "a.com", NOW + 86_400_000)).toBe(false); // next UTC day
+    expect(await routeClosedBySettleFailures(s, NOW)).toBe(false); // per-seller counter alone never closes the route
+  });
+});
