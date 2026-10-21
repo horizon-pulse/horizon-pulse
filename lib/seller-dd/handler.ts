@@ -22,11 +22,11 @@ import {
 import { premiumStore, type PremiumStore } from "@/lib/premium/store";
 import { receiptSignerReady, signReceipt } from "@/lib/receipt-signer";
 import { requestFingerprint } from "@/lib/request-fingerprint";
-import { ddKeys, recordLoss, recordSettleFailure, type NonceState, type Reservation, refundDeclineSlot, routeClosedBySettleFailures, takeDeclineSlot } from "./caps";
+import { ddKeys, recordLoss, recordSellerSettleFailure, recordSettleFailure, sellerClosedBySettleFailures, type NonceState, type Reservation, refundDeclineSlot, routeClosedBySettleFailures, takeDeclineSlot } from "./caps";
 import { cdpContinuityDeps, defaultNetDeps, testPayLanded } from "./checks";
-import { DD_AMOUNT, DD_DESCRIPTION, DD_INCOMPLETE_NOTE, DD_NOTICE, DD_PATH, DD_TIER, SETTLE_FAIL_LIMIT, sellerDdEnabled, testPayEnabled } from "./config";
+import { DD_AMOUNT, DD_DESCRIPTION, DD_INCOMPLETE_NOTE, DD_NOTICE, DD_PATH, DD_TIER, SELLER_SETTLE_FAIL_LIMIT, SETTLE_FAIL_LIMIT, sellerDdEnabled, testPayEnabled } from "./config";
 import { runSellerDd, type EngineDeps } from "./engine";
-import { eqAddr, isEvmAddress, screenLists } from "./screen";
+import { eqAddr, isEvmAddress, registrableDomain, screenLists } from "./screen";
 import { testerStatus } from "./testpay";
 import { logReceipt, markSuperseded, getReceipt, getRecheckContext, rcptKeys, VERDICT_ID_RE } from "./receipts";
 
@@ -86,6 +86,10 @@ export function parseBody(raw: unknown): { ok: true; v: DdBody } | { ok: false; 
   return { ok: true, v: { resource: o.resource, expected_payTo: (o.expected_payTo as string | undefined) ?? null } };
 }
 
+function sellerDomainOf(resource: string): string | null {
+  try { return registrableDomain(new URL(resource).hostname); } catch { return null; }
+}
+
 export async function sellerDdHandler(req: NextRequest): Promise<NextResponse> {
   if (!sellerDdEnabled()) return notFound();
   if (req.method === "OPTIONS") return new NextResponse(null, { status: 204, headers: CORS });
@@ -134,6 +138,10 @@ export async function sellerDdHandler(req: NextRequest): Promise<NextResponse> {
   const store = premiumStore();
   if (!store) return noCharge(503, "store_unavailable");
   if (await routeClosedBySettleFailures(store, clockFn())) return noCharge(503, "route_paused_settle_failures", {}, { "Retry-After": "3600" });
+  // Odin 10/21 #4: per-seller settle-failure limit, checked before the buyer's payment is verified
+  const sellerDomain = sellerDomainOf(b.v.resource);
+  if (!sellerDomain) return noCharge(400, "host_invalid");
+  if (await sellerClosedBySettleFailures(store, sellerDomain, clockFn())) return noCharge(503, "seller_paused_settle_failures", { seller: sellerDomain }, { "Retry-After": "3600" });
 
   if (!rq) return noCharge(503, "fingerprint_unavailable");
   return await paidFlow(req, store, d, b.v, lists, rq);
@@ -209,6 +217,12 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
     const f = await recordSettleFailure(store, clockFn());
     if (f.write_failed) alertHigh("seller_dd_settle_counter_write_failed");
     if (f.count >= SETTLE_FAIL_LIMIT) alertHigh("seller_dd_route_closed_settle_failures", { count: f.count });
+    const sd = sellerDomainOf(body.resource);
+    if (sd) {
+      const sf = await recordSellerSettleFailure(store, sd, clockFn());
+      if (sf.write_failed) alertHigh("seller_dd_seller_settle_counter_write_failed", { seller: sd });
+      if (sf.count >= SELLER_SETTLE_FAIL_LIMIT) alertHigh("seller_dd_seller_closed_settle_failures", { seller: sd, count: sf.count });
+    }
     const rc = newReconcileId();
     await moveClaim(store, held, { s: "unconfirmed", rc }).catch(() => null);
     await store.zadd(ddKeys.unconfirmed(), Number(d.validBefore), held.key, Math.ceil(CLAIM_TTL_MS.unconfirmed / 1000)).catch(() => undefined);

@@ -138,7 +138,7 @@ describe("seller-dd route", () => {
   it("B1: 3 settle timeouts -> settle_unconfirmed each (no loss yet, never re-settled); route closed before verify", async () => {
     h.settle.mockResolvedValue({ ok: false, kind: "timeout", tx: null });
     for (let k = 0; k < 3; k++) {
-      const r = await POST(req("POST", { resource: `https://seller${k}.example.com/api` }, await paymentHeader()));
+      const r = await POST(req("POST", { resource: `https://seller${k}-shop.com/api` }, await paymentHeader()));
       expect(r.status).toBe(504);
       const b = await r.json();
       expect(b).toMatchObject({ status: "settle_unconfirmed", reason: "buyer_settle_timeout", notice: DD_NOTICE });
@@ -150,6 +150,38 @@ describe("seller-dd route", () => {
     const r = await POST(req("POST", { resource: "https://seller9.example.com/api" }, await paymentHeader()));
     expect((await r.json()).reason).toBe("route_paused_settle_failures");
     expect(h.verify).not.toHaveBeenCalled();
+  });
+  it("Odin #4: per-seller settle-fail: 2 failures on one seller -> that seller refused no_charge before verify; other sellers still served", async () => {
+    h.settle.mockResolvedValue({ ok: false, kind: "timeout", tx: null });
+    for (let k = 0; k < 2; k++) expect((await POST(req("POST", { resource: `https://api.bad-seller.com/v${k}` }, await paymentHeader()))).status).toBe(504);
+    h.verify.mockClear(); engineRan.mockClear(); h.settle.mockClear();
+    // same registrable domain, different subdomain/path -> refused, no verify, no test pay, no settle
+    const r = await POST(req("POST", { resource: "https://other.bad-seller.com/x" }, await paymentHeader()));
+    expect(r.status).toBe(503);
+    expect(await r.json()).toMatchObject({ status: "no_charge", charged: false, reason: "seller_paused_settle_failures", seller: "bad-seller.com", notice: DD_NOTICE });
+    expect(h.verify).not.toHaveBeenCalled(); expect(engineRan).not.toHaveBeenCalled(); expect(h.settle).not.toHaveBeenCalled();
+    expect(Number(await store.get(ddKeys.sellerSettleFail("bad-seller.com", NOW)))).toBe(2);
+    expect(Number(await store.get(ddKeys.settleFail(NOW)))).toBe(2); // global counted too
+    // a different seller is still served (global 2 < 3)
+    h.settle.mockResolvedValue({ ok: true, tx: "0x" + "cd".repeat(32), payer: buyer.address, header: "e30=" });
+    const ok = await POST(req("POST", { resource: "https://good-seller.com/api" }, await paymentHeader()));
+    expect(ok.status).toBe(200);
+  });
+  it("Odin #4: unreadable per-seller counter -> refused (fail closed)", async () => {
+    const realGet = store.get.bind(store);
+    store.get = async (k: string) => { if (k.startsWith("dd:settlefail:seller:")) throw new Error("down"); return realGet(k); };
+    const r = await POST(req("POST", { resource: "https://x-seller.com/api" }, await paymentHeader()));
+    expect((await r.json()).reason).toBe("seller_paused_settle_failures");
+    expect(h.verify).not.toHaveBeenCalled();
+  });
+  it("Odin #4: per-seller counter write failure latches that seller closed (B2 rule)", async () => {
+    h.settle.mockResolvedValue({ ok: false, kind: "ambiguous", tx: null });
+    const realAdj = store.spendAdjust.bind(store);
+    store.spendAdjust = async (k: string, d: number, t: number) => { if (k.startsWith("dd:settlefail:seller:")) throw new Error("down"); return realAdj(k, d, t); };
+    expect((await POST(req("POST", { resource: "https://latch-seller.com/api" }, await paymentHeader()))).status).toBe(502);
+    store.spendAdjust = realAdj;
+    const r = await POST(req("POST", { resource: "https://latch-seller.com/api" }, await paymentHeader()));
+    expect((await r.json()).reason).toBe("seller_paused_settle_failures");
   });
   it("B1: timeout where the settle landed -> redeem with payer proof delivers the cached signed verdict, no re-settle, no new test pay", async () => {
     h.settle.mockResolvedValue({ ok: false, kind: "timeout", tx: null });
