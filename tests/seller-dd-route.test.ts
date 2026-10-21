@@ -132,7 +132,7 @@ describe("seller-dd route", () => {
     const b = await r.json();
     expect(b).toMatchObject({ status: "no_charge", charged: false, notice: DD_NOTICE });
     expect(h.settle).not.toHaveBeenCalled();
-    expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeGreaterThan(0);
+    expect((Number(await store.get(ddKeys.lossUsd(NOW))) / 1e6)).toBeGreaterThan(0);
     expect(JSON.stringify(b)).not.toMatch(/"evidence"|excerpt|"history"|"sig"|"listed"/);
   });
   it("B1: 3 settle timeouts -> settle_unconfirmed each (no loss yet, never re-settled); route closed before verify", async () => {
@@ -192,7 +192,7 @@ describe("seller-dd route", () => {
     expect(r.status).toBe(410);
     expect((await r.json()).reason).toBe("payment_did_not_land");
     await reconcileUnconfirmed(store, NOW + 400_000);
-    expect(Number(await store.get(ddKeys.lossUsd(NOW + 400_000)))).toBeCloseTo(0.01);
+    expect((Number(await store.get(ddKeys.lossUsd(NOW + 400_000))) / 1e6)).toBeCloseTo(0.01);
     expect(h.settle).toHaveBeenCalledTimes(1);
   });
   it("B1: cron closes an unconfirmed claim not landed (loss once), leaves a landed one for redeem", async () => {
@@ -203,7 +203,7 @@ describe("seller-dd route", () => {
     const r2 = await reconcileUnconfirmed(store, NOW + 400_000);
     expect(r1).toMatchObject({ checked: 1, closed_not_charged: 1 });
     expect(r2).toMatchObject({ checked: 0 });
-    expect(Number(await store.get(ddKeys.lossUsd(NOW + 400_000)))).toBeCloseTo(0.01);
+    expect((Number(await store.get(ddKeys.lossUsd(NOW + 400_000))) / 1e6)).toBeCloseTo(0.01);
   });
   it("LOW-1: buyer auth spent/cancelled after our test pay -> settle fails, buyer NOT charged, our test pay recorded as loss once", async () => {
     h.settle.mockResolvedValue({ ok: false, kind: "ambiguous", tx: null }); // e.g. buyer used the nonce elsewhere / cancelled it
@@ -219,7 +219,7 @@ describe("seller-dd route", () => {
     const r = await reconcileUnconfirmed(store, NOW + 400_000);
     expect(r).toMatchObject({ closed_not_charged: 1 });
     await reconcileUnconfirmed(store, NOW + 400_000);
-    expect(Number(await store.get(ddKeys.lossUsd(NOW + 400_000)))).toBeCloseTo(0.01);
+    expect((Number(await store.get(ddKeys.lossUsd(NOW + 400_000))) / 1e6)).toBeCloseTo(0.01);
     expect(h.settle).toHaveBeenCalledTimes(1);
   });
   it("B2: settle-failure counter write fails -> route fails closed for the day", async () => {
@@ -294,7 +294,7 @@ describe("seller-dd completeness (required checks)", () => {
     expect(b.summary_flags).toContain("INCOMPLETE_schema_match");
     expect(h.settle).not.toHaveBeenCalled();
     expect(getPaid).toHaveBeenCalledTimes(1);
-    expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeGreaterThan(0);
+    expect((Number(await store.get(ddKeys.lossUsd(NOW))) / 1e6)).toBeGreaterThan(0);
   });
   it("full pass: every required check ran -> 200 delivered, completeness complete, settled once; tx lookup failure recorded, not silent", async () => {
     engineWith({});

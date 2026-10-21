@@ -39,9 +39,10 @@ export async function GET(req: NextRequest) {
       settle_fail: settleFail,
       settle_fail_limit: SETTLE_FAIL_LIMIT,
       settle_closed: Boolean(closed) || settleFail >= SETTLE_FAIL_LIMIT,
-      spend_day_usd: num(spendDay),
+      // Sentinel LOW-A: counters are integer micro-USD
+      spend_day_usd: num(spendDay) / 1_000_000,
       daily_cap_usd: DAILY_CAP_USD,
-      spend_lifetime_usd: num(spendLife),
+      spend_lifetime_usd: num(spendLife) / 1_000_000,
       lifetime_cap_usd: LIFETIME_CAP_USD,
     }, { headers: h });
   } catch {

@@ -76,7 +76,7 @@ describe("seller-dd replay (100% expected outcomes)", () => {
     const tp = (out.verdict.checks as any[]).find((c) => c.name === "test_pay");
     // C4: evidence never contains the seller's settle header values
     expect(JSON.stringify(tp)).not.toContain("0xfake");
-    if (!fx.expect.pass && fx.expect.paid) expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeGreaterThan(0); // loss ledger
+    if (!fx.expect.pass && fx.expect.paid) expect((Number(await store.get(ddKeys.lossUsd(NOW))) / 1e6)).toBeGreaterThan(0); // loss ledger
     if (fx.name.startsWith("terms bar")) {
       expect(out.verdict.paid_response_excerpt).toBeUndefined();
       expect((out.verdict.checks as any[]).find((c) => c.name === "schema_match").evidence.diff).toBeUndefined();
@@ -145,13 +145,13 @@ describe("seller-dd replay (100% expected outcomes)", () => {
     const fx: Fx = { ...FIXTURES[0]!, landed: "unknown" };
     const out = await runSellerDd({ resource: "https://seller.example.com/api", request_id: "u1", deadline: NOW + 45_000 }, deps(fx, store, { paid: 0, signed: 0 }));
     expect(out.pass).toBe(false);
-    expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeCloseTo(0.01);
+    expect((Number(await store.get(ddKeys.lossUsd(NOW))) / 1e6)).toBeCloseTo(0.01);
     const entries = await store.zrangeByScore(ddKeys.loss(NOW), Number.MAX_SAFE_INTEGER, 10);
     expect(JSON.parse(entries[0]!).status).toBe("unconfirmed");
     const { reconcileOpen } = await import("@/lib/seller-dd/caps");
     const later = NOW + 600_000; store.now = () => later;
     expect(await reconcileOpen(store, async () => "unused", later)).toMatchObject({ released: 1 });
-    expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeCloseTo(0);
+    expect((Number(await store.get(ddKeys.lossUsd(NOW))) / 1e6)).toBeCloseTo(0);
     const all = (await store.zrangeByScore(ddKeys.loss(NOW), Number.MAX_SAFE_INTEGER, 10)).map((e) => JSON.parse(e).status);
     expect(all).toEqual(["unconfirmed", "released"]);
   });

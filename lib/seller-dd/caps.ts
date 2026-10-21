@@ -8,7 +8,7 @@
  * A facilitator or seller error never releases.
  */
 import { BRIEF_DECLINE_CAP, BRIEF_DECLINE_TTL_S, UNSETTLED_DAILY_CAP_USD, unsettledKey } from "@/lib/premium/handler";
-import type { PremiumStore } from "@/lib/premium/store";
+import type { CounterKind, PremiumStore } from "@/lib/premium/store";
 import { DAILY_CAP_USD, LIFETIME_CAP_USD, PER_HOST_DAILY, SETTLE_FAIL_LIMIT } from "./config";
 
 const DAY_TTL_S = 3 * 86_400;
@@ -17,15 +17,21 @@ const day = (now: number) => new Date(now).toISOString().slice(0, 10);
 
 export const ddKeys = {
   idem: (requestId: string, seller: string) => `dd:idem:${requestId}:${seller.toLowerCase()}`,
-  day: (now: number) => `dd:spend:${day(now)}`,
-  life: () => "dd:spend:lifetime",
+  /** Sentinel LOW-A: integer micro-USD (1 USD = 1_000_000). */
+  day: (now: number) => `dd:spendu:${day(now)}`,
+  life: () => "dd:spendu:lifetime",
+  /** pre-LOW-A float-USD keys: read once to seed the micro keys, never written again */
+  legacyDay: (now: number) => `dd:spend:${day(now)}`,
+  legacyLife: () => "dd:spend:lifetime",
+  released: (requestId: string) => `dd:released:${requestId}`,
   host: (domain: string, now: number) => `dd:host:${domain}:${day(now)}`,
   ip: (ip: string, now: number) => `dd:ip:${ip}:${day(now)}`,
   res: (requestId: string) => `dd:res:${requestId}`,
   open: () => "dd:open",
   nonce: (nonce: string) => `dd:nonce:${nonce.toLowerCase()}`,
   loss: (now: number) => `dd:loss:${day(now)}`,
-  lossUsd: (now: number) => `dd:lossusd:${day(now)}`,
+  /** integer micro-USD (LOW-A). Name kept for callers; the pre-LOW-A float key was dd:lossusd:<day>. */
+  lossUsd: (now: number) => `dd:lossu:${day(now)}`,
   lossRec: (requestId: string) => `dd:lossrec:${requestId}`,
   settleFail: (now: number) => `dd:settlefail:${day(now)}`,
   settleClosed: (now: number) => `dd:settleclosed:${day(now)}`,
@@ -37,16 +43,32 @@ export const ddKeys = {
 export type Reservation = { request_id: string; seller: string; domain: string; ip: string; payTo: string; value_usd: number; nonce: string; validBefore: number; at: number };
 export type ReserveResult = { ok: true } | { ok: false; code: "already_paid" | "daily_cap" | "lifetime_cap" | "host_cap" | "unsettled_cap" | "store_unavailable" };
 
-/** The counters one test pay takes, in refusal-priority order (Odin 10/21 #3). */
-function capSteps(r: Reservation, now: number): [string, number, number, number, ReserveResult & { ok: false }][] {
+export const USD_MICRO = 1_000_000;
+/** Reservation value in integer micro-USD (value_usd comes from an atomic USDC amount, so this is exact). */
+export const microOf = (r: Reservation) => Math.round(r.value_usd * USD_MICRO);
+type Step = [key: string, amount: number, cap: number, ttlS: number, kind: CounterKind, refusal: ReserveResult & { ok: false }];
+/** The counters one test pay takes, in refusal-priority order (Odin 10/21 #3). Money in integer micro-USD (LOW-A). */
+function capSteps(r: Reservation, now: number): Step[] {
+  const m = microOf(r);
   return [
-    [ddKeys.day(now), r.value_usd, DAILY_CAP_USD, DAY_TTL_S, { ok: false, code: "daily_cap" }],
-    [ddKeys.life(), r.value_usd, LIFETIME_CAP_USD, LIFE_TTL_S, { ok: false, code: "lifetime_cap" }],
-    [ddKeys.host(r.domain, now), 1, PER_HOST_DAILY, DAY_TTL_S, { ok: false, code: "host_cap" }],
-    [ddKeys.ip(r.ip, now), 1, PER_HOST_DAILY, DAY_TTL_S, { ok: false, code: "host_cap" }],
-    // Odin C4: the test pay counts against the brief's global $3/day unsettled cap
-    [unsettledKey(now), r.value_usd, UNSETTLED_DAILY_CAP_USD, 2 * 86_400, { ok: false, code: "unsettled_cap" }],
+    [ddKeys.day(now), m, DAILY_CAP_USD * USD_MICRO, DAY_TTL_S, "int", { ok: false, code: "daily_cap" }],
+    [ddKeys.life(), m, LIFETIME_CAP_USD * USD_MICRO, LIFE_TTL_S, "int", { ok: false, code: "lifetime_cap" }],
+    [ddKeys.host(r.domain, now), 1, PER_HOST_DAILY, DAY_TTL_S, "int", { ok: false, code: "host_cap" }],
+    [ddKeys.ip(r.ip, now), 1, PER_HOST_DAILY, DAY_TTL_S, "int", { ok: false, code: "host_cap" }],
+    // Odin C4: the test pay counts against the brief's global $3/day unsettled cap. That key is OWNED by the brief and is a
+    // float-USD counter there, so it stays float here (LOW-A exception, documented in the review note).
+    [unsettledKey(now), r.value_usd, UNSETTLED_DAILY_CAP_USD, 2 * 86_400, "float", { ok: false, code: "unsettled_cap" }],
   ];
+}
+
+/** LOW-A migration: seed each micro key once (SET NX) from the old float-USD key, rounded UP, so no prior spend is lost. */
+async function seedMicroFromLegacy(store: PremiumStore, now: number): Promise<void> {
+  for (const [nk, ok, ttl] of [[ddKeys.day(now), ddKeys.legacyDay(now), DAY_TTL_S], [ddKeys.life(), ddKeys.legacyLife(), LIFE_TTL_S]] as const) {
+    if ((await store.get(nk)) !== null) continue;
+    const old = Number((await store.get(ok)) ?? 0);
+    if (!Number.isFinite(old)) throw new Error("legacy_unparseable");
+    await store.setNx(nk, String(Math.max(0, Math.ceil(old * USD_MICRO - 1e-6))), ttl * 1000);
+  }
 }
 
 /**
@@ -61,11 +83,12 @@ export async function reserveTestPay(store: PremiumStore, r: Reservation, now: n
   try {
     if (!(await store.setNx(idemKey, "1", DAY_TTL_S * 1000))) return { ok: false, code: "already_paid" };
     idemTaken = true;
+    await seedMicroFromLegacy(store, now);
     const steps = capSteps(r, now);
-    const failed = await store.spendReserveMulti(steps.map((x) => x[0]), steps.map((x) => x[1]), steps.map((x) => x[2]), steps.map((x) => x[3]));
+    const failed = await store.spendReserveMulti(steps.map((x) => x[0]), steps.map((x) => x[1]), steps.map((x) => x[2]), steps.map((x) => x[3]), steps.map((x) => x[4]));
     if (failed !== 0) {
       await store.del(idemKey).catch(() => undefined);
-      return steps[failed - 1]![4];
+      return steps[failed - 1]![5];
     }
     reserved = true;
     await store.set(ddKeys.res(r.request_id), JSON.stringify(r), DAY_TTL_S);
@@ -87,10 +110,10 @@ export async function reserveTestPay(store: PremiumStore, r: Reservation, now: n
  * the reserve). Safe because no signature exists, so nothing can settle. Never call after a signature was produced; that
  * path waits for releaseIfConfirmedUnused (validBefore passed AND nonce unused on-chain).
  */
-export async function releaseUnsigned(store: PremiumStore, r: Reservation, now: number): Promise<void> {
-  for (const [k, amt, , ttl] of capSteps(r, now)) await store.spendAdjust(k, -amt, ttl);
-  await store.zrem(ddKeys.open(), r.request_id).catch(() => undefined);
-  await store.del(ddKeys.res(r.request_id), ddKeys.nonce(r.nonce), ddKeys.idem(r.request_id, r.seller)).catch(() => undefined);
+export async function releaseUnsigned(store: PremiumStore, r: Reservation, now: number): Promise<boolean> {
+  // Sentinel LOW-B: ONE Lua call, once per reservation id (marker dd:released:<id>); a retry cannot double-refund.
+  const steps = capSteps(r, now);
+  return store.adjustOnce(ddKeys.released(r.request_id), DAY_TTL_S, steps.map((x) => x[0]), steps.map((x) => -x[1]), steps.map((x) => x[3]), steps.map((x) => x[4]), ddKeys.open(), r.request_id, [ddKeys.res(r.request_id), ddKeys.nonce(r.nonce), ddKeys.idem(r.request_id, r.seller)]);
 }
 
 export type NonceState = "used" | "unused" | "unknown";
@@ -99,11 +122,9 @@ export async function releaseIfConfirmedUnused(store: PremiumStore, r: Reservati
   if (Math.floor(nowMs / 1000) <= r.validBefore) return false;
   if ((await nonceState(r.nonce)) !== "unused") return false;
   const at = r.at;
-  await store.spendAdjust(ddKeys.day(at), -r.value_usd, DAY_TTL_S);
-  await store.spendAdjust(ddKeys.life(), -r.value_usd, LIFE_TTL_S);
-  await store.spendAdjust(unsettledKey(at), -r.value_usd, 2 * 86_400);
-  await store.zrem(ddKeys.open(), r.request_id);
-  await store.del(ddKeys.res(r.request_id));
+  // LOW-B: same once-per-reservation marker as releaseUnsigned, so the two release paths can never both refund.
+  const released = await store.adjustOnce(ddKeys.released(r.request_id), DAY_TTL_S, [ddKeys.day(at), ddKeys.life(), unsettledKey(at)], [-microOf(r), -microOf(r), -r.value_usd], [DAY_TTL_S, LIFE_TTL_S, 2 * 86_400], ["int", "int", "float"], ddKeys.open(), r.request_id, [ddKeys.res(r.request_id)]);
+  if (!released) { await store.zrem(ddKeys.open(), r.request_id).catch(() => undefined); return false; }
   await releaseLoss(store, r, nowMs);
   return true;
 }
@@ -132,14 +153,14 @@ export async function reconcileOpen(store: PremiumStore, nonceState: (nonce: str
 export type LossStatus = "confirmed" | "unconfirmed";
 export async function recordLoss(store: PremiumStore, r: Reservation, reason: string, now: number, status: LossStatus = "confirmed"): Promise<void> {
   await store.zadd(ddKeys.loss(now), now, JSON.stringify({ request_id: r.request_id, value_usd: r.value_usd, reason, nonce: r.nonce, status }), 40 * 86_400);
-  await store.spendAdjust(ddKeys.lossUsd(now), r.value_usd, 40 * 86_400);
+  await store.spendAdjust(ddKeys.lossUsd(now), microOf(r), 40 * 86_400);
   if (status === "unconfirmed") await store.set(ddKeys.lossRec(r.request_id), String(now), 40 * 86_400);
 }
 async function releaseLoss(store: PremiumStore, r: Reservation, nowMs: number): Promise<void> {
   const at = Number((await store.get(ddKeys.lossRec(r.request_id)).catch(() => null)) ?? NaN);
   if (!Number.isFinite(at)) return;
   await store.zadd(ddKeys.loss(at), nowMs, JSON.stringify({ request_id: r.request_id, value_usd: -r.value_usd, reason: "released_nonce_unused", nonce: r.nonce, status: "released" }), 40 * 86_400);
-  await store.spendAdjust(ddKeys.lossUsd(at), -r.value_usd, 40 * 86_400);
+  await store.spendAdjust(ddKeys.lossUsd(at), -microOf(r), 40 * 86_400);
   await store.del(ddKeys.lossRec(r.request_id));
 }
 

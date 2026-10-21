@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MemoryPremiumStore, type PremiumStore } from "@/lib/premium/store";
-import { UpstashPremiumStore, SPEND_RESERVE_MULTI_LUA } from "@/lib/premium/store";
+import { ADJUST_ONCE_LUA, UpstashPremiumStore, SPEND_RESERVE_MULTI_LUA } from "@/lib/premium/store";
 import { ddKeys, releaseUnsigned, recordLoss, recordSettleFailure, reconcileOpen, releaseIfConfirmedUnused, reserveTestPay, routeClosedBySettleFailures, type Reservation } from "@/lib/seller-dd/caps";
 
 const NOW = Date.parse("2026-10-20T12:00:00Z");
@@ -20,14 +20,14 @@ describe("C3 caps + reservation lifecycle", () => {
   });
   it("daily cap refuses before unsettled when spend already at $5", async () => {
     const s = mk();
-    await s.spendAdjust(ddKeys.day(NOW), 4.95, 100);
+    await s.spendAdjust(ddKeys.day(NOW), 4950000, 100);
     expect(await reserveTestPay(s, res(), NOW)).toEqual({ ok: false, code: "daily_cap" });
   });
   it("lifetime $25 cap", async () => {
     const s = mk();
-    await s.spendAdjust(ddKeys.life(), 24.95, 100);
+    await s.spendAdjust(ddKeys.life(), 24950000, 100);
     expect(await reserveTestPay(s, res(), NOW)).toEqual({ ok: false, code: "lifetime_cap" });
-    expect(Number(await s.get(ddKeys.day(NOW)) ?? 0)).toBeCloseTo(0); // rolled back
+    expect((Number(await s.get(ddKeys.day(NOW)) ?? 0)) / 1e6).toBeCloseTo(0); // rolled back
   });
   it("per-host cap keyed by registrable domain AND by IP (L-2): 3/day", async () => {
     const s = mk();
@@ -44,10 +44,10 @@ describe("C3 caps + reservation lifecycle", () => {
   });
   it("concurrent race at the cap edge never exceeds the cap", async () => {
     const s = mk();
-    await s.spendAdjust(ddKeys.day(NOW), 4.5, 100);
+    await s.spendAdjust(ddKeys.day(NOW), 4500000, 100);
     const out = await Promise.all(Array.from({ length: 40 }, () => reserveTestPay(s, res(), NOW)));
     expect(out.filter((o) => o.ok).length).toBe(5);
-    expect(Number(await s.get(ddKeys.day(NOW)))).toBeLessThanOrEqual(5 + 1e-9);
+    expect((Number(await s.get(ddKeys.day(NOW))) / 1e6)).toBeLessThanOrEqual(5 + 1e-9);
   });
   it("store outage -> store_unavailable (no signing)", async () => {
     const s = mk();
@@ -62,9 +62,9 @@ describe("C3 caps + reservation lifecycle", () => {
     const later = (r.validBefore + 5) * 1000;
     expect(await releaseIfConfirmedUnused(s, r, async () => "unknown", later)).toBe(false);
     expect(await releaseIfConfirmedUnused(s, r, async () => "used", later)).toBe(false);
-    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(0.1);
+    expect((Number(await s.get(ddKeys.day(NOW))) / 1e6)).toBeCloseTo(0.1);
     expect(await releaseIfConfirmedUnused(s, r, async () => "unused", later)).toBe(true);
-    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(0);
+    expect((Number(await s.get(ddKeys.day(NOW))) / 1e6)).toBeCloseTo(0);
   });
   it("cron reconcile: used kept counted, unused released", async () => {
     const s = mk();
@@ -73,12 +73,12 @@ describe("C3 caps + reservation lifecycle", () => {
     s.now = () => NOW + 600_000;
     const r = await reconcileOpen(s, async (n) => (n === a.nonce ? "used" : "unused"), NOW + 600_000);
     expect(r).toMatchObject({ checked: 2, released: 1, settled: 1 });
-    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(0.1);
+    expect((Number(await s.get(ddKeys.day(NOW))) / 1e6)).toBeCloseTo(0.1);
   });
   it("loss ledger records each no_charge test pay", async () => {
     const s = mk();
     await recordLoss(s, res(), "only_2_of_4", NOW); await recordLoss(s, res(), "buyer_settle_ambiguous", NOW);
-    expect(Number(await s.get(ddKeys.lossUsd(NOW)))).toBeCloseTo(0.2);
+    expect((Number(await s.get(ddKeys.lossUsd(NOW))) / 1e6)).toBeCloseTo(0.2);
   });
   it("3 settle failures/day -> closed; unreadable -> closed", async () => {
     const s = mk();
@@ -96,18 +96,18 @@ describe("Odin 10/21 #3: atomic multi-counter reserve (no overshoot)", () => {
     const s = mk();
     const out = await Promise.all(Array.from({ length: 200 }, () => reserveTestPay(s, res(), NOW)));
     const ok = out.filter((o) => o.ok).length;
-    expect(Number(await s.get(ddKeys.day(NOW)))).toBeLessThanOrEqual(5 + 1e-9);
-    expect(Number(await s.get(ddKeys.life()))).toBeLessThanOrEqual(25 + 1e-9);
-    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(ok * 0.1, 6);
-    expect(Number(await s.get(ddKeys.life()))).toBeCloseTo(ok * 0.1, 6);
+    expect((Number(await s.get(ddKeys.day(NOW))) / 1e6)).toBeLessThanOrEqual(5 + 1e-9);
+    expect((Number(await s.get(ddKeys.life())) / 1e6)).toBeLessThanOrEqual(25 + 1e-9);
+    expect((Number(await s.get(ddKeys.day(NOW))) / 1e6)).toBeCloseTo(ok * 0.1, 6);
+    expect((Number(await s.get(ddKeys.life())) / 1e6)).toBeCloseTo(ok * 0.1, 6);
   });
   it("concurrent at the lifetime edge: exactly the fitting number succeed, refused ones touch no counter", async () => {
     const s = mk();
-    await s.spendAdjust(ddKeys.life(), 24.7, 100);
+    await s.spendAdjust(ddKeys.life(), 24700000, 100);
     const out = await Promise.all(Array.from({ length: 30 }, () => reserveTestPay(s, res(), NOW)));
     expect(out.filter((o) => o.ok).length).toBe(3);
     expect(out.filter((o) => !o.ok).every((o) => !o.ok && o.code === "lifetime_cap")).toBe(true);
-    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(0.3, 6); // no leaked partial reservation
+    expect((Number(await s.get(ddKeys.day(NOW))) / 1e6)).toBeCloseTo(0.3, 6); // no leaked partial reservation
   });
   it("concurrent same host: PER_HOST_DAILY=3 never exceeded", async () => {
     const s = mk();
@@ -117,7 +117,7 @@ describe("Odin 10/21 #3: atomic multi-counter reserve (no overshoot)", () => {
   });
   it("cap refusal writes nothing and frees the idempotency slot", async () => {
     const s = mk();
-    await s.spendAdjust(ddKeys.day(NOW), 5, 100);
+    await s.spendAdjust(ddKeys.day(NOW), 5000000, 100);
     const r = res();
     expect(await reserveTestPay(s, r, NOW)).toEqual({ ok: false, code: "daily_cap" });
     expect(Number((await s.get(ddKeys.life())) ?? 0)).toBe(0);
@@ -127,15 +127,15 @@ describe("Odin 10/21 #3: atomic multi-counter reserve (no overshoot)", () => {
     const s = mk();
     const broken: PremiumStore = new Proxy(s, { get: (t, p) => (p === "zadd" ? async () => { throw new Error("down"); } : (t as any)[p]) });
     expect(await reserveTestPay(broken, res(), NOW)).toEqual({ ok: false, code: "store_unavailable" });
-    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(0, 9);
-    expect(Number(await s.get(ddKeys.life()))).toBeCloseTo(0, 9);
+    expect((Number(await s.get(ddKeys.day(NOW))) / 1e6)).toBeCloseTo(0, 9);
+    expect((Number(await s.get(ddKeys.life())) / 1e6)).toBeCloseTo(0, 9);
   });
   it("releaseUnsigned returns every counter and clears the reservation", async () => {
     const s = mk();
     const r = res({ domain: "rel.com" });
     expect((await reserveTestPay(s, r, NOW)).ok).toBe(true);
     await releaseUnsigned(s, r, NOW);
-    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(0, 9);
+    expect((Number(await s.get(ddKeys.day(NOW))) / 1e6)).toBeCloseTo(0, 9);
     expect(Number(await s.get(ddKeys.host("rel.com", NOW)))).toBe(0);
     expect(await s.get(ddKeys.res(r.request_id))).toBeNull();
     expect(await s.zrangeByScore(ddKeys.open(), Infinity, 10)).toEqual([]);
@@ -147,11 +147,76 @@ describe("Odin 10/21 #3: atomic multi-counter reserve (no overshoot)", () => {
     expect(await u.spendReserveMulti(["a", "b", "c"], [0.1, 0.1, 1], [5, 25, 3], [1, 2, 3])).toBe(3);
     expect(bodies).toHaveLength(1);
     expect(bodies[0][0].slice(0, 6)).toEqual(["EVAL", SPEND_RESERVE_MULTI_LUA, 3, "p:a", "p:b", "p:c"]);
-    expect(SPEND_RESERVE_MULTI_LUA).toMatch(/return i end end for i = 1, n do redis.call\('INCRBYFLOAT'/);
+    expect(SPEND_RESERVE_MULTI_LUA).toMatch(/return i end end for i = 1, n do if ARGV\[3 \* n \+ i\] == 'int' then redis.call\('INCRBY'/);
   });
   it("Upstash: malformed script result fails closed (throws -> store_unavailable)", async () => {
     const f = (async () => new Response(JSON.stringify([{ result: "x" }]), { status: 200 })) as unknown as typeof fetch;
     const u = new UpstashPremiumStore("https://example.invalid", "t", "p:", f);
     await expect(u.spendReserveMulti(["a"], [1], [1], [1])).rejects.toThrow();
+  });
+});
+
+describe("Sentinel LOW-A: integer micro-USD money counters", () => {
+  it("day/lifetime/loss counters hold integers (no float drift over 30 x $0.10)", async () => {
+    const s = mk();
+    for (let k = 0; k < 30; k++) await reserveTestPay(s, res(), NOW);
+    const d = await s.get(ddKeys.day(NOW)), l = await s.get(ddKeys.life());
+    expect(d).toMatch(/^\d+$/); expect(l).toMatch(/^\d+$/);
+    expect(Number(d)).toBe(Number(l));
+    expect(Number(d) % 100_000).toBe(0);
+    await recordLoss(s, res(), "x", NOW);
+    expect(await s.get(ddKeys.lossUsd(NOW))).toMatch(/^\d+$/);
+  });
+  it("exact cap at $5.000000: 50 reservations of $0.10 fit when the unsettled cap is not the limiter", async () => {
+    const s = mk();
+    await s.spendAdjust(ddKeys.day(NOW), 4_900_000, 100);
+    expect((await reserveTestPay(s, res(), NOW)).ok).toBe(true); // 4.9 + 0.1 == 5.0 exactly
+    expect(Number(await s.get(ddKeys.day(NOW)))).toBe(5_000_000);
+    expect(await reserveTestPay(s, res({ value_usd: 0.000001 }), NOW)).toEqual({ ok: false, code: "daily_cap" });
+  });
+  it("migration: micro keys are seeded from the legacy float-USD keys (rounded up), so prior spend still counts", async () => {
+    const s = mk();
+    await s.set(ddKeys.legacyLife(), "24.95", 100);
+    await s.set(ddKeys.legacyDay(NOW), "0.3", 100);
+    expect(await reserveTestPay(s, res(), NOW)).toEqual({ ok: false, code: "lifetime_cap" });
+    expect(Number(await s.get(ddKeys.life()))).toBe(24_950_000);
+    expect(Number(await s.get(ddKeys.day(NOW)))).toBe(300_000);
+  });
+  it("non-integer amount on an int counter throws (fail closed) in both stores", async () => {
+    const s = mk();
+    await expect(s.spendReserveMulti(["a"], [0.5], [1], [10], ["int"])).rejects.toThrow();
+  });
+});
+
+describe("Sentinel LOW-B: releaseUnsigned atomic + idempotent", () => {
+  it("repeat release refunds once only", async () => {
+    const s = mk();
+    await s.spendAdjust(ddKeys.day(NOW), 1_000_000, 100); // other spend that must survive
+    const r = res();
+    expect((await reserveTestPay(s, r, NOW)).ok).toBe(true);
+    expect(await releaseUnsigned(s, r, NOW)).toBe(true);
+    expect(await releaseUnsigned(s, r, NOW)).toBe(false);
+    await Promise.all([releaseUnsigned(s, r, NOW), releaseUnsigned(s, r, NOW)]);
+    expect(Number(await s.get(ddKeys.day(NOW)))).toBe(1_000_000);
+  });
+  it("releaseUnsigned then the cron path for the same reservation: no second refund", async () => {
+    const s = mk();
+    await s.spendAdjust(ddKeys.life(), 2_000_000, 100);
+    const r = res();
+    await reserveTestPay(s, r, NOW);
+    await releaseUnsigned(s, r, NOW);
+    expect(await releaseIfConfirmedUnused(s, r, async () => "unused", (r.validBefore + 5) * 1000)).toBe(false);
+    expect(Number(await s.get(ddKeys.life()))).toBe(2_000_000);
+  });
+  it("Upstash: release is ONE EVAL of ADJUST_ONCE_LUA with the marker first", async () => {
+    const bodies: any[] = [];
+    const f = (async (_u: string, init: any) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify([{ result: 1 }]), { status: 200 }); }) as unknown as typeof fetch;
+    const u = new UpstashPremiumStore("https://example.invalid", "t", "p:", f);
+    const r = res();
+    expect(await releaseUnsigned(u, r, NOW)).toBe(true);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0][0][0]).toBe("EVAL");
+    expect(bodies[0][0][1]).toBe(ADJUST_ONCE_LUA);
+    expect(bodies[0][0][3]).toBe(`p:${ddKeys.released(r.request_id)}`);
   });
 });

@@ -38,14 +38,27 @@ export interface PremiumStore {
    * Seller DD atomic caps (Odin 10/21 #3): ONE Lua script checks every counter against its cap and, only if all fit, adds
    * every amount. Returns 0 on success, or the 1-based index of the first counter that would overshoot (nothing written).
    */
-  spendReserveMulti(keys: string[], amounts: number[], caps: number[], ttlS: number[]): Promise<number>;
+  spendReserveMulti(keys: string[], amounts: number[], caps: number[], ttlS: number[], kinds?: CounterKind[]): Promise<number>;
+  /**
+   * Sentinel LOW-B: apply `deltas` to `keys` ONCE per `marker` in ONE Lua call (SET marker NX first; if it already exists
+   * nothing happens and false is returned), then ZREM member from zkey and DEL delKeys. Safe to repeat.
+   */
+  adjustOnce(marker: string, markerTtlS: number, keys: string[], deltas: number[], ttlS: number[], kinds: CounterKind[], zkey: string, member: string, delKeys: string[]): Promise<boolean>;
 }
+/** Sentinel LOW-A: "int" = integer counter (micro-USD or a count; INCRBY), "float" = legacy float counter (INCRBYFLOAT). */
+export type CounterKind = "int" | "float";
+const fmtAmt = (a: number, k: CounterKind) => (k === "int" ? String(Math.trunc(a)) : a.toFixed(8));
+const assertInt = (a: number[], k: CounterKind[]) => { a.forEach((x, i) => { if (k[i] === "int" && !Number.isSafeInteger(x)) throw new StoreError("non_integer_amount"); }); };
 
 export const SPEND_RESERVE_LUA =
   "local cur = tonumber(redis.call('GET', KEYS[1]) or '0') local a = tonumber(ARGV[1]) if cur + a > tonumber(ARGV[2]) then return 0 end redis.call('INCRBYFLOAT', KEYS[1], ARGV[1]) redis.call('EXPIRE', KEYS[1], ARGV[3]) return 1";
 
+/** ARGV: amounts[n], caps[n], ttls[n], kinds[n] ("int" -> INCRBY, exact compare; "float" -> INCRBYFLOAT, 1e-9 slack). */
 export const SPEND_RESERVE_MULTI_LUA =
-  "local n = #KEYS for i = 1, n do local cur = tonumber(redis.call('GET', KEYS[i]) or '0') if cur + tonumber(ARGV[i]) > tonumber(ARGV[n + i]) + 1e-9 then return i end end for i = 1, n do redis.call('INCRBYFLOAT', KEYS[i], ARGV[i]) redis.call('EXPIRE', KEYS[i], ARGV[2 * n + i]) end return 0";
+  "local n = #KEYS for i = 1, n do local cur = tonumber(redis.call('GET', KEYS[i]) or '0') local slack = 0 if ARGV[3 * n + i] == 'float' then slack = 1e-9 end if cur + tonumber(ARGV[i]) > tonumber(ARGV[n + i]) + slack then return i end end for i = 1, n do if ARGV[3 * n + i] == 'int' then redis.call('INCRBY', KEYS[i], ARGV[i]) else redis.call('INCRBYFLOAT', KEYS[i], ARGV[i]) end redis.call('EXPIRE', KEYS[i], ARGV[2 * n + i]) end return 0";
+/** KEYS: marker, zkey, counters[n], dels[m]. ARGV: markerTtl, member, n, deltas[n], ttls[n], kinds[n]. */
+export const ADJUST_ONCE_LUA =
+  "if not redis.call('SET', KEYS[1], '1', 'NX', 'EX', ARGV[1]) then return 0 end local n = tonumber(ARGV[3]) for i = 1, n do local k = KEYS[2 + i] if ARGV[3 + 2 * n + i] == 'int' then redis.call('INCRBY', k, ARGV[3 + i]) else redis.call('INCRBYFLOAT', k, ARGV[3 + i]) end redis.call('EXPIRE', k, ARGV[3 + n + i]) end redis.call('ZREM', KEYS[2], ARGV[2]) for j = 3 + n, #KEYS do redis.call('DEL', KEYS[j]) end return 1";
 
 export const CAS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 else return 0 end";
 export const CASDEL_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) return 1 else return 0 end";
@@ -137,11 +150,17 @@ export class UpstashPremiumStore implements PremiumStore {
     const [r] = await this.pipe([["EVAL", SPEND_RESERVE_LUA, 1, this.k(key), amount.toFixed(8), cap.toFixed(8), Math.max(1, Math.ceil(ttlS))]]);
     return Number(r) === 1;
   }
-  async spendReserveMulti(keys: string[], amounts: number[], caps: number[], ttlS: number[]) {
-    const [r] = await this.pipe([["EVAL", SPEND_RESERVE_MULTI_LUA, keys.length, ...keys.map(this.k), ...amounts.map((a) => a.toFixed(8)), ...caps.map((c) => c.toFixed(8)), ...ttlS.map((t) => Math.max(1, Math.ceil(t)))]]);
+  async spendReserveMulti(keys: string[], amounts: number[], caps: number[], ttlS: number[], kinds: CounterKind[] = keys.map(() => "float")) {
+    assertInt(amounts, kinds); assertInt(caps, kinds);
+    const [r] = await this.pipe([["EVAL", SPEND_RESERVE_MULTI_LUA, keys.length, ...keys.map(this.k), ...amounts.map((a, i) => fmtAmt(a, kinds[i]!)), ...caps.map((c, i) => fmtAmt(c, kinds[i]!)), ...ttlS.map((t) => Math.max(1, Math.ceil(t))), ...kinds]]);
     const n = Number(r);
     if (!Number.isInteger(n) || n < 0 || n > keys.length) throw new StoreError("store_error");
     return n;
+  }
+  async adjustOnce(marker: string, markerTtlS: number, keys: string[], deltas: number[], ttlS: number[], kinds: CounterKind[], zkey: string, member: string, delKeys: string[]) {
+    assertInt(deltas, kinds);
+    const [r] = await this.pipe([["EVAL", ADJUST_ONCE_LUA, 2 + keys.length + delKeys.length, this.k(marker), this.k(zkey), ...keys.map(this.k), ...delKeys.map(this.k), Math.max(1, Math.ceil(markerTtlS)), member, keys.length, ...deltas.map((d, i) => fmtAmt(d, kinds[i]!)), ...ttlS.map((t) => Math.max(1, Math.ceil(t))), ...kinds]]);
+    return Number(r) === 1;
   }
   async spendAdjust(key: string, delta: number, ttlS: number) {
     await this.pipe([
@@ -230,14 +249,28 @@ export class MemoryPremiumStore implements PremiumStore {
     this.kv.set(key, { v: String(cur + amount), exp: this.now() + ttlS * 1000 });
     return true;
   }
-  async spendReserveMulti(keys: string[], amounts: number[], caps: number[], ttlS: number[]) {
+  async spendReserveMulti(keys: string[], amounts: number[], caps: number[], ttlS: number[], kinds: CounterKind[] = keys.map(() => "float")) {
     // synchronous body = atomic (mirrors the single Lua call)
-    for (let i = 0; i < keys.length; i++) if (Number(this.alive(keys[i])?.v ?? "0") + amounts[i] > caps[i] + 1e-9) return i + 1;
+    assertInt(amounts, kinds); assertInt(caps, kinds);
+    for (let i = 0; i < keys.length; i++) if (Number(this.alive(keys[i])?.v ?? "0") + amounts[i] > caps[i] + (kinds[i] === "float" ? 1e-9 : 0)) return i + 1;
     for (let i = 0; i < keys.length; i++) {
       this.writes.push({ op: "spendReserve", key: keys[i], ttlMs: ttlS[i] * 1000 });
       this.kv.set(keys[i], { v: String(Number(this.alive(keys[i])?.v ?? "0") + amounts[i]), exp: this.now() + ttlS[i] * 1000 });
     }
     return 0;
+  }
+  async adjustOnce(marker: string, markerTtlS: number, keys: string[], deltas: number[], ttlS: number[], kinds: CounterKind[], zkey: string, member: string, delKeys: string[]) {
+    assertInt(deltas, kinds);
+    if (this.alive(marker)) return false;
+    this.writes.push({ op: "set", key: marker, ttlMs: markerTtlS * 1000 });
+    this.kv.set(marker, { v: "1", exp: this.now() + markerTtlS * 1000 });
+    for (let i = 0; i < keys.length; i++) {
+      this.writes.push({ op: "spendAdjust", key: keys[i]!, ttlMs: ttlS[i]! * 1000 });
+      this.kv.set(keys[i]!, { v: String(Number(this.alive(keys[i]!)?.v ?? "0") + deltas[i]!), exp: this.now() + ttlS[i]! * 1000 });
+    }
+    this.z.get(zkey)?.delete(member);
+    for (const k of delKeys) this.kv.delete(k);
+    return true;
   }
   async spendAdjust(key: string, delta: number, ttlS: number) {
     const cur = Number(this.alive(key)?.v ?? "0");
