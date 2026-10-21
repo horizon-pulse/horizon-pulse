@@ -43,7 +43,7 @@ function setEngine(pass: boolean) {
       getPaid: async () => ({ ok: true, status: 200, headers: { "content-type": "application/json" }, body: "{}", truncated: false, ip: "93.184.216.34", fetched_at: "t" }),
     },
     continuity: { lookup: async () => ({ payTo: "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
-    history: async () => (pass ? { window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.01", from_block: 1, to_block: 2, source: "x" } : null),
+    history: async () => ({ window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.01", from_block: 1, to_block: 2, source: "x" }), // outside review #1: history always readable here; "fail" = test pay not landed
     landed: async () => ({ state: pass ? "used" : "unused", nodes: ["a", "b"] }),
     authTx: async () => null,
     sleep: async () => undefined,
@@ -248,5 +248,77 @@ describe("seller-dd route", () => {
     const r = await POST(req("POST", { resource: "http://seller.example.com/api" }, await paymentHeader()));
     expect(r.status).toBe(400);
     expect((await r.json()).notice).toBe(DD_NOTICE);
+  });
+});
+
+/* ---- Outside review #1 (Option B, Counsel PASS 10/21): required checks, "incomplete" = 422 and NO settlement ---- */
+describe("seller-dd completeness (required checks)", () => {
+  const getPaid = vi.fn();
+  function engineWith(o: { history?: unknown; paidOk?: boolean }) {
+    getPaid.mockReset().mockImplementation(async () => (o.paidOk === false ? { ok: false, code: "timeout" } : { ok: true, status: 200, headers: { "content-type": "application/json" }, body: "{}", truncated: false, ip: "93.184.216.34", fetched_at: "t" }));
+    setSellerDdDepsForTests({
+      net: {
+        get402: async () => ({ ok: true, status: 402, headers: { "content-type": "application/json" }, body: JSON.stringify({ x402Version: 2, accepts: [{ scheme: "exact", network: "eip155:8453", asset: USDC_BASE, amount: "10000", payTo: "0x" + "4e".repeat(20), extra: { name: "USD Coin", version: "2" } }] }), truncated: false, ip: "93.184.216.34", fetched_at: "t" }),
+        getPaid,
+      },
+      continuity: { lookup: async () => ({ payTo: "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
+      history: async () => (o.history === undefined ? { window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.01", from_block: 1, to_block: 2, source: "x" } : o.history),
+      landed: async () => ({ state: "used", nodes: ["a", "b"] }),
+      authTx: async () => ({ tx: null, attempts: [{ source: "base-rpc.publicnode.com", reason: "http_429;retry:http_429" }] }),
+      sleep: async () => undefined,
+    } as never);
+  }
+  const allFailed = { ok: false, attempts: [{ source: "base.blockscout.com", reason: "http_403" }, { source: "base-rpc.publicnode.com", reason: "head:timeout;retry:timeout" }] };
+
+  it("history read fails on every source -> 422 incomplete, charged false, NO settle, NO test pay, Counsel note verbatim", async () => {
+    engineWith({ history: allFailed });
+    const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
+    expect(r.status).toBe(422);
+    const b = await r.json();
+    expect(b).toMatchObject({ status: "incomplete", charged: false, completeness: "incomplete", notice: DD_NOTICE });
+    expect(b.message).toBe("Incomplete: one or more checks could not be evidenced (see missing_checks), so no verdict was issued and you were not charged. You may retry later with a new payment authorization.");
+    expect(b.missing_checks).toEqual(expect.arrayContaining(["history_and_lookalike", "test_pay"]));
+    expect(b.summary_flags).toEqual(expect.arrayContaining(["INCOMPLETE_history_and_lookalike", "INCOMPLETE_test_pay"]));
+    // Counsel condition: no settlement attempted on the incomplete 422
+    expect(h.settle).not.toHaveBeenCalled();
+    expect(getPaid).not.toHaveBeenCalled(); // no test payment spent when the required history check cannot run
+    expect(JSON.stringify(b)).not.toMatch(/"sig"|"evidence"|excerpt/);
+  });
+  it("test pay landed but paid response not captured -> schema_match not_run -> 422 incomplete, NO settle, loss recorded", async () => {
+    engineWith({ paidOk: false });
+    const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
+    expect(r.status).toBe(422);
+    const b = await r.json();
+    expect(b).toMatchObject({ status: "incomplete", charged: false });
+    expect(b.missing_checks).toContain("schema_match");
+    expect(b.summary_flags).toContain("INCOMPLETE_schema_match");
+    expect(h.settle).not.toHaveBeenCalled();
+    expect(getPaid).toHaveBeenCalledTimes(1);
+    expect(Number(await store.get(ddKeys.lossUsd(NOW)))).toBeGreaterThan(0);
+  });
+  it("full pass: every required check ran -> 200 delivered, completeness complete, settled once; tx lookup failure recorded, not silent", async () => {
+    engineWith({});
+    const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
+    expect(r.status).toBe(200);
+    const b = await r.json();
+    expect(b).toMatchObject({ status: "delivered", charged: true, completeness: "complete", missing_checks: [], checks_not_run: [] });
+    expect(b.checks_run).toEqual(["402_parse", "test_pay", "schema_match", "payTo_continuity", "history_and_lookalike"]);
+    expect(b.checks.every((c: any) => c.state === "pass" || c.state === "fail")).toBe(true);
+    expect(b.summary_flags.some((f: string) => f.startsWith("INCOMPLETE_"))).toBe(false);
+    expect(b.checks.find((c: any) => c.name === "test_pay").evidence.tx_hash_lookup_failed).toEqual([{ source: "base-rpc.publicnode.com", reason: "http_429;retry:http_429" }]);
+    expect(h.settle).toHaveBeenCalledTimes(1);
+    expect(b.sig).toBeTruthy();
+  });
+  it("history failure reasons per source are carried in the (unsigned, internal) check evidence", async () => {
+    const { runSellerDd } = await import("@/lib/seller-dd/engine");
+    engineWith({ history: allFailed });
+    const { screenLists } = await import("@/lib/seller-dd/screen");
+    const out = await runSellerDd({ resource: "https://seller.example.com/api", request_id: "ab".repeat(12), deadline: Date.now() + 30_000 }, { net: { get402: async () => ({ ok: true, status: 402, headers: {}, body: JSON.stringify({ x402Version: 2, accepts: [{ scheme: "exact", network: "eip155:8453", asset: USDC_BASE, amount: "10000", payTo: "0x" + "4e".repeat(20), extra: { name: "USD Coin", version: "2" } }] }), truncated: false, ip: "93.184.216.34", fetched_at: "t" }), getPaid: getPaid as never }, continuity: { lookup: async () => null }, store, lists: screenLists(), env: process.env, now: () => NOW, history: async () => allFailed as never } as never);
+    const c = (out.verdict.checks as any[]).find((x) => x.name === "history_and_lookalike");
+    expect(c.state).toBe("not_run");
+    expect(c.evidence.failed_sources).toEqual(allFailed.attempts);
+    expect(c.note).toContain("base.blockscout.com http_403");
+    expect(out.pass).toBe(false);
+    expect(out.verdict.completeness).toBe("incomplete");
   });
 });

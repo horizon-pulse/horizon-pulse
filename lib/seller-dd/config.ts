@@ -34,11 +34,15 @@ export const VALID_BEFORE_MAX_S = 300;
 /** 402/Bazaar description. 10/20 copy recheck (Odin Class A on 173cb97): "dated snapshots" -> CDP discovery listing (#4),
  * "settlement history" -> recent window (#3). PENDING Counsel re-check. Test asserts < 500 chars. */
 export const DD_DESCRIPTION =
-  "Seller due-diligence for one x402 endpoint. We make a real capped test payment, check the paid response against the listed schema, compare payTo with the CDP listing, read a recent window of on-chain USDC payments to the payTo and screen for lookalike addresses. Returns a signed JSON verdict of evidenced facts. No charge unless the test payment succeeds and at least 3 of the other 4 checks complete. Facts, not endorsement; no warranty. Not affiliated with the seller checked. $5.";
+  "Seller due-diligence for one x402 endpoint. We make a real capped test payment, check the paid response against the listed schema, compare payTo with the CDP listing, read a recent window of on-chain USDC payments to the payTo and screen for lookalike addresses. Returns a signed JSON verdict of evidenced facts. No charge unless the test payment and all 4 other checks complete. Facts, not endorsement; no warranty. Not affiliated with the seller checked. $5.";
 
 /** Counsel notice (spec §5 + D1), verbatim, REQUIRED top-level field in every response body including no_charge. */
 export const DD_NOTICE =
   "Technical facts as observed at checked_at, with evidence. Not an endorsement, rating, recommendation or warranty. Horizon Pulse is not affiliated with the seller checked. Not financial advice. Disputes or corrections: horizonpulse.co@proton.me.";
+
+/** Counsel PASS 10/21 (to-pulse/2026-10-21-counsel-pass-seller-dd-completeness-copy.md), verbatim. Body of every 422 "incomplete". */
+export const DD_INCOMPLETE_NOTE =
+  "Incomplete: one or more checks could not be evidenced (see missing_checks), so no verdict was issued and you were not charged. You may retry later with a new payment authorization.";
 
 /** D5: excerpt cap (estimate). */
 export const EXCERPT_MAX = 200;

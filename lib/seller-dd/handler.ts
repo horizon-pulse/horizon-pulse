@@ -24,7 +24,7 @@ import { receiptSignerReady, signReceipt } from "@/lib/receipt-signer";
 import { requestFingerprint } from "@/lib/request-fingerprint";
 import { ddKeys, recordLoss, recordSettleFailure, type NonceState, type Reservation, refundDeclineSlot, routeClosedBySettleFailures, takeDeclineSlot } from "./caps";
 import { cdpContinuityDeps, defaultNetDeps, testPayLanded } from "./checks";
-import { DD_AMOUNT, DD_DESCRIPTION, DD_NOTICE, DD_PATH, DD_TIER, SETTLE_FAIL_LIMIT, sellerDdEnabled, testPayEnabled } from "./config";
+import { DD_AMOUNT, DD_DESCRIPTION, DD_INCOMPLETE_NOTE, DD_NOTICE, DD_PATH, DD_TIER, SETTLE_FAIL_LIMIT, sellerDdEnabled, testPayEnabled } from "./config";
 import { runSellerDd, type EngineDeps } from "./engine";
 import { eqAddr, isEvmAddress, screenLists } from "./screen";
 import { testerStatus } from "./testpay";
@@ -176,7 +176,12 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
   if (!out.pass || !sig) {
     // unpaid: check names + results only (no evidence, excerpt, history or payTo facts leave without a charge)
     await moveClaim(store, held, { s: "declined" }).catch(() => null);
-    return noCharge(422, out.pass ? "signing_failed" : out.reason ?? "no_charge", { checks_evidenced: out.checks_evidenced, checks: (out.verdict.checks as { name: string; result: string }[]).map((c) => ({ name: c.name, result: c.result })) });
+    const checksOut = (out.verdict.checks as { name: string; result: string; state?: string }[]).map((c) => ({ name: c.name, result: c.result, state: c.state }));
+    // Outside review #1 / Counsel PASS 10/21: any required check not run -> "incomplete", 422, nothing settled.
+    if (!out.pass && out.verdict.completeness === "incomplete") {
+      return NextResponse.json({ status: "incomplete", charged: false, reason: out.reason ?? "incomplete", completeness: "incomplete", missing_checks: out.verdict.missing_checks, summary_flags: out.verdict.summary_flags, message: DD_INCOMPLETE_NOTE, checks_evidenced: out.checks_evidenced, checks: checksOut, notice: DD_NOTICE }, { status: 422, headers: CORS });
+    }
+    return noCharge(422, out.pass ? "signing_failed" : out.reason ?? "no_charge", { checks_evidenced: out.checks_evidenced, completeness: out.verdict.completeness, missing_checks: out.verdict.missing_checks, checks: checksOut });
   }
 
   // (4) settle buyer on PASS only. Cache the signed verdict BEFORE settle, keyed by buyer+nonce (claim key), so a
@@ -319,6 +324,8 @@ export async function runRecheck(store: PremiumStore, oldId: string): Promise<{ 
       const deps: EngineDeps = { net: defaultNetDeps(), continuity: cdpContinuityDeps(), store, lists, env: process.env, now: clockFn, ...(engineDepsOverride ?? {}) };
       const out = await runSellerDd({ resource: ctx.resource, expected_payTo: ctx.expected_payTo, request_id: requestId, deadline: now + SYNC_DEADLINE_MS, loss_tag: "recheck" }, deps);
       if (!out.test_paid) return { status: 422, body: { error: "recheck_not_completed", reason: out.reason, old_status: "current" } };
+      // Outside review #1: a superseding verdict must be COMPLETE (every required check ran); else the old one stays current.
+      if (out.verdict.completeness !== "complete") return { status: 422, body: { error: "recheck_incomplete", reason: out.reason, missing_checks: out.verdict.missing_checks, old_status: "current" } };
       // Odin R1 / Sentinel LOW-1: every re-check test pay is our cost -> ledger entry tagged "recheck" (fail path: engine tags it)
       if (out.pass && out.reservation) await recordLoss(store, out.reservation, "recheck", clockFn()).catch(() => undefined);
       body = { ...out.verdict, pass: out.pass, supersedes: oldId }; pass = out.pass;

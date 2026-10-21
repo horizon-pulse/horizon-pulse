@@ -8,13 +8,14 @@
  */
 import { encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PremiumStore } from "@/lib/premium/store";
-import type { RpcDeps } from "@/lib/chain-rpc";
+import { defaultRpcDeps, type RpcDeps } from "@/lib/chain-rpc";
 import { DD_NOTICE, PER_CALL_MAX_ATOMIC } from "./config";
 import { recordLoss, reserveTestPay, type Reservation } from "./caps";
 import {
-  authorizationTx, excerptFor, httpsUrl, parse402, readHistory, schemaMatch, sha256, termsAllowExcerpt, testPayLanded,
+  excerptFor, httpsUrl, parse402, schemaMatch, sha256, termsAllowExcerpt, testPayLanded,
   type ContinuityDeps, type FetchOut, type History, type Listed, type NetDeps,
 } from "./checks";
+import { authorizationTxDetailed, readHistoryDetailed, type HistoryRead, type SourceAttempt } from "./history";
 import { eqAddr, isEvmAddress, registrableDomain, screenPayTo, type ScreenLists } from "./screen";
 import { ALLOWED_SIGN_KIND, freshNonce, signTestAuthorization, testerStatus, type SignRequest, type SignResult } from "./testpay";
 import { canonicalJson } from "@/lib/receipt-signer";
@@ -29,7 +30,11 @@ export function windowLabel(fromBlock: number, toBlock: number): { blocks: numbe
 }
 
 export type CheckName = "402_parse" | "test_pay" | "schema_match" | "payTo_continuity" | "history_and_lookalike";
-export type Check = { name: CheckName; result: "ok" | "warn" | "fail" | "skipped"; evidence: Record<string, unknown>; note: string };
+export type Check = { name: CheckName; result: "ok" | "warn" | "fail" | "skipped"; evidence: Record<string, unknown>; note: string; state?: CheckState };
+/** Outside review #1: typed state. pass/fail = the check RAN (with evidence); not_run = it did not (reason in note/evidence). */
+export type CheckState = "pass" | "fail" | "not_run";
+/** Every check is required: a verdict is issued (and the buyer charged) only when ALL ran. */
+export const REQUIRED_CHECKS: readonly CheckName[] = ["402_parse", "test_pay", "schema_match", "payTo_continuity", "history_and_lookalike"];
 
 export type EngineDeps = {
   net: NetDeps;
@@ -41,8 +46,8 @@ export type EngineDeps = {
   now: () => number;
   sign?: (r: SignRequest, nonce: string) => Promise<SignResult>;
   landed?: (tester: string, nonce: string, deadline: number) => Promise<{ state: "used" | "unused" | "unknown"; nodes: string[] }>;
-  authTx?: (tester: string, nonce: string, deadline: number) => Promise<string | null>;
-  history?: (payTo: string, deadline: number) => Promise<History | null>;
+  authTx?: (tester: string, nonce: string, deadline: number) => Promise<string | null | { tx: string | null; attempts: SourceAttempt[] }>;
+  history?: (payTo: string, deadline: number) => Promise<History | HistoryRead | null>;
   sleep?: (ms: number) => Promise<void>;
 };
 
@@ -50,6 +55,12 @@ export type EngineInput = { resource: string; expected_payTo?: string | null; re
 export type EngineOut = { pass: boolean; reason: string | null; checks_evidenced: number; verdict: Record<string, unknown>; test_paid: boolean; reservation: Reservation | null };
 
 const evidenced = (c: Check) => c.result !== "skipped" && Object.keys(c.evidence).length > 0;
+/** A check that ran and FAILED (e.g. test pay sent but not confirmed) is "fail", even with no evidence object. */
+export const checkState = (c: Check): CheckState => (c.result === "fail" ? "fail" : !evidenced(c) ? "not_run" : "pass");
+function asHistoryRead(r: History | HistoryRead | null): HistoryRead {
+  if (!r) return { ok: false, attempts: [{ source: "unknown", reason: "no_result" }] };
+  return "ok" in r ? r : { ok: true, history: r, attempts: [] };
+}
 
 export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<EngineOut> {
   const now = deps.now;
@@ -122,16 +133,19 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
 
   // 5. on-chain history (read even when pay is blocked: it is a fact about the listed payTo)
   if (listed && isEvmAddress(listed.payTo)) {
-    history = await (deps.history ?? ((p, d) => readHistory(p, d, deps.rpc)))(listed.payTo, inp.deadline).catch(() => null);
+    const hr = asHistoryRead(await (deps.history ?? ((p, d) => readHistoryDetailed(p, d, { ...(deps.rpc ?? defaultRpcDeps()), env: deps.env, sleep: deps.sleep })))(listed.payTo, inp.deadline).catch(() => null));
+    history = hr.ok ? hr.history : null;
+    // Outside review #1: no history -> the required check cannot run -> do NOT spend a test payment (result is incomplete anyway)
+    if (!hr.ok) blocked ??= "history_unavailable";
     if (history && screen) {
       checks.history_and_lookalike = {
         name: "history_and_lookalike",
         result: screen.result,
-        evidence: { block_range: `${history.from_block}-${history.to_block}`, source: history.source, screen_list_version: deps.lists!.version },
+        evidence: { block_range: `${history.from_block}-${history.to_block}`, source: history.source, screen_list_version: deps.lists!.version, ...(hr.attempts.length ? { failed_sources: hr.attempts } : {}) },
         note: `${history.unique_payers} unique payers, ${history.repeat_payers} repeat payers in blocks ${history.from_block}-${history.to_block}; screen: ${screen.code}`,
       };
     } else {
-      checks.history_and_lookalike = { name: "history_and_lookalike", result: "skipped", evidence: {}, note: history ? "screen list unavailable" : "on-chain history read failed" };
+      checks.history_and_lookalike = { name: "history_and_lookalike", result: "skipped", evidence: history ? {} : { failed_sources: hr.attempts }, note: history ? "screen list unavailable" : `on-chain history read failed on every source: ${hr.attempts.map((a) => `${a.source} ${a.reason}`).join("; ").slice(0, 400)}` };
     }
   }
 
@@ -173,8 +187,10 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
           landState = land.state;
           const respSha = paid.ok ? sha256(paid.body) : null;
           if (land.state === "used") {
-            const tx = await (deps.authTx ?? ((t, n, d) => authorizationTx(t, n, d, deps.rpc)))(tester.address, nonce, inp.deadline).catch(() => null);
-            checks.test_pay = { name: "test_pay", result: paid.ok && paid.status >= 200 && paid.status < 300 ? "ok" : "warn", evidence: { nonce, auth_sha256: sha256(canonicalJson(s.auth)), nodes: land.nodes, ...(tx ? { tx_hash: tx } : {}), ...(respSha ? { response_sha256: respSha } : {}) }, note: paid.ok ? `test payment of ${listed.price_atomic} atomic USDC confirmed on-chain by ${land.nodes.length} nodes; paid response HTTP ${paid.status}` : `test payment confirmed on-chain; paid response not captured (${paid.code})` };
+            const txr = await (deps.authTx ?? ((t, n, d) => authorizationTxDetailed(t, n, d, { ...(deps.rpc ?? defaultRpcDeps()), env: deps.env, sleep: deps.sleep })))(tester.address, nonce, inp.deadline).catch(() => ({ tx: null, attempts: [{ source: "unknown", reason: "threw" }] }));
+            const tx = txr && typeof txr === "object" ? txr.tx : txr;
+            const txFail = txr && typeof txr === "object" && !txr.tx ? txr.attempts : null; // no longer silent
+            checks.test_pay = { name: "test_pay", result: paid.ok && paid.status >= 200 && paid.status < 300 ? "ok" : "warn", evidence: { nonce, auth_sha256: sha256(canonicalJson(s.auth)), nodes: land.nodes, ...(tx ? { tx_hash: tx } : { tx_hash_lookup_failed: txFail ?? [{ source: "unknown", reason: "no_result" }] }), ...(respSha ? { response_sha256: respSha } : {}) }, note: paid.ok ? `test payment of ${listed.price_atomic} atomic USDC confirmed on-chain by ${land.nodes.length} nodes; paid response HTTP ${paid.status}` : `test payment confirmed on-chain; paid response not captured (${paid.code})` };
             if (!paid.ok) blocked = `paid_response_${paid.code}`;
           } else {
             checks.test_pay = { name: "test_pay", result: "fail", evidence: {}, note: `test payment not confirmed on-chain by two nodes (${land.state})${paid.ok ? `; paid response HTTP ${paid.status}` : `; ${paid.code}`}` };
@@ -196,11 +212,15 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
   }
 
   const list = Object.values(checks);
-  const others = list.filter((c) => c.name !== "test_pay" && evidenced(c)).length;
+  for (const c of list) c.state = checkState(c);
+  const missing = REQUIRED_CHECKS.filter((name) => checks[name].state === "not_run");
+  const complete = missing.length === 0;
+  for (const m of missing) flags.push(`INCOMPLETE_${m}`);
   const testOk = checks.test_pay.result !== "skipped" && checks.test_pay.result !== "fail" && evidenced(checks.test_pay) && !blocked;
-  const pass = testOk && others >= 3;
+  // Outside review #1 (Option B, Counsel PASS 10/21): charge ONLY when every required check ran (was: 3 of the other 4).
+  const pass = testOk && complete;
   const n = list.filter(evidenced).length;
-  const reason = pass ? null : blocked ?? (testOk ? `only_${others}_of_4_other_checks_evidenced` : "test_pay_not_evidenced");
+  const reason = pass ? null : blocked && blocked !== "history_unavailable" ? blocked : !complete ? "incomplete" : "test_pay_not_evidenced";
 
   if (!pass && testPaid && reservation) await recordLoss(deps.store, reservation, inp.loss_tag ?? reason ?? "no_charge", now(), landState === "used" ? "confirmed" : "unconfirmed").catch(() => undefined);
 
@@ -210,6 +230,10 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
     checked_at: checkedAt,
     resource: inp.resource,
     listed: listed ? { price: listed.price_atomic, network: listed.network, asset: listed.asset, payTo: listed.payTo } : null,
+    completeness: complete ? "complete" : "incomplete",
+    missing_checks: missing,
+    checks_run: list.filter((c) => c.state !== "not_run").map((c) => c.name),
+    checks_not_run: list.filter((c) => c.state === "not_run").map((c) => ({ name: c.name, reason: c.note })),
     checks: list,
     history: history ? { window_note: `recent window only: last ${windowLabel(history.from_block, history.to_block).blocks} Base blocks (${windowLabel(history.from_block, history.to_block).text}), not a full history`, window_hours: Math.round(windowLabel(history.from_block, history.to_block).hours * 10) / 10, window_blocks: windowLabel(history.from_block, history.to_block).blocks, unique_payers: history.unique_payers, repeat_payers: history.repeat_payers, first_seen: history.first_seen_block, volume_usdc: history.volume_usdc } : null,
     summary_flags: flags,

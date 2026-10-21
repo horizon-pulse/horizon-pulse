@@ -19,7 +19,7 @@ describe("seller-dd copy (Counsel)", () => {
   it("402 description is under 500 chars and carries Counsel's exact sentences", () => {
     expect(DD_DESCRIPTION.length).toBeLessThan(500);
     expect(DD_DESCRIPTION).toContain("Facts, not endorsement; no warranty. Not affiliated with the seller checked. $5.");
-    expect(DD_DESCRIPTION).toContain("No charge unless the test payment succeeds and at least 3 of the other 4 checks complete.");
+    expect(DD_DESCRIPTION).toContain("No charge unless the test payment and all 4 other checks complete.");
   });
   it("copy recheck 10/20: CDP listing + recent window; no 'dated snapshots' / 'settlement history'", () => {
     expect(DD_DESCRIPTION).toContain("compare payTo with the CDP listing");

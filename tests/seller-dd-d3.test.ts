@@ -43,7 +43,7 @@ function setEngine(pass: boolean) {
       getPaid: async () => ({ ok: true, status: 200, headers: { "content-type": "application/json" }, body: "{}", truncated: false, ip: "93.184.216.34", fetched_at: "t" }),
     },
     continuity: { lookup: async () => ({ payTo: "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
-    history: async () => (pass ? { window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.01", from_block: 1, to_block: 2, source: "x" } : null),
+    history: async () => ({ window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.01", from_block: 1, to_block: 2, source: "x" }), // outside review #1: history always readable here; "fail" = test pay not landed
     landed: async () => ({ state: pass ? "used" : "unused", nodes: ["a", "b"] }),
     authTx: async () => null,
     sleep: async () => undefined,
@@ -412,5 +412,35 @@ describe("seller-dd D3 Counsel retention: 90-day window, real purge, dispute hol
     expect((await dispute(v.id, "open")).status).toBe(401);
     vi.stubEnv("HP_SELLER_DD_ENABLED", "");
     expect((await dispute(v.id, "open")).status).toBe(404);
+  });
+});
+
+/* ---- Outside review #1: supersede only with a COMPLETE verdict (used for dd_f7c8af73a7bf51c81114bd55 / 10/20 Preview) ---- */
+describe("seller-dd supersede requires a complete re-check", () => {
+  beforeEach(() => { vi.stubEnv("HP_DD_RECHECK_SECRET", SECRET); vi.stubEnv("CRON_SECRET", "c".repeat(32)); });
+  it("re-check whose history read fails -> 422, no reissue, old verdict stays current", async () => {
+    const old = await buy();
+    setSellerDdDepsForTests({
+      net: {
+        get402: async () => ({ ok: true, status: 402, headers: { "content-type": "application/json" }, body: JSON.stringify({ x402Version: 2, accepts: [{ scheme: "exact", network: "eip155:8453", asset: USDC_BASE, amount: "10000", payTo: "0x" + "4e".repeat(20), extra: { name: "USD Coin", version: "2" } }] }), truncated: false, ip: "93.184.216.34", fetched_at: "t" }),
+        getPaid: async () => ({ ok: true, status: 200, headers: { "content-type": "application/json" }, body: "{}", truncated: false, ip: "93.184.216.34", fetched_at: "t" }),
+      },
+      continuity: { lookup: async () => ({ payTo: "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
+      history: async () => ({ ok: false, attempts: [{ source: "base.blockscout.com", reason: "http_403" }] }),
+      landed: async () => ({ state: "used", nodes: ["a", "b"] }),
+      authTx: async () => null,
+      sleep: async () => undefined,
+    } as never);
+    const r = await recheck(old.id);
+    expect(r.status).toBe(422);
+    expect((await r.json()).old_status).toBe("current");
+    const v = await (await verify(old.id)).json();
+    expect(v).toMatchObject({ status: "current", superseded_by: null });
+  });
+  it("complete re-check supersedes the old (incomplete-era) verdict; new body carries completeness complete", async () => {
+    const old = await buy();
+    const b = await (await recheck(old.id)).json();
+    expect(b).toMatchObject({ status: "reissued", supersedes: old.id, completeness: "complete", missing_checks: [] });
+    expect((await (await verify(old.id)).json())).toMatchObject({ status: "superseded", superseded_by: b.id });
   });
 });

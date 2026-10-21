@@ -13,6 +13,7 @@ import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import { BASE_CAIP2, USDC_BASE } from "@/lib/config";
 import { cdpGet } from "@/lib/bazaar-check";
 import { defaultRpcDeps, ethCall, hexToBig, rpcs, type RpcDeps } from "@/lib/chain-rpc";
+import { authorizationTxDetailed, readHistoryDetailed, type History } from "./history";
 import { distinctOperators } from "@/lib/premium/onchain";
 import { AUTHORIZATION_STATE_SELECTOR } from "@/lib/premium/payment";
 import { createGuardedAgent, guardedFetch, isBlockedIp, isSsrfBlockedError } from "@/lib/net-guard";
@@ -248,45 +249,16 @@ export async function nonceStateTwoNode(tester: string) {
   return async (nonce: string) => (await testPayLanded(tester, nonce, Date.now() + 10_000)).state;
 }
 
-/** tx hash of our AuthorizationUsed(tester, nonce) event, from our own RPC read (recent blocks only). */
+/** tx hash of our AuthorizationUsed(tester, nonce) event. Provider fallback + reasons: lib/seller-dd/history.ts. */
 export async function authorizationTx(tester: string, nonce: string, deadline: number, deps: RpcDeps = defaultRpcDeps(), lookback = 300): Promise<string | null> {
-  try {
-    const head = hexToBig(await rpcAt(deps, rpcs("base")[0]!, "eth_blockNumber", [], deadline));
-    if (head === null) return null;
-    const logs = await rpcAt(deps, rpcs("base")[0]!, "eth_getLogs", [{ address: USDC_BASE, fromBlock: `0x${(head - BigInt(lookback)).toString(16)}`, toBlock: "latest", topics: [AUTH_USED_TOPIC, pad(tester), nonce.toLowerCase()] }], deadline);
-    const l = Array.isArray(logs) ? obj(logs[0]) : null;
-    return typeof l?.transactionHash === "string" ? l.transactionHash : null;
-  } catch {
-    return null;
-  }
+  return (await authorizationTxDetailed(tester, nonce, deadline, deps, lookback).catch(() => ({ tx: null }))).tx;
 }
 
-export type History = { window_blocks: number; window_days: number; unique_payers: number; repeat_payers: number; first_seen_block: number | null; volume_usdc: string; from_block: number; to_block: number; source: string };
-/** USDC Transfer logs to payTo over a bounded recent block window (public RPC log-range limits; see build notes). */
+export type { History } from "./history";
+/** Back-compat wrapper (History or null). The engine uses readHistoryDetailed for per-source reasons. */
 export async function readHistory(payTo: string, deadline: number, deps: RpcDeps = defaultRpcDeps(), windowBlocks = 9_000): Promise<History | null> {
-  const url = rpcs("base")[0]!;
-  try {
-    const head = hexToBig(await rpcAt(deps, url, "eth_blockNumber", [], deadline));
-    if (head === null) return null;
-    const from = head - BigInt(windowBlocks);
-    const logs = await rpcAt(deps, url, "eth_getLogs", [{ address: USDC_BASE, fromBlock: `0x${from.toString(16)}`, toBlock: `0x${head.toString(16)}`, topics: [TRANSFER_TOPIC, null, pad(payTo)] }], deadline);
-    if (!Array.isArray(logs)) return null;
-    const counts = new Map<string, number>();
-    let vol = 0n, first: number | null = null;
-    for (const l0 of logs) {
-      const l = obj(l0);
-      const fromT = Array.isArray(l?.topics) ? String(l!.topics[1] ?? "") : "";
-      const who = `0x${fromT.slice(-40)}`.toLowerCase();
-      counts.set(who, (counts.get(who) ?? 0) + 1);
-      vol += hexToBig(l?.data) ?? 0n;
-      const b = hexToBig(l?.blockNumber);
-      if (b !== null && (first === null || Number(b) < first)) first = Number(b);
-    }
-    const whole = vol / 1_000_000n, frac = (vol % 1_000_000n).toString().padStart(6, "0");
-    return { window_blocks: windowBlocks, window_days: Math.round(((Number(head - from) + 1) * 2) / 864) / 100, unique_payers: counts.size, repeat_payers: [...counts.values()].filter((n) => n > 1).length, first_seen_block: first, volume_usdc: `${whole}.${frac}`, from_block: Number(from), to_block: Number(head), source: new URL(url).host };
-  } catch {
-    return null;
-  }
+  const r = await readHistoryDetailed(payTo, deadline, deps, windowBlocks).catch(() => null);
+  return r && r.ok ? r.history : null;
 }
 
 export { ethCall };
