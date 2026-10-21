@@ -91,7 +91,7 @@ export function markMcpPayer(): void {
   }
 }
 
-/** Route-tag record for a settled paid MCP tool call (public settle fields only). Never throws. */
+/** Route-tag record for a settled paid MCP tool call: ts, route, method, network, amount, tx, payer (no bodies/headers/secrets). Never throws. */
 export function logMcpPaidSettle(opts: PaymentOpts, settlement: { success?: boolean; transaction?: unknown; network?: unknown; payer?: unknown } | undefined): void {
   try {
     if (!settlement || settlement.success !== true) return;

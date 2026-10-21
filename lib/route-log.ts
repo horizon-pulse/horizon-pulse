@@ -224,8 +224,10 @@ export function logRouteRequest(opts: {
  * not pass through createX402GetHandler (paid MCP tools, premium tiers, seller
  * DD) record which route was paid, so the funnel can attribute every paid call
  * by route. Same record shape, sink, TTLs and fire-and-forget rules as
- * logRouteRequest; outcome is always paid_settled. Only public settle fields
- * (tx, network, payer) and the atomic price: no bodies, headers or secrets.
+ * logRouteRequest; outcome is always paid_settled. Each record stores ts,
+ * route, method, outcome, network (rail), atomic amount, tx and payer address
+ * (payer and tx are public onchain; 30-day TTL per Odin C1 10/17). Nothing
+ * else: no bodies, headers, IPs, payment payloads, signatures or secrets.
  */
 export function buildPaidSettleRecord(opts: {
   route: string;
