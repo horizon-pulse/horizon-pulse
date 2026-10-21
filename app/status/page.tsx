@@ -76,6 +76,9 @@ export default async function StatusPage() {
             <p className="hp-sub">
               The Base payTo balance below is a live <code>balanceOf</code> read on Base each time this page loads. Nothing is cached or estimated.
             </p>
+            <p className="hp-sub" data-runtime-node={process.version}>
+              Server runtime: Node <code>{process.version}</code>
+            </p>
             <p className="hp-proof">
               <a href={`https://basescan.org/address/${DEFAULT_PAY_TO}`} target="_blank" rel="noreferrer">Base payTo on Basescan ↗</a>
               <span>·</span>
