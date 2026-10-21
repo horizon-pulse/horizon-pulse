@@ -195,7 +195,7 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
     if (out.reservation) await recordLoss(store, out.reservation, "receipt_log_unavailable", clockFn()).catch(() => undefined);
     return noCharge(503, "store_unavailable");
   }
-  const s = await settlePayment(d, DD_TIER);
+  const s = await settlePayment(d, DD_TIER, DD_PATH);
   if (!s.ok) {
     // Odin #6/B1: settle_unconfirmed, never re-settle, never ask for a new authorization; timeouts/ambiguous count toward
     // the 3/day kill switch (B2: a failed counter write closes the route). Loss is written only once the buyer nonce is

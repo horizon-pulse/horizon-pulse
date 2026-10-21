@@ -218,3 +218,49 @@ export function logRouteRequest(opts: {
     /* never affect the request */
   }
 }
+
+/**
+ * Route tag at payment (Odin Class A branch, 2026-10-21): paid settles that do
+ * not pass through createX402GetHandler (paid MCP tools, premium tiers, seller
+ * DD) record which route was paid, so the funnel can attribute every paid call
+ * by route. Same record shape, sink, TTLs and fire-and-forget rules as
+ * logRouteRequest; outcome is always paid_settled. Only public settle fields
+ * (tx, network, payer) and the atomic price: no bodies, headers or secrets.
+ */
+export function buildPaidSettleRecord(opts: {
+  route: string;
+  method: string;
+  rail: string | null | undefined;
+  amountAtomic: string;
+  tx: string | null | undefined;
+  payer: string | null | undefined;
+  now?: Date;
+}): RouteLogRecord {
+  const str = (v: unknown) => (typeof v === "string" && v.length > 0 && v.length <= 256 ? v : null);
+  return {
+    ts: (opts.now ?? new Date()).toISOString(),
+    route: opts.route,
+    method: opts.method,
+    outcome: "paid_settled",
+    rail: str(opts.rail) ?? "unknown",
+    amount: opts.amountAtomic,
+    tx: str(opts.tx),
+    payer: str(opts.payer),
+  };
+}
+
+/** Fire-and-forget paid-settle record. Never throws and never delays the caller. */
+export function logPaidSettle(opts: Parameters<typeof buildPaidSettleRecord>[0]): void {
+  try {
+    if (process.env.VITEST && process.env.HP_ROUTE_LOG_IN_TESTS !== "true") return;
+    const rec = buildPaidSettleRecord(opts);
+    const task = () => sendRouteLog(rec).then(() => undefined);
+    try {
+      after(task);
+    } catch {
+      void task();
+    }
+  } catch {
+    /* never affect the paid call */
+  }
+}

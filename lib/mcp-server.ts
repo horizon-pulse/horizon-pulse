@@ -23,7 +23,8 @@ import { z } from "zod";
 import { buildPaymentRequirements, getResourceServer } from "./x402-server";
 import { PUBLIC_BASE_URL } from "./config";
 import { CALLER_IP_HEADER, platformIp } from "./caller-ip";
-import { scheduleMarkPayer } from "./free-tier";
+import { routePathOf, scheduleMarkPayer } from "./free-tier";
+import { logPaidSettle } from "./route-log";
 import { MMR_DESCRIPTION } from "./money-market-rates";
 import { premiumHandler } from "./premium/handler";
 import { BRIEF_EXAMPLES } from "./premium/source-index";
@@ -85,6 +86,17 @@ export function markMcpPayer(): void {
   try {
     const ip = mcpCaller.getStore()?.ip;
     if (ip) scheduleMarkPayer(new Headers({ [CALLER_IP_HEADER]: ip }));
+  } catch {
+    /* never affect the tool result */
+  }
+}
+
+/** Route-tag record for a settled paid MCP tool call (public settle fields only). Never throws. */
+export function logMcpPaidSettle(opts: PaymentOpts, settlement: { success?: boolean; transaction?: unknown; network?: unknown; payer?: unknown } | undefined): void {
+  try {
+    if (!settlement || settlement.success !== true) return;
+    const s = (v: unknown) => (typeof v === "string" ? v : null);
+    logPaidSettle({ route: routePathOf(opts.resource), method: "MCP", rail: s(settlement.network), amountAtomic: opts.maxAmountRequired, tx: s(settlement.transaction), payer: s(settlement.payer) });
   } catch {
     /* never affect the tool result */
   }
@@ -484,7 +496,13 @@ export function buildMcpServer(): McpServer {
       // Known-payer guard (lib/free-tier.ts): a settled paid MCP call marks the /mcp caller's
       // IP, same as a settled paid REST call. Fires only after a successful settlement (the
       // wrapper skips settlement on isError). Fire-and-forget; never affects the tool result.
-      hooks: { onAfterSettlement: () => markMcpPayer() },
+      hooks: {
+        onAfterSettlement: (ctx) => {
+          markMcpPayer();
+          // Route tag at payment: the paid MCP tool's route path, so the funnel attributes it by route.
+          logMcpPaidSettle(t.opts, ctx.settlement);
+        },
+      },
     });
     server.tool(t.name, mcpToolDescription(t.name, t.opts), t.schema, mcpToolAnnotations(t.name), withX402ErrorMeta(paid(async (args) => t.call(args as Record<string, unknown>))));
   }

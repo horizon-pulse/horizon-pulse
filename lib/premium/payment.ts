@@ -25,6 +25,7 @@ import { BASE_CAIP2, DEFAULT_PAY_TO, PUBLIC_BASE_URL, USDC_BASE } from "@/lib/co
 import { defaultRpcDeps, ethCall, type RpcDeps } from "@/lib/chain-rpc";
 import { BUYER_TERMS_URL } from "./copy";
 import { tierPath, type Tier } from "./tiers";
+import { logPaidSettle } from "@/lib/route-log";
 import { BRIEF_SERVICE_META, briefBazaarExtension } from "./bazaar";
 
 export const PREMIUM_CORS: Record<string, string> = {
@@ -231,11 +232,16 @@ export async function verifyPayment(d: Decoded, x: Tier): Promise<VerifyResult> 
 export type SettleResult =
   | { ok: true; tx: string | null; payer: string | null; header: string }
   | { ok: false; kind: "timeout" | "ambiguous"; tx: string | null };
-export async function settlePayment(d: Decoded, x: Tier): Promise<SettleResult> {
+export async function settlePayment(d: Decoded, x: Tier, routePath: string = tierPath(x)): Promise<SettleResult> {
   try {
     const r: any = await client().settle(d.raw, requirementFor(x) as never);
     const tx = typeof r?.transaction === "string" && r.transaction ? r.transaction : null;
-    if (r?.success === true && tx) return { ok: true, tx, payer: typeof r.payer === "string" ? r.payer : d.from, header: encodePaymentResponseHeader(r) };
+    if (r?.success === true && tx) {
+      const payer = typeof r.payer === "string" ? r.payer : d.from;
+      // Route tag at payment: record which route was paid (fire-and-forget, after the settle succeeded).
+      logPaidSettle({ route: routePath, method: "POST", rail: typeof r.network === "string" ? r.network : BASE_CAIP2, amountAtomic: x.amount, tx, payer });
+      return { ok: true, tx, payer, header: encodePaymentResponseHeader(r) };
+    }
     return { ok: false, kind: "ambiguous", tx };
   } catch (e) {
     console.error(facilitatorErrorSummary("settle", e));
