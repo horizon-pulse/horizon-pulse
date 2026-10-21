@@ -51,16 +51,4 @@ export function payerMarkTtlDays(env: Env = process.env): number {
   return n >= 1 && n <= 30 ? n : DEFAULT_PAYER_MARK_TTL_DAYS;
 }
 
-/**
- * public/llms.txt and public/openapi.json are static files. With HP_FREE_TIER=optin
- * at build time, beforeFiles rewrites serve the free-tier-annotated copies
- * (app/free-tier/*) at the same URLs. Off -> no rewrites: the static files, byte-identical.
- * (Vercel env changes take effect on the next deploy, like every other flag here.)
- */
-export function freeTierRewrites(env: Env = process.env) {
-  if (freeTierMode(env) !== "optin") return [];
-  return [
-    { source: "/llms.txt", destination: "/free-tier/llms.txt" },
-    { source: "/openapi.json", destination: "/free-tier/openapi.json" },
-  ];
-}
+/* freeTierRewrites removed (Sentinel L2): replaced by docRewrites() in lib/doc-rewrites.ts, which next.config uses. */

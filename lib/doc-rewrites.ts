@@ -1,17 +1,18 @@
 /**
- * Build-time beforeFiles rewrites for the static docs (no "@/" imports: next.config loads this).
+ * Build-time beforeFiles rewrites for the static docs (no runtime "@/" imports: next.config loads this; seller-dd/config
+ * has only a type-only "@/" import, erased at compile).
  * /llms.txt and /openapi.json are served by app/free-tier/* when EITHER the free tier is optin (lib/free-tier-mode.ts)
- * OR seller due-diligence is on (HP_PREMIUM_ENABLED=true AND HP_SELLER_DD_ENABLED=true, same exact-string gate as
- * lib/seller-dd/config.ts). Both off -> no rewrites: the public/ files, byte-identical.
+ * OR seller due-diligence is on (sellerDdEnabled() imported from lib/seller-dd/config.ts: the route's own gate,
+ * not a copy; Sentinel L1). Both off -> no rewrites: the public/ files, byte-identical.
  * (Vercel env changes take effect on the next deploy, like every other flag here.)
  */
 import { freeTierMode } from "./free-tier-mode";
+import { sellerDdEnabled } from "./seller-dd/config";
 
 type Env = Record<string, string | undefined>;
 
-export function sellerDdDocsOn(env: Env = process.env): boolean {
-  return env.HP_PREMIUM_ENABLED === "true" && env.HP_SELLER_DD_ENABLED === "true";
-}
+/** Same function as the route gate (Sentinel L1: imported, not duplicated). */
+export const sellerDdDocsOn = (env: Env = process.env): boolean => sellerDdEnabled(env);
 
 export function docRewrites(env: Env = process.env) {
   if (freeTierMode(env) !== "optin" && !sellerDdDocsOn(env)) return [];
