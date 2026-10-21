@@ -95,7 +95,7 @@ import { persistAlert } from "@/lib/alert-persist";
 import { createHash, randomBytes } from "node:crypto";
 import type { NextRequest } from "next/server";
 import { RAIL_REJECT, reasonFromRailResponse, settleFailReason, type OnReject } from "./rail-reject";
-import { NextRequest as NextRequestCtor, NextResponse } from "next/server";
+import { NextRequest as NextRequestCtor, NextResponse, after } from "next/server";
 import { HTTPFacilitatorClient, x402ResourceServer } from "@x402/core/server";
 import type { FacilitatorClient, RouteConfig, RoutesConfig } from "@x402/core/server";
 import type {
@@ -161,8 +161,17 @@ export const COLD_BACKOFF_BASE_MS = 5_000;
 export const COLD_BACKOFF_MAX_MS = 60_000;
 /** ALERT after this many failed checks in a row (one failed check never alerts). */
 export const ALERT_CONSECUTIVE_FAILURES = 3;
-/** ALERT when a check has had no success for this long (since the last confirmation, or the first failure if never confirmed). */
+/**
+ * ALERT when a check has been FAILING continuously for this long, measured from the first failure of the
+ * current streak (fix 2026-10-21, check_failing RCA: it used to be measured from the last success, so an
+ * instance idle > 30 min alerted on its first failed refresh).
+ */
 export const ALERT_STALE_MS = 30 * 60_000;
+/**
+ * A warm refresh starting this long after the previous check of the same kind finished counts as "after a long
+ * idle" (the instance was likely frozen): its first failure is retried once inline before it counts.
+ */
+export const LONG_IDLE_MS = 2 * READY_TTL_MS;
 /** Same default @x402/core applies to the Base entry. */
 export const MAX_TIMEOUT_SECONDS = 300;
 /** Upper bound on the signed blob we forward (a single-signed Payment is ~250 bytes; multisig more). */
@@ -291,6 +300,8 @@ export function resetXrplRailForTests(): void {
   readyRefresh = null;
   failures.ready = freshFailure();
   failures.rail = freshFailure();
+  lastCheckAt.ready = 0;
+  lastCheckAt.rail = 0;
   alertedEpisodes.clear();
   paidHandlers = new WeakMap();
   replay = createReplayStore();
@@ -403,11 +414,12 @@ const failures: { ready: Failure; rail: Failure } = { ready: freshFailure(), rai
 /** Dedupe: "<check>:<reason>" alerted in the current failure episode (cleared by the next success). */
 const alertedEpisodes = new Set<string>();
 
-function noteCheckFailure(check: XrplCheck, f: Failure, confirmedAt: number | undefined, entry: "kept" | "hidden"): void {
+function noteCheckFailure(check: XrplCheck, f: Failure, _confirmedAt: number | undefined, entry: "kept" | "hidden"): void {
   const now = Date.now();
   f.streak++;
   if (!f.firstFailAt) f.firstFailAt = now;
-  const since = now - (confirmedAt ?? f.firstFailAt);
+  // Stale = how long the check has been failing (since the streak began), never time since the last success.
+  const since = now - f.firstFailAt;
   const fire = (reason: "consecutive_failures" | "stale") => {
     const k = `${check}:${reason}`;
     if (alertedEpisodes.has(k)) return;
@@ -423,6 +435,41 @@ function noteCheckSuccess(check: XrplCheck, f: Failure): void {
   f.firstFailAt = 0;
   alertedEpisodes.delete(`${check}:consecutive_failures`);
   alertedEpisodes.delete(`${check}:stale`);
+}
+
+/** When each check kind last finished (success or failure); 0 = never. Drives the long-idle retry. */
+const lastCheckAt: { ready: number; rail: number } = { ready: 0, rail: 0 };
+
+/**
+ * Warm check after a long idle: one inline retry (after COLD_RETRY_DELAY_MS) before a failure counts, so a
+ * request/timer frozen across an idle period does not register as a failing check. A confirmed absence is
+ * never retried. Not idle, or already in a failure streak: a single attempt, exactly as before.
+ */
+async function idleRetryOnce<T>(idle: boolean, attempt: () => Promise<T>): Promise<T> {
+  try {
+    return await attempt();
+  } catch (err) {
+    if (!idle || isConfirmedAbsence(err)) throw err;
+    await new Promise((res) => setTimeout(res, COLD_RETRY_DELAY_MS));
+    return attempt();
+  }
+}
+
+/**
+ * Keep a background refresh alive past the response (Vercel may freeze the instance once the response is sent,
+ * leaving the RPC / timeout timer pending until the next thaw). Next's after() when inside a request scope;
+ * outside one (tests, scripts) it throws and the promise simply runs detached, as before. Never throws.
+ */
+function keepAlive(p: Promise<unknown>): void {
+  const settled = p.then(
+    () => undefined,
+    () => undefined,
+  );
+  try {
+    after(settled);
+  } catch {
+    void settled;
+  }
 }
 
 /** Cold backoff after `streak` failed checks: 5 s, 10 s, 20 s, 40 s, 60 s, 60 s... */
@@ -1013,7 +1060,8 @@ function startRailInit(config: XrplRailConfig, key: string): Promise<Rail | null
   const prev = railState?.key === key ? railState : null;
   // Confirmed rail: one bounded refresh in the background. Cold: retried inside this request.
   const attempt = (ms: number) => withTimeout(initRail(config), ms, "XRPL rail init");
-  const promise: Promise<Rail | null> = (prev ? attempt(config.initTimeoutMs) : coldAttempts(config.initTimeoutMs, attempt))
+  const idle = !!prev && failures.rail.streak === 0 && lastCheckAt.rail > 0 && Date.now() - lastCheckAt.rail > LONG_IDLE_MS;
+  const promise: Promise<Rail | null> = (prev ? idleRetryOnce(idle, () => attempt(config.initTimeoutMs)) : coldAttempts(config.initTimeoutMs, attempt))
     .then(
       (rail): Rail | null => {
         railState = { key, rail, builtAt: Date.now() };
@@ -1060,6 +1108,7 @@ function startRailInit(config: XrplRailConfig, key: string): Promise<Rail | null
       },
     )
     .finally(() => {
+      lastCheckAt.rail = Date.now();
       if (railInit?.promise === promise) railInit = null;
     });
   railInit = { key, promise };
@@ -1076,7 +1125,7 @@ async function getRail(config: XrplRailConfig): Promise<Rail | null> {
   const key = JSON.stringify(config);
   if (railState?.key === key) {
     const now = Date.now();
-    if (now - railState.builtAt > RAIL_TTL_MS && now >= (railState.retryAt ?? 0)) void startRailInit(config, key);
+    if (now - railState.builtAt > RAIL_TTL_MS && now >= (railState.retryAt ?? 0)) keepAlive(startRailInit(config, key));
     return railState.rail;
   }
   if (failedKey === key && Date.now() < failedUntil) return null;
@@ -1154,7 +1203,12 @@ function refreshReady(config: XrplRailConfig, key: string): Promise<boolean> {
     const confirmedAt = prev?.ready ? prev.confirmedAt : undefined;
     try {
       // Confirmed instance: one bounded check (background). Cold: retried inside this request.
-      const ready = confirmedAt !== undefined ? await checkPayToReady(config) : await coldAttempts(config.initTimeoutMs, (ms) => checkPayToReady(config, ms));
+      const idle =
+        confirmedAt !== undefined && failures.ready.streak === 0 && lastCheckAt.ready > 0 && Date.now() - lastCheckAt.ready > LONG_IDLE_MS;
+      const ready =
+        confirmedAt !== undefined
+          ? await idleRetryOnce(idle, () => checkPayToReady(config))
+          : await coldAttempts(config.initTimeoutMs, (ms) => checkPayToReady(config, ms));
       const now = Date.now();
       // A definitive RPC answer either way (ready, or confirmed absence: actNotFound, no/frozen/zero trust line, flags).
       // One ALERT per transition into "absent": from confirmed, or a cold instance's first definitive answer.
@@ -1185,6 +1239,7 @@ function refreshReady(config: XrplRailConfig, key: string): Promise<boolean> {
       return false;
     }
   })().finally(() => {
+    lastCheckAt.ready = Date.now();
     if (readyRefresh === p) readyRefresh = null;
   });
   readyRefresh = p;
@@ -1203,7 +1258,7 @@ export async function xrplPayToReady(config: XrplRailConfig): Promise<boolean> {
     if (Date.now() >= readyCache.until) {
       const coldFailed = !readyCache.ready && !readyCache.definitive;
       if (coldFailed) return refreshReady(config, key);
-      void refreshReady(config, key);
+      keepAlive(refreshReady(config, key));
     }
     return readyCache.ready;
   }

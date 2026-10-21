@@ -242,7 +242,7 @@ describe("XRPL rail keep-present (Odin Class A follow-up 2026-10-17)", () => {
     expect(failing().map((a) => [a.check, a.reason, a.entry])).toEqual([["payto_ready", "consecutive_failures", "kept"]]);
     for (let i = 0; i < 5; i++) await tick(h, 1 * MIN + 1); // more failures: deduped
     expect(failing()).toHaveLength(1);
-    for (let i = 0; i < 20; i++) await tick(h, 1 * MIN + 1); // now > 30 min since last confirmation
+    for (let i = 0; i < 25; i++) await tick(h, 1 * MIN + 1); // now > 30 min of continuous failure (stale is measured from the first failure since 2026-10-21)
     expect(failing().map((a) => a.reason)).toEqual(["consecutive_failures", "stale"]);
     for (let i = 0; i < 10; i++) await tick(h, 1 * MIN + 1);
     expect(failing()).toHaveLength(2);
