@@ -4,6 +4,8 @@
  * the pinned payout address), every 402 / OPTIONS / discovery surface must be
  * byte-identical to origin/main.
  *
+ * 2026-10-21 (branch feat/feedback-listing, on main 6292d39): UPDATE_GOLDEN=1; ONLY discovery sha256 of public/openapi.json
+ *   and public/llms.txt changed (free POST /api/feedback listed). golden.cdp and golden.local byte-identical (checked).
  * 2026-10-20 (branch fix-tokenized-stock-coin, on main d4bc01b): regenerated with UPDATE_GOLDEN=1. Only
  * /api/tokenized-stock entries changed (402/OPTIONS description "omit for all 13" -> "all 12" after COIN was pulled;
  * CDP Bazaar example notAdvice -> Counsel line) plus the openapi.json/llms.txt discovery hashes. Every other key

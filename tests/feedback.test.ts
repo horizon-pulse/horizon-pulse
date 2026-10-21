@@ -229,3 +229,30 @@ describe("MCP listing", () => {
     expect(on).toContain("submit_feedback");
   });
 });
+
+describe("listing (feat/feedback-listing): openapi + llms.txt match the code", () => {
+  it("openapi /api/feedback: free, no 402, body keys exactly type/text/symbol/route", async () => {
+    const fs = await import("node:fs");
+    const spec = JSON.parse(fs.readFileSync("public/openapi.json", "utf8"));
+    const op = spec.paths["/api/feedback"].post;
+    expect(op["x-free"]).toBe(true);
+    expect(op.security).toEqual([]);
+    expect(op["x-payment-info"]).toBeUndefined();
+    expect(Object.keys(op.responses).sort()).toEqual(["201", "400", "413", "415", "429", "503"]);
+    const sch = op.requestBody.content["application/json"].schema;
+    expect(Object.keys(sch.properties).sort()).toEqual(["route", "symbol", "text", "type"]);
+    expect(sch.additionalProperties).toBe(false);
+    expect(sch.properties.type.enum).toEqual(["coin", "data", "route", "other"]);
+    expect(sch.properties.text.maxLength).toBe(500);
+    expect(parseFeedback(op.requestBody.content["application/json"].example).ok).toBe(true);
+  });
+  it("llms.txt line is the Counsel-passed draft word for word; no forbidden words", async () => {
+    const fs = await import("node:fs");
+    const llms = fs.readFileSync("public/llms.txt", "utf8");
+    const draft = fs.readFileSync("docs/drafts/feedback-listing.md", "utf8").split("\n").find((l) => l.startsWith("- POST `/api/feedback`"))!;
+    expect(llms.split("\n")).toContain(draft);
+    expect(llms).toContain("the `money_market_rates` and `submit_feedback` tools are free (no challenge)");
+    const added = draft + JSON.stringify(JSON.parse(fs.readFileSync("public/openapi.json", "utf8")).paths["/api/feedback"]);
+    expect(added).not.toMatch(/anonym|payer|"message"|grok|xai/i);
+  });
+});

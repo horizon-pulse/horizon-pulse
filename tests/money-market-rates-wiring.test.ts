@@ -30,11 +30,11 @@ describe("openapi + docs + llms", () => {
     expect(op.description).toContain(MMR_DISCLAIMER);
     expect(op.responses["200"].description).toContain(MMR_DISCLAIMER);
   });
-  it("paid counts: 29 paid paths (16 + discourse/split + tx-status + tokenized-stock + watch + balance + tx-guard + grocery/normalize + grocery/ingredient + chain/head + token/meta + name/resolve (wave 1, 2026-10-16) + batch (2026-10-19) + x402-check/deep (2026-10-19)); 1 free path", () => {
+  it("paid counts: 29 paid paths (16 + discourse/split + tx-status + tokenized-stock + watch + balance + tx-guard + grocery/normalize + grocery/ingredient + chain/head + token/meta + name/resolve (wave 1, 2026-10-16) + batch (2026-10-19) + x402-check/deep (2026-10-19)); 2 free paths (money-market-rates + feedback, 2026-10-21)", () => {
     const paidPaths = Object.entries<Record<string, Record<string, unknown>>>(spec.paths).filter(([, it]) => Object.values(it).some((o) => o["x-payment-info"]));
     const freePaths = Object.entries<Record<string, Record<string, unknown>>>(spec.paths).filter(([, it]) => Object.values(it).some((o) => o["x-free"]));
     expect(paidPaths).toHaveLength(29);
-    expect(freePaths.map(([p]) => p)).toEqual(["/api/money-market-rates"]);
+    expect(freePaths.map(([p]) => p)).toEqual(["/api/money-market-rates", "/api/feedback"]);
   });
   it("llms.txt lists it as FREE with the exact disclaimer", () => {
     expect(llms).toContain("GET `/api/money-market-rates` — FREE (no x402, no 402)");

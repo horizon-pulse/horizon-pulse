@@ -6704,6 +6704,125 @@
           }
         }
       }
+    },
+    "/api/feedback": {
+      "post": {
+        "operationId": "submitFeedback",
+        "summary": "Request a missing coin, data field or route (FREE, no payment)",
+        "description": "FREE (no payment). Tell Horizon Pulse about a missing coin, data field or route. Fields: type (coin, data, route or other), text (1-500 characters, plain text; links are not followed and are stored masked), optional symbol and route. Stored for human review only, for up to 90 days; nothing ships automatically and there is no reply. We may use what you send to improve Horizon Pulse, with no obligation or payment. Do not include personal data, secrets or keys. Limit: 5 per hour and 20 per day per caller IP address, plus a shared daily cap. Limits use a keyed hash (HMAC) of the caller's IP address; the IP address itself is not stored. The limit counters expire within 25 hours, and each stored entry keeps that hash for up to 90 days so repeat submissions can be reviewed.",
+        "tags": [
+          "Free data"
+        ],
+        "security": [],
+        "x-free": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "coin",
+                      "data",
+                      "route",
+                      "other"
+                    ]
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "symbol": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9]{2,10}$"
+                  },
+                  "route": {
+                    "type": "string",
+                    "pattern": "^/api/[a-z0-9-]+(?:/[a-z0-9-]+)*$",
+                    "maxLength": 65
+                  }
+                }
+              },
+              "example": {
+                "type": "coin",
+                "text": "Please add funding for PEPE",
+                "symbol": "PEPE"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Stored for human review; nothing ships automatically",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad field",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body over 2 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Not JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (Retry-After)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

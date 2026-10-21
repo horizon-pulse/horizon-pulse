@@ -6,6 +6,7 @@
  *
  *   npx tsx --tsconfig tsconfig.json scripts/gen-openapi.ts
  */
+import { FEEDBACK_MCP_DESCRIPTION, FEEDBACK_TYPES, FEEDBACK_TEXT_MAX } from "../lib/feedback";
 import fs from "node:fs";
 import path from "node:path";
 import * as S from "../lib/x402-server";
@@ -328,6 +329,49 @@ for (const x of ALL_PREMIUM_LISTINGS) {
         "200": { description: `Rates as published, per-rate status and terms block. ${M.MMR_DISCLAIMER}`, content: { "application/json": { schema: { type: "object" } } } },
         "400": { description: "Bad or unknown params (body lists the allowed params).", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         "429": { description: "Upstream NY Fed fetch limit reached for every requested rate and nothing cached; Retry-After: 60. Per-rate limits otherwise show status rate_limited.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+      },
+    },
+  };
+}
+
+// FREE route: POST /api/feedback (lib/feedback.ts). No x-payment-info, security: [] (no x402), no 402.
+// Copy: Counsel PASS 2026-10-21 (6292d39). Field names and patterns mirror parseFeedback exactly; no other keys accepted.
+{
+  const err = (d: string) => ({ description: d, content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } });
+  paths["/api/feedback"] = {
+    post: {
+      operationId: "submitFeedback",
+      summary: "Request a missing coin, data field or route (FREE, no payment)",
+      description: FEEDBACK_MCP_DESCRIPTION,
+      tags: ["Free data"],
+      security: [],
+      "x-free": true,
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["type", "text"],
+              properties: {
+                type: { type: "string", enum: [...FEEDBACK_TYPES] },
+                text: { type: "string", minLength: 1, maxLength: FEEDBACK_TEXT_MAX },
+                symbol: { type: "string", pattern: "^[A-Za-z0-9]{2,10}$" },
+                route: { type: "string", pattern: "^/api/[a-z0-9-]+(?:/[a-z0-9-]+)*$", maxLength: 65 },
+              },
+            },
+            example: { type: "coin", text: "Please add funding for PEPE", symbol: "PEPE" },
+          },
+        },
+      },
+      responses: {
+        "201": { description: "Stored for human review; nothing ships automatically", content: { "application/json": { schema: { type: "object" } } } },
+        "400": err("Bad field"),
+        "413": err("Body over 2 KB"),
+        "415": err("Not JSON"),
+        "429": err("Rate limited (Retry-After)"),
+        "503": err("Temporarily unavailable"),
       },
     },
   };
