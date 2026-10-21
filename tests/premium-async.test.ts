@@ -877,7 +877,7 @@ describe("delta 2: Odin P1–P5", () => {
   });
   it("P4: copy says $1, $5 and $10 (never $3)", () => {
     const all = TECHNICAL_NOTES.join(" ");
-    expect(all).toContain("$1, $5 and $10");
+    expect(all).toContain("For the $1 verified brief, the $5 seller due-diligence check and the $5 and $10 research tiers"); // Counsel T4 10/21
     expect(all).not.toContain("$3");
   });
   it("P5: concurrent accepts from one payer cannot exceed 2 open jobs (atomic reserve)", async () => {

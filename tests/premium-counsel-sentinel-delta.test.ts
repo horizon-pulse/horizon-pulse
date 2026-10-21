@@ -76,7 +76,7 @@ describe("Counsel E1-E10 (verbatim copy)", () => {
     expect(src).toContain('answer_by === "model" ? { ai_note: AI_ANSWER_NOTE } : {}');
   });
   it("E6: payment line and TECHNICAL_NOTES para 4 say charge-on-pass for the $1 brief", () => {
-    expect(BUYER_TERMS.join(" ")).toContain("The $1 verified brief is settled only after the brief passes its published contract (/contracts/brief-verified); a brief that does not pass is not charged. The $5 and $10 tiers are settled before the result is built;");
+    expect(BUYER_TERMS.join(" ")).toContain("The $1 verified brief is settled only after the brief passes its published contract (/contracts/brief-verified); a brief that does not pass is not charged. The $5 seller due-diligence check is settled only after the test payment and all 4 other checks complete; otherwise it is not charged. The $5 standard and $10 extended research tiers are settled before the result is built;"); // Counsel T3 10/21
     expect(BUYER_TERMS.join(" ")).not.toContain("The $1, $5 and $10 tiers are settled before");
     expect(TECHNICAL_NOTES[3]).toContain("The $1 verified brief is settled only after it passes; if that settlement cannot be confirmed, the response says settle_unconfirmed and the steps below apply.");
   });
