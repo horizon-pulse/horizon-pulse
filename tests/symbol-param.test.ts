@@ -99,3 +99,30 @@ describe("supported ?symbol= unpaid still gets the normal 402", () => {
     });
   }
 });
+
+describe("strict matching (Sentinel LOW-1 / INFO-1 on 6a210ee)", () => {
+  const bad = (q: string) => expect(parseSymbolParam(url("pulse", q)).ok, q).toBe(false);
+  it("Unicode lookalikes and non-ASCII whitespace are rejected", () => {
+    for (const q of ["?symbol=%C5%BFol", "?symbol=l%C4%B1nk", "?symbol=%D0%92TC", "?symbol=%EF%BC%A2TC",
+      "?symbol=%C2%A0BTC", "?symbol=%EF%BB%BFBTC", "?symbol=BTC%C2%A0", "?symbol=%E2%80%8BBTC", "?symbol=B", "?symbol=ABCDEF", "?symbol=BTC1"]) bad(q);
+  });
+  it("ASCII space/tab/newline padding still accepted", () => {
+    for (const q of ["?symbol=%20btc%20", "?symbol=%09LINK%0A", "?symbol=qnt%0D%0A"]) expect(parseSymbolParam(url("pulse", q)).ok, q).toBe(true);
+  });
+  it("variant param names are 400, not a silent default", () => {
+    for (const q of ["?Symbol=LINK", "?SYMBOL=LINK", "?symbol[]=LINK", "?symbols=LINK", "?symbol=LINK&Symbol=QNT"]) bad(q);
+    expect(parseSymbolParam(url("pulse", "?free=1&utm_source=x")).ok).toBe(true);
+  });
+  for (const r of ROUTES) {
+    it(`${r}: ?Symbol=LINK and ſol -> 400 before payment, no vendor`, async () => {
+      mock = makeVendorMock();
+      const { GET } = await import(`@/app/api/${r}/route`);
+      for (const q of ["?Symbol=LINK", "?symbol=%C5%BFol"]) {
+        const res: Response = await GET(new NextRequest(url(r, q), { headers: { "payment-signature": "dGVzdA==" } }));
+        expect(res.status).toBe(400);
+        expect((await res.json()).charged).toBe(false);
+      }
+      expect(mock.calls).toEqual([]);
+    });
+  }
+});

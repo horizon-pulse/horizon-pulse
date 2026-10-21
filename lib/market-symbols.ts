@@ -46,13 +46,24 @@ export type SymbolParse =
 
 export function parseSymbolParam(url: string): SymbolParse {
   const params = new URL(url).searchParams;
+  // Sentinel INFO-1: a near-miss name (Symbol=, SYMBOL=, symbol[]=, symbols=) would silently
+  // fall back to the default set and be charged for it; refuse it instead (400, before payment).
+  for (const key of new Set(params.keys())) {
+    if (key !== "symbol" && /^symbols?(\[.*\])?$/i.test(key)) {
+      return { ok: false, error: `Unknown parameter "${key.slice(0, 20)}": the name is exactly symbol (e.g. symbol=LINK)` };
+    }
+  }
   if (!params.has("symbol")) return { ok: true, symbols: null };
   const all = params.getAll("symbol");
   if (all.length > 1) return { ok: false, error: "Pass one symbol (e.g. symbol=LINK)" };
-  const raw = all[0]!.trim().toUpperCase();
-  if (!raw) return { ok: false, error: "symbol is empty: pass a ticker (e.g. symbol=LINK) or omit it for BTC, ETH and SOL" };
-  if (raw.length > 12 || !Object.prototype.hasOwnProperty.call(MARKET_SYMBOLS, raw)) {
-    return { ok: false, error: `Unsupported symbol "${raw.slice(0, 12)}"` };
+  // Sentinel LOW-1: ASCII-only trim (space, tab, CR, LF; not NBSP/BOM), then strict ASCII letters
+  // BEFORE uppercasing, so Unicode folds (U+017F "ſol" -> SOL, U+0131 "lınk" -> LINK) never match.
+  const trimmed = all[0]!.replace(/^[ \t\r\n]+|[ \t\r\n]+$/g, "");
+  if (!trimmed) return { ok: false, error: "symbol is empty: pass a ticker (e.g. symbol=LINK) or omit it for BTC, ETH and SOL" };
+  if (!/^[A-Za-z]{2,5}$/.test(trimmed)) return { ok: false, error: "symbol must be 2-5 ASCII letters (e.g. symbol=LINK)" };
+  const raw = trimmed.toUpperCase();
+  if (!Object.prototype.hasOwnProperty.call(MARKET_SYMBOLS, raw)) {
+    return { ok: false, error: `Unsupported symbol "${raw}"` };
   }
   return { ok: true, symbols: [raw as MarketSymbol] };
 }
