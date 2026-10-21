@@ -96,7 +96,7 @@ beforeEach(() => {
     },
     continuity: { lookup: async () => ({ payTo: SELLER_PAYTO, source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
     history: async () => ({ window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.001", from_block: 1, to_block: 2, source: "x" }),
-    landed: async () => ({ state: "used", nodes: ["a", "b"] }),
+    preflight: async () => ({ ok: true, balance_atomic: "3000000", nonce: 0 }), landed: async () => ({ state: "used", nodes: ["a", "b"] }),
     authTx: async () => null,
     sleep: async () => undefined,
   });

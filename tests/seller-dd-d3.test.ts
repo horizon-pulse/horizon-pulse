@@ -44,7 +44,7 @@ function setEngine(pass: boolean) {
     },
     continuity: { lookup: async () => ({ payTo: "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
     history: async () => ({ window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.01", from_block: 1, to_block: 2, source: "x" }), // outside review #1: history always readable here; "fail" = test pay not landed
-    landed: async () => ({ state: pass ? "used" : "unused", nodes: ["a", "b"] }),
+    preflight: async () => ({ ok: true, balance_atomic: "3000000", nonce: 0 }), landed: async () => ({ state: pass ? "used" : "unused", nodes: ["a", "b"] }),
     authTx: async () => null,
     sleep: async () => undefined,
   });
@@ -427,7 +427,7 @@ describe("seller-dd supersede requires a complete re-check", () => {
       },
       continuity: { lookup: async () => ({ payTo: "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
       history: async () => ({ ok: false, attempts: [{ source: "base.blockscout.com", reason: "http_403" }] }),
-      landed: async () => ({ state: "used", nodes: ["a", "b"] }),
+      preflight: async () => ({ ok: true, balance_atomic: "3000000", nonce: 0 }), landed: async () => ({ state: "used", nodes: ["a", "b"] }),
       authTx: async () => null,
       sleep: async () => undefined,
     } as never);
