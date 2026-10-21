@@ -10,6 +10,7 @@
  * network, asset, payTo, method, body fields, status codes). No new claims.
  */
 import { BASE_CAIP2, CDP_FACILITATOR_URL, DEFAULT_PAY_TO, PUBLIC_BASE_URL, USDC_BASE } from "@/lib/config";
+import { LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DD_AMOUNT, DD_DESCRIPTION, DD_DISPUTE_TERM, DD_NOTICE, DD_PASS_NOTE, DD_PATH, DD_PRICE_USD, DD_RETENTION_TERM, sellerDdEnabled } from "./config";
 
 type Env = Record<string, string | undefined>;
@@ -115,9 +116,19 @@ export function llmsSellerDdSection(): string {
   ].join("\n");
 }
 
-/** llms.txt with the seller-dd section inserted before "## Input bounds" (flag on); flag off -> unchanged. */
+/**
+ * Flag-on count line (Odin wording, Counsel condition 10/20): the number is DERIVED from the live route registry
+ * (LIVE_PAID_ROUTES, which excludes the brief and seller-dd), so it always equals the live paid-route count at flag-on.
+ */
+export function sellerDdCountLine(n: number = LIVE_PAID_ROUTES.length): string {
+  return `${n} paid routes plus the $1 verified brief and the $5 seller due-diligence check`;
+}
+const STATIC_COUNT_LINE_RE = /^\d+ paid routes: the \d+ in this table[^\n]*$/m;
+
+/** llms.txt with the count line replaced and the seller-dd section inserted before "## Input bounds" (flag on); flag off -> unchanged. */
 export function llmsWithSellerDd(original: string, env: Env = process.env): string {
   if (!sellerDdEnabled(env)) return original;
+  original = original.replace(STATIC_COUNT_LINE_RE, `${sellerDdCountLine()} (the ${LIVE_PAID_ROUTES.length} in this table have the same price on Base, Solana, Polygon and the XRP Ledger; the brief and the seller due-diligence check are Base USDC only).`);
   const section = llmsSellerDdSection();
   const marker = "## Input bounds";
   const i = original.indexOf(marker);

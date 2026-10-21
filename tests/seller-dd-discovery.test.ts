@@ -72,6 +72,22 @@ describe("seller-dd discovery gating", () => {
     for (const c of [DD_NOTICE, DD_PASS_NOTE, DD_DISPUTE_TERM, DD_RETENTION_TERM]) expect(txt).toContain(c);
     const start = txt.indexOf("## Seller due-diligence");
     const end = txt.indexOf("## Input bounds");
-    expect(txt.slice(0, start) + txt.slice(end)).toBe(pub("llms.txt"));
+    const countRe = /^\d+ paid routes: the \d+ in this table[^\n]*$/m;
+    const flagOnCount = txt.split("\n").find((l) => l.includes("paid routes plus the $1 verified brief"))!;
+    expect(txt.slice(0, start) + txt.slice(end)).toBe(pub("llms.txt").replace(countRe, flagOnCount));
+  });
+
+  it("flag on: count line derived from the live route registry (Counsel: N = live paid routes excl. brief + seller-dd)", async () => {
+    const { LIVE_PAID_ROUTES } = await import("@/lib/live-catalog");
+    const { sellerDdCountLine } = await import("@/lib/seller-dd/discovery");
+    const n = LIVE_PAID_ROUTES.length;
+    expect(LIVE_PAID_ROUTES.some((r) => /brief|seller-dd/.test(r.path))).toBe(false);
+    expect(sellerDdCountLine()).toBe(`${n} paid routes plus the $1 verified brief and the $5 seller due-diligence check`);
+    const { llms } = await load(ON);
+    const txt = await llms.text();
+    expect(txt).toContain(sellerDdCountLine());
+    expect(txt).not.toMatch(/^\d+ paid routes: the \d+ in this table/m);
+    const tableRows = txt.slice(txt.indexOf("## Live paid routes"), txt.indexOf("## ", txt.indexOf("## Live paid routes") + 3)).split("\n").filter((l) => /^\| (GET|POST|GET\/POST) \| \/api\//.test(l));
+    if (tableRows.length) expect(tableRows.length).toBe(n);
   });
 });
