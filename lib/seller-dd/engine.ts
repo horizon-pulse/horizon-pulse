@@ -10,7 +10,7 @@ import { encodePaymentSignatureHeader } from "@x402/core/http";
 import type { PremiumStore } from "@/lib/premium/store";
 import { defaultRpcDeps, type RpcDeps } from "@/lib/chain-rpc";
 import { DD_NOTICE, PER_CALL_MAX_ATOMIC } from "./config";
-import { recordLoss, reserveTestPay, type Reservation } from "./caps";
+import { recordLoss, releaseUnsigned, reserveTestPay, type Reservation } from "./caps";
 import {
   excerptFor, httpsUrl, parse402, schemaMatch, sha256, termsAllowExcerpt, testPayLanded,
   type ContinuityDeps, type FetchOut, type History, type Listed, type NetDeps,
@@ -174,7 +174,12 @@ export async function runSellerDd(inp: EngineInput, deps: EngineDeps): Promise<E
       else {
         const req: SignRequest = { kind: ALLOWED_SIGN_KIND, requestedDomain: listed.extra, network: listed.network, asset: listed.asset, to: listed.payTo, pinnedPayTo: ref.payTo, value, remainingAtomic: value, validAfter: 0n, validBefore: BigInt(validBefore) };
         const s = await (deps.sign ?? ((r, n) => signTestAuthorization(r, n, deps.env)))(req, nonce);
-        if (!s.ok) blocked = `sign_${s.code}`; // reservation stays until the cron confirms the nonce unused
+        if (!s.ok) {
+          // Odin 10/21 #3: no signature exists on a refusal/failure, so nothing can settle: release the reservation now.
+          blocked = `sign_${s.code}`;
+          await releaseUnsigned(deps.store, reservation, reservation.at).catch(() => undefined);
+          reservation = null;
+        }
         else {
           const header = encodePaymentSignatureHeader({ x402Version: 2, accepted: listed.accept, payload: { signature: s.signature, authorization: s.auth } } as never);
           testPaid = true;

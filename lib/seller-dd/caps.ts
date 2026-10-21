@@ -37,36 +37,60 @@ export const ddKeys = {
 export type Reservation = { request_id: string; seller: string; domain: string; ip: string; payTo: string; value_usd: number; nonce: string; validBefore: number; at: number };
 export type ReserveResult = { ok: true } | { ok: false; code: "already_paid" | "daily_cap" | "lifetime_cap" | "host_cap" | "unsettled_cap" | "store_unavailable" };
 
-/** Reserve every counter for one test pay, atomically per counter, in order; roll back earlier counters on a cap refusal. */
+/** The counters one test pay takes, in refusal-priority order (Odin 10/21 #3). */
+function capSteps(r: Reservation, now: number): [string, number, number, number, ReserveResult & { ok: false }][] {
+  return [
+    [ddKeys.day(now), r.value_usd, DAILY_CAP_USD, DAY_TTL_S, { ok: false, code: "daily_cap" }],
+    [ddKeys.life(), r.value_usd, LIFETIME_CAP_USD, LIFE_TTL_S, { ok: false, code: "lifetime_cap" }],
+    [ddKeys.host(r.domain, now), 1, PER_HOST_DAILY, DAY_TTL_S, { ok: false, code: "host_cap" }],
+    [ddKeys.ip(r.ip, now), 1, PER_HOST_DAILY, DAY_TTL_S, { ok: false, code: "host_cap" }],
+    // Odin C4: the test pay counts against the brief's global $3/day unsettled cap
+    [unsettledKey(now), r.value_usd, UNSETTLED_DAILY_CAP_USD, 2 * 86_400, { ok: false, code: "unsettled_cap" }],
+  ];
+}
+
+/**
+ * Reserve every counter for one test pay in ONE atomic Lua call (Odin 10/21 #3): either all counters fit under their caps
+ * and are all incremented, or none is touched. Concurrent callers can never overshoot a cap. Happens BEFORE signing.
+ * If a bookkeeping write AFTER the reserve fails, nothing has been signed yet, so the reservation is released
+ * (releaseUnsigned) and the caller gets store_unavailable (no signing).
+ */
 export async function reserveTestPay(store: PremiumStore, r: Reservation, now: number): Promise<ReserveResult> {
-  const undo: (() => Promise<void>)[] = [];
-  const rollback = async () => { for (const u of undo.reverse()) await u().catch(() => undefined); };
+  const idemKey = ddKeys.idem(r.request_id, r.seller);
+  let idemTaken = false, reserved = false;
   try {
-    if (!(await store.setNx(ddKeys.idem(r.request_id, r.seller), "1", DAY_TTL_S * 1000))) return { ok: false, code: "already_paid" };
-    const steps: [string, number, number, number, ReserveResult & { ok: false }][] = [
-      [ddKeys.day(now), r.value_usd, DAILY_CAP_USD, DAY_TTL_S, { ok: false, code: "daily_cap" }],
-      [ddKeys.life(), r.value_usd, LIFETIME_CAP_USD, LIFE_TTL_S, { ok: false, code: "lifetime_cap" }],
-      [ddKeys.host(r.domain, now), 1, PER_HOST_DAILY, DAY_TTL_S, { ok: false, code: "host_cap" }],
-      [ddKeys.ip(r.ip, now), 1, PER_HOST_DAILY, DAY_TTL_S, { ok: false, code: "host_cap" }],
-      // Odin C4: the test pay counts against the brief's global $3/day unsettled cap
-      [unsettledKey(now), r.value_usd, UNSETTLED_DAILY_CAP_USD, 2 * 86_400, { ok: false, code: "unsettled_cap" }],
-    ];
-    for (const [k, amt, cap, ttl, refusal] of steps) {
-      if (!(await store.spendReserve(k, amt, cap, ttl))) {
-        await rollback();
-        return refusal;
-      }
-      undo.push(() => store.spendAdjust(k, -amt, ttl));
+    if (!(await store.setNx(idemKey, "1", DAY_TTL_S * 1000))) return { ok: false, code: "already_paid" };
+    idemTaken = true;
+    const steps = capSteps(r, now);
+    const failed = await store.spendReserveMulti(steps.map((x) => x[0]), steps.map((x) => x[1]), steps.map((x) => x[2]), steps.map((x) => x[3]));
+    if (failed !== 0) {
+      await store.del(idemKey).catch(() => undefined);
+      return steps[failed - 1]![4];
     }
+    reserved = true;
     await store.set(ddKeys.res(r.request_id), JSON.stringify(r), DAY_TTL_S);
     // L-5: nonce index so the on-chain watch can match every outbound transfer to a reservation (kept 40 days)
     await store.set(ddKeys.nonce(r.nonce), r.request_id, 40 * 86_400);
     await store.zadd(ddKeys.open(), r.validBefore, r.request_id, DAY_TTL_S);
     return { ok: true };
   } catch {
-    // C3: store outage mid-reservation -> no signing. Counters already taken stay counted; the cron reconciles.
+    // C3: store outage -> no signing. Nothing is signed yet, so release what we took (best effort; if the release also
+    // fails, the counters stay counted, which is conservative).
+    if (reserved) await releaseUnsigned(store, r, now).catch(() => undefined);
+    else if (idemTaken) await store.del(idemKey).catch(() => undefined);
     return { ok: false, code: "store_unavailable" };
   }
+}
+
+/**
+ * Release a reservation whose authorization was NEVER signed (signing refused/failed, or a bookkeeping write failed after
+ * the reserve). Safe because no signature exists, so nothing can settle. Never call after a signature was produced; that
+ * path waits for releaseIfConfirmedUnused (validBefore passed AND nonce unused on-chain).
+ */
+export async function releaseUnsigned(store: PremiumStore, r: Reservation, now: number): Promise<void> {
+  for (const [k, amt, , ttl] of capSteps(r, now)) await store.spendAdjust(k, -amt, ttl);
+  await store.zrem(ddKeys.open(), r.request_id).catch(() => undefined);
+  await store.del(ddKeys.res(r.request_id), ddKeys.nonce(r.nonce), ddKeys.idem(r.request_id, r.seller)).catch(() => undefined);
 }
 
 export type NonceState = "used" | "unused" | "unknown";

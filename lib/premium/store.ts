@@ -34,10 +34,18 @@ export interface PremiumStore {
   spendReserve(key: string, amount: number, cap: number, ttlS: number): Promise<boolean>;
   /** INCRBYFLOAT key delta (+ EXPIRE); used to refund / reconcile a reservation. */
   spendAdjust(key: string, delta: number, ttlS: number): Promise<void>;
+  /**
+   * Seller DD atomic caps (Odin 10/21 #3): ONE Lua script checks every counter against its cap and, only if all fit, adds
+   * every amount. Returns 0 on success, or the 1-based index of the first counter that would overshoot (nothing written).
+   */
+  spendReserveMulti(keys: string[], amounts: number[], caps: number[], ttlS: number[]): Promise<number>;
 }
 
 export const SPEND_RESERVE_LUA =
   "local cur = tonumber(redis.call('GET', KEYS[1]) or '0') local a = tonumber(ARGV[1]) if cur + a > tonumber(ARGV[2]) then return 0 end redis.call('INCRBYFLOAT', KEYS[1], ARGV[1]) redis.call('EXPIRE', KEYS[1], ARGV[3]) return 1";
+
+export const SPEND_RESERVE_MULTI_LUA =
+  "local n = #KEYS for i = 1, n do local cur = tonumber(redis.call('GET', KEYS[i]) or '0') if cur + tonumber(ARGV[i]) > tonumber(ARGV[n + i]) + 1e-9 then return i end end for i = 1, n do redis.call('INCRBYFLOAT', KEYS[i], ARGV[i]) redis.call('EXPIRE', KEYS[i], ARGV[2 * n + i]) end return 0";
 
 export const CAS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 else return 0 end";
 export const CASDEL_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) return 1 else return 0 end";
@@ -129,6 +137,12 @@ export class UpstashPremiumStore implements PremiumStore {
     const [r] = await this.pipe([["EVAL", SPEND_RESERVE_LUA, 1, this.k(key), amount.toFixed(8), cap.toFixed(8), Math.max(1, Math.ceil(ttlS))]]);
     return Number(r) === 1;
   }
+  async spendReserveMulti(keys: string[], amounts: number[], caps: number[], ttlS: number[]) {
+    const [r] = await this.pipe([["EVAL", SPEND_RESERVE_MULTI_LUA, keys.length, ...keys.map(this.k), ...amounts.map((a) => a.toFixed(8)), ...caps.map((c) => c.toFixed(8)), ...ttlS.map((t) => Math.max(1, Math.ceil(t)))]]);
+    const n = Number(r);
+    if (!Number.isInteger(n) || n < 0 || n > keys.length) throw new StoreError("store_error");
+    return n;
+  }
   async spendAdjust(key: string, delta: number, ttlS: number) {
     await this.pipe([
       ["INCRBYFLOAT", this.k(key), delta.toFixed(8)],
@@ -215,6 +229,15 @@ export class MemoryPremiumStore implements PremiumStore {
     this.writes.push({ op: "spendReserve", key, ttlMs: ttlS * 1000 });
     this.kv.set(key, { v: String(cur + amount), exp: this.now() + ttlS * 1000 });
     return true;
+  }
+  async spendReserveMulti(keys: string[], amounts: number[], caps: number[], ttlS: number[]) {
+    // synchronous body = atomic (mirrors the single Lua call)
+    for (let i = 0; i < keys.length; i++) if (Number(this.alive(keys[i])?.v ?? "0") + amounts[i] > caps[i] + 1e-9) return i + 1;
+    for (let i = 0; i < keys.length; i++) {
+      this.writes.push({ op: "spendReserve", key: keys[i], ttlMs: ttlS[i] * 1000 });
+      this.kv.set(keys[i], { v: String(Number(this.alive(keys[i])?.v ?? "0") + amounts[i]), exp: this.now() + ttlS[i] * 1000 });
+    }
+    return 0;
   }
   async spendAdjust(key: string, delta: number, ttlS: number) {
     const cur = Number(this.alive(key)?.v ?? "0");

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { MemoryPremiumStore, type PremiumStore } from "@/lib/premium/store";
-import { ddKeys, recordLoss, recordSettleFailure, reconcileOpen, releaseIfConfirmedUnused, reserveTestPay, routeClosedBySettleFailures, type Reservation } from "@/lib/seller-dd/caps";
+import { UpstashPremiumStore, SPEND_RESERVE_MULTI_LUA } from "@/lib/premium/store";
+import { ddKeys, releaseUnsigned, recordLoss, recordSettleFailure, reconcileOpen, releaseIfConfirmedUnused, reserveTestPay, routeClosedBySettleFailures, type Reservation } from "@/lib/seller-dd/caps";
 
 const NOW = Date.parse("2026-10-20T12:00:00Z");
 let i = 0;
@@ -50,7 +51,7 @@ describe("C3 caps + reservation lifecycle", () => {
   });
   it("store outage -> store_unavailable (no signing)", async () => {
     const s = mk();
-    const broken: PremiumStore = new Proxy(s, { get: (t, p) => (p === "spendReserve" ? async () => { throw new Error("down"); } : (t as any)[p]) });
+    const broken: PremiumStore = new Proxy(s, { get: (t, p) => (p === "spendReserveMulti" ? async () => { throw new Error("down"); } : (t as any)[p]) });
     expect(await reserveTestPay(broken, res(), NOW)).toEqual({ ok: false, code: "store_unavailable" });
   });
   it("release only after validBefore AND nonce unused; errors/used/unknown never release", async () => {
@@ -87,5 +88,70 @@ describe("C3 caps + reservation lifecycle", () => {
     expect(await routeClosedBySettleFailures(s, NOW)).toBe(true);
     const broken = new Proxy(mk(), { get: (t, p) => (p === "get" ? async () => { throw new Error("x"); } : (t as any)[p]) }) as PremiumStore;
     expect(await routeClosedBySettleFailures(broken, NOW)).toBe(true);
+  });
+});
+
+describe("Odin 10/21 #3: atomic multi-counter reserve (no overshoot)", () => {
+  it("200 concurrent reservations: day <= $5, lifetime <= $25, unsettled <= $3, and counters agree with successes", async () => {
+    const s = mk();
+    const out = await Promise.all(Array.from({ length: 200 }, () => reserveTestPay(s, res(), NOW)));
+    const ok = out.filter((o) => o.ok).length;
+    expect(Number(await s.get(ddKeys.day(NOW)))).toBeLessThanOrEqual(5 + 1e-9);
+    expect(Number(await s.get(ddKeys.life()))).toBeLessThanOrEqual(25 + 1e-9);
+    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(ok * 0.1, 6);
+    expect(Number(await s.get(ddKeys.life()))).toBeCloseTo(ok * 0.1, 6);
+  });
+  it("concurrent at the lifetime edge: exactly the fitting number succeed, refused ones touch no counter", async () => {
+    const s = mk();
+    await s.spendAdjust(ddKeys.life(), 24.7, 100);
+    const out = await Promise.all(Array.from({ length: 30 }, () => reserveTestPay(s, res(), NOW)));
+    expect(out.filter((o) => o.ok).length).toBe(3);
+    expect(out.filter((o) => !o.ok).every((o) => !o.ok && o.code === "lifetime_cap")).toBe(true);
+    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(0.3, 6); // no leaked partial reservation
+  });
+  it("concurrent same host: PER_HOST_DAILY=3 never exceeded", async () => {
+    const s = mk();
+    const out = await Promise.all(Array.from({ length: 25 }, () => reserveTestPay(s, res({ domain: "same.com" }), NOW)));
+    expect(out.filter((o) => o.ok).length).toBe(3);
+    expect(Number(await s.get(ddKeys.host("same.com", NOW)))).toBe(3);
+  });
+  it("cap refusal writes nothing and frees the idempotency slot", async () => {
+    const s = mk();
+    await s.spendAdjust(ddKeys.day(NOW), 5, 100);
+    const r = res();
+    expect(await reserveTestPay(s, r, NOW)).toEqual({ ok: false, code: "daily_cap" });
+    expect(Number((await s.get(ddKeys.life())) ?? 0)).toBe(0);
+    expect(await s.get(ddKeys.idem(r.request_id, r.seller))).toBeNull();
+  });
+  it("bookkeeping write fails after reserve -> released (nothing signed), store_unavailable", async () => {
+    const s = mk();
+    const broken: PremiumStore = new Proxy(s, { get: (t, p) => (p === "zadd" ? async () => { throw new Error("down"); } : (t as any)[p]) });
+    expect(await reserveTestPay(broken, res(), NOW)).toEqual({ ok: false, code: "store_unavailable" });
+    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(0, 9);
+    expect(Number(await s.get(ddKeys.life()))).toBeCloseTo(0, 9);
+  });
+  it("releaseUnsigned returns every counter and clears the reservation", async () => {
+    const s = mk();
+    const r = res({ domain: "rel.com" });
+    expect((await reserveTestPay(s, r, NOW)).ok).toBe(true);
+    await releaseUnsigned(s, r, NOW);
+    expect(Number(await s.get(ddKeys.day(NOW)))).toBeCloseTo(0, 9);
+    expect(Number(await s.get(ddKeys.host("rel.com", NOW)))).toBe(0);
+    expect(await s.get(ddKeys.res(r.request_id))).toBeNull();
+    expect(await s.zrangeByScore(ddKeys.open(), Infinity, 10)).toEqual([]);
+  });
+  it("Upstash: the reserve is ONE EVAL of the multi-key Lua; a non-zero result maps to the refusing counter", async () => {
+    const bodies: any[] = [];
+    const f = (async (_u: string, init: any) => { bodies.push(JSON.parse(init.body)); return new Response(JSON.stringify([{ result: 3 }]), { status: 200 }); }) as unknown as typeof fetch;
+    const u = new UpstashPremiumStore("https://example.invalid", "t", "p:", f);
+    expect(await u.spendReserveMulti(["a", "b", "c"], [0.1, 0.1, 1], [5, 25, 3], [1, 2, 3])).toBe(3);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0][0].slice(0, 6)).toEqual(["EVAL", SPEND_RESERVE_MULTI_LUA, 3, "p:a", "p:b", "p:c"]);
+    expect(SPEND_RESERVE_MULTI_LUA).toMatch(/return i end end for i = 1, n do redis.call\('INCRBYFLOAT'/);
+  });
+  it("Upstash: malformed script result fails closed (throws -> store_unavailable)", async () => {
+    const f = (async () => new Response(JSON.stringify([{ result: "x" }]), { status: 200 })) as unknown as typeof fetch;
+    const u = new UpstashPremiumStore("https://example.invalid", "t", "p:", f);
+    await expect(u.spendReserveMulti(["a"], [1], [1], [1])).rejects.toThrow();
   });
 });
