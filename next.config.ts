@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 import { darkPageExtensions } from "./lib/dark-paths";
-import { freeTierRewrites } from "./lib/free-tier-mode";
+import { docRewrites } from "./lib/doc-rewrites";
 import { API_SECURITY_HEADERS, API_SOURCE, SITE_PAGES_SOURCE, SITE_SECURITY_HEADERS, WELL_KNOWN_SECURITY_HEADERS, WELL_KNOWN_SOURCE } from "./lib/security-headers";
 
 const nextConfig: NextConfig = {
@@ -16,10 +16,10 @@ const nextConfig: NextConfig = {
       { source: WELL_KNOWN_SOURCE, headers: WELL_KNOWN_SECURITY_HEADERS.map((h) => ({ ...h })) },
     ];
   },
-  // Free daily cap (lib/free-tier-mode.ts): HP_FREE_TIER=optin -> llms.txt / openapi.json
-  // served with the opt-in section; off (default) -> no rewrites, static files unchanged.
+  // Free daily cap (HP_FREE_TIER=optin) and/or seller due-diligence (HP_PREMIUM_ENABLED + HP_SELLER_DD_ENABLED)
+  // -> llms.txt / openapi.json served dynamically with their sections (lib/doc-rewrites.ts); both off -> no rewrites.
   async rewrites() {
-    return { beforeFiles: freeTierRewrites(), afterFiles: [], fallback: [] };
+    return { beforeFiles: docRewrites(), afterFiles: [], fallback: [] };
   },
   // Headless Chromium for /api/screenshot: keep out of the bundle, ship the
   // brotli'd binary with every function that can invoke the handler.
