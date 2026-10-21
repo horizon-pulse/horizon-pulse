@@ -11,6 +11,7 @@ import {
 import { SOLANA_MAINNET_CAIP2, SOLANA_PAYTO } from "@/lib/solana-config";
 import { freeTierMode, wellKnownFreeTier } from "@/lib/free-tier";
 import { premiumResources, premiumWellKnownBlock } from "@/lib/premium/discovery";
+import { sellerDdResources, sellerDdWellKnownBlock } from "@/lib/seller-dd/discovery";
 
 /**
  * GET /.well-known/x402 — x402 discovery fan-out (compatibility path).
@@ -43,7 +44,10 @@ export function GET(): NextResponse {
   };
   // Premium ladder (lib/premium): HP_PREMIUM_ENABLED=true appends per-tier URLs + a `premium` block; off -> `doc` unchanged.
   const premium = premiumWellKnownBlock();
-  const withPremium = premium ? { ...doc, resources: [...doc.resources, ...premiumResources()], premium } : doc;
+  const withPremium0 = premium ? { ...doc, resources: [...doc.resources, ...premiumResources()], premium } : doc;
+  // Seller due-diligence (lib/seller-dd/discovery.ts): HP_PREMIUM_ENABLED + HP_SELLER_DD_ENABLED appends its URL + a `sellerDd` block; off -> unchanged.
+  const sellerDd = sellerDdWellKnownBlock();
+  const withPremium = sellerDd ? { ...withPremium0, resources: [...withPremium0.resources, ...sellerDdResources()], sellerDd } : withPremium0;
   // Free daily cap (lib/free-tier.ts): HP_FREE_TIER=optin adds the copy + a freeTier block; off -> `doc` unchanged.
   return NextResponse.json(
     freeTierMode() === "optin" ? wellKnownFreeTier(withPremium) : withPremium,
