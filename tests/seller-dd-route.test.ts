@@ -18,6 +18,7 @@ import { MemoryPremiumStore, setPremiumStoreForTests } from "@/lib/premium/store
 import { TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_BASE_DOMAIN } from "@/lib/premium/payment";
 import { ddKeys } from "@/lib/seller-dd/caps";
 import { DD_NOTICE } from "@/lib/seller-dd/config";
+import { PAUSE_KEY, readPause, setPause } from "@/lib/seller-dd/pause";
 import { receiptPublicKeys, verifyReceipt } from "@/lib/receipt-signer";
 
 const APPROVED_PAYTO = "0x5b32c973596078a967562ca652761404f19be0e9"; // full approved string (security/approved-addresses.md)
@@ -36,7 +37,7 @@ const req = (method: string, body?: unknown, pay?: string) => new NextRequest(UR
 
 let store: MemoryPremiumStore;
 const engineRan = vi.fn();
-function setEngine(pass: boolean) {
+function setEngine(pass: boolean, preflight: (...a: any[]) => Promise<any> = async () => ({ ok: true, balance_atomic: "3000000", nonce: 0 })) {
   setSellerDdDepsForTests({
     net: {
       get402: async () => { engineRan(); return { ok: true, status: 402, headers: { "content-type": "application/json" }, body: JSON.stringify({ x402Version: 2, accepts: [{ scheme: "exact", network: "eip155:8453", asset: USDC_BASE, amount: "10000", payTo: "0x" + "4e".repeat(20), extra: { name: "USD Coin", version: "2" } }] }), truncated: false, ip: "93.184.216.34", fetched_at: "t" }; },
@@ -44,7 +45,7 @@ function setEngine(pass: boolean) {
     },
     continuity: { lookup: async () => ({ payTo: "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
     history: async () => ({ window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.01", from_block: 1, to_block: 2, source: "x" }), // outside review #1: history always readable here; "fail" = test pay not landed
-    landed: async () => ({ state: pass ? "used" : "unused", nodes: ["a", "b"] }),
+    preflight, landed: async () => ({ state: pass ? "used" : "unused", nodes: ["a", "b"] }),
     authTx: async () => null,
     sleep: async () => undefined,
   });
@@ -114,6 +115,45 @@ describe("seller-dd route", () => {
     expect(r.status).toBe(402);
     expect(engineRan).not.toHaveBeenCalled();
     expect(h.settle).not.toHaveBeenCalled();
+  });
+  it("Odin #5 pre-flight: balance low -> no_charge, no reservation, no signature, buyer never verified-settled", async () => {
+    setEngine(true, async () => ({ ok: false, code: "preflight_balance_low" }));
+    const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
+    const b = await r.json();
+    expect(b).toMatchObject({ status: "no_charge", charged: false, reason: "preflight_balance_low" });
+    expect(h.settle).not.toHaveBeenCalled();
+    expect(await store.get(ddKeys.day(NOW))).toBeNull(); // nothing reserved
+    expect(await store.get(ddKeys.lossUsd(NOW))).toBeNull(); // nothing spent
+    expect((await readPause(store)).paused).toBe(false); // low balance refuses, never pauses
+  });
+  it("Odin #5 pre-flight: nonce > 0 -> no_charge, no spend, and the route auto-pauses", async () => {
+    setEngine(true, async () => ({ ok: false, code: "preflight_nonce_nonzero" }));
+    const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
+    expect((await r.json()).reason).toBe("preflight_nonce_nonzero");
+    expect(await store.get(ddKeys.day(NOW))).toBeNull();
+    expect((await readPause(store)).latch?.cause).toBe("tester_nonce_above_zero");
+    setEngine(true);
+    h.verify.mockClear(); engineRan.mockClear();
+    const r2 = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
+    expect(r2.status).toBe(503);
+    expect((await r2.json()).reason).toBe("test_pay_auto_paused");
+    expect(h.verify).not.toHaveBeenCalled(); expect(engineRan).not.toHaveBeenCalled();
+  });
+  it("Odin #5 pre-flight unreadable -> no_charge, no spend", async () => {
+    setEngine(true, async () => { throw new Error("rpc down"); });
+    const b = await (await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()))).json();
+    expect(b).toMatchObject({ status: "no_charge", reason: "preflight_unavailable" });
+    expect(await store.get(ddKeys.day(NOW))).toBeNull();
+  });
+  it("Odin #5 recovery through the kill switch alone (paid requests): paused -> switch off -> switch on -> served", async () => {
+    await setPause(store, "outflow_not_ours", NOW);
+    expect((await (await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()))).json()).reason).toBe("test_pay_auto_paused");
+    vi.stubEnv("HP_DD_TESTPAY", "off");
+    expect((await (await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()))).json()).reason).toBe("test_pay_disabled");
+    vi.stubEnv("HP_DD_TESTPAY", "on");
+    const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
+    expect(r.status).toBe(200);
+    expect(await store.get(PAUSE_KEY)).toBeNull();
   });
   it("PASS -> buyer settled once, signed verdict verifies with the published key", async () => {
     const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
@@ -263,7 +303,7 @@ describe("seller-dd completeness (required checks)", () => {
       },
       continuity: { lookup: async () => (o.listing === false ? null : { payTo: o.sellerPayTo ?? "0x" + "4e".repeat(20), source_url: "https://api.cdp.coinbase.com/x", fetched_at: "t" }) },
       history: async () => (o.history === undefined ? { window_blocks: 1, window_days: 0, unique_payers: 1, repeat_payers: 0, first_seen_block: 1, volume_usdc: "0.01", from_block: 1, to_block: 2, source: "x" } : o.history),
-      landed: async () => ({ state: "used", nodes: ["a", "b"] }),
+      preflight: async () => ({ ok: true, balance_atomic: "3000000", nonce: 0 }), landed: async () => ({ state: "used", nodes: ["a", "b"] }),
       authTx: async () => ({ tx: null, attempts: [{ source: "base-rpc.publicnode.com", reason: "http_429;retry:http_429" }] }),
       sleep: async () => undefined,
     } as never);
@@ -341,7 +381,7 @@ describe("seller-dd completeness (required checks)", () => {
     });
   }
   it("read failure (402 fetch timeout) -> 422 incomplete WITH the note, NO settle", async () => {
-    setSellerDdDepsForTests({ net: { get402: async () => ({ ok: false, code: "timeout" }), getPaid }, continuity: { lookup: async () => null }, history: async () => null, landed: async () => ({ state: "used", nodes: ["a", "b"] }), authTx: async () => null, sleep: async () => undefined } as never);
+    setSellerDdDepsForTests({ net: { get402: async () => ({ ok: false, code: "timeout" }), getPaid }, continuity: { lookup: async () => null }, history: async () => null, preflight: async () => ({ ok: true, balance_atomic: "3000000", nonce: 0 }), landed: async () => ({ state: "used", nodes: ["a", "b"] }), authTx: async () => null, sleep: async () => undefined } as never);
     getPaid.mockReset();
     const r = await POST(req("POST", { resource: "https://seller.example.com/api" }, await paymentHeader()));
     expect(r.status).toBe(422);

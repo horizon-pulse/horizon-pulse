@@ -28,6 +28,7 @@ import { DD_AMOUNT, DD_DESCRIPTION, DD_INCOMPLETE_NOTE, DD_NOTICE, DD_PATH, DD_T
 import { runSellerDd, type EngineDeps } from "./engine";
 import { eqAddr, isEvmAddress, screenLists } from "./screen";
 import { testerStatus } from "./testpay";
+import { observeKillSwitch, readPause } from "./pause";
 import { logReceipt, markSuperseded, getReceipt, getRecheckContext, rcptKeys, VERDICT_ID_RE } from "./receipts";
 
 const CORS: Record<string, string> = {
@@ -86,6 +87,17 @@ export function parseBody(raw: unknown): { ok: true; v: DdBody } | { ok: false; 
   return { ok: true, v: { resource: o.resource, expected_payTo: (o.expected_payTo as string | undefined) ?? null } };
 }
 
+/** Odin 10/21 #5: auto-pause latch (switch is on here). Clears on a completed off->on cycle; unreadable -> paused. */
+async function autoPauseBlock(): Promise<NextResponse | null> {
+  const st = premiumStore();
+  if (!st) return null; // no store: later gates already refuse (store_unavailable)
+  const obs = await observeKillSwitch(st, "on").catch(() => "still_paused" as const);
+  if (obs === "cleared") alertHigh("seller_dd_auto_pause_cleared", { via: "kill_switch_cycle" });
+  const p = await readPause(st);
+  if (!p.paused) return null;
+  return noCharge(503, "test_pay_auto_paused", {}, { "Retry-After": "3600" });
+}
+
 export async function sellerDdHandler(req: NextRequest): Promise<NextResponse> {
   if (!sellerDdEnabled()) return notFound();
   if (req.method === "OPTIONS") return new NextResponse(null, { status: 204, headers: CORS });
@@ -112,7 +124,14 @@ export async function sellerDdHandler(req: NextRequest): Promise<NextResponse> {
   }
 
   // Kill switch / tester / signer / screen readiness: refused BEFORE the buyer's payment is touched.
-  if (!testPayEnabled()) return noCharge(503, "test_pay_disabled", {}, { "Retry-After": "3600" });
+  if (!testPayEnabled()) {
+    // Odin 10/21 #5: a paid request seen with the switch off counts as the "off" half of the recovery cycle
+    const st = premiumStore();
+    if (st) await observeKillSwitch(st, "off").catch(() => undefined);
+    return noCharge(503, "test_pay_disabled", {}, { "Retry-After": "3600" });
+  }
+  const pauseBlock = await autoPauseBlock();
+  if (pauseBlock) return pauseBlock;
   const lists = screenLists();
   if (!lists) return noCharge(503, "screen_list_unavailable");
   const tester = await testerStatus(process.env, lists);
@@ -302,6 +321,7 @@ export async function runRecheck(store: PremiumStore, oldId: string): Promise<{ 
   if (ctx === undefined) return { status: 503, body: { error: "store_unavailable" } };
   if (!ctx) return { status: 410, body: { error: "recheck_window_expired", message: "Re-check is available for 90 days after a verdict is issued; this verdict's re-check inputs have expired. The receipt (hashes only) is still verifiable." } };
   if (!testPayEnabled()) return { status: 503, body: { error: "test_pay_disabled" } };
+  if (await autoPauseBlock()) return { status: 503, body: { error: "test_pay_auto_paused" } };
   const lists = screenLists();
   if (!lists) return { status: 503, body: { error: "screen_list_unavailable" } };
   const tester = await testerStatus(process.env, lists);
