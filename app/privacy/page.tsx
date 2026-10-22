@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
-import { FEEDBACK_PRIVACY_PARAGRAPH, privacyLine } from "@/lib/privacy-copy";
+import { feedbackPrivacyParagraph, privacyLine } from "@/lib/privacy-copy";
 
 export const dynamic = "force-static";
 
@@ -20,7 +20,7 @@ export default function PrivacyPage() {
           <div className="hp-wrap">
             <h1>Privacy</h1>
             <p id="route-log">{privacyLine()}</p>
-            <p id="feedback">{FEEDBACK_PRIVACY_PARAGRAPH}</p>
+            <p id="feedback">{feedbackPrivacyParagraph()}</p>
           </div>
         </section>
       </main>

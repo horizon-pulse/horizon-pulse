@@ -270,6 +270,9 @@ export function parseFeedbackV2(body: unknown): Parsed {
   return { ok: true, value: { ...p.value, text: r.text, ...(v2 as Partial<FeedbackInput>) }, flags };
 }
 
+/** Sentinel NOTE-A: ONE generic body for both duplicate cases, so the reply never shows whether others sent the same text. */
+export const DUP_RESPONSE = { ok: true, status: "counted", note: "Stored for human review. Nothing ships automatically." } as const;
+
 /** Normalised text for the dedupe key: lowercase, whitespace collapsed. */
 export function dupKeyHash(type: string, text: string, secret: string): string {
   const norm = text.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
@@ -408,10 +411,10 @@ export async function handleFeedback(req: Request, deps: FeedbackDeps = {}): Pro
       const dr = await kv.pipeline([["SADD", ks, ipHash], ["EXPIRE", ks, FEEDBACK_DUP_TTL_S], ["GET", dupKey]]);
       const added = Number(dr[0]);
       const firstId = typeof dr[2] === "string" ? dr[2] : null;
-      if (added === 0) return json(200, { ok: true, status: "counted", note: "Already received from you today. Stored for human review. Nothing ships automatically." });
+      if (added === 0) return json(200, DUP_RESPONSE);
       if (firstId) {
         await kv.pipeline([["ZINCRBY", `${P}votes`, 1, firstId], ["EXPIRE", `${P}votes`, FEEDBACK_TTL_S]]);
-        return json(200, { ok: true, status: "counted", note: "Counted with an earlier matching request. Stored for human review. Nothing ships automatically." });
+        return json(200, DUP_RESPONSE);
       }
     }
     const id = deps.newId ? deps.newId() : newFeedbackId(now);

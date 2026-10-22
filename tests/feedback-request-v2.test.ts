@@ -8,7 +8,7 @@ import {
   FEEDBACK_NO_CREDIT_TERM, type Kv,
 } from "@/lib/feedback";
 import { buildFeedbackDigest, digestFileName } from "@/lib/feedback-digest";
-import { FEEDBACK_PRIVACY_PARAGRAPH, privacyLine } from "@/lib/privacy-copy";
+import { FEEDBACK_PRIVACY_PARAGRAPH, FEEDBACK_PRIVACY_PARAGRAPH_V1, feedbackPrivacyParagraph, privacyLine } from "@/lib/privacy-copy";
 import { PRIVACY_PREMIUM_REPLACEMENT } from "@/lib/premium/copy";
 
 const SECRET = "t".repeat(40); // test-only value
@@ -172,6 +172,9 @@ describe("dedupe (Sentinel MEDIUM-1)", () => {
     expect(r3.status).toBe(200);
     const t3 = await r3.text();
     expect(t3).not.toContain(stored(m)[0].id);
+    // Sentinel NOTE-A: same-IP and other-IP duplicates get the identical body
+    expect(await r2.json()).toEqual(JSON.parse(t3));
+    expect(JSON.parse(t3)).toEqual({ ok: true, status: "counted", note: "Stored for human review. Nothing ships automatically." });
     expect(stored(m)).toHaveLength(1);
     expect(m.z.get("fb:v1:votes")!.get(stored(m)[0].id)).toBe(1);
     // dup keys expire in 25h
@@ -195,7 +198,17 @@ describe("Counsel copy (E1-E5 verbatim)", () => {
     expect(privacyLine({ HP_PREMIUM_ENABLED: "true" })).toContain("we store request content only for premium jobs and free feedback, as described below");
     expect(PRIVACY_PREMIUM_REPLACEMENT).toContain("only for premium jobs, as described below"); // /premium-terms unchanged
     const page = readFileSync("app/privacy/page.tsx", "utf8");
-    expect(page).toMatch(/<p id="feedback">\{FEEDBACK_PRIVACY_PARAGRAPH\}<\/p>/);
+    expect(page).toMatch(/<p id="feedback">\{feedbackPrivacyParagraph\(\)\}<\/p>/);
+  });
+  it("Sentinel FIX-1: v2 off -> only live-true claims; v2 on -> Counsel E1 verbatim; no new words", () => {
+    expect(feedbackPrivacyParagraph({})).toBe(FEEDBACK_PRIVACY_PARAGRAPH_V1);
+    expect(feedbackPrivacyParagraph({ FEEDBACK_ROUTE_ENABLED: "1" })).toBe(FEEDBACK_PRIVACY_PARAGRAPH_V1);
+    expect(feedbackPrivacyParagraph(V2)).toBe(FEEDBACK_PRIVACY_PARAGRAPH);
+    expect(FEEDBACK_PRIVACY_PARAGRAPH_V1).toBe("Free feedback (/api/feedback and the submit_feedback tool): we store the text you send, its type and any optional fields you choose (symbol, route), plus a keyed hash (HMAC) of your IP address used for rate limits and repeat review; the IP address itself is not stored. Entries are kept for up to 90 days for human review, then deleted. Do not include personal data, secrets or keys. We may use what you send to improve Horizon Pulse, with no obligation or payment.");
+    for (const w of ["want", "use case", "would-pay", "reject", "mask", "email", "phone", "wallet"]) expect(FEEDBACK_PRIVACY_PARAGRAPH_V1).not.toContain(w);
+    const words = (t: string) => new Set(t.toLowerCase().match(/[a-z0-9-]+/g));
+    const full = words(FEEDBACK_PRIVACY_PARAGRAPH);
+    for (const w of words(FEEDBACK_PRIVACY_PARAGRAPH_V1)) expect(full.has(w), w).toBe(true);
   });
   it("E2/E3 exact, in v2 description; v1 description unchanged; never 'anonymous'", () => {
     expect(FEEDBACK_WOULD_PAY_TERM).toBe("would_pay is an optional price bucket per call. It is a signal only, not an order, offer or commitment by either side, and does not affect any price you are charged.");

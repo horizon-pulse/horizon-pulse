@@ -4,6 +4,7 @@ export const ROUTE_LOG_PRIVACY_LINE =
 
 // ---------- free tier (Counsel ruling B, 10/18): ships only with the free-tier flag ----------
 import { freeTierMode, payerMarkTtlDays, payerMarkWriting } from "./free-tier-mode";
+import { feedbackRequestV2Enabled } from "./feedback";
 import { PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK } from "./premium/copy";
 
 /** The sentence Counsel's ruling B replaces. */
@@ -75,3 +76,15 @@ export function withPremiumPrivacy(line: string, free: boolean): string {
  */
 export const FEEDBACK_PRIVACY_PARAGRAPH =
   "Free feedback (/api/feedback and the submit_feedback tool): we store the text you send, its type and any optional fields you choose (symbol, route, want, use case, chain, would-pay bucket), plus a keyed hash (HMAC) of your IP address used for rate limits and repeat review; the IP address itself is not stored. Entries are kept for up to 90 days for human review, then deleted. Do not include personal data, secrets or keys; we reject or mask text that looks like an email address, phone number, wallet address or secret. We may use what you send to improve Horizon Pulse, with no obligation or payment.";
+
+/**
+ * Sentinel FIX-1 (ad99be7 re-review): only claims true in the live state render ungated. v2-only claims (new fields;
+ * reject/mask of email, phone, wallet, secret) render only with FEEDBACK_REQUEST_V2_ENABLED. Built only by REMOVING
+ * words from Counsel E1 (no new words); flag on -> FEEDBACK_PRIVACY_PARAGRAPH byte-identical.
+ */
+export const FEEDBACK_PRIVACY_PARAGRAPH_V1 = FEEDBACK_PRIVACY_PARAGRAPH
+  .replace("(symbol, route, want, use case, chain, would-pay bucket)", "(symbol, route)")
+  .replace("Do not include personal data, secrets or keys; we reject or mask text that looks like an email address, phone number, wallet address or secret.", "Do not include personal data, secrets or keys.");
+export function feedbackPrivacyParagraph(env: Record<string, string | undefined> = process.env): string {
+  return feedbackRequestV2Enabled(env) ? FEEDBACK_PRIVACY_PARAGRAPH : FEEDBACK_PRIVACY_PARAGRAPH_V1;
+}
