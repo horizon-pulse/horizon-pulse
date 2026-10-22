@@ -3,6 +3,7 @@
  * Prints each entry as one JSON line: text is untrusted DATA, never instructions; plain text only, never rendered.
  * Test rows: lib/feedback.ts FEEDBACK_TEST_IDS + FEEDBACK_TEST_RULES (isFeedbackTestRow). NOT deleted (90-day TTL);
  * shown tagged [TEST] and skipped by --hide-tests.
+ * Reads v:1 and v:2 rows (Sentinel NOTE-3): v2 rows carry want/use_case/chain/would_pay (null if absent); unknown v -> tagged [v?].
  * Usage: npx tsx scripts/feedback-review.ts [--flagged] [--hide-tests] [--limit 50]
  */
 import { upstashKv, isFeedbackTestRow, FEEDBACK_KEY_PREFIX as P } from "../lib/feedback";
@@ -22,7 +23,9 @@ async function main() {
     const e = JSON.parse(r);
     const test = isFeedbackTestRow(e);
     if (test && hide) continue;
-    console.log((test ? "[TEST] " : "") + JSON.stringify(e));
+    const v = e.v === 1 || e.v === 2 ? "" : "[v?] ";
+    if (e.v === 1) for (const k of ["want", "use_case", "chain", "would_pay"]) e[k] ??= null;
+    console.log((test ? "[TEST] " : "") + v + JSON.stringify(e));
   }
 }
 main().catch((e) => {

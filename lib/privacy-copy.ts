@@ -4,7 +4,7 @@ export const ROUTE_LOG_PRIVACY_LINE =
 
 // ---------- free tier (Counsel ruling B, 10/18): ships only with the free-tier flag ----------
 import { freeTierMode, payerMarkTtlDays, payerMarkWriting } from "./free-tier-mode";
-import { PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT } from "./premium/copy";
+import { PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK } from "./premium/copy";
 
 /** The sentence Counsel's ruling B replaces. */
 export const NO_IP_SENTENCE = "We do not store IP addresses, user agents, headers or request content.";
@@ -64,6 +64,14 @@ const FREE_LAST_SENTENCE = "These hashes are not linked to wallet addresses, tra
  * rest of the line is unchanged. Premium off -> the line is byte-identical to before.
  */
 export function withPremiumPrivacy(line: string, free: boolean): string {
-  if (!free) return line.replace(NO_IP_SENTENCE, `${PRIVACY_PREMIUM_REPLACEMENT} ${PRIVACY_PREMIUM_ADDITION}`);
-  return line.replace(FREE_NO_CONTENT_SENTENCE, PRIVACY_PREMIUM_REPLACEMENT).replace(FREE_LAST_SENTENCE, `${FREE_LAST_SENTENCE} ${PRIVACY_PREMIUM_ADDITION}`);
+  // Counsel E1 (10/22): /privacy names free feedback in the request-content sentence. /premium-terms keeps PRIVACY_PREMIUM_REPLACEMENT.
+  if (!free) return line.replace(NO_IP_SENTENCE, `${PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK} ${PRIVACY_PREMIUM_ADDITION}`);
+  return line.replace(FREE_NO_CONTENT_SENTENCE, PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK).replace(FREE_LAST_SENTENCE, `${FREE_LAST_SENTENCE} ${PRIVACY_PREMIUM_ADDITION}`);
 }
+
+/**
+ * Counsel E1 (2026-10-22, to-pulse/2026-10-22-counsel-feedback-request-scope.md), verbatim. Rendered on /privacy
+ * unconditionally so it is live BEFORE FEEDBACK_ROUTE_ENABLED / FEEDBACK_REQUEST_V2_ENABLED are turned on.
+ */
+export const FEEDBACK_PRIVACY_PARAGRAPH =
+  "Free feedback (/api/feedback and the submit_feedback tool): we store the text you send, its type and any optional fields you choose (symbol, route, want, use case, chain, would-pay bucket), plus a keyed hash (HMAC) of your IP address used for rate limits and repeat review; the IP address itself is not stored. Entries are kept for up to 90 days for human review, then deleted. Do not include personal data, secrets or keys; we reject or mask text that looks like an email address, phone number, wallet address or secret. We may use what you send to improve Horizon Pulse, with no obligation or payment.";

@@ -36,6 +36,9 @@ export const REFUND_LINE =
 
 export const PRIVACY_PREMIUM_REPLACEMENT =
   "We do not store user agents or headers, and we store request content only for premium jobs, as described below.";
+/** Counsel E1 (2026-10-22 feedback-request scope), verbatim: the /privacy version of the request-content sentence. */
+export const PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK =
+  "We do not store user agents or headers, and we store request content only for premium jobs and free feedback, as described below.";
 export const PRIVACY_PREMIUM_ADDITION =
   "For premium report and watch jobs we also store the question or target URL you submit, the tier, the job's results and copies of the public web pages they cite, so the paying caller can retrieve them; these are deleted 30 days after the job is delivered, fails or, for a watch, ends. If a payment needs to be reconciled, we keep the payment record (route, tier, payer wallet, amount, transaction details and outcome) until it is resolved and for at most 12 months.";
 

@@ -16,6 +16,7 @@
 import { createHmac, randomBytes } from "node:crypto";
 import { callerIp } from "./caller-ip";
 import { resolveSharedReplayStoreEnv } from "./xrpl-replay-store";
+import { english as BIP39_EN } from "viem/accounts";
 
 type Env = Record<string, string | undefined>;
 type FetchFn = typeof fetch;
@@ -49,6 +50,27 @@ export function isFeedbackTestRow(rec: { id?: unknown; type?: unknown; text?: un
 }
 export const FEEDBACK_IP_DOMAIN = "hp-feedback-ip-v1:";
 const ALLOWED_KEYS = new Set(["type", "text", "symbol", "route"]);
+
+// ---------- v2 "request" extension (scope 2026-10-22, Odin Class A 10/21 11:53 PM, Sentinel M1/M2/LOW1-3, Counsel E1-E6) ----------
+/** Strict shared enums (Sentinel LOW-3): REST and MCP (zod) use these same arrays. */
+export const FEEDBACK_WANTS = ["route", "data", "coin", "chain", "rail"] as const;
+export const FEEDBACK_USE_CASES = ["trading", "research", "payments", "monitoring", "other"] as const;
+export const FEEDBACK_CHAINS = ["base", "solana", "ethereum", "arbitrum", "optimism", "polygon", "bitcoin", "xrpl", "other"] as const;
+export const FEEDBACK_WOULD_PAY = ["0", "<0.01", "0.01-0.10", ">0.10"] as const;
+export const FEEDBACK_V2_FIELDS = { want: FEEDBACK_WANTS, use_case: FEEDBACK_USE_CASES, chain: FEEDBACK_CHAINS, would_pay: FEEDBACK_WOULD_PAY } as const;
+type V2Field = keyof typeof FEEDBACK_V2_FIELDS;
+const ALLOWED_KEYS_V2 = new Set([...ALLOWED_KEYS, ...Object.keys(FEEDBACK_V2_FIELDS)]);
+export const FEEDBACK_DUP_DOMAIN = "hp-feedback-dup-v1:";
+export const FEEDBACK_DUP_TTL_S = 90_000; // 25 h (Counsel E6: no extra privacy copy at <= 25 h)
+export const FEEDBACK_REFUSAL_TTL_S = 8 * 86_400;
+/** Counsel E5, exact error copy. Never echoes the offending text. */
+export const FEEDBACK_REJECT_PII = "Rejected: remove personal data, contact details, secrets or keys.";
+
+/** NEW flag (default OFF). Only meaningful with FEEDBACK_ROUTE_ENABLED on; off -> v1 behaviour byte-identical. */
+export function feedbackRequestV2Enabled(env: Env = process.env): boolean {
+  const v = (env.FEEDBACK_REQUEST_V2_ENABLED ?? "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "on";
+}
 
 export function feedbackEnabled(env: Env = process.env): boolean {
   const v = (env.FEEDBACK_ROUTE_ENABLED ?? "").trim().toLowerCase();
@@ -122,7 +144,68 @@ export function oddFlags(text: string): string[] {
   return flags;
 }
 
-export type FeedbackInput = { type: FeedbackType; text: string; symbol?: string; route?: string };
+// ---------- v2 PII / secret checks (Sentinel MEDIUM-2, Counsel E5, Odin: wallets REDACTED) ----------
+const SECRET_WORDS = /\b(private[ _-]?key|secret[ _-]?key|seed[ _-]?phrase|recovery[ _-]?phrase|mnemonic|api[_ -]?key|password|passphrase|bearer)\b/i;
+const HEX64 = /(?<![0-9a-fA-F])(?:0x)?[0-9a-fA-F]{64}(?![0-9a-fA-F])/;
+const KNOWN_TOKEN = /\b(?:(?:sk|pk|rk|xai|ghp|gho|ghs|github_pat|xox[abpr])[-_][A-Za-z0-9_-]{12,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{20,}|eyJ[A-Za-z0-9_-]{15,})/;
+const EVM_ADDR = /(?<![0-9a-zA-Z])0x[0-9a-fA-F]{40}(?![0-9a-zA-Z])/g;
+const B58_ADDR = /(?<![0-9A-Za-z])[1-9A-HJ-NP-Za-km-z]{32,44}(?![0-9A-Za-z])/g;
+const TOKEN_RUN = /[A-Za-z0-9+/=_-]{33,}/g;
+const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]{2,}/;
+const PHONE = /(?<![\d])\+?\(?\d[\d\s().-]{7,}\d(?![\d])/g;
+const BIP39 = new Set<string>(BIP39_EN);
+export const SEED_RUN_MIN = 12;
+
+/** 12+ consecutive BIP39 words (any separators/case). */
+export function hasSeedLikeRun(text: string): boolean {
+  let run = 0;
+  for (const w of text.toLowerCase().split(/[^a-z]+/)) {
+    if (!w) continue;
+    run = BIP39.has(w) ? run + 1 : 0;
+    if (run >= SEED_RUN_MIN) return true;
+  }
+  return false;
+}
+
+/** True if text looks like it carries a secret: keywords, 64-hex keys, seed-like word runs, long tokens. */
+export function secretLike(text: string): boolean {
+  if (SECRET_WORDS.test(text) || HEX64.test(text) || KNOWN_TOKEN.test(text) || hasSeedLikeRun(text)) return true;
+  for (const m of text.match(TOKEN_RUN) ?? []) {
+    if (/^0x[0-9a-fA-F]{40}$/.test(m)) continue; // wallet: redacted, not rejected
+    if (m.length <= 44 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(m)) continue; // base58 address: redacted
+    if (/^[a-z]+(?:[-_][a-z]+)*$/i.test(m) && !/\d/.test(m)) continue; // long plain word/slug, no digits
+    return true;
+  }
+  return false;
+}
+
+export function emailLike(text: string): boolean {
+  return EMAIL.test(text);
+}
+export function phoneLike(text: string): boolean {
+  for (const m of text.match(PHONE) ?? []) {
+    const d = m.replace(/\D/g, "").length;
+    if (d >= 9 && d <= 15 && !/^\d+\.\d+$/.test(m.trim())) return true;
+  }
+  return false;
+}
+
+/** Odin ruling: REDACT wallet addresses before storing. Nothing of the address survives. */
+export function redactAddresses(text: string): { text: string; had: boolean } {
+  const out = text.replace(EVM_ADDR, "[addr]").replace(B58_ADDR, (m) => (/\d/.test(m) && /[A-Za-z]/.test(m) ? "[addr]" : m));
+  return { text: out, had: out !== text };
+}
+
+export type FeedbackInput = {
+  type: FeedbackType;
+  text: string;
+  symbol?: string;
+  route?: string;
+  want?: (typeof FEEDBACK_WANTS)[number];
+  use_case?: (typeof FEEDBACK_USE_CASES)[number];
+  chain?: (typeof FEEDBACK_CHAINS)[number];
+  would_pay?: (typeof FEEDBACK_WOULD_PAY)[number];
+};
 export type Parsed = { ok: true; value: FeedbackInput; flags: string[] } | { ok: false; error: string };
 
 export function parseFeedback(body: unknown): Parsed {
@@ -152,6 +235,45 @@ export function parseFeedback(body: unknown): Parsed {
   const flags = oddFlags(raw);
   if (m.hadUrl) flags.unshift("has_url");
   return { ok: true, value: out, flags };
+}
+
+/**
+ * v2 parse: v1 rules, plus strict enums (unknown key/value -> 400, never echoed), secret/email/phone -> 400 (E5 copy,
+ * nothing stored, nothing echoed), wallet addresses REDACTED to [addr] (+ address_like flag) before storing.
+ */
+export function parseFeedbackV2(body: unknown): Parsed {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { ok: false, error: "body: must be a JSON object" };
+  const o = body as Record<string, unknown>;
+  for (const k of Object.keys(o))
+    if (!ALLOWED_KEYS_V2.has(k)) return { ok: false, error: "body: unknown field (allowed: type, text, symbol, route, want, use_case, chain, would_pay)" };
+  const v2: Partial<Record<V2Field, string>> = {};
+  for (const f of Object.keys(FEEDBACK_V2_FIELDS) as V2Field[]) {
+    if (o[f] === undefined) continue;
+    const allowed = FEEDBACK_V2_FIELDS[f] as readonly string[];
+    if (typeof o[f] !== "string" || !allowed.includes(o[f] as string)) return { ok: false, error: `${f}: one of ${allowed.join(", ")}` };
+    v2[f] = o[f] as string;
+  }
+  const base: Record<string, unknown> = { type: o.type, text: o.text };
+  if (o.symbol !== undefined) base.symbol = o.symbol;
+  if (o.route !== undefined) base.route = o.route;
+  if (typeof o.text === "string") {
+    const raw = o.text.normalize("NFC");
+    // Before any other text check so nothing secret or personal is ever echoed in a later error.
+    if (secretLike(raw) || emailLike(raw)) return { ok: false, error: FEEDBACK_REJECT_PII };
+    if (phoneLike(redactAddresses(raw).text)) return { ok: false, error: FEEDBACK_REJECT_PII };
+  }
+  const p = parseFeedback(base);
+  if (!p.ok) return p;
+  const r = redactAddresses(p.value.text);
+  const flags = p.flags.filter((f) => f !== "secret_like");
+  if (r.had && !flags.includes("address_like")) flags.push("address_like");
+  return { ok: true, value: { ...p.value, text: r.text, ...(v2 as Partial<FeedbackInput>) }, flags };
+}
+
+/** Normalised text for the dedupe key: lowercase, whitespace collapsed. */
+export function dupKeyHash(type: string, text: string, secret: string): string {
+  const norm = text.normalize("NFC").toLowerCase().replace(/\s+/g, " ").trim();
+  return createHmac("sha256", secret).update(FEEDBACK_DUP_DOMAIN + type + "\n" + norm).digest("hex");
 }
 
 // ---------- KV ----------
@@ -242,7 +364,8 @@ export async function handleFeedback(req: Request, deps: FeedbackDeps = {}): Pro
   } catch {
     return json(400, { ok: false, error: "body: invalid JSON" });
   }
-  const p = parseFeedback(body);
+  const v2 = feedbackRequestV2Enabled(env);
+  const p = v2 ? parseFeedbackV2(body) : parseFeedback(body);
   if (!p.ok) return json(400, { ok: false, error: p.error });
 
   const secret = feedbackSecret(env);
@@ -263,25 +386,44 @@ export async function handleFeedback(req: Request, deps: FeedbackDeps = {}): Pro
     const r = await kv.pipeline([["INCR", kh], ["EXPIRE", kh, 3700], ["INCR", kd], ["EXPIRE", kd, 90_000]]);
     const [h, d] = [Number(r[0]), Number(r[2])];
     if (h > FEEDBACK_IP_PER_HOUR || d > FEEDBACK_IP_PER_DAY) {
+      if (v2) await countRefusal(kv, "ip", day);
       const retry = d > FEEDBACK_IP_PER_DAY ? (day + 1) * 86_400 - Math.floor(now / 1000) : (hour + 1) * 3600 - Math.floor(now / 1000);
       return json(429, { ok: false, error: "rate_limited", retry_after_s: retry }, { "retry-after": String(retry) });
     }
     const gr = await kv.pipeline([["INCR", kg], ["EXPIRE", kg, 90_000]]);
     const g = Number(gr[0]);
     if (g > FEEDBACK_GLOBAL_PER_DAY) {
+      if (v2) await countRefusal(kv, "global", day);
       if (g === FEEDBACK_GLOBAL_PER_DAY + 1) console.log(JSON.stringify({ evt: "feedback_global_cap_hit", day }));
       const retry = (day + 1) * 86_400 - Math.floor(now / 1000);
       return json(429, { ok: false, error: "rate_limited", retry_after_s: retry }, { "retry-after": String(retry) });
     }
+    // Sentinel MEDIUM-1: dedupe AFTER both rate limits (a duplicate still spends budget), keyed HMAC with its own
+    // domain prefix (never a plain hash), counted once per distinct ip_hash. Keys expire in 25 h (Counsel E6).
+    let dupKey: string | null = null;
+    if (v2) {
+      const dh = dupKeyHash(p.value.type, p.value.text, secret).slice(0, 32);
+      const ks = `${P}dup:${day}:${dh}`;
+      dupKey = `${ks}:id`;
+      const dr = await kv.pipeline([["SADD", ks, ipHash], ["EXPIRE", ks, FEEDBACK_DUP_TTL_S], ["GET", dupKey]]);
+      const added = Number(dr[0]);
+      const firstId = typeof dr[2] === "string" ? dr[2] : null;
+      if (added === 0) return json(200, { ok: true, status: "counted", note: "Already received from you today. Stored for human review. Nothing ships automatically." });
+      if (firstId) {
+        await kv.pipeline([["ZINCRBY", `${P}votes`, 1, firstId], ["EXPIRE", `${P}votes`, FEEDBACK_TTL_S]]);
+        return json(200, { ok: true, status: "counted", note: "Counted with an earlier matching request. Stored for human review. Nothing ships automatically." });
+      }
+    }
     const id = deps.newId ? deps.newId() : newFeedbackId(now);
     const record = {
-      v: 1,
+      v: v2 ? 2 : 1,
       id,
       ts: new Date(now).toISOString(),
       type: p.value.type,
       text: p.value.text,
       symbol: p.value.symbol ?? null,
       route: p.value.route ?? null,
+      ...(v2 ? { want: p.value.want ?? null, use_case: p.value.use_case ?? null, chain: p.value.chain ?? null, would_pay: p.value.would_pay ?? null } : {}),
       flags: p.flags,
       ip_hash: ipHash,
       status: "received",
@@ -291,6 +433,7 @@ export async function handleFeedback(req: Request, deps: FeedbackDeps = {}): Pro
       ["ZADD", `${P}idx`, now, id],
       ["ZREMRANGEBYSCORE", `${P}idx`, 0, now - FEEDBACK_TTL_S * 1000],
     ];
+    if (dupKey) cmds.push(["SET", dupKey, id, "NX", "EX", FEEDBACK_DUP_TTL_S]);
     if (p.flags.length) cmds.push(["ZADD", `${P}flagged`, now, id], ["ZREMRANGEBYSCORE", `${P}flagged`, 0, now - FEEDBACK_TTL_S * 1000]);
     await kv.pipeline(cmds);
     console.log(JSON.stringify({ evt: "feedback_stored", type: record.type, flagged: p.flags.length > 0 }));
@@ -299,6 +442,33 @@ export async function handleFeedback(req: Request, deps: FeedbackDeps = {}): Pro
     return json(503, { ok: false, error: "temporarily_unavailable" });
   }
 }
+
+/** Sentinel LOW-1: count limit refusals per day (no IP, no hash) so a flood is visible. Best effort. */
+async function countRefusal(kv: Kv, which: "ip" | "global", day: number): Promise<void> {
+  const k = `${FEEDBACK_KEY_PREFIX}refused:${which}:${day}`;
+  try {
+    const r = await kv.pipeline([["INCR", k], ["EXPIRE", k, FEEDBACK_REFUSAL_TTL_S]]);
+    const n = Number(r[0]);
+    if (n === 1 || n % 50 === 0) console.log(JSON.stringify({ evt: "feedback_refused", which, day, count: n }));
+  } catch {
+    /* counting must never change the 429 */
+  }
+}
+
+/** Counsel E2, exact. */
+export const FEEDBACK_WOULD_PAY_TERM =
+  "would_pay is an optional price bucket per call. It is a signal only, not an order, offer or commitment by either side, and does not affect any price you are charged.";
+/** Counsel E3, exact. */
+export const FEEDBACK_NO_CREDIT_TERM = "Requests may or may not be built. No credit, discount, priority or payment is given for any submission.";
+
+/**
+ * v2 description (DRAFT copy: v1 approved wording + Counsel E2/E3/E5 verbatim; needs Forge copy + Counsel PASS + Odin OK
+ * before FEEDBACK_REQUEST_V2_ENABLED is turned on). Never says "anonymous" (Counsel E5).
+ */
+export const FEEDBACK_MCP_DESCRIPTION_V2 =
+  "FREE (no payment). Tell Horizon Pulse about a missing coin, data field or route, or what you would like us to add. Fields: type (coin, data, route or other), text (1-500 characters, plain text; links are not followed and are stored masked), optional symbol and route, and optional want (route, data, coin, chain or rail), use_case (trading, research, payments, monitoring or other), chain and would_pay (0, <0.01, 0.01-0.10 or >0.10 USD per call). " +
+  FEEDBACK_WOULD_PAY_TERM + " " + FEEDBACK_NO_CREDIT_TERM +
+  " Stored for human review only, for up to 90 days; nothing ships automatically and there is no reply. We may use what you send to improve Horizon Pulse, with no obligation or payment. Do not include personal data, secrets or keys: text that looks like an email address, phone number or secret is rejected, and wallet addresses are removed before storing. No account needed; IP stored only as a keyed hash. Limit: 5 per hour and 20 per day per caller IP address, plus a shared daily cap. Limits use a keyed hash (HMAC) of the caller's IP address; the IP address itself is not stored. The limit counters expire within 25 hours, and each stored entry keeps that hash for up to 90 days so repeat submissions can be reviewed.";
 
 export const FEEDBACK_MCP_DESCRIPTION =
   "FREE (no payment). Tell Horizon Pulse about a missing coin, data field or route. Fields: type (coin, data, route or other), text (1-500 characters, plain text; links are not followed and are stored masked), optional symbol and route. Stored for human review only, for up to 90 days; nothing ships automatically and there is no reply. We may use what you send to improve Horizon Pulse, with no obligation or payment. Do not include personal data, secrets or keys. Limit: 5 per hour and 20 per day per caller IP address, plus a shared daily cap. Limits use a keyed hash (HMAC) of the caller's IP address; the IP address itself is not stored. The limit counters expire within 25 hours, and each stored entry keeps that hash for up to 90 days so repeat submissions can be reviewed.";

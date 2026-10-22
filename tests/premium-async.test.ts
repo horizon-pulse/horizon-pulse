@@ -26,7 +26,7 @@ import {
   resetPremiumNoncesForTests, setPremiumRpcForTests, TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_BASE_DOMAIN,
 } from "@/lib/premium/payment";
 import { setParallelForTests } from "@/lib/premium/parallel";
-import { BUYER_TERMS, WATCH_TERMS, TECHNICAL_NOTES, RECONCILE_RETENTION_S, PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT } from "@/lib/premium/copy";
+import { BUYER_TERMS, WATCH_TERMS, TECHNICAL_NOTES, RECONCILE_RETENTION_S, PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT, PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK } from "@/lib/premium/copy";
 import { CAP_EXEMPT_OUTCOMES, recordReconcile, RECONCILE_WRITE_CAP_PER_DAY, reconcileWriteStats, flushReconcileForTests, setReconcileForTests, storedFingerprint, type ReconcileLine } from "@/lib/premium/reconcile";
 import { MemoryPremiumStore, premiumPrefix, setPremiumStoreForTests, UpstashPremiumStore, type PremiumStore } from "@/lib/premium/store";
 import { BRIEF_RUN_COST_USD, setBriefGateForTests, setPremiumClockForTests, UNSETTLED_DAILY_CAP_USD, unsettledKey } from "@/lib/premium/handler";
@@ -673,8 +673,10 @@ describe("Odin C5 premium alert cap, Counsel C2 EXPIRE NX + keyed hash, Counsel 
     expect(privacyLine({})).toBe(ROUTE_LOG_PRIVACY_LINE);
     const on1 = privacyLine({ HP_PREMIUM_ENABLED: "true" });
     expect(on1).not.toContain(NO_IP_SENTENCE);
-    expect(on1).toContain(`${PRIVACY_PREMIUM_REPLACEMENT} ${PRIVACY_PREMIUM_ADDITION}`);
-    expect(on1).toBe(ROUTE_LOG_PRIVACY_LINE.replace(NO_IP_SENTENCE, `${PRIVACY_PREMIUM_REPLACEMENT} ${PRIVACY_PREMIUM_ADDITION}`));
+    // Counsel E1 (10/22): /privacy uses the "...premium jobs and free feedback..." sentence.
+    expect(on1).toContain(`${PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK} ${PRIVACY_PREMIUM_ADDITION}`);
+    expect(on1).toBe(ROUTE_LOG_PRIVACY_LINE.replace(NO_IP_SENTENCE, `${PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK} ${PRIVACY_PREMIUM_ADDITION}`));
+    expect(PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK).toBe(PRIVACY_PREMIUM_REPLACEMENT.replace("premium jobs,", "premium jobs and free feedback,"));
   });
 });
 

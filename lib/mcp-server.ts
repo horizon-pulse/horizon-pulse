@@ -13,7 +13,10 @@
  *   settled (wrapper cancels settlement on isError).
  * - No Bazaar discovery extension on MCP tools (REST discovery unchanged).
  */
-import { FEEDBACK_MCP_DESCRIPTION, feedbackEnabled, handleFeedback } from "./feedback";
+import {
+  FEEDBACK_MCP_DESCRIPTION, FEEDBACK_MCP_DESCRIPTION_V2, FEEDBACK_WANTS, FEEDBACK_USE_CASES, FEEDBACK_CHAINS, FEEDBACK_WOULD_PAY,
+  FEEDBACK_WOULD_PAY_TERM, feedbackEnabled, feedbackRequestV2Enabled, handleFeedback,
+} from "./feedback";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createPaymentWrapper } from "@x402/mcp";
@@ -510,7 +513,11 @@ export function buildMcpServer(): McpServer {
   // FREE tools: no x402 wrapper, no challenge; counted as free, never in TOOLS (the paid list).
   for (const f of FREE_TOOLS) server.tool(f.name, f.description, f.schema, async (args) => f.call(args as Record<string, unknown>));
   // FREE feedback tool: listed only when FEEDBACK_ROUTE_ENABLED is on (same flag as POST /api/feedback). No x402.
-  if (feedbackEnabled()) server.tool(FEEDBACK_TOOL.name, FEEDBACK_TOOL.description, FEEDBACK_TOOL.schema, async (args) => FEEDBACK_TOOL.call(args as Record<string, unknown>));
+  if (feedbackEnabled()) {
+    // v2 (FEEDBACK_REQUEST_V2_ENABLED, default off) swaps the schema/description in place: still ONE tool, count unchanged.
+    const t = feedbackRequestV2Enabled() ? FEEDBACK_TOOL_V2 : FEEDBACK_TOOL;
+    server.tool(t.name, t.description, t.schema, async (args) => t.call(args as Record<string, unknown>));
+  }
   // Premium verified brief: listed only when the tier is live. Never takes payment over MCP: it makes the same
   // unpaid HTTP request an agent would and returns that 402 challenge (or the unpaid 422/503) as-is.
   if (tierAllowed("brief")) server.tool(VERIFIED_BRIEF_TOOL.name, VERIFIED_BRIEF_TOOL.description, VERIFIED_BRIEF_TOOL.schema, async (args) => VERIFIED_BRIEF_TOOL.call(args as Record<string, unknown>));
@@ -549,6 +556,24 @@ export const FEEDBACK_TOOL = {
     const body: Record<string, unknown> = { type: a.type, text: a.text };
     if (a.symbol !== undefined) body.symbol = a.symbol;
     if (a.route !== undefined) body.route = a.route;
+    return runHandler(handleFeedback as unknown as Handler, makeRequest("/api/feedback", {}, body));
+  },
+};
+
+/** v2: same tool name and handler; optional strict enums are the SAME arrays REST validates (Sentinel LOW-3). */
+export const FEEDBACK_TOOL_V2 = {
+  name: "submit_feedback",
+  description: FEEDBACK_MCP_DESCRIPTION_V2,
+  schema: {
+    ...FEEDBACK_TOOL.schema,
+    want: z.enum(FEEDBACK_WANTS).optional().describe("Optional: what you want added (route, data, coin, chain or rail)"),
+    use_case: z.enum(FEEDBACK_USE_CASES).optional().describe("Optional: what you would use it for"),
+    chain: z.enum(FEEDBACK_CHAINS).optional().describe("Optional: chain it is about"),
+    would_pay: z.enum(FEEDBACK_WOULD_PAY).optional().describe(FEEDBACK_WOULD_PAY_TERM),
+  },
+  call: (a: Record<string, unknown>) => {
+    const body: Record<string, unknown> = { type: a.type, text: a.text };
+    for (const k of ["symbol", "route", "want", "use_case", "chain", "would_pay"]) if (a[k] !== undefined) body[k] = a[k];
     return runHandler(handleFeedback as unknown as Handler, makeRequest("/api/feedback", {}, body));
   },
 };
