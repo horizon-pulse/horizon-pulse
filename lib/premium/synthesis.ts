@@ -468,6 +468,7 @@ export function consistentValues(extracted: ParallelResult[], pool: { url: strin
  * authority among the extracted pages (Claude §4.6: primary publication + a second document from the same authority).
  */
 export const ISSUING_AUTHORITIES: { topic: RegExp; name: string; domains: string[] }[] = [
+  // newyorkfed.org pages are NY Fed Content (ToU): any brief citing them carries nyfed_terms (lib/premium/nyfed-attribution.ts, Counsel 10/23).
   { topic: /\b(federal funds|fed funds|fomc|discount rate|interest on reserve|policy rate)\b/i, name: "Federal Reserve System", domains: ["federalreserve.gov", "newyorkfed.org", "stlouisfed.org"] },
 ];
 export type Authority = { source_tier: "issuing_authority"; authority: string; url: string; documents: number; note: string };

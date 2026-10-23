@@ -6,6 +6,7 @@ import { BRIEF_VERIFIED_SENTENCE } from "./copy";
  * Heuristics are labelled as such in the output; nothing here is a verdict.
  */
 import { toContract } from "./contract";
+import { withNyfedTerms } from "./nyfed-attribution";
 import { buildVerified } from "./verified";
 import { classifyQuestion, fetchIndexPages, stripTypePrefix } from "./source-index";
 import { ParallelError, extractAllowed, parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
@@ -525,7 +526,7 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
     const [brief, chain] = await Promise.all([synthesizeBrief(q, code, read, deadline, jobKey), chainP]);
     const full = attachOnchain(brief, chain);
     // Hardened spec §1-§2: the contract view (evidence object per claim, pass/fail). Only status "pass" settles.
-    return { ...full, contract: toContract(q, full, read, new Date().toISOString()) };
+    return withNyfedTerms({ ...full, contract: toContract(q, full, read, new Date().toISOString()) });
   }
   const urls = [...new Set(found.map((r) => r.url))].slice(0, x.reads);
   const read = await parallelExtract(q, urls, deadline);
@@ -562,5 +563,6 @@ export async function runVerifiedBrief(input: string, deadline: number, capture?
   const s = Date.now();
   const contract = await buildVerified(q, t, web, index, chain, new Date().toISOString(), deadline);
   timing.build_ms = Date.now() - s;
-  return { tier: "brief", question: q, contract, timing, disclaimer: `${ADVICE_DISCLAIMER} ${BRIEF_VERIFIED_SENTENCE}`, ...((contract as { answer_by?: string }).answer_by === "model" ? { ai_note: AI_ANSWER_NOTE } : {}), coverage: t.label };
+  // Counsel/Odin 10/23: NY Fed ToU credit + not-affiliated + free-at-source when any cited page is newyorkfed.org.
+  return withNyfedTerms({ tier: "brief", question: q, contract, timing, disclaimer: `${ADVICE_DISCLAIMER} ${BRIEF_VERIFIED_SENTENCE}`, ...((contract as { answer_by?: string }).answer_by === "model" ? { ai_note: AI_ANSWER_NOTE } : {}), coverage: t.label });
 }
