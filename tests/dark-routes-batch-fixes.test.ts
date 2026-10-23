@@ -319,7 +319,7 @@ describe("route log: the receipt id is random and never joined", () => {
     walk("lib");
     walk("app");
     // The dark routes' route.ts only pass the id from the runtime to their handler.
-    expect(hits.sort()).toEqual(["app/api/audit/security/handler.ts", "app/api/audit/security/route.audit.ts", "app/api/injection/scan/handler.ts", "app/api/injection/scan/route.inj.ts", "app/api/package/check/handler.ts", "app/api/package/check/route.pkg.ts", "app/api/trade-gate/handler.ts", "app/api/trade-gate/route.tg.ts", "lib/dark-route-runtime.ts", "lib/dark-routes.ts"].sort());
+    expect(hits.sort()).toEqual(["app/api/aave-equities/collateral-data/handler.ts", "app/api/aave-equities/collateral-data/route.aave.ts", "app/api/audit/security/handler.ts", "app/api/audit/security/route.audit.ts", "app/api/injection/scan/handler.ts", "app/api/injection/scan/route.inj.ts", "app/api/package/check/handler.ts", "app/api/package/check/route.pkg.ts", "app/api/trade-gate/handler.ts", "app/api/trade-gate/route.tg.ts", "lib/dark-route-runtime.ts", "lib/dark-routes.ts"].sort());
     for (const f of hits) for (const line of src(f).split("\n").filter((l) => /receiptId/.test(l))) expect(line, f).not.toMatch(/logRouteRequest|upstash|cache\.set|limiter\(|EVAL/i);
   });
 });

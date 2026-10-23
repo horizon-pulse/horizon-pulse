@@ -166,7 +166,8 @@ describe("all 28 paid handlers build `priced` with the rail-aware helper", () =>
     // dark routes 10/17 (Michael via Odin 10:28 PM ET): 404 unless their own HP_*_ENABLED flag is "true";
     // not in the live catalog / goldens; held to the same priced rule.
     // trade-gate 10/22 (Michael via Odin): dark, HP_TRADE_GATE_ENABLED default off.
-    const INERT_ROUTES = ["audit/security", "batch", "injection/scan", "package/check", "trade-gate"];
+    // aave-equities 10/23 (Michael via Odin 11:37 AM ET): dark, HP_AAVE_EQUITIES_ENABLED default off.
+    const INERT_ROUTES = ["aave-equities/collateral-data", "audit/security", "batch", "injection/scan", "package/check", "trade-gate"];
     expect(dirs).toEqual([...PAID_ROUTES, ...INERT_ROUTES].sort());
     expect(dirs).toHaveLength(28 + INERT_ROUTES.length);
     for (const d of dirs) {

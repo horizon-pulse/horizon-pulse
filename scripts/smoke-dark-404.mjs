@@ -17,7 +17,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 const BASE = (process.argv[2] || "https://horizonpulse.dev").replace(/\/$/, "");
-const DARK = ["/api/audit/security", "/api/package/check", "/api/package/check?tier=deep", "/api/injection/scan", "/api/trade-gate", "/web-checks", "/web-checks/opt-out?domain=example.com"];
+const DARK = ["/api/audit/security", "/api/package/check", "/api/package/check?tier=deep", "/api/injection/scan", "/api/trade-gate", "/api/aave-equities/collateral-data", "/web-checks", "/web-checks/opt-out?domain=example.com"];
 const METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"];
 const HEADER_SETS = {
   plain: {},
