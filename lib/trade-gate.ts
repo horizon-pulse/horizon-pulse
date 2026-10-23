@@ -33,6 +33,13 @@ export const TRADE_GATE_DESCRIPTION =
 export const TRADE_GATE_MAX_BODY_BYTES = 64 * 1024;
 const MAX_POSITIONS = 500;
 const MAX_ID_LEN = 200;
+/** Sentinel LOW-2: unknown rule keys echoed back are capped in length and count. */
+export const TRADE_GATE_MAX_ECHO_KEY_LEN = 32;
+export const TRADE_GATE_MAX_ECHO_KEYS = 3;
+/** Sentinel LOW-3: finite upper bounds so order cost can never reach Infinity. */
+export const TRADE_GATE_MAX_QUANTITY = 1_000_000;
+export const TRADE_GATE_MAX_PRICE = 10_000_000;
+export const TRADE_GATE_MAX_MULTIPLIER = 10_000;
 
 export type CheckId = "R1" | "R2" | "R3" | "R4" | "R5" | "R6" | "R7" | "R8" | "R9" | "R10" | "R11";
 export type Check = { id: CheckId; rule: string; status: "pass" | "fail" | "skipped"; detail: string };
@@ -107,19 +114,19 @@ function parseOrder(o: unknown): Order | string {
   if (o.asset_type !== "option" && o.asset_type !== "equity") return "order.asset_type must be option or equity";
   const sides = o.asset_type === "option" ? OPTION_SIDES : EQUITY_SIDES;
   if (!str(o.side) || !sides.includes(o.side)) return `order.side must be one of ${sides.join(", ")} for ${o.asset_type}`;
-  if (!num(o.quantity) || !Number.isInteger(o.quantity) || o.quantity <= 0) return "order.quantity must be a positive integer";
-  if (!num(o.limit_price) || o.limit_price <= 0) return "order.limit_price must be a positive number (for a market order, the price to use for cost)";
+  if (!num(o.quantity) || !Number.isInteger(o.quantity) || o.quantity <= 0 || o.quantity > TRADE_GATE_MAX_QUANTITY) return `order.quantity must be a positive integer of at most ${TRADE_GATE_MAX_QUANTITY}`;
+  if (!num(o.limit_price) || o.limit_price <= 0 || o.limit_price > TRADE_GATE_MAX_PRICE) return `order.limit_price must be a positive number of at most ${TRADE_GATE_MAX_PRICE} (for a market order, the price to use for cost)`;
   if (o.order_type !== "limit" && o.order_type !== "market") return "order.order_type must be limit or market";
   let multiplier = 1;
   let expiration: string | null = null;
   if (o.asset_type === "option") {
-    if (!num(o.multiplier) || o.multiplier <= 0) return "order.multiplier must be a positive number for an option";
+    if (!num(o.multiplier) || o.multiplier <= 0 || o.multiplier > TRADE_GATE_MAX_MULTIPLIER) return `order.multiplier must be a positive number of at most ${TRADE_GATE_MAX_MULTIPLIER} for an option`;
     multiplier = o.multiplier;
     if (isoDate(o.expiration) === null) return "order.expiration must be YYYY-MM-DD for an option";
     expiration = o.expiration as string;
     if (o.option_type !== "call" && o.option_type !== "put") return "order.option_type must be call or put for an option";
   } else if (o.multiplier !== undefined && o.multiplier !== null) {
-    if (!num(o.multiplier) || o.multiplier <= 0) return "order.multiplier must be a positive number";
+    if (!num(o.multiplier) || o.multiplier <= 0 || o.multiplier > TRADE_GATE_MAX_MULTIPLIER) return `order.multiplier must be a positive number of at most ${TRADE_GATE_MAX_MULTIPLIER}`;
     multiplier = o.multiplier;
   }
   const underlying = o.underlying === undefined || o.underlying === null ? symbol : sym(o.underlying);
@@ -151,7 +158,12 @@ function parseRules(r: unknown): Rules | string {
   if (r === undefined || r === null) return {};
   if (!isObj(r)) return "rules must be an object";
   const known = new Set<string>(Object.values(RULE_KEYS));
-  for (const k of Object.keys(r)) if (!known.has(k)) return `unknown rule ${k}`;
+  const unknown = Object.keys(r).filter((k) => !known.has(k));
+  if (unknown.length > 0) {
+    const shown = unknown.slice(0, TRADE_GATE_MAX_ECHO_KEYS).map((k) => (k.length > TRADE_GATE_MAX_ECHO_KEY_LEN ? `${k.slice(0, TRADE_GATE_MAX_ECHO_KEY_LEN)}...` : k));
+    const more = unknown.length - shown.length;
+    return `unknown rule ${shown.join(", ")}${more > 0 ? ` (+${more} more)` : ""}`;
+  }
   for (const k of known) {
     const v = r[k];
     if (v === undefined || v === null) continue;
@@ -197,6 +209,7 @@ export function evaluateTradeGate(body: unknown, now: Date = new Date()): TradeG
   const isReducingSell = order.side === "sell" || order.side === "sell_to_close";
   const isOption = order.asset_type === "option";
   const cost = r2(order.quantity * order.limit_price * order.multiplier);
+  if (!Number.isFinite(cost)) return bad("order cost is out of range");
   const navPct = (v: number) => (v / account.nav) * 100;
 
   const checks: Check[] = [];
