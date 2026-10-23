@@ -257,7 +257,7 @@ export function evaluateTradeGate(body: unknown, now: Date = new Date()): TradeG
         break;
       }
       case "R8": {
-        if (att.basis === null) { push(id, "pass", "no existing_cost_basis supplied"); break; }
+        if (att.basis === null) { push(id, "skipped", "no existing_cost_basis supplied"); break; }
         push(id, att.basis > order.limit_price ? "fail" : "pass", `existing_cost_basis ${fmt(att.basis)}, limit_price ${fmt(order.limit_price)}`);
         break;
       }
