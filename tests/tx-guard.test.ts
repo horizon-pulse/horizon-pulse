@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { txGuard, parseTxGuardInput, expectedMatch, sdnCheck, overall, SDN_SNAPSHOT, SDN_NO_MATCH, SCAM_LIST_SOURCE, SCAM_LIST_COMMIT, SDN_FAIL_AFTER_DAYS, sdnAgeDays, allSourcesFailed, UNTRUSTED, TX_GUARD_METHODOLOGY, NOTE, type Check } from "@/lib/tx-guard";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
-import SDN from "@/lib/data/ofac-sdn-crypto-2026-10-19.json";
+import SDN from "@/lib/data/ofac-sdn-crypto-2026-10-23.json";
 import { createHash } from "node:crypto";
 import { NextRequest } from "next/server";
 import { txGuardHandler } from "@/app/api/tx-guard/handler";
@@ -13,7 +13,7 @@ const SOL = "BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz";
 const XRP = "rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De";
 const SDN_ETH = (SDN.entries as { currency: string; address: string }[]).find((e) => e.currency === "ETH")!.address;
 const GUAR = (SDN.entries as { address: string; sdnName: string }[]).find((e) => e.sdnName === "XINBI GUARANTEE")!.address;
-const NOW = Date.parse("2026-10-15T15:00:00Z");
+const NOW = Date.parse("2026-10-22T15:00:00Z");
 
 const ok = (j: unknown) => new Response(JSON.stringify(j), { status: 200, headers: { "content-type": "application/json" } });
 type O = { nonce?: number; code?: string; sigs?: { signature: string; blockTime: number }[]; xrplNotFound?: boolean; xrplFirst?: string; scam?: string[]; down?: boolean; scamDown?: boolean };
@@ -79,7 +79,7 @@ describe("expected_match", () => {
 describe("ofac_sdn", () => {
   it("snapshot carries source URL, pull date and publisher date", () => {
     expect(SDN_SNAPSHOT.sourceUrl).toBe("https://sanctionslistservice.ofac.treas.gov/api/PublicationPreview/exports/SDN.CSV");
-    expect(SDN_SNAPSHOT.pulledAt).toMatch(/^2026-10-19T/);
+    expect(SDN_SNAPSHOT.pulledAt).toMatch(/^2026-10-23T/);
     expect(SDN_SNAPSHOT.publisherLastModified).toMatch(/^2026-/);
     expect(SDN_SNAPSHOT.addresses).toBe(SDN.entries.length);
   });
@@ -93,7 +93,7 @@ describe("ofac_sdn", () => {
     expect(clean.result).not.toBe("allow");
   });
   it("bundled snapshot is deterministic (sha pinned; rebuild with scripts/pull-sdn.mjs) and not older than 30 days (fails the suite and the build)", () => {
-    expect(createHash("sha256").update(readFileSync("lib/data/ofac-sdn-crypto-2026-10-19.json")).digest("hex")).toBe("1b07427771f960862b4a3e359d1829dd92352fccac54707e9199fc6faa1a5beb");
+    expect(createHash("sha256").update(readFileSync("lib/data/ofac-sdn-crypto-2026-10-23.json")).digest("hex")).toBe("ebc0444c86603a09de4dfb4368dd83b047fe72effe13f17d87be74fa7653b3c5");
     expect(SDN_FAIL_AFTER_DAYS).toBe(30);
     expect(sdnAgeDays(Date.now())).toBeLessThanOrEqual(SDN_FAIL_AFTER_DAYS);
     expect(readFileSync("package.json", "utf8")).toContain('"prebuild": "node scripts/check-sdn-age.mjs"');
