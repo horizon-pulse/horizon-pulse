@@ -63,11 +63,16 @@ describe("withNyfedTerms on a brief body", () => {
 
 describe("wiring", () => {
   const src = readFileSync(path.join(__dirname, "..", "lib/premium/research.ts"), "utf8");
-  it("both brief return paths are wrapped (verified brief and legacy synthesis path)", () => {
+  it("both brief return paths are wrapped, scrubbed and backstopped (verified brief and legacy synthesis path)", () => {
     expect(src).toMatch(/return withNyfedTerms\(\{ tier: "brief", question: q, contract, timing,/);
-    expect(src).toMatch(/return withNyfedTerms\(\{ \.\.\.full, contract: toContract\(/);
+    expect(src).toMatch(/buildVerified\(q, t, scrubNyfedPages\(web\), scrubNyfedPages\(index\)/);
+    expect(src).toMatch(/withholdNyfedRates\(await buildVerified/);
+    expect(src).toMatch(/return withNyfedTerms\(withholdNyfedRates\(\{ \.\.\.full, contract: toContract\(/);
+    expect(src).toMatch(/synthesizeBrief\(q, code, clean,/);
+    expect(src).toMatch(/nyfedLast\(q \? rankExtractCandidates/);
   });
-  it("synthesis.ts:471 issuing-authority entry still lists newyorkfed.org (now covered by nyfed_terms)", () => {
-    expect(ISSUING_AUTHORITIES.some((a) => a.domains.includes("newyorkfed.org"))).toBe(true);
+  it("synthesis.ts:471 issuing-authority list no longer includes newyorkfed.org; Board first", () => {
+    expect(ISSUING_AUTHORITIES.some((a) => a.domains.includes("newyorkfed.org"))).toBe(false);
+    expect(ISSUING_AUTHORITIES[0].domains[0]).toBe("federalreserve.gov");
   });
 });

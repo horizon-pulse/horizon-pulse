@@ -467,11 +467,13 @@ export function consistentValues(extracted: ParallelResult[], pool: { url: strin
  * source_tier "issuing_authority", never as a cross-publisher confirmation. "documents" counts distinct pages from the same
  * authority among the extracted pages (Claude §4.6: primary publication + a second document from the same authority).
  */
+import { BOARD_CITATION } from "./nyfed-attribution";
 export const ISSUING_AUTHORITIES: { topic: RegExp; name: string; domains: string[] }[] = [
-  // newyorkfed.org pages are NY Fed Content (ToU): any brief citing them carries nyfed_terms (lib/premium/nyfed-attribution.ts, Counsel 10/23).
-  { topic: /\b(federal funds|fed funds|fomc|discount rate|interest on reserve|policy rate)\b/i, name: "Federal Reserve System", domains: ["federalreserve.gov", "newyorkfed.org", "stlouisfed.org"] },
+  // Odin 10/23 6:13 PM ET: newyorkfed.org dropped (NY Fed Content; linked via nyfed_terms, never quoted for rates).
+  // Policy-rate quotes come from the Board (federalreserve.gov, cited as the Board) or stlouisfed.org.
+  { topic: /\b(federal funds|fed funds|fomc|discount rate|interest on reserve|policy rate)\b/i, name: "Federal Reserve System", domains: ["federalreserve.gov", "stlouisfed.org"] },
 ];
-export type Authority = { source_tier: "issuing_authority"; authority: string; url: string; documents: number; note: string };
+export type Authority = { source_tier: "issuing_authority"; authority: string; url: string; documents: number; note: string; citation?: string };
 export function issuingAuthority(q: string, answerUrls: string[], extracted: ParallelResult[]): Authority | null {
   const a = ISSUING_AUTHORITIES.find((x) => x.topic.test(q));
   if (!a) return null;
@@ -479,7 +481,8 @@ export function issuingAuthority(q: string, answerUrls: string[], extracted: Par
   const url = answerUrls.find(mine);
   if (!url) return null;
   const documents = new Set(extracted.map((r) => r.url).filter(mine)).size;
-  return { source_tier: "issuing_authority", authority: a.name, url, documents, note: "Set by the issuing authority and quoted from its own publication; one authoritative source, not a cross-publisher confirmation." };
+  const board = /(^|\.)federalreserve\.gov$/i.test(domainOf(url) ?? "");
+  return { source_tier: "issuing_authority", authority: a.name, url, documents, note: "Set by the issuing authority and quoted from its own publication; one authoritative source, not a cross-publisher confirmation.", ...(board ? { citation: BOARD_CITATION } : {}) };
 }
 export function sharedFact(a: Set<string>, b: Set<string>): boolean {
   for (const x of a) for (const y of b) {

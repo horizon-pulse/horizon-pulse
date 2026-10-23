@@ -6,7 +6,7 @@ import { BRIEF_VERIFIED_SENTENCE } from "./copy";
  * Heuristics are labelled as such in the output; nothing here is a verdict.
  */
 import { toContract } from "./contract";
-import { withNyfedTerms } from "./nyfed-attribution";
+import { nyfedLast, scrubNyfedPages, withNyfedTerms, withholdNyfedRates } from "./nyfed-attribution";
 import { buildVerified } from "./verified";
 import { classifyQuestion, fetchIndexPages, stripTypePrefix } from "./source-index";
 import { ParallelError, extractAllowed, parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
@@ -486,7 +486,7 @@ export function briefExtractUrls(found: ParallelResult[], n = BRIEF_EXTRACT_N, q
   const pubs = new Set<string>();
   const out: string[] = [];
   const seen: ParallelResult[] = [];
-  for (const r of q ? rankExtractCandidates(found, q, now) : found) {
+  for (const r of nyfedLast(q ? rankExtractCandidates(found, q, now) : found)) {
     const d = domainOf(r.url);
     if (!d || /\.pdf(\?|$)/i.test(r.url) || !extractAllowed(r.url)) continue;
     if (seen.some((k) => domainOf(k.url) !== d && isSyndicated(k, r))) continue;
@@ -522,11 +522,13 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
     const urls = briefExtractUrls(found, BRIEF_EXTRACT_N, q);
     const read = withSearchDates(urls.length ? await parallelExtract(q, urls, deadline).catch(() => [] as ParallelResult[]) : [], found);
     if (capture) capture.data = { search: found, extract: read };
-    const code = compile(x, q, found, undefined, read);
-    const [brief, chain] = await Promise.all([synthesizeBrief(q, code, read, deadline, jobKey), chainP]);
+    const rawRead = read;
+    const clean = scrubNyfedPages(read); // Odin 10/23 6:13 PM ET: no rate-bearing NY Fed sentence reaches quotes or the answer
+    const code = compile(x, q, scrubNyfedPages(found), undefined, clean);
+    const [brief, chain] = await Promise.all([synthesizeBrief(q, code, clean, deadline, jobKey), chainP]);
     const full = attachOnchain(brief, chain);
     // Hardened spec §1-§2: the contract view (evidence object per claim, pass/fail). Only status "pass" settles.
-    return withNyfedTerms({ ...full, contract: toContract(q, full, read, new Date().toISOString()) });
+    return withNyfedTerms(withholdNyfedRates({ ...full, contract: toContract(q, full, clean, new Date().toISOString()) }, [...found, ...rawRead]), new Date(), [...found, ...rawRead].map((r) => r.url));
   }
   const urls = [...new Set(found.map((r) => r.url))].slice(0, x.reads);
   const read = await parallelExtract(q, urls, deadline);
@@ -561,8 +563,9 @@ export async function runVerifiedBrief(input: string, deadline: number, capture?
   if (!chain && upstreamErrors >= (t.official ? 1 : 0) + (t.web ? 1 : 0) && upstreamErrors > 0) throw new ParallelError("upstream_unavailable");
   if (capture) capture.data = { search: [], extract: [...index, ...web] };
   const s = Date.now();
-  const contract = await buildVerified(q, t, web, index, chain, new Date().toISOString(), deadline);
+  // Odin 10/23 6:13 PM ET: rate-bearing NY Fed sentences are removed before claims/answer; NY Fed pages are linked only.
+  const contract = withholdNyfedRates(await buildVerified(q, t, scrubNyfedPages(web), scrubNyfedPages(index), chain, new Date().toISOString(), deadline), [...web, ...index]);
   timing.build_ms = Date.now() - s;
   // Counsel/Odin 10/23: NY Fed ToU credit + not-affiliated + free-at-source when any cited page is newyorkfed.org.
-  return withNyfedTerms({ tier: "brief", question: q, contract, timing, disclaimer: `${ADVICE_DISCLAIMER} ${BRIEF_VERIFIED_SENTENCE}`, ...((contract as { answer_by?: string }).answer_by === "model" ? { ai_note: AI_ANSWER_NOTE } : {}), coverage: t.label });
+  return withNyfedTerms({ tier: "brief", question: q, contract, timing, disclaimer: `${ADVICE_DISCLAIMER} ${BRIEF_VERIFIED_SENTENCE}`, ...((contract as { answer_by?: string }).answer_by === "model" ? { ai_note: AI_ANSWER_NOTE } : {}), coverage: t.label }, new Date(), [...web, ...index].map((r) => r.url));
 }
