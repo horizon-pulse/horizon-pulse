@@ -92,3 +92,19 @@ export function nyfedLast<T extends { url: string }>(xs: T[]): T[] {
 }
 
 export const BOARD_CITATION = "Source: Board of Governors of the Federal Reserve System (federalreserve.gov). Board website information is public domain unless otherwise indicated.";
+
+/**
+ * Sentinel NOTE-1 (10/23): after the final-output withhold, recompute the contract pass status before settle so a call is
+ * never charged for a claim/answer that was withheld. Any withheld answer, claim text or evidence quote fails the contract.
+ */
+export function recheckWithheldContract<T>(contract: T): T {
+  const c = contract as any;
+  if (!c || typeof c !== "object" || !("status" in c)) return contract;
+  const reasons: string[] = Array.isArray(c.fail_reasons) ? [...c.fail_reasons] : [];
+  const add = (r: string) => { if (!reasons.includes(r)) reasons.push(r); };
+  if (c.answer === NYFED_WITHHELD) add("answer_withheld_nyfed");
+  const claims: any[] = Array.isArray(c.claims) ? c.claims : [];
+  if (claims.some((x) => x?.text === NYFED_WITHHELD || (Array.isArray(x?.evidence) && x.evidence.some((e: any) => e?.quote === NYFED_WITHHELD || e?.text === NYFED_WITHHELD)))) add("claim_withheld_nyfed");
+  if (reasons.length === (c.fail_reasons?.length ?? 0) && c.status === (reasons.length ? "fail" : "pass")) return contract;
+  return { ...c, status: reasons.length ? "fail" : "pass", fail_reasons: reasons } as T;
+}

@@ -67,7 +67,9 @@ describe("wiring", () => {
     expect(src).toMatch(/return withNyfedTerms\(\{ tier: "brief", question: q, contract, timing,/);
     expect(src).toMatch(/buildVerified\(q, t, scrubNyfedPages\(web\), scrubNyfedPages\(index\)/);
     expect(src).toMatch(/withholdNyfedRates\(await buildVerified/);
-    expect(src).toMatch(/return withNyfedTerms\(withholdNyfedRates\(\{ \.\.\.full, contract: toContract\(/);
+    expect(src).toMatch(/const held = withholdNyfedRates\(\{ \.\.\.full, contract: toContract\(/);
+    expect(src).toMatch(/return withNyfedTerms\(\{ \.\.\.held, contract: recheckWithheldContract\(held\.contract\) \}/);
+    expect(src).toMatch(/recheckWithheldContract\(withholdNyfedRates\(await buildVerified/); // Sentinel NOTE-1
     expect(src).toMatch(/synthesizeBrief\(q, code, clean,/);
     expect(src).toMatch(/nyfedLast\(q \? rankExtractCandidates/);
   });

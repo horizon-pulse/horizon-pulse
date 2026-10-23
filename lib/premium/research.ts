@@ -6,7 +6,7 @@ import { BRIEF_VERIFIED_SENTENCE } from "./copy";
  * Heuristics are labelled as such in the output; nothing here is a verdict.
  */
 import { toContract } from "./contract";
-import { nyfedLast, scrubNyfedPages, withNyfedTerms, withholdNyfedRates } from "./nyfed-attribution";
+import { nyfedLast, recheckWithheldContract, scrubNyfedPages, withNyfedTerms, withholdNyfedRates } from "./nyfed-attribution";
 import { buildVerified } from "./verified";
 import { classifyQuestion, fetchIndexPages, stripTypePrefix } from "./source-index";
 import { ParallelError, extractAllowed, parallelExtract, parallelSearch, type ParallelResult } from "./parallel";
@@ -528,7 +528,8 @@ export async function runResearch(x: Tier, q: string, deadline: number, capture?
     const [brief, chain] = await Promise.all([synthesizeBrief(q, code, clean, deadline, jobKey), chainP]);
     const full = attachOnchain(brief, chain);
     // Hardened spec §1-§2: the contract view (evidence object per claim, pass/fail). Only status "pass" settles.
-    return withNyfedTerms(withholdNyfedRates({ ...full, contract: toContract(q, full, clean, new Date().toISOString()) }, [...found, ...rawRead]), new Date(), [...found, ...rawRead].map((r) => r.url));
+    const held = withholdNyfedRates({ ...full, contract: toContract(q, full, clean, new Date().toISOString()) }, [...found, ...rawRead]);
+    return withNyfedTerms({ ...held, contract: recheckWithheldContract(held.contract) }, new Date(), [...found, ...rawRead].map((r) => r.url));
   }
   const urls = [...new Set(found.map((r) => r.url))].slice(0, x.reads);
   const read = await parallelExtract(q, urls, deadline);
@@ -564,7 +565,7 @@ export async function runVerifiedBrief(input: string, deadline: number, capture?
   if (capture) capture.data = { search: [], extract: [...index, ...web] };
   const s = Date.now();
   // Odin 10/23 6:13 PM ET: rate-bearing NY Fed sentences are removed before claims/answer; NY Fed pages are linked only.
-  const contract = withholdNyfedRates(await buildVerified(q, t, scrubNyfedPages(web), scrubNyfedPages(index), chain, new Date().toISOString(), deadline), [...web, ...index]);
+  const contract = recheckWithheldContract(withholdNyfedRates(await buildVerified(q, t, scrubNyfedPages(web), scrubNyfedPages(index), chain, new Date().toISOString(), deadline), [...web, ...index])); // Sentinel NOTE-1
   timing.build_ms = Date.now() - s;
   // Counsel/Odin 10/23: NY Fed ToU credit + not-affiliated + free-at-source when any cited page is newyorkfed.org.
   return withNyfedTerms({ tier: "brief", question: q, contract, timing, disclaimer: `${ADVICE_DISCLAIMER} ${BRIEF_VERIFIED_SENTENCE}`, ...((contract as { answer_by?: string }).answer_by === "model" ? { ai_note: AI_ANSWER_NOTE } : {}), coverage: t.label }, new Date(), [...web, ...index].map((r) => r.url));
