@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { decodeFunctionData, encodeFunctionResult, parseAbi, type Hex } from "viem";
-import { AAVE_EQUITIES_DESCRIPTION, AAVE_EQUITIES_DISCLAIMER, AAVE_EQUITIES_UNTRUSTED, AAVE_V4_BASE, AAVE_V4_BASE_ASSETS, EQUITY_SYMBOLS, feedSession, fixed, parseInput, readCollateralData, V4_ABI, type Deps } from "@/lib/aave-equities";
+import { AAVE_EQUITIES_DESCRIPTION, AAVE_EQUITIES_DISCLAIMER, AAVE_EQUITIES_UNTRUSTED, AAVE_V4_BASE, AAVE_V4_BASE_ASSETS, EQUITY_SYMBOLS, feedSession, fixed, parseInput, readCollateralData, STALE_AFTER_SECONDS, US_MARKET_HOLIDAYS, V4_ABI, type Deps } from "@/lib/aave-equities";
 import { aaveEquitiesHandler } from "@/app/api/aave-equities/collateral-data/handler";
 import * as route from "@/app/api/aave-equities/collateral-data/route.aave";
 import { AAVE_EQUITIES_TIERS, darkRouteConfig, resetRateLimitsForTests } from "@/lib/dark-routes";
@@ -103,7 +103,7 @@ describe("read engine (fake RPC)", () => {
     const r = await readCollateralData({ token: "NVDAc", collateralAmount: "10", debtUsdc: "1000" }, fakeDeps());
     if (!r.ok) throw new Error(r.error);
     const c = r.equities[0]!.computed!;
-    expect(c).toEqual(expect.objectContaining({ collateral_value_usd: "2000", max_borrow_usdc_at_collateral_factor: "1400", health_factor: "1.4", implied_liquidation_price_usd: "142.8571" }));
+    expect(c).toEqual(expect.objectContaining({ collateral_value_usd: "2000", borrowing_level_usdc_at_collateral_factor: "1400", health_factor: "1.4", liquidation_level_price_usd: "142.8571" }));
     expect(c.label).toMatch(/Computed from current onchain parameters/);
     expect(c.price_held_warning).toBeUndefined();
   });
@@ -114,6 +114,27 @@ describe("read engine (fake RPC)", () => {
     expect(r.ok && r.equities[0]!.computed!.price_held_warning).toMatch(/holding its last value/);
     const stale = await readCollateralData(ALL, fakeDeps({ updatedAgo: 30 * 3600 }));
     expect(stale.ok && stale.equities[0]!.price.price_held).toBe(true);
+  });
+  it("staleness path A (calendar only): holiday session with a FRESH feed is held", async () => {
+    const thanksgiving = Date.parse("2026-11-26T15:00:00Z"); // Thu 10:00 ET, NYSE holiday, weekday
+    const r = await readCollateralData(ALL, fakeDeps({ updatedAgo: 60 }, thanksgiving));
+    if (!r.ok) throw new Error(r.error);
+    expect(r.equities[0]!.price.age_seconds).toBe(60);
+    expect(r.equities[0]!.price).toEqual(expect.objectContaining({ market_session: "holiday_closed", price_held: true }));
+  });
+  it("staleness path B (feed age only): open session, age > 24h10m is held; at the limit it is not", async () => {
+    const over = await readCollateralData(ALL, fakeDeps({ updatedAgo: STALE_AFTER_SECONDS + 1 }));
+    if (!over.ok) throw new Error(over.error);
+    expect(over.equities[0]!.price).toEqual(expect.objectContaining({ market_session: "open", price_held: true }));
+    const at = await readCollateralData(ALL, fakeDeps({ updatedAgo: STALE_AFTER_SECONDS }));
+    if (!at.ok) throw new Error(at.error);
+    expect(at.equities[0]!.price).toEqual(expect.objectContaining({ market_session: "open", price_held: false }));
+    expect(STALE_AFTER_SECONDS).toBe(24 * 3600 + 600);
+  });
+  it("holiday calendar refresh tripwire: fails on/after 2027-12-01 (real clock)", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(today < "2027-12-01", `US_MARKET_HOLIDAYS in lib/aave-equities.ts ends ${US_MARKET_HOLIDAYS[US_MARKET_HOLIDAYS.length - 1]}: REFRESH THE HOLIDAY CALENDAR (add 2028 NYSE holidays) and move this tripwire date forward.`).toBe(true);
+    expect(US_MARKET_HOLIDAYS[US_MARKET_HOLIDAYS.length - 1]! >= "2027-12-01").toBe(true);
   });
   it("sessions: Fri 20:00 ET close, Sun 20:00 ET reopen, holidays", () => {
     expect(feedSession(Date.parse("2026-10-23T23:59:00Z"))).toBe("open"); // Fri 19:59 ET
@@ -153,7 +174,7 @@ describe("handler (paid path body)", () => {
     expect(j.untrusted).toBe(AAVE_EQUITIES_UNTRUSTED);
     expect(j.disclaimer).toBe(AAVE_EQUITIES_DISCLAIMER);
     expect(j.equities).toHaveLength(1);
-    expect(j.equities[0].computed.max_borrow_usdc_at_collateral_factor).toBe("280");
+    expect(j.equities[0].computed.borrowing_level_usdc_at_collateral_factor).toBe("280");
   });
   it("200 POST JSON", async () => {
     const res = await aaveEquitiesHandler(new NextRequest(u, { method: "POST", body: JSON.stringify({ token: "AAPLc" }), headers: { "content-type": "application/json" } }), tier, "hpr_test", fakeDeps());
@@ -187,7 +208,10 @@ describe("copy (market data only; Counsel review pending)", () => {
   it("Reg S line, no-affiliation line, not-advice, description <= 500 chars", () => {
     expect(AAVE_EQUITIES_DESCRIPTION.length).toBeLessThanOrEqual(500);
     expect(AAVE_EQUITIES_DISCLAIMER).toMatch(/Regulation S/);
-    expect(AAVE_EQUITIES_DISCLAIMER).toMatch(/eligible non-US persons/);
+    expect(AAVE_EQUITIES_DISCLAIMER).toContain("are not available to U.S. persons or in other restricted jurisdictions; check your own eligibility");
+    expect(AAVE_EQUITIES_DESCRIPTION).toContain("are not available to U.S. persons or in other restricted jurisdictions; eligibility is the caller's to check"); // row 223 bans "your" in listing descriptions
+    expect(AAVE_EQUITIES_DISCLAIMER).toMatch(/or to the Aave market/);
+    expect(ALL_COPY).not.toMatch(/eligible non-US persons/);
     expect(AAVE_EQUITIES_DISCLAIMER).toMatch(/not affiliated with Aave, Coinbase or Base/);
     expect(AAVE_EQUITIES_DESCRIPTION).toMatch(/Reg S/);
     expect(AAVE_EQUITIES_DESCRIPTION).toMatch(/not affiliated with Aave, Coinbase or Base/i);
