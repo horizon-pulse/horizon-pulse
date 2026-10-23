@@ -18,6 +18,7 @@ export const DARK_PATHS = [
   { path: "/web-checks/opt-out", flag: "HP_AUDIT_SECURITY_ENABLED", ext: "audit", file: "app/web-checks/opt-out/route.audit.ts" },
   { path: "/api/package/check", flag: "HP_PACKAGE_CHECK_ENABLED", ext: "pkg", file: "app/api/package/check/route.pkg.ts" },
   { path: "/api/injection/scan", flag: "HP_INJECTION_SCAN_ENABLED", ext: "inj", file: "app/api/injection/scan/route.inj.ts" },
+  { path: "/api/trade-gate", flag: "HP_TRADE_GATE_ENABLED", ext: "tg", file: "app/api/trade-gate/route.tg.ts" },
 ] as const;
 
 /** All HTTP methods a dark route must answer exactly like an unknown path while dark. */

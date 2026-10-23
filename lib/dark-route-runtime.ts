@@ -22,9 +22,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createX402GetHandler, discoveryOptionsResponse } from "./x402-server";
 import { DISCLAIMER } from "./dark-checks-shared";
-import { clientKey, darkDescription, darkEnabled, darkPaymentOpts, darkRouteConfig, DARK_DESCRIPTIONS, DARK_RATE_LIMITS, findTier, newReceiptId, rateLimitHit, RECEIPT_HEADER, type DarkRoute, type Tier } from "./dark-routes";
+import { clientKey, darkDescription, darkEnabled, darkPaymentOpts, darkRouteConfig, DARK_DESCRIPTIONS, DARK_RATE_LIMITS, findTier, type DarkPaidPath, newReceiptId, rateLimitHit, RECEIPT_HEADER, type DarkRoute, type Tier } from "./dark-routes";
 
-type Path = keyof typeof DARK_DESCRIPTIONS;
+type Path = DarkPaidPath;
 export type TierHandler = (req: NextRequest, tier: Tier, receiptId: string) => Promise<NextResponse>;
 
 const notFound = () => NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -37,7 +37,10 @@ export function makeDarkRoute(opts: {
   handler: TierHandler;
   /** Per-request tier gate; a disabled tier is 404 (no 402, no payment), and is not listed. */
   tierEnabled?: (t: Tier) => boolean;
+  /** Disclaimer on runtime-made answers (429/502/400 bad_tier). Default: the dark-checks DISCLAIMER. */
+  disclaimer?: string;
 }) {
+  const disclaimer = opts.disclaimer ?? DISCLAIMER;
   const enabled = (t: Tier) => (opts.tierEnabled ? opts.tierEnabled(t) : true);
   const paid = new Map<string, (req: NextRequest) => Promise<NextResponse>>();
   const tierHandler = (t: Tier) => {
@@ -50,7 +53,7 @@ export function makeDarkRoute(opts: {
           const receiptId = newReceiptId();
           const wait = rateLimitHit(`${opts.route}:ip:${clientKey(req.headers)}`, DARK_RATE_LIMITS[opts.route].perMinute);
           if (wait) {
-            const r429 = NextResponse.json({ ok: false, code: "rate_limited", error: "Too many requests; retry later. Not charged.", charged: false, receiptId, disclaimer: DISCLAIMER }, { status: 429, headers: { "Retry-After": String(wait) } });
+            const r429 = NextResponse.json({ ok: false, code: "rate_limited", error: "Too many requests; retry later. Not charged.", charged: false, receiptId, disclaimer }, { status: 429, headers: { "Retry-After": String(wait) } });
             r429.headers.set(RECEIPT_HEADER, receiptId);
             return r429;
           }
@@ -59,7 +62,7 @@ export function makeDarkRoute(opts: {
             res = await opts.handler(req, t, receiptId);
           } catch {
             // Never a 500 (Odin B-1): an unexpected failure is a refused answer; a non-2xx never settles, so nothing is charged.
-            res = NextResponse.json({ ok: false, code: "check_failed", error: "The check could not be completed; not charged. Retry later.", charged: false, receiptId, disclaimer: DISCLAIMER }, { status: 502 });
+            res = NextResponse.json({ ok: false, code: "check_failed", error: "The check could not be completed; not charged. Retry later.", charged: false, receiptId, disclaimer }, { status: 502 });
           }
           res.headers.set(RECEIPT_HEADER, receiptId);
           return res;
@@ -77,7 +80,7 @@ export function makeDarkRoute(opts: {
     const t = findTier(opts.tiers, req.nextUrl.searchParams.get("tier"), opts.defaultTier);
     if (!t) {
       const live = opts.tiers.filter(enabled);
-      return NextResponse.json({ ok: false, code: "bad_tier", error: `tier must be one of ${live.map((x) => x.id).join(", ")}`, tiers: live.map((x) => ({ tier: x.id, priceUsd: x.usd, amountAtomic: x.atomicStr })), charged: false, disclaimer: DISCLAIMER }, { status: 400 });
+      return NextResponse.json({ ok: false, code: "bad_tier", error: `tier must be one of ${live.map((x) => x.id).join(", ")}`, tiers: live.map((x) => ({ tier: x.id, priceUsd: x.usd, amountAtomic: x.atomicStr })), charged: false, disclaimer }, { status: 400 });
     }
     if (!enabled(t)) return notFound();
     return tierHandler(t)(req);

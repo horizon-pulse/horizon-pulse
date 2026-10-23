@@ -10,13 +10,15 @@ import { NextRequest } from "next/server";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
 import { OUTPUT_EXAMPLES } from "@/lib/route-examples";
 import { GROCERY_INGREDIENT_POST_OUTPUT_EXAMPLE } from "@/lib/grocery-ingredient-example";
+import { TRADE_GATE_DISCLAIMER } from "@/lib/trade-gate";
 
 const INSTRUCTION = /\bUse (when|to|before)\b|\bCall GET\b|do not act|do not pay|don't|\byou\b|\byour\b|\bshould\b|\bmust\b/i;
 
 describe("listing copy (row 223)", () => {
   it.each(Object.entries(ROUTE_METADATA))("%s: <= 500 chars and no instruction to the caller", (_p, m) => {
     expect(m.description.length).toBeLessThanOrEqual(500);
-    expect(m.description).not.toMatch(INSTRUCTION);
+    // Counsel E4 (10/22): the Trade Gate disclaimer is required verbatim and says "you"; only that exact sentence is exempt.
+    expect(m.description.replace(TRADE_GATE_DISCLAIMER, "")).not.toMatch(INSTRUCTION);
   });
   it("tx-guard copy says snapshot match, never 'OFAC check' (Counsel: no sanctions screening)", () => {
     const d = ROUTE_METADATA["/api/tx-guard"].description;
