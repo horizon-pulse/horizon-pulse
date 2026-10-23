@@ -9,9 +9,10 @@ import path from "node:path";
 import { NextRequest } from "next/server";
 import {
   canonicalJson, evaluateTradeGate, TRADE_GATE_DESCRIPTION, TRADE_GATE_DISCLAIMER, TRADE_GATE_HASH_NOTE, TRADE_GATE_ID_NOTE, TRADE_GATE_RULES_NOTE,
+  TRADE_GATE_MAX_ECHO_KEY_LEN, TRADE_GATE_MAX_MULTIPLIER, TRADE_GATE_MAX_PRICE, TRADE_GATE_MAX_QUANTITY,
   type TradeGateOk,
 } from "@/lib/trade-gate";
-import { tradeGateHandler } from "@/app/api/trade-gate/handler";
+import { readCappedBody, tradeGateHandler } from "@/app/api/trade-gate/handler";
 import * as tgRoute from "@/app/api/trade-gate/route.tg";
 import { TRADE_GATE_TIERS, darkDescription, darkRouteConfig, resetRateLimitsForTests } from "@/lib/dark-routes";
 import { ROUTE_METADATA } from "@/lib/route-metadata";
@@ -258,5 +259,82 @@ describe("handler (paid path body)", () => {
       const src = readFileSync(path.join(ROOT, f), "utf8");
       expect(src, f).not.toMatch(/console\.|redis|upstash|kv\b|writeFile|appendFile|fetch\(/i);
     }
+  });
+});
+
+describe("Sentinel 14b96df LOWs", () => {
+  const tier = TRADE_GATE_TIERS[0]!;
+  const URL_ = "https://horizonpulse.dev/api/trade-gate";
+  it("LOW-1: Content-Length over 64KB -> 413 before the body is read, with disclaimer", async () => {
+    let pulled = false;
+    const stream = new ReadableStream<Uint8Array>({ pull(c) { pulled = true; c.enqueue(new TextEncoder().encode("{}")); c.close(); } }, { highWaterMark: 0 });
+    const req = new NextRequest(URL_, { method: "POST", body: stream, headers: { "content-type": "application/json", "content-length": String(70_000) }, duplex: "half" } as unknown as ConstructorParameters<typeof NextRequest>[1]);
+    const res = await tradeGateHandler(req, tier, "hpr_test", () => NOW);
+    expect(res.status).toBe(413);
+    const j = await res.json();
+    expect(j.disclaimer).toBe(E4);
+    expect(j.charged).toBe(false);
+    expect(pulled).toBe(false);
+  });
+  it("LOW-1: invalid Content-Length -> 400 with disclaimer", async () => {
+    const req = new NextRequest(URL_, { method: "POST", body: "{}", headers: { "content-type": "application/json", "content-length": "abc" } });
+    const res = await tradeGateHandler(req, tier, "hpr_test", () => NOW);
+    expect(res.status).toBe(400);
+    expect((await res.json()).disclaimer).toBe(E4);
+  });
+  it("LOW-1: streamed body with no Content-Length stops at the cap -> 413", async () => {
+    let chunksSent = 0;
+    const chunk = new Uint8Array(16 * 1024).fill(120);
+    const stream = new ReadableStream<Uint8Array>({ pull(c) { chunksSent++; if (chunksSent > 100) { c.close(); return; } c.enqueue(chunk); } });
+    const req = new NextRequest(URL_, { method: "POST", body: stream, duplex: "half" } as unknown as ConstructorParameters<typeof NextRequest>[1]);
+    expect(req.headers.get("content-length")).toBeNull();
+    const res = await tradeGateHandler(req, tier, "hpr_test", () => NOW);
+    expect(res.status).toBe(413);
+    expect((await res.json()).disclaimer).toBe(E4);
+    expect(chunksSent).toBeLessThan(10);
+  });
+  it("LOW-1: readCappedBody returns the text under the cap", async () => {
+    expect(await readCappedBody(new Request(URL_, { method: "POST", body: "hello" }), 10)).toBe("hello");
+    expect(await readCappedBody(new Request(URL_, { method: "POST", body: "x".repeat(11) }), 10)).toBe("too_large");
+  });
+  it("LOW-2: unknown rule keys are truncated and limited in count", () => {
+    const long = "k".repeat(500);
+    const b = mod((x) => { x.rules[long] = true; for (let i = 0; i < 20; i++) x.rules[`zz_${i}`] = true; });
+    const r = evaluateTradeGate(b, NOW);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.status).toBe(400);
+    expect(r.error).not.toContain(long);
+    expect(r.error).toContain("k".repeat(TRADE_GATE_MAX_ECHO_KEY_LEN) + "...");
+    expect(r.error).toContain("(+18 more)");
+    expect(r.error.length).toBeLessThan(200);
+    expect(r.error).not.toContain("zz_19");
+  });
+  it("LOW-2: a single short unknown key is still named", () => {
+    const r = evaluateTradeGate(mod((x) => { x.rules.foo = true; }), NOW);
+    expect(r.ok ? "" : r.error).toBe("unknown rule foo");
+  });
+  it.each([
+    ["quantity", Infinity], ["quantity", NaN], ["quantity", TRADE_GATE_MAX_QUANTITY + 1], ["quantity", 1e308],
+    ["limit_price", Infinity], ["limit_price", NaN], ["limit_price", TRADE_GATE_MAX_PRICE + 1], ["limit_price", 1e308],
+    ["multiplier", Infinity], ["multiplier", NaN], ["multiplier", TRADE_GATE_MAX_MULTIPLIER + 1], ["multiplier", 1e308],
+  ])("LOW-3: order.%s = %s -> 400", (k, v) => {
+    const r = evaluateTradeGate(mod((x) => { (x.order as Record<string, unknown>)[k] = v; }), NOW);
+    expect(r.ok).toBe(false);
+    if (!r.ok) { expect(r.status).toBe(400); expect(r.code).toBe("bad_input"); }
+  });
+  it("LOW-3: equity multiplier is capped too; max values still give a finite cost", () => {
+    const eq = mod((x) => { Object.assign(x.order, { asset_type: "equity", side: "buy", multiplier: TRADE_GATE_MAX_MULTIPLIER + 1 }); });
+    expect(evaluateTradeGate(eq, NOW).ok).toBe(false);
+    const big = mod((x) => { Object.assign(x.order, { quantity: TRADE_GATE_MAX_QUANTITY, limit_price: TRADE_GATE_MAX_PRICE, multiplier: TRADE_GATE_MAX_MULTIPLIER }); x.rules = {}; });
+    const r = ok(big);
+    expect(Number.isFinite(r.order_cost)).toBe(true);
+    expect(JSON.stringify(r)).not.toContain("Infinity");
+  });
+  it("LOW-1/3 via handler: 1e308 price in JSON -> 400 not charged", async () => {
+    const raw = JSON.stringify(base()).replace('"limit_price":2', '"limit_price":1e308');
+    const res = await tradeGateHandler(new NextRequest(URL_, { method: "POST", body: raw, headers: { "content-type": "application/json" } }), tier, "hpr_test", () => NOW);
+    expect(res.status).toBe(400);
+    expect((await res.json()).charged).toBe(false);
   });
 });

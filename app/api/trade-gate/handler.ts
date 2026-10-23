@@ -14,13 +14,16 @@ export async function tradeGateHandler(req: NextRequest, tier: Tier, receiptId: 
   const refuse = (status: number, code: string, error: string) =>
     NextResponse.json({ ok: false, code, error, charged: false, receiptId, disclaimer: TRADE_GATE_DISCLAIMER }, { status });
   if (req.method !== "POST") return refuse(400, "bad_input", "POST a JSON body {order, account, rules, attestations, as_of}");
-  let raw: string;
-  try {
-    raw = await req.text();
-  } catch {
-    return refuse(400, "bad_input", "Body could not be read");
+  const declared = req.headers.get("content-length");
+  if (declared !== null) {
+    const n = Number(declared);
+    if (!/^\d+$/.test(declared.trim()) || !Number.isFinite(n)) return refuse(400, "bad_input", "Content-Length is invalid");
+    if (n > TRADE_GATE_MAX_BODY_BYTES) return refuse(413, "too_large", `Body is over ${TRADE_GATE_MAX_BODY_BYTES} bytes`);
   }
-  if (Buffer.byteLength(raw, "utf8") > TRADE_GATE_MAX_BODY_BYTES) return refuse(413, "too_large", `Body is over ${TRADE_GATE_MAX_BODY_BYTES} bytes`);
+  const read = await readCappedBody(req, TRADE_GATE_MAX_BODY_BYTES);
+  if (read === "too_large") return refuse(413, "too_large", `Body is over ${TRADE_GATE_MAX_BODY_BYTES} bytes`);
+  if (read === null) return refuse(400, "bad_input", "Body could not be read");
+  const raw = read;
   let body: unknown;
   try {
     body = JSON.parse(raw);
@@ -39,4 +42,27 @@ export async function tradeGateHandler(req: NextRequest, tier: Tier, receiptId: 
     notes: { rules: TRADE_GATE_RULES_NOTE, hashes: TRADE_GATE_HASH_NOTE, ids: TRADE_GATE_ID_NOTE },
     disclaimer: TRADE_GATE_DISCLAIMER,
   });
+}
+
+/** Streams the body and stops as soon as it passes `max` bytes (Sentinel LOW-1: never buffer an oversized body). */
+export async function readCappedBody(req: Request, max: number): Promise<string | "too_large" | null> {
+  try {
+    if (!req.body) return "";
+    const reader = req.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > max) {
+        await reader.cancel().catch(() => undefined);
+        return "too_large";
+      }
+      chunks.push(value);
+    }
+    return new TextDecoder("utf-8").decode(Buffer.concat(chunks));
+  } catch {
+    return null;
+  }
 }
