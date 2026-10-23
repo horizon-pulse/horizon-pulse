@@ -41,10 +41,10 @@ const st = (r: TradeGateOk, id: string) => r.checks.find((c) => c.id === id)!.st
 const mod = <T,>(f: (b: ReturnType<typeof base>) => void) => { const b = base(); f(b); return b; };
 
 describe("engine: R1-R11", () => {
-  it("all rules met -> all_supplied_rules_met, 11 checked, 0 skipped", () => {
+  it("all rules met -> all_supplied_rules_met, 10 checked, 1 skipped (R8 no basis)", () => {
     const r = ok(base());
     expect(r.rules_result).toBe("all_supplied_rules_met");
-    expect([r.checked, r.skipped, r.failed]).toEqual([11, 0, []]);
+    expect([r.checked, r.skipped, r.failed]).toEqual([10, 1, []]);
     expect(r.order_cost).toBe(200);
   });
   it("R1 cash_only: cost over cash fails", () => {
@@ -83,6 +83,7 @@ describe("engine: R1-R11", () => {
   it("R8 no averaging down: basis above limit_price fails", () => {
     expect(st(ok(mod((b) => (b.attestations.existing_cost_basis = 2.5))), "R8")).toBe("fail");
     expect(st(ok(mod((b) => (b.attestations.existing_cost_basis = 1.5))), "R8")).toBe("pass");
+    expect(st(ok(base()), "R8")).toBe("skipped");
   });
   it("R9-R11 attestations: empty / not true fail", () => {
     const r = ok(mod((b) => (b.attestations = { thesis_id: "  ", preview_ok: false, approval_ref: null as unknown as string, existing_cost_basis: null })));
