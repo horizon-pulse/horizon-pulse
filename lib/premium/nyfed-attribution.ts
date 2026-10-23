@@ -105,6 +105,8 @@ export function recheckWithheldContract<T>(contract: T): T {
   if (c.answer === NYFED_WITHHELD) add("answer_withheld_nyfed");
   const claims: any[] = Array.isArray(c.claims) ? c.claims : [];
   if (claims.some((x) => x?.text === NYFED_WITHHELD || (Array.isArray(x?.evidence) && x.evidence.some((e: any) => e?.quote === NYFED_WITHHELD || e?.text === NYFED_WITHHELD)))) add("claim_withheld_nyfed");
-  if (reasons.length === (c.fail_reasons?.length ?? 0) && c.status === (reasons.length ? "fail" : "pass")) return contract;
-  return { ...c, status: reasons.length ? "fail" : "pass", fail_reasons: reasons } as T;
+  // Sentinel LOW-1: the recheck may only lower status, never raise it; an incoming fail stays fail.
+  const status = c.status !== "pass" || reasons.length ? "fail" : "pass";
+  if (reasons.length === (c.fail_reasons?.length ?? 0) && c.status === status) return contract;
+  return { ...c, status, fail_reasons: reasons } as T;
 }

@@ -31,4 +31,10 @@ describe("recheckWithheldContract", () => {
     const b = { ...base(NYFED_WITHHELD, "ok"), status: "fail", fail_reasons: ["no_answer"] };
     expect(recheckWithheldContract(b).fail_reasons).toEqual(["no_answer", "answer_withheld_nyfed"]);
   });
+  it("Sentinel LOW-1: incoming fail with empty fail_reasons stays fail (never raised to pass)", () => {
+    const b = { ...base("ok", "ok"), status: "fail", fail_reasons: [] as string[] };
+    const c = recheckWithheldContract(b);
+    expect(c.status).toBe("fail");
+    expect(briefPassTier({ contract: c })).toBeNull();
+  });
 });
