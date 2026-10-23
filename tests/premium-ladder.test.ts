@@ -43,6 +43,7 @@ const nonce = () => `0x${(++nonceSeq).toString(16).padStart(64, "0")}`;
 
 type PayOpts = { amount?: string; value?: string; network?: string; scheme?: string; asset?: string; payTo?: string; to?: string; nonce?: string; validAfter?: string; validBefore?: string; badSig?: boolean };
 /** Real EIP-3009 signature by a throwaway test key (never a real wallet), so the local signature check passes. */
+let lastSignature = "";
 async function payment(o: PayOpts = {}) {
   const amount = o.amount ?? price("brief");
   const auth = { from: FROM, to: o.to ?? o.payTo ?? PAYTO, value: o.value ?? amount, validAfter: o.validAfter ?? "0", validBefore: o.validBefore ?? String(Math.floor(Date.now() / 1000) + 1800), nonce: o.nonce ?? nonce() };
@@ -55,6 +56,7 @@ async function payment(o: PayOpts = {}) {
       message: { from: FROM as `0x${string}`, to: auth.to as `0x${string}`, value: BigInt(auth.value), validAfter: BigInt(auth.validAfter), validBefore: BigInt(auth.validBefore), nonce: auth.nonce as `0x${string}` },
     });
   }
+  lastSignature = signature;
   return encodePaymentSignatureHeader({
     x402Version: 2,
     accepted: { scheme: o.scheme ?? "exact", network: o.network ?? "eip155:8453", amount, asset: o.asset ?? USDC, payTo: o.payTo ?? PAYTO, maxTimeoutSeconds: 300, extra: { name: "USD Coin", version: "2" } },
@@ -542,7 +544,10 @@ describe("§4 settle timeout / ambiguous / used nonce", () => {
     expect(reconciles).toHaveLength(1);
     expect(reconciles[0]).toMatchObject({ outcome, tier: "brief", route: "/api/research/report/brief", payer: FROM, amount: "1000000", payTo: PAYTO });
     expect(reconciles[0].fingerprint).toMatch(/^[0-9a-f]{64}$/);
-    expect(JSON.stringify(reconciles[0])).not.toContain("abab"); // no signature
+    // no signature: match the exact signature sent (and its 0x-less body), not a 4-char substring that a random reconcile_id can contain (Sentinel NOTE-3)
+    expect(lastSignature).toMatch(/^0x[0-9a-fA-F]{130}$/);
+    const rec = JSON.stringify(reconciles[0]).toLowerCase();
+    expect(rec).not.toContain(lastSignature.toLowerCase().slice(2));
     expect(errors.some((e) => e.includes("[premium][ALERT][HIGH]") && e.includes(outcome))).toBe(true);
   };
   it("T4.1: settle timeout -> 504 settle_unconfirmed + reconcile + HIGH, never a 402", async () => {
