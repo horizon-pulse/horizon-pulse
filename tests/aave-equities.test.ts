@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { NextRequest } from "next/server";
 import { decodeFunctionData, encodeFunctionResult, parseAbi, type Hex } from "viem";
-import { AAVE_EQUITIES_DESCRIPTION, AAVE_EQUITIES_DISCLAIMER, AAVE_EQUITIES_UNTRUSTED, AAVE_V4_BASE, AAVE_V4_BASE_ASSETS, EQUITY_SYMBOLS, feedSession, fixed, parseInput, readCollateralData, STALE_AFTER_SECONDS, US_MARKET_HOLIDAYS, V4_ABI, type Deps } from "@/lib/aave-equities";
+import { AAVE_EQUITIES_DESCRIPTION, AAVE_EQUITIES_DISCLAIMER, AAVE_EQUITIES_UNTRUSTED, AAVE_V4_BASE, AAVE_V4_BASE_ASSETS, AAVE_V4_BASE_PRICE_FEEDS, EQUITY_SYMBOLS, RPC_DEADLINE_MS, feedSession, fixed, parseInput, readCollateralData, STALE_AFTER_SECONDS, US_MARKET_HOLIDAYS, V4_ABI, type Deps } from "@/lib/aave-equities";
 import { aaveEquitiesHandler } from "@/app/api/aave-equities/collateral-data/handler";
 import * as route from "@/app/api/aave-equities/collateral-data/route.aave";
 import { AAVE_EQUITIES_TIERS, darkRouteConfig, resetRateLimitsForTests } from "@/lib/dark-routes";
@@ -20,7 +20,7 @@ const MC = parseAbi(["struct Call3 { address target; bool allowFailure; bytes ca
 const NOW = Date.parse("2026-10-21T15:00:00Z");
 const SYMS = [...EQUITY_SYMBOLS, "USDC"] as const;
 
-type Over = { paused?: Record<string, boolean>; cf?: Record<string, number>; updatedAgo?: number; hubMismatch?: boolean; failFn?: string; rpcDown?: boolean };
+type Over = { paused?: Record<string, boolean>; cf?: Record<string, number>; updatedAgo?: number; hubMismatch?: boolean; failFn?: string; rpcDown?: boolean; feedMismatch?: string; hang?: boolean; deadlineMs?: number };
 function fakeDeps(o: Over = {}, now = NOW): Deps & { calls: number } {
   const st = { calls: 0 };
   const answer = (target: string, fn: string, args: readonly unknown[]): unknown => {
@@ -37,7 +37,7 @@ function fakeDeps(o: Over = {}, now = NOW): Deps & { calls: number } {
       case "getReserveSuppliedAssets": return sym === "USDC" ? 6_000_000n * 10n ** 6n : 1000n * 10n ** 8n;
       case "getSpokeConfig": return { addCap: sym === "USDC" ? 32_000_000 : 4000, drawCap: sym === "USDC" ? 21_000_000 : 0, riskPremiumThreshold: 0, active: true, halted: false };
       case "getReservePrice": return sym === "USDC" ? 100_000_000n : 200n * 10n ** 8n;
-      case "getReserveSource": return "0x04689a41629776563E6822F76f2e57D148d28513";
+      case "getReserveSource": return o.feedMismatch === sym ? "0x000000000000000000000000000000000000bEEF" : AAVE_V4_BASE_PRICE_FEEDS[sym]!;
       case "getAssetDrawnRate": return 4n * 10n ** 25n; // 4% in RAY
       case "getAssetLiquidity": return 1_000_000n * 10n ** 6n;
       case "getAssetOwed": return [4_000_000n * 10n ** 6n, 0n];
@@ -51,6 +51,7 @@ function fakeDeps(o: Over = {}, now = NOW): Deps & { calls: number } {
   const f = (async (_url: string, init?: RequestInit) => {
     st.calls++;
     if (o.rpcDown) return new Response("nope", { status: 503 });
+    if (o.hang) return new Promise<Response>((_, rej) => init!.signal!.addEventListener("abort", () => rej(new Error("aborted"))));
     const body = JSON.parse(String(init!.body)) as { params: [{ data: Hex }] };
     const { args } = decodeFunctionData({ abi: MC, data: body.params[0].data });
     const results = (args![0] as unknown as { target: string; callData: Hex }[]).map((c) => {
@@ -61,7 +62,7 @@ function fakeDeps(o: Over = {}, now = NOW): Deps & { calls: number } {
     });
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: encodeFunctionResult({ abi: MC, functionName: "aggregate3", result: results }) }), { status: 200 });
   }) as unknown as typeof fetch;
-  return Object.assign(st, { fetch: f, now: () => now, rpcs: () => ["https://rpc.test"] });
+  return Object.assign(st, { fetch: f, now: () => now, rpcs: () => ["https://rpc.test"], ...(o.deadlineMs !== undefined ? { deadlineMs: o.deadlineMs } : {}) });
 }
 const ALL = { token: null, collateralAmount: null, debtUsdc: null };
 
@@ -143,6 +144,19 @@ describe("read engine (fake RPC)", () => {
     expect(feedSession(Date.parse("2026-10-26T00:00:00Z"))).toBe("open"); // Sun 20:00 ET
     expect(feedSession(Date.parse("2026-11-26T15:00:00Z"))).toBe("holiday_closed");
   });
+  it("Sentinel LOW-1: overall RPC deadline trips -> 502 rpc_unavailable (not charged), well before the per-RPC 8 s timeout", async () => {
+    expect(RPC_DEADLINE_MS).toBe(45_000);
+    const t0 = Date.now();
+    const r = await readCollateralData(ALL, fakeDeps({ hang: true, deadlineMs: 50 }));
+    expect(r).toEqual(expect.objectContaining({ ok: false, status: 502, code: "rpc_unavailable" }));
+    expect(Date.now() - t0).toBeLessThan(2_000);
+  });
+  it("Sentinel NOTE-1: oracle source != address-book feed -> 502 (not charged); pinned feeds match the address book", async () => {
+    expect(await readCollateralData(ALL, fakeDeps({ feedMismatch: "TSLAc" }))).toEqual(expect.objectContaining({ ok: false, status: 502, code: "unexpected_onchain_state" }));
+    expect(await readCollateralData({ token: "NVDAc", collateralAmount: null, debtUsdc: null }, fakeDeps({ feedMismatch: "USDC" }))).toEqual(expect.objectContaining({ ok: false, code: "unexpected_onchain_state" }));
+    expect(Object.keys(AAVE_V4_BASE_PRICE_FEEDS).sort()).toEqual([...EQUITY_SYMBOLS, "USDC"].sort());
+    expect(AAVE_V4_BASE_PRICE_FEEDS.NVDAc).toBe("0x04689a41629776563E6822F76f2e57D148d28513");
+  });
   it("hub mismatch, missing fields, RPC down: 502 (not charged)", async () => {
     expect(await readCollateralData(ALL, fakeDeps({ hubMismatch: true }))).toEqual(expect.objectContaining({ ok: false, status: 502, code: "unexpected_onchain_state" }));
     expect(await readCollateralData(ALL, fakeDeps({ failFn: "getDynamicReserveConfig" }))).toEqual(expect.objectContaining({ ok: false, code: "unexpected_onchain_state" }));
@@ -209,7 +223,7 @@ describe("copy (market data only; Counsel review pending)", () => {
     expect(AAVE_EQUITIES_DESCRIPTION.length).toBeLessThanOrEqual(500);
     expect(AAVE_EQUITIES_DISCLAIMER).toMatch(/Regulation S/);
     expect(AAVE_EQUITIES_DISCLAIMER).toContain("are not available to U.S. persons or in other restricted jurisdictions; check your own eligibility");
-    expect(AAVE_EQUITIES_DESCRIPTION).toContain("are not available to U.S. persons or in other restricted jurisdictions; eligibility is the caller's to check"); // row 223 bans "your" in listing descriptions
+    expect(AAVE_EQUITIES_DESCRIPTION).toContain("are not available to U.S. persons or in other restricted jurisdictions; check your own eligibility");
     expect(AAVE_EQUITIES_DISCLAIMER).toMatch(/or to the Aave market/);
     expect(ALL_COPY).not.toMatch(/eligible non-US persons/);
     expect(AAVE_EQUITIES_DISCLAIMER).toMatch(/not affiliated with Aave, Coinbase or Base/);
