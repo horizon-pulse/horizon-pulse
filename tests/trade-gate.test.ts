@@ -230,7 +230,7 @@ describe("route: flag off 404; flag on 402 unpaid", () => {
 describe("handler (paid path body)", () => {
   const tier = TRADE_GATE_TIERS[0]!;
   const post = (body: string) => new NextRequest("https://horizonpulse.dev/api/trade-gate", { method: "POST", body, headers: { "content-type": "application/json" } });
-  it("200: rules_result, counts, hashes, notes, E4 disclaimer; input never echoed", async () => {
+  it("200: rules_result, counts, hashes, notes, E4 disclaimer; request IDs and body not returned (detail may restate order fields and check arithmetic)", async () => {
     const b = base();
     b.attestations.thesis_id = "opaque-thesis-xyz";
     const res = await tradeGateHandler(post(JSON.stringify(b)), tier, "hpr_test", () => NOW);

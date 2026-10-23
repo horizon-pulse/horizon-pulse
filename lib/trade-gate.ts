@@ -9,7 +9,7 @@
  *   E5 detail strings state arithmetic / input facts only (tests ban judgment words).
  *   E6 Nothing from the request or the response is stored or logged here.
  *   E7 order/rules sha256 hashes are returned to the caller only, never stored.
- *   E8 thesis_id / approval_ref are opaque strings, only checked for being non-empty, never echoed.
+ *   E8 thesis_id / approval_ref are opaque strings, only checked for being non-empty, and are not returned in the response.
  * Inputs are self-reported by the caller; Trade Gate verifies nothing with any outside party.
  */
 import { createHash } from "node:crypto";
