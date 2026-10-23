@@ -48,7 +48,7 @@
           "Crypto market data"
         ],
         "summary": "BTC, ETH and SOL spot prices with 24h momentum (Coinbase Exchange, CoinGecko fallback)",
-        "description": "Crypto price API: BTC, ETH and SOL spot prices in USD in one GET, or one coin via symbol= (bad symbol: 400, no charge). Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat), avgChange24hPct and asOf. Prices from Coinbase Exchange with CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Crypto market data: a current USD price snapshot for BTC, ETH and SOL, or one coin via symbol= (bad symbol: 400, no charge), for quick market context. JSON per asset: priceUsd, change24hPct, momentum; plus overall momentum, sentiment, direction, avgChange24hPct, asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not a forecast and not financial advice. Errors are not charged.\n\nPrice: $0.002 USDC per call (2000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -179,7 +179,7 @@
           "Crypto market data"
         ],
         "summary": "RSI, MACD and Bollinger bands plus perpetual funding (CoinGecko, OKX)",
-        "description": "Crypto technical indicators API: RSI-14, MACD and Bollinger Bands for BTC, ETH and SOL in one GET, or one coin via symbol= (bad symbol: 400, no charge). Returns JSON per asset: rsi14, macd {macd, signal, histogram} (null when there are too few candles), bollinger {upper, middle, lower, period}, lastClose and OKX perpetual funding {fundingRate, fundingTime}. Computed from CoinGecko OHLC closes (Coinbase candles fallback); methodology included. Descriptive only, not advice. Errors are not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Crypto market data: precomputed RSI-14, MACD and Bollinger Bands plus latest OKX perp funding for BTC, ETH and SOL, or one coin via symbol= (bad symbol: 400, no charge), with no candle fetching needed. JSON per asset: rsi14, macd {macd, signal, histogram} (null if too few candles), bollinger, lastClose, funding. From CoinGecko OHLC closes (Coinbase fallback); methodology included. Descriptive only, not a forecast and not financial advice. Errors are not charged.\n\nPrice: $0.005 USDC per call (5000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,
@@ -819,7 +819,7 @@
           "Crypto market data"
         ],
         "summary": "BTC, ETH and SOL perpetual funding with a crowding hint (OKX)",
-        "description": "Perpetual funding rates API: current BTC, ETH and SOL perp funding from OKX USDT swaps in one GET, or one coin via symbol= (bad symbol: 400, no charge). Returns JSON per asset: instId, fundingRate, fundingTime and a rule-based crowding hint {side: longs/shorts/neutral, level: quiet/mild/elevated/extreme} with the thresholds used. OKX public data only. The hint is not a forecast or advice. Errors are not charged.\n\nPrice: $0.003 USDC per call (3000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
+        "description": "Crypto market data: current OKX USDT-swap perp funding rates for BTC, ETH and SOL, or one coin via symbol= (bad symbol: 400, no charge), showing whether longs or shorts are paying. JSON per asset: instId, fundingRate, fundingTime and a rule-based crowding hint {side: longs/shorts/neutral, level: quiet/mild/elevated/extreme} with thresholds. OKX public data only. The hint is not a forecast and not financial advice. Errors are not charged.\n\nPrice: $0.003 USDC per call (3000 atomic), paid with x402 v2 `exact` in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger (same price). Unpaid requests get 402 with PAYMENT-REQUIRED; retry with PAYMENT-SIGNATURE.",
         "x-payment-info": {
           "protocol": "x402",
           "x402Version": 2,

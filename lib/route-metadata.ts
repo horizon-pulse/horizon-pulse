@@ -21,12 +21,12 @@ export const MAX_DESCRIPTION_CHARS = 500;
 export const ROUTE_METADATA = {
   "/api/pulse": {
     description:
-      "Crypto price API: BTC, ETH and SOL spot prices in USD in one GET, or one coin via symbol= (bad symbol: 400, no charge). Returns JSON: assets.BTC/ETH/SOL with priceUsd, change24hPct and momentum (bullish/bearish/neutral), plus overall momentum, sentiment (risk-on/risk-off/neutral), direction (up/down/flat), avgChange24hPct and asOf. Prices from Coinbase Exchange with CoinGecko fallback (source field). Labels are fixed rules on 24h change, not advice. Errors are not charged.",
+      "Crypto market data: a current USD price snapshot for BTC, ETH and SOL, or one coin via symbol= (bad symbol: 400, no charge), for quick market context. JSON per asset: priceUsd, change24hPct, momentum; plus overall momentum, sentiment, direction, avgChange24hPct, asOf. Prices from Coinbase Exchange, CoinGecko fallback (source field). Labels are fixed rules on 24h change, not a forecast and not financial advice. Errors are not charged.",
     tags: ["crypto", "market-data", "spot-prices", "btc-eth-sol", "momentum"],
   },
   "/api/signals": {
     description:
-      "Crypto technical indicators API: RSI-14, MACD and Bollinger Bands for BTC, ETH and SOL in one GET, or one coin via symbol= (bad symbol: 400, no charge). Returns JSON per asset: rsi14, macd {macd, signal, histogram} (null when there are too few candles), bollinger {upper, middle, lower, period}, lastClose and OKX perpetual funding {fundingRate, fundingTime}. Computed from CoinGecko OHLC closes (Coinbase candles fallback); methodology included. Descriptive only, not advice. Errors are not charged.",
+      "Crypto market data: precomputed RSI-14, MACD and Bollinger Bands plus latest OKX perp funding for BTC, ETH and SOL, or one coin via symbol= (bad symbol: 400, no charge), with no candle fetching needed. JSON per asset: rsi14, macd {macd, signal, histogram} (null if too few candles), bollinger, lastClose, funding. From CoinGecko OHLC closes (Coinbase fallback); methodology included. Descriptive only, not a forecast and not financial advice. Errors are not charged.",
     tags: ["crypto", "technical-analysis", "rsi-macd-bollinger", "indicators", "funding-rates"],
   },
   "/api/yield": {
@@ -46,7 +46,7 @@ export const ROUTE_METADATA = {
   },
   "/api/funding": {
     description:
-      "Perpetual funding rates API: current BTC, ETH and SOL perp funding from OKX USDT swaps in one GET, or one coin via symbol= (bad symbol: 400, no charge). Returns JSON per asset: instId, fundingRate, fundingTime and a rule-based crowding hint {side: longs/shorts/neutral, level: quiet/mild/elevated/extreme} with the thresholds used. OKX public data only. The hint is not a forecast or advice. Errors are not charged.",
+      "Crypto market data: current OKX USDT-swap perp funding rates for BTC, ETH and SOL, or one coin via symbol= (bad symbol: 400, no charge), showing whether longs or shorts are paying. JSON per asset: instId, fundingRate, fundingTime and a rule-based crowding hint {side: longs/shorts/neutral, level: quiet/mild/elevated/extreme} with thresholds. OKX public data only. The hint is not a forecast and not financial advice. Errors are not charged.",
     tags: ["crypto", "funding-rates", "perpetuals", "derivatives", "okx"],
   },
   "/api/fetch": {

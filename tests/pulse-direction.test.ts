@@ -29,7 +29,7 @@ describe("aggregatePulse direction (formerly signal)", () => {
     expect(overall).not.toHaveProperty("signal");
     expect(overall.direction).toBe("flat");
     const d = ROUTE_METADATA["/api/pulse"].description;
-    expect(d).toContain("direction (up/down/flat)");
+    expect(d).toContain("direction"); // 2026-10-22 copy/bazaar-when-to-use: enum list dropped from prose (Forge copy, Counsel PASS); values remain in output schema
     expect(d).not.toMatch(/signal|buy|sell|hold/i);
   });
 });
