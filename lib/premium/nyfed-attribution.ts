@@ -58,24 +58,24 @@ export function withNyfedTerms<T extends object>(body: T, now: Date = new Date()
  * the page text) and cannot reach the AI answer line (its numbers must come from the claims).
  */
 export const NYFED_RATE_RE =
-  /\d\s*(%|percent\b|per cent\b|bps?\b|basis points?\b)|\b\d+(\.\d+)?\s*(-|to)\s*\d+(\.\d+)?\s*(%|percent\b)|\b\d+\.\d+\b|\b\d+\s*-?\s*\d?\/\d\b/i;
+  /\d\s*(%|percent\b|per cent\b|bps?\b|basis points?\b)|\b\d+(\.\d+)?\s*(-|to)\s*\d+(\.\d+)?\s*(%|percent\b)|\b\d+\.\d+\b|\b\d+\s*-?\s*\d?\/\d\b|\bpercent\b|\bper cent\b|\bbasis points?\b|\bpercentage points?\b/i; // Sentinel LOW-1: bare word-form rates count
 export const hasRate = (t: string) => NYFED_RATE_RE.test(t);
 export const NYFED_WITHHELD = "NY Fed value not quoted; free at the linked page.";
 
 /** Split excerpt text into sentence/line pieces (keeps the separators out; pieces are rejoined with newlines). */
 const pieces = (t: string) => t.split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter(Boolean);
 
-/** Remove rate-bearing sentences from newyorkfed.org pages; other pages untouched. */
+/** Counsel E3 (10/23): drop ALL newyorkfed.org excerpts (linked, not quoted); the page/URL stays so it is still linked. Other pages untouched. */
 export function scrubNyfedPages<T extends { url: string; excerpts: string[] }>(pages: T[]): T[] {
-  return pages.map((p) => isNyfedUrl(p.url) ? { ...p, excerpts: p.excerpts.map((e) => pieces(e).filter((s) => !hasRate(s)).join("\n")).filter((e) => e.trim()) } : p);
+  return pages.map((p) => isNyfedUrl(p.url) ? { ...p, excerpts: [] } : p);
 }
 
-/** Final backstop on a paid body: any string that contains a rate-bearing sentence from an original NY Fed page is withheld. */
+/** Final backstop on a paid body: any string that contains any sentence (rate-bearing or not) from an original NY Fed page is withheld. */
 export function withholdNyfedRates<T>(body: T, original: { url: string; excerpts: string[] }[]): T {
-  const bad = original.filter((p) => isNyfedUrl(p.url)).flatMap((p) => p.excerpts.flatMap(pieces)).filter(hasRate)
+  const bad = original.filter((p) => isNyfedUrl(p.url)).flatMap((p) => p.excerpts.flatMap(pieces))
     .map((s) => s.replace(/\s+/g, " ").trim().toLowerCase()).filter((s) => s.length >= 12);
   if (!bad.length) return body;
-  const hit = (s: string) => { const n = s.replace(/\s+/g, " ").trim().toLowerCase(); return hasRate(n) && bad.some((b) => n.includes(b) || (n.length >= 12 && b.includes(n))); };
+  const hit = (s: string) => { const n = s.replace(/\s+/g, " ").trim().toLowerCase(); return bad.some((b) => n.includes(b) || (n.length >= 24 && b.includes(n))); };
   const walk = (v: any, d: number): any => {
     if (d > 14 || v === null || v === undefined) return v;
     if (typeof v === "string") return hit(v) ? NYFED_WITHHELD : v;
@@ -91,4 +91,4 @@ export function nyfedLast<T extends { url: string }>(xs: T[]): T[] {
   return [...xs.filter((x) => !isNyfedUrl(x.url)), ...xs.filter((x) => isNyfedUrl(x.url))];
 }
 
-export const BOARD_CITATION = "Board of Governors of the Federal Reserve System, federalreserve.gov (public domain U.S. government work).";
+export const BOARD_CITATION = "Source: Board of Governors of the Federal Reserve System (federalreserve.gov). Board website information is public domain unless otherwise indicated.";

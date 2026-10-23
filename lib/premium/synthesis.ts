@@ -470,8 +470,8 @@ export function consistentValues(extracted: ParallelResult[], pool: { url: strin
 import { BOARD_CITATION } from "./nyfed-attribution";
 export const ISSUING_AUTHORITIES: { topic: RegExp; name: string; domains: string[] }[] = [
   // Odin 10/23 6:13 PM ET: newyorkfed.org dropped (NY Fed Content; linked via nyfed_terms, never quoted for rates).
-  // Policy-rate quotes come from the Board (federalreserve.gov, cited as the Board) or stlouisfed.org.
-  { topic: /\b(federal funds|fed funds|fomc|discount rate|interest on reserve|policy rate)\b/i, name: "Federal Reserve System", domains: ["federalreserve.gov", "stlouisfed.org"] },
+  // Policy-rate quotes come from the Board (federalreserve.gov, cited as the Board) only; stlouisfed.org dropped (Counsel E1 10/23, terms not reviewed).
+  { topic: /\b(federal funds|fed funds|fomc|discount rate|interest on reserve|policy rate)\b/i, name: "Federal Reserve System", domains: ["federalreserve.gov"] },
 ];
 export type Authority = { source_tier: "issuing_authority"; authority: string; url: string; documents: number; note: string; citation?: string };
 export function issuingAuthority(q: string, answerUrls: string[], extracted: ParallelResult[]): Authority | null {
