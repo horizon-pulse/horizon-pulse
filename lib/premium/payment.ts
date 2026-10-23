@@ -27,6 +27,7 @@ import { BUYER_TERMS_URL } from "./copy";
 import { tierPath, type Tier } from "./tiers";
 import { logPaidSettle } from "@/lib/route-log";
 import { BRIEF_SERVICE_META, briefBazaarExtension } from "./bazaar";
+import { sellerDdBazaarExtension } from "@/lib/seller-dd/bazaar";
 
 export const PREMIUM_CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -232,9 +233,29 @@ export async function verifyPayment(d: Decoded, x: Tier): Promise<VerifyResult> 
 export type SettleResult =
   | { ok: true; tx: string | null; payer: string | null; header: string }
   | { ok: false; kind: "timeout" | "ambiguous"; tx: string | null };
+/**
+ * Bazaar indexing from any buyer (beat-14 plan move 1): CDP indexes a route from the extensions.bazaar block in the
+ * SETTLED payment payload. Many buyers send a payload without it, so for the two discoverable tiers (the $1 brief and
+ * Seller DD) we attach our own server-side block when the payload has none. A payload that already carries
+ * extensions.bazaar is passed through untouched; every other tier is untouched. Returns a shallow copy (d.raw is not
+ * mutated). Discovery metadata only: amount, payTo, signature and authorization are not modified.
+ */
+export function bazaarExtensionFor(x: Tier): Record<string, unknown> | null {
+  if (x.id === "brief") return briefBazaarExtension() as Record<string, unknown>;
+  if ((x.id as string) === "seller-dd") return sellerDdBazaarExtension() as Record<string, unknown>;
+  return null;
+}
+export function withServerBazaarExtension(raw: any, x: Tier): any {
+  const ext = bazaarExtensionFor(x);
+  if (!ext || !raw || typeof raw !== "object" || raw.x402Version !== 2) return raw;
+  const cur = raw.extensions && typeof raw.extensions === "object" && !Array.isArray(raw.extensions) ? raw.extensions : null;
+  if (cur && cur.bazaar !== undefined && cur.bazaar !== null) return raw;
+  return { ...raw, extensions: { ...(cur ?? {}), bazaar: ext.bazaar } };
+}
+
 export async function settlePayment(d: Decoded, x: Tier, routePath: string = tierPath(x)): Promise<SettleResult> {
   try {
-    const r: any = await client().settle(d.raw, requirementFor(x) as never);
+    const r: any = await client().settle(withServerBazaarExtension(d.raw, x), requirementFor(x) as never);
     const tx = typeof r?.transaction === "string" && r.transaction ? r.transaction : null;
     if (r?.success === true && tx) {
       const payer = typeof r.payer === "string" ? r.payer : d.from;
