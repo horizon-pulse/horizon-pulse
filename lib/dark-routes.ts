@@ -15,6 +15,7 @@ import { randomUUID } from "node:crypto";
 import type { RoutesConfig } from "@x402/core/server";
 import { getNetworkCaip2, getPayTo } from "./config";
 import { callerIp } from "./caller-ip";
+import { TRADE_GATE_DESCRIPTION } from "./trade-gate";
 
 // ---------------------------------------------------------------------------
 // Flags
@@ -23,6 +24,8 @@ export const DARK_FLAGS = {
   audit: "HP_AUDIT_SECURITY_ENABLED",
   pkg: "HP_PACKAGE_CHECK_ENABLED",
   injection: "HP_INJECTION_SCAN_ENABLED",
+  /** Trade Gate (Michael via Odin 10/22): defaults OFF; listing/going live needs Odin OK + securities-attorney review (Counsel). */
+  tradegate: "HP_TRADE_GATE_ENABLED",
 } as const;
 export type DarkRoute = keyof typeof DARK_FLAGS;
 
@@ -91,6 +94,9 @@ export const PACKAGE_TIERS: readonly Tier[] = [
 /** Prompt-injection heuristics scan: base $0.01 (confirmed by Odin 10:47 PM ET 10/17). */
 export const INJECTION_TIERS: readonly Tier[] = [tier("base", 10_000, "Rule-based prompt-injection pattern scan of supplied text or a public URL")] as const;
 
+/** Trade Gate: base $0.01 (Odin 10/22, "about $0.01 per call"; PROPOSED). */
+export const TRADE_GATE_TIERS: readonly Tier[] = [tier("base", 10_000, "Mechanical check of one order against caller-supplied rules")] as const;
+
 export function findTier(tiers: readonly Tier[], id: string | null | undefined, fallback: string): Tier | null {
   const want = (id ?? "").trim().toLowerCase() || fallback;
   return tiers.find((t) => t.id === want) ?? null;
@@ -138,13 +144,16 @@ export const DARK_DESCRIPTIONS = {
  * (no Bazaar discovery) and no serviceMetadata while dark.
  */
 /** The description actually served for a dark route (audit copy follows HP_AUDIT_HIGH_TIERS_ENABLED). */
-export function darkDescription(path: keyof typeof DARK_DESCRIPTIONS, env: Record<string, string | undefined> = process.env): string {
+/** Every dark path with a paid config: DARK_DESCRIPTIONS keys plus Trade Gate (own Counsel E4 copy, kept separate). */
+export type DarkPaidPath = keyof typeof DARK_DESCRIPTIONS | "/api/trade-gate";
+export function darkDescription(path: DarkPaidPath, env: Record<string, string | undefined> = process.env): string {
+  if (path === "/api/trade-gate") return TRADE_GATE_DESCRIPTION;
   if (path === "/api/audit/security") return auditHighTiersEnabled(env) ? AUDIT_DESCRIPTION_HIGH_TIERS : AUDIT_DESCRIPTION_BASE;
   if (path === "/api/package/check") return packageDeepEnabled(env) ? PACKAGE_DESCRIPTION_DEEP : PACKAGE_DESCRIPTION_BASE;
   return DARK_DESCRIPTIONS[path];
 }
 
-export function darkRouteConfig(path: keyof typeof DARK_DESCRIPTIONS, t: Tier): RoutesConfig {
+export function darkRouteConfig(path: DarkPaidPath, t: Tier): RoutesConfig {
   return {
     [path]: {
       accepts: [{ scheme: "exact", price: t.usd, network: getNetworkCaip2(), payTo: getPayTo() }],
@@ -154,7 +163,7 @@ export function darkRouteConfig(path: keyof typeof DARK_DESCRIPTIONS, t: Tier): 
   };
 }
 
-export function darkPaymentOpts(path: keyof typeof DARK_DESCRIPTIONS, t: Tier) {
+export function darkPaymentOpts(path: DarkPaidPath, t: Tier) {
   return { maxAmountRequired: t.atomicStr, resource: path, description: darkDescription(path) } as const;
 }
 
@@ -175,6 +184,7 @@ export const DARK_RATE_LIMITS: Record<DarkRoute, { perMinute: number }> = {
   audit: { perMinute: 6 },
   pkg: { perMinute: 60 },
   injection: { perMinute: 60 },
+  tradegate: { perMinute: 60 },
 };
 /** Per target host: at most this many checks per minute across ALL instances (shared Upstash counter). */
 export const AUDIT_TARGET_PER_MINUTE = 3;

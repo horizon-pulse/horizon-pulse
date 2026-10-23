@@ -186,6 +186,11 @@ export const ROUTE_METADATA = {
     description: DARK_DESCRIPTIONS["/api/injection/scan"],
     tags: ["prompt-injection-heuristics", "prompt-injection", "text-scan", "hidden-text", "agent-tools"],
   },
+  // DARK (HP_TRADE_GATE_ENABLED, default off). Counsel E4 disclaimer verbatim inside the description.
+  "/api/trade-gate": {
+    description: darkDescription("/api/trade-gate"),
+    tags: ["pre-trade-rules", "order-rules-check", "caller-supplied-rules", "agent-tools", "deterministic"],
+  },
 } as const satisfies Record<string, RouteMetadata>;
 
 export type MeteredPath = keyof typeof ROUTE_METADATA;
