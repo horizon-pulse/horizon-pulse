@@ -6,7 +6,7 @@ import { evaluateTradeGate, TRADE_GATE_DISCLAIMER, TRADE_GATE_HASH_NOTE, TRADE_G
 /**
  * DARK (HP_TRADE_GATE_ENABLED). POST JSON only. A checked answer is billed; bad input (400/413/405-as-400) is not.
  * Counsel E6/E7: nothing from the request or the response is stored or logged here; hashes go back to the caller only.
- * The input (order, account, rules, attestations) is never echoed back.
+ * The request body, request IDs (thesis_id, approval_ref) and account fields are not returned as submitted. Detail strings may restate order fields such as symbol, underlying, side, expiration and as_of, plus the numbers used in each check, which can include values derived from the account inputs supplied.
  */
 export async function tradeGateHandler(req: NextRequest, tier: Tier, receiptId: string, now: () => Date = () => new Date()): Promise<NextResponse> {
   const TIER_PRICE_USD = tier.usd;
