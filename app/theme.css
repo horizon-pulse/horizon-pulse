@@ -1,0 +1,21 @@
+/*
+ * Horizon Pulse theme tokens: the ONE file to change when the new X header is picked.
+ * Colors, fonts and the hero/CTA backgrounds are all here; landing.css only reads these vars.
+ * Current values = the pre-refresh look (no visual change on this branch).
+ * Keep --text-2/--text-3 at >= 4.5:1 contrast on --bg when swapping palettes.
+ */
+:root {
+  --bg: #08090a; --bg-1: #0f1011; --bg-2: #141516;
+  --line: rgba(255,255,255,.08); --line-2: rgba(255,255,255,.14);
+  --text: #f7f8f8; --text-2: #8a8f98; --text-3: #80858d; /* 5.37:1 on --bg */
+  --accent: #22d3ee;
+  --accent-glow: rgba(34,211,238,.13);
+  --accent-glow-soft: rgba(34,211,238,.07);
+  --t-err: #e5b567; --t-key: #8ab4f8; --t-ok: #6fd3a8;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --header-bg: rgba(8,9,10,.72);
+  /* Hero background: swap for the header art, e.g. url(/brand/hero.webp) center/cover, var(--hero-glow). */
+  --hero-bg: radial-gradient(640px 380px at 50% 30%, var(--accent-glow), transparent 70%);
+  --band-bg: radial-gradient(520px 220px at 50% 0%, var(--accent-glow-soft), transparent 70%);
+}

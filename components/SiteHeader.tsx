@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { GITHUB_REPO } from "@/lib/config";
+import "@/app/theme.css";
 import "@/app/landing.css";
 
 export function SiteHeader() {

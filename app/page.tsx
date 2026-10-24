@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { BASE_PAY_TO_BASENAME, CONTACT_EMAIL, DEFAULT_PAY_TO, GITHUB_REPO, USDC_BASE } from "@/lib/config";
+import { BASE_PAY_TO_BASENAME, CONTACT_EMAIL, GITHUB_REPO, USDC_BASE, getPayTo } from "@/lib/config";
 import { SOLANA_PAYTO, USDC_SOLANA_MINT } from "@/lib/solana-config";
 import { USDC_POLYGON } from "@/lib/polygon-config";
 import { XRPL_PAYTO, RLUSD_MAINNET_ISSUER } from "@/lib/xrpl-config";
 import { andList, catalogStats, FREE_ROUTE, orList, routeName, routePath, LIVE_PAID_ROUTES } from "@/lib/live-catalog";
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
+import { paymentRails } from "@/lib/payment-rails";
+import { EURC_BASE } from "@/lib/eurc-config";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { HeroTerminal } from "@/components/HeroTerminal";
@@ -13,7 +15,7 @@ import { CopyLine } from "@/components/CopyLine";
 
 const demoSet = new Set(DEMO_ROUTES.map((d) => d.route));
 const FEATURED = ["pulse", "fetch", "extract"];
-const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/merchant?payTo=${DEFAULT_PAY_TO.toLowerCase()}`;
+const BAZAAR_LOOKUP = `https://api.cdp.coinbase.com/platform/v2/x402/discovery/merchant?payTo=${getPayTo().toLowerCase()}`;
 const WORDS = ["Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen", "Twenty"];
 
 const Ico = ({ d }: { d: string }) => (
@@ -35,6 +37,8 @@ const ICONS: Record<string, string> = {
 
 export default function HomePage() {
   const s = catalogStats();
+  const pay = paymentRails();
+  const payTo = getPayTo();
   const featured = FEATURED.map((n) => LIVE_PAID_ROUTES.find((r) => routeName(r) === n)).filter(Boolean) as typeof LIVE_PAID_ROUTES[number][];
   return (
     <div className="hp">
@@ -98,6 +102,34 @@ export default function HomePage() {
                 <div className="d">URLs in /.well-known/x402 · {s.postAccepting} {s.premium.some((x) => x.method === "POST") ? "accept" : "also accept"} POST</div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="hp-section" id="pay">
+          <div className="hp-wrap">
+            <div data-reveal>
+              <div className="hp-label">Payment options</div>
+              <h2>
+                Open to every agent. <span>Pay per call via x402.</span>
+              </h2>
+              <p className="hp-lead">No accounts and no API keys. Pick any option listed in the 402 response, which gives the exact amount for each.</p>
+            </div>
+            <ul className="hp-rails" data-reveal>
+              {pay.rails.map((r) => (
+                <li className="hp-rail" key={r.asset}>
+                  <h3>{r.asset}</h3>
+                  <p>{r.chains.join(", ")}</p>
+                </li>
+              ))}
+            </ul>
+            {s.premium.length ? (
+              <p className="hp-rail-note" data-reveal>
+                {s.premium.map((x, i) => (
+                  <span key={x.id}>{i ? (i === s.premium.length - 1 ? " and the " : ", the ") : "The "}{x.priceUsd} {x.label}</span>
+                ))}{" "}
+                {s.premium.length > 1 ? "accept" : "accepts"} {pay.premiumAssets.join(" or ")} on Base only.
+              </p>
+            ) : null}
           </div>
         </section>
 
@@ -261,17 +293,23 @@ export default function HomePage() {
                 <h3>Payment</h3>
                 <div className="hp-kv">
                   <span className="k">Base: pay to</span>
-                  <code>{DEFAULT_PAY_TO}</code>
+                  <code>{payTo}</code>
                   <span className="k">Base name</span>
                   <span><code>{BASE_PAY_TO_BASENAME}</code>, the Basename for this address</span>
                   <span className="k">Base asset</span>
                   <span>USDC <code>{USDC_BASE}</code></span>
+                  {pay.eurc ? (
+                    <>
+                      <span className="k">Base asset (EURC)</span>
+                      <span>EURC <code>{EURC_BASE}</code></span>
+                    </>
+                  ) : null}
                   <span className="k">Solana: pay to</span>
                   <code>{SOLANA_PAYTO}</code>
                   <span className="k">Solana asset</span>
                   <span>USDC <code>{USDC_SOLANA_MINT}</code></span>
                   <span className="k">Polygon: pay to</span>
-                  <code>{DEFAULT_PAY_TO}</code>
+                  <code>{payTo}</code>
                   <span className="k">Polygon asset</span>
                   <span>native USDC <code>{USDC_POLYGON}</code> (same address as Base)</span>
                   <span className="k">XRP Ledger: pay to</span>

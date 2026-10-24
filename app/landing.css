@@ -1,19 +1,11 @@
-:root {
-  --bg: #08090a; --bg-1: #0f1011; --bg-2: #141516;
-  --line: rgba(255,255,255,.08); --line-2: rgba(255,255,255,.14);
-  --text: #f7f8f8; --text-2: #8a8f98; --text-3: #80858d; /* was #62666d: 3.45:1 on --bg, Lighthouse color-contrast; now 5.37:1 (>= 4.9:1 on #111214) */
-  --accent: #22d3ee;
-  --t-err: #e5b567; --t-key: #8ab4f8; --t-ok: #6fd3a8;
-  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
+/* Theme tokens (colors, fonts, hero background) live in app/theme.css. */
 .hp { background: var(--bg); color: var(--text); font-family: var(--sans); -webkit-font-smoothing: antialiased; min-height: 100vh; font-size: 15px; line-height: 1.55; }
 .hp a { color: inherit; }
 .hp code { font-family: var(--mono); font-size: .88em; color: var(--text); background: rgba(255,255,255,.05); border: 1px solid var(--line); padding: 1px 5px; border-radius: 5px; }
 .hp-wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
 
 /* header (shared with /status) */
-.hp-header { position: sticky; top: 0; z-index: 20; background: rgba(8,9,10,.72); backdrop-filter: saturate(160%) blur(12px); border-bottom: 1px solid var(--line); font-family: var(--sans); }
+.hp-header { position: sticky; top: 0; z-index: 20; background: var(--header-bg); backdrop-filter: saturate(160%) blur(12px); border-bottom: 1px solid var(--line); font-family: var(--sans); }
 .hp-header-in { display: flex; align-items: center; gap: 24px; height: 56px; }
 .hp-brand { display: flex; align-items: center; gap: 9px; font-weight: 590; font-size: 14.5px; color: var(--text); text-decoration: none; letter-spacing: -.01em; }
 .hp-mark { display: grid; place-items: center; color: var(--text); }
@@ -31,7 +23,7 @@
 
 /* hero */
 .hp-hero { position: relative; padding: 96px 0 40px; text-align: center; overflow: hidden; }
-.hp-hero::before { content: ""; position: absolute; inset: -200px 0 auto; height: 720px; pointer-events: none; background: radial-gradient(640px 380px at 50% 30%, rgba(34,211,238,.13), transparent 70%); }
+.hp-hero::before { content: ""; position: absolute; inset: -200px 0 auto; height: 720px; pointer-events: none; background: var(--hero-bg); }
 .hp-hero > * { position: relative; }
 .hp-chip { display: inline-flex; align-items: center; gap: 8px; font: 500 12px var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; background: rgba(255,255,255,.02); }
 .hp-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--t-ok); box-shadow: 0 0 10px var(--t-ok); }
@@ -119,7 +111,7 @@
 .hp-kv .k { color: var(--text-3); }
 .hp-kv code { word-break: break-all; font-size: 11.5px; }
 
-.hp-cta-band { margin: 120px 0 0; padding: 72px 24px; text-align: center; border-top: 1px solid var(--line); background: radial-gradient(520px 220px at 50% 0%, rgba(34,211,238,.07), transparent 70%); }
+.hp-cta-band { margin: 120px 0 0; padding: 72px 24px; text-align: center; border-top: 1px solid var(--line); background: var(--band-bg); }
 .hp-cta-band h2 { font-size: 36px; letter-spacing: -.028em; font-weight: 560; margin: 0 0 10px; }
 .hp-cta-band p { color: var(--text-2); margin: 0 0 26px; }
 
@@ -249,3 +241,11 @@
 
 /* Odin 10:37: visible amber TEST label on the hero recording (payer is our own test wallet). Amber = brand-kit amber #E0A458 (own value; --t-err unchanged). */
 .hp-test-badge { display: inline-block; margin-right: 8px; padding: 1px 7px; border: 1px solid #E0A458; border-radius: 4px; color: #08090a; background: #E0A458; font: 600 11px/1.6 var(--mono); letter-spacing: .06em; }
+
+/* payment options */
+.hp-rails { list-style: none; padding: 0; margin: 24px 0 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.hp-rail { border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; background: var(--bg-1); }
+.hp-rail h3 { margin: 0 0 6px; font-size: 17px; font-weight: 590; }
+.hp-rail p { margin: 0; color: var(--text-2); font-size: 14px; }
+.hp-rail code { word-break: break-all; }
+.hp-rail-note { margin-top: 16px; color: var(--text-2); font-size: 14px; }
