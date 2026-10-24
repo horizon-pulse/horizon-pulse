@@ -20,9 +20,10 @@ const MC = parseAbi(["struct Call3 { address target; bool allowFailure; bytes ca
 const NOW = Date.parse("2026-10-21T15:00:00Z");
 const SYMS = [...EQUITY_SYMBOLS, "USDC"] as const;
 
-type Over = { paused?: Record<string, boolean>; cf?: Record<string, number>; updatedAgo?: number; hubMismatch?: boolean; failFn?: string; rpcDown?: boolean; feedMismatch?: string; hang?: boolean; deadlineMs?: number };
-function fakeDeps(o: Over = {}, now = NOW): Deps & { calls: number } {
-  const st = { calls: 0 };
+type Over = { paused?: Record<string, boolean>; cf?: Record<string, number>; updatedAgo?: number; hubMismatch?: boolean; failFn?: string; rpcDown?: boolean; feedMismatch?: string; hang?: boolean; deadlineMs?: number; skewUrl?: string; downUrl?: string; urls?: string[] };
+function fakeDeps(o: Over = {}, now = NOW): Deps & { calls: number; tags: string[] } {
+  const st = { calls: 0, tags: [] as string[] };
+  let curUrl = "";
   const answer = (target: string, fn: string, args: readonly unknown[]): unknown => {
     const id = Number(args[0] ?? 0);
     const sym = SYMS[id] ?? "USDC";
@@ -34,7 +35,7 @@ function fakeDeps(o: Over = {}, now = NOW): Deps & { calls: number } {
       case "getReserve": return { underlying: AAVE_V4_BASE_ASSETS[sym]!.toLowerCase(), hub: o.hubMismatch ? "0x000000000000000000000000000000000000dEaD" : AAVE_V4_BASE.EQUITIES_HUB, assetId: id, decimals: sym === "USDC" ? 6 : 8, collateralRisk: 0, flags: 0, dynamicConfigKey: 0 };
       case "getReserveConfig": return { collateralRisk: 0, paused: o.paused?.[sym] ?? false, frozen: false, borrowable: sym === "USDC", receiveSharesEnabled: true };
       case "getDynamicReserveConfig": return sym === "USDC" ? { collateralFactor: 0, maxLiquidationBonus: 10000, liquidationFee: 0 } : { collateralFactor: o.cf?.[sym] ?? 7000, maxLiquidationBonus: 10550, liquidationFee: 1000 };
-      case "getReserveSuppliedAssets": return sym === "USDC" ? 6_000_000n * 10n ** 6n : 1000n * 10n ** 8n;
+      case "getReserveSuppliedAssets": if (o.skewUrl === curUrl) return 1n; return sym === "USDC" ? 6_000_000n * 10n ** 6n : 1000n * 10n ** 8n;
       case "getSpokeConfig": return { addCap: sym === "USDC" ? 32_000_000 : 4000, drawCap: sym === "USDC" ? 21_000_000 : 0, riskPremiumThreshold: 0, active: true, halted: false };
       case "getReservePrice": return sym === "USDC" ? 100_000_000n : 200n * 10n ** 8n;
       case "getReserveSource": return o.feedMismatch === sym ? "0x000000000000000000000000000000000000bEEF" : AAVE_V4_BASE_PRICE_FEEDS[sym]!;
@@ -48,11 +49,13 @@ function fakeDeps(o: Over = {}, now = NOW): Deps & { calls: number } {
     }
     throw new Error(`unhandled ${fn} ${target}`);
   };
-  const f = (async (_url: string, init?: RequestInit) => {
+  const f = (async (url: string, init?: RequestInit) => {
     st.calls++;
-    if (o.rpcDown) return new Response("nope", { status: 503 });
+    if (o.rpcDown || o.downUrl === url) return new Response("nope", { status: 503 });
     if (o.hang) return new Promise<Response>((_, rej) => init!.signal!.addEventListener("abort", () => rej(new Error("aborted"))));
-    const body = JSON.parse(String(init!.body)) as { params: [{ data: Hex }] };
+    const body = JSON.parse(String(init!.body)) as { params: [{ data: Hex }, string] };
+    st.tags.push(body.params[1]);
+    curUrl = url;
     const { args } = decodeFunctionData({ abi: MC, data: body.params[0].data });
     const results = (args![0] as unknown as { target: string; callData: Hex }[]).map((c) => {
       const d = decodeFunctionData({ abi: V4_ABI, data: c.callData });
@@ -62,7 +65,7 @@ function fakeDeps(o: Over = {}, now = NOW): Deps & { calls: number } {
     });
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: encodeFunctionResult({ abi: MC, functionName: "aggregate3", result: results }) }), { status: 200 });
   }) as unknown as typeof fetch;
-  return Object.assign(st, { fetch: f, now: () => now, rpcs: () => ["https://rpc.test"], ...(o.deadlineMs !== undefined ? { deadlineMs: o.deadlineMs } : {}) });
+  return Object.assign(st, { fetch: f, now: () => now, rpcs: () => o.urls ?? ["https://rpc-a.test", "https://rpc-b.test"], ...(o.deadlineMs !== undefined ? { deadlineMs: o.deadlineMs } : {}) });
 }
 const ALL = { token: null, collateralAmount: null, debtUsdc: null };
 
@@ -264,5 +267,42 @@ describe("dark: flag + discovery absence", () => {
     const { getPayTo } = await import("@/lib/config");
     const cfg = darkRouteConfig("/api/aave-equities/collateral-data", AAVE_EQUITIES_TIERS[0]!) as Record<string, { accepts: { payTo: string; price: string }[] }>;
     expect(cfg["/api/aave-equities/collateral-data"].accepts[0]).toEqual(expect.objectContaining({ price: "$0.01", payTo: getPayTo() }));
+  });
+});
+
+describe("RPC quorum at a pinned block (Sentinel LOW-2)", () => {
+  it("every round after the head read is pinned to head - 2 (123 -> 0x79)", async () => {
+    const d = fakeDeps();
+    const r = await readCollateralData(ALL, d);
+    expect(r.ok).toBe(true);
+    expect(d.tags[0]).toBe("latest");
+    expect(new Set(d.tags.filter((t) => t !== "latest"))).toEqual(new Set(["0x79"]));
+  });
+  it("two RPCs that disagree -> 502 unexpected_onchain_state, not charged", async () => {
+    const r = await readCollateralData(ALL, fakeDeps({ skewUrl: "https://rpc-b.test" }));
+    expect(r).toMatchObject({ ok: false, status: 502, code: "unexpected_onchain_state" });
+    expect((r as { error: string }).error).toContain("disagree");
+  });
+  it("only one RPC answering -> 502 rpc_unavailable (a single answer is never trusted)", async () => {
+    const r = await readCollateralData(ALL, fakeDeps({ downUrl: "https://rpc-b.test" }));
+    expect(r).toMatchObject({ ok: false, status: 502, code: "rpc_unavailable" });
+    expect((await readCollateralData(ALL, fakeDeps({ urls: ["https://rpc-a.test"] }))).ok).toBe(false);
+  });
+  it("duplicate URLs count once", async () => {
+    expect((await readCollateralData(ALL, fakeDeps({ urls: ["https://rpc-a.test", "https://rpc-a.test"] }))).ok).toBe(false);
+  });
+  it("3 RPCs, one down, two agree -> ok", async () => {
+    const r = await readCollateralData(ALL, fakeDeps({ urls: ["https://x.test", "https://rpc-a.test", "https://rpc-b.test"], downUrl: "https://x.test" }));
+    expect(r.ok).toBe(true);
+  });
+});
+
+describe("Content-Length (Sentinel NOTE-3)", () => {
+  it("an invalid Content-Length is rejected with 400 before any RPC", async () => {
+    const d = fakeDeps();
+    const req = new NextRequest("https://x.test/api/aave-equities/collateral-data", { method: "POST", body: "{}", headers: { "content-length": "abc", "content-type": "application/json" } });
+    const res = await aaveEquitiesHandler(req, AAVE_EQUITIES_TIERS[0]!, "r1", d);
+    expect(res.status).toBe(400);
+    expect(d.calls).toBe(0);
   });
 });

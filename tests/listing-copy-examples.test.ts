@@ -20,7 +20,11 @@ describe("listing copy (row 223)", () => {
     expect(m.description.length).toBeLessThanOrEqual(500);
     // Counsel E4 (10/22): the Trade Gate disclaimer is required verbatim and says "you"; only that exact sentence is exempt.
     // Counsel E1/E2 (10/23): the 10/20 Reg S line is required verbatim in the Aave equities description; only that exact phrase is exempt.
-    expect(m.description.replace(TRADE_GATE_DISCLAIMER, "").replace(AAVE_EQUITIES_REG_S_LINE, "")).not.toMatch(INSTRUCTION);
+    // Sentinel NOTE-5 (10/23): each exemption applies only on its own route.
+    let d = m.description;
+    if (_p === "/api/trade-gate") d = d.replace(TRADE_GATE_DISCLAIMER, "");
+    if (_p === "/api/aave-equities/collateral-data") d = d.replace(AAVE_EQUITIES_REG_S_LINE, "");
+    expect(d).not.toMatch(INSTRUCTION);
   });
   it("tx-guard copy says snapshot match, never 'OFAC check' (Counsel: no sanctions screening)", () => {
     const d = ROUTE_METADATA["/api/tx-guard"].description;

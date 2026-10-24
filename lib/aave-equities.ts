@@ -119,31 +119,43 @@ export const defaultDeps = (): Deps => ({
   rpcs: () => [process.env.BASE_RPC_URL ?? "", "https://base.drpc.org", "https://mainnet.base.org"].filter(Boolean),
 });
 
-async function multicallRaw(deps: Deps, calls: Call[], deadline: AbortSignal): Promise<R[] | null> {
+/** Sentinel LOW-2 (10/23): never trust the first RPC that answers. Every round is read at one pinned block from all RPCs in
+ * parallel; at least AAVE_RPC_QUORUM distinct RPCs must return byte-identical results, and any successful RPC that disagrees
+ * fails the call (502, not charged). An HP-controlled BASE_RPC_URL is still wanted before go-live; quorum is defense in depth. */
+export const AAVE_RPC_QUORUM = 2;
+/** Blocks behind the first-seen head that every round is pinned to, so lagging public RPCs have the block. */
+export const AAVE_PIN_LAG_BLOCKS = 2n;
+type Round = { kind: "ok"; out: R[] } | { kind: "down" } | { kind: "disagree" };
+async function oneRpc(deps: Deps, url: string, data: Hex, tag: string, n: number, deadline: AbortSignal): Promise<string | null> {
+  try {
+    const res = await deps.fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: MULTICALL3, data }, tag] }),
+      signal: AbortSignal.any([AbortSignal.timeout(RPC_TIMEOUT_MS), deadline]),
+    });
+    if (!res.ok) return null;
+    const j = (await res.json()) as { result?: string };
+    if (typeof j.result !== "string" || !j.result.startsWith("0x") || j.result.length <= 2) return null;
+    const out = decodeFunctionResult({ abi: MC_ABI, functionName: "aggregate3", data: j.result as Hex }) as unknown as R[];
+    return out.length === n ? j.result.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+async function multicallRaw(deps: Deps, calls: Call[], deadline: AbortSignal, tag: string): Promise<Round> {
   const data = encodeFunctionData({
     abi: MC_ABI,
     functionName: "aggregate3",
     args: [calls.map((c) => ({ target: c.target, allowFailure: true, callData: encodeFunctionData({ abi: V4_ABI, functionName: c.fn, args: c.args ?? [] } as never) }))],
   });
-  for (const url of deps.rpcs()) {
-    if (deadline.aborted) return null;
-    try {
-      const res = await deps.fetch(url, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: MULTICALL3, data }, "latest"] }),
-        signal: AbortSignal.any([AbortSignal.timeout(RPC_TIMEOUT_MS), deadline]),
-      });
-      if (!res.ok) continue;
-      const j = (await res.json()) as { result?: string };
-      if (typeof j.result !== "string" || !j.result.startsWith("0x") || j.result.length <= 2) continue;
-      const out = decodeFunctionResult({ abi: MC_ABI, functionName: "aggregate3", data: j.result as Hex }) as unknown as R[];
-      if (out.length === calls.length) return out;
-    } catch {
-      /* next RPC */
-    }
-  }
-  return null;
+  if (deadline.aborted) return { kind: "down" };
+  const urls = [...new Set(deps.rpcs())];
+  const got = (await Promise.all(urls.map((u) => oneRpc(deps, u, data, tag, calls.length, deadline)))).filter((x): x is string => x !== null);
+  if (deadline.aborted) return { kind: "down" };
+  if (new Set(got).size > 1) return { kind: "disagree" };
+  if (got.length < AAVE_RPC_QUORUM) return { kind: "down" };
+  return { kind: "ok", out: decodeFunctionResult({ abi: MC_ABI, functionName: "aggregate3", data: got[0] as Hex }) as unknown as R[] };
 }
 function dec<T>(fn: Fn, r: R | undefined): T | null {
   if (!r || !r.success || r.returnData === "0x") return null;
@@ -278,11 +290,36 @@ export async function readCollateralData(input: Input, deps: Deps = defaultDeps(
   const bad = (why: string): Err => ({ ok: false, status: 502, code: "unexpected_onchain_state", error: `Unexpected onchain state (${why}); not charged.` });
   // Sentinel LOW-1: one overall deadline shared by every RPC round; when it trips, 502 (not charged) instead of a platform timeout.
   const deadline = AbortSignal.timeout(deps.deadlineMs ?? RPC_DEADLINE_MS);
-  const multicall = (d: Deps, c: Call[]) => multicallRaw(d, c, deadline);
+  const disagree = bad("Base RPCs disagree at the pinned block");
+  let tag = "latest";
+  let split = false;
+  const multicall = async (_d: Deps, c: Call[]): Promise<R[] | null> => {
+    const r = await multicallRaw(deps, c, deadline, tag);
+    if (r.kind === "disagree") split = true;
+    return r.kind === "ok" ? r.out : null;
+  };
+  const fail = () => (split ? disagree : rpcDown);
+
+  // Round 0 (Sentinel LOW-2): pick the pin block. Every RPC answers "latest"; heads may differ, so only the block number is read
+  // here, from any answer, and nothing from this round reaches the body. All later rounds are quorum reads at that pinned block.
+  const head = await (async () => {
+    const data = encodeFunctionData({ abi: MC_ABI, functionName: "aggregate3", args: [[{ target: MULTICALL3, allowFailure: false, callData: encodeFunctionData({ abi: V4_ABI, functionName: "getBlockNumber" }) }]] });
+    const outs = await Promise.all([...new Set(deps.rpcs())].map((u) => oneRpc(deps, u, data, "latest", 1, deadline)));
+    let best: bigint | null = null;
+    for (const o of outs) {
+      if (!o) continue;
+      const r = (decodeFunctionResult({ abi: MC_ABI, functionName: "aggregate3", data: o as Hex }) as unknown as R[])[0];
+      const n = dec<bigint>("getBlockNumber", r);
+      if (n !== null && (best === null || n < best)) best = n;
+    }
+    return best;
+  })();
+  if (head === null || head <= AAVE_PIN_LAG_BLOCKS) return rpcDown;
+  tag = `0x${(head - AAVE_PIN_LAG_BLOCKS).toString(16)}`;
 
   // Round 1: reserve count, liquidation config, block.
   const r1 = await multicall(deps, [{ target: SPOKE, fn: "getReserveCount" }, { target: SPOKE, fn: "getLiquidationConfig" }, { target: MULTICALL3, fn: "getBlockNumber" }, { target: MULTICALL3, fn: "getCurrentBlockTimestamp" }]);
-  if (!r1) return rpcDown;
+  if (!r1) return fail();
   const count = dec<bigint>("getReserveCount", r1[0]);
   if (count === null || count <= 0n || count > 64n) return bad("reserve count");
   const liq = dec<{ targetHealthFactor: bigint; healthFactorForMaxBonus: bigint; liquidationBonusFactor: number }>("getLiquidationConfig", r1[1]);
@@ -292,7 +329,7 @@ export async function readCollateralData(input: Input, deps: Deps = defaultDeps(
 
   // Round 2: reserves.
   const r2 = await multicall(deps, ids.map((i) => ({ target: SPOKE, fn: "getReserve" as const, args: [i] })));
-  if (!r2) return rpcDown;
+  if (!r2) return fail();
   const reserves = r2.map((r) => dec<ReserveS>("getReserve", r));
   const bySym = new Map<string, { id: bigint; r: ReserveS }>();
   reserves.forEach((r, i) => {
@@ -330,7 +367,7 @@ export async function readCollateralData(input: Input, deps: Deps = defaultDeps(
     { target: ORACLE, fn: "decimals" },
   );
   const r3 = await multicall(deps, calls);
-  if (!r3) return rpcDown;
+  if (!r3) return fail();
   type Cfg = { paused: boolean; frozen: boolean; borrowable: boolean };
   type Dyn = { collateralFactor: number; maxLiquidationBonus: number; liquidationFee: number };
   type SpokeCfg = { addCap: number; drawCap: number; active: boolean; halted: boolean };
@@ -368,7 +405,7 @@ export async function readCollateralData(input: Input, deps: Deps = defaultDeps(
   // Round 4: feed timestamps (pinned feeds, confirmed above).
   const feeds = wanted.map((s) => rows.get(s)!.src);
   const r4 = feeds.some(Boolean) ? await multicall(deps, feeds.map((f) => ({ target: (f ?? MULTICALL3) as Hex, fn: "latestRoundData" as const }))) : [];
-  if (r4 === null) return rpcDown;
+  if (r4 === null) return fail();
 
   const nowMs = deps.now();
   const session = feedSession(nowMs);
