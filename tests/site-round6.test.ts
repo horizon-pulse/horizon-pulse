@@ -46,7 +46,8 @@ describe("site round 6", () => {
     vi.resetModules();
     const h = await html();
     vi.doUnmock("@/lib/solana-config"); vi.doUnmock("@/lib/polygon-config"); vi.doUnmock("@/lib/xrpl-config"); vi.resetModules();
-    for (const v of [DEFAULT_PAY_TO, SOLANA_PAYTO, XRPL_PAYTO, USDC_POLYGON, RLUSD_MAINNET_ISSUER, "Polygon: pay to", "XRP Ledger: pay to", "same price on all four"]) expect(h).toContain(v);
+    for (const v of [DEFAULT_PAY_TO, SOLANA_PAYTO, XRPL_PAYTO, USDC_POLYGON, RLUSD_MAINNET_ISSUER, "Polygon: pay to", "XRP Ledger: pay to", "Standard routes: same USD list price on every network. The 402 response gives the exact amount for each option."]) expect(h).toContain(v);
+    expect(h).not.toContain("same price on all four");
     expect(h).not.toContain("same price on both");
   });
 

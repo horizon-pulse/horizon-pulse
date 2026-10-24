@@ -332,7 +332,7 @@ export default function HomePage() {
                     </>
                   ) : null}
                   <span className="k">Settlement</span>
-                  <span>x402 <code>exact</code>, same price on all four. Coinbase CDP facilitator on Base and Polygon, PayAI on Solana; XRP Ledger payments are verified by us on the validated ledger</span>
+                  <span>x402 <code>exact</code>. Standard routes: same USD list price on every network. The 402 response gives the exact amount for each option. Coinbase CDP facilitator on Base and Polygon, PayAI on Solana; XRP Ledger payments are verified by us on the validated ledger</span>
                   <span className="k">Balance</span>
                   <span>Base payTo live on <Link href="/status">/status</Link></span>
                 </div>
