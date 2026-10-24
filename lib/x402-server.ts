@@ -72,7 +72,8 @@ import { exampleRecordedAt, OUTPUT_EXAMPLES } from "./route-examples";
 import { GROCERY_INGREDIENT_OUTPUT_EXAMPLE, GROCERY_INGREDIENT_POST_OUTPUT_EXAMPLE } from "./grocery-ingredient-example";
 import { getSolanaRailConfig } from "./solana-config";
 import { handleSolanaPayment, isSolanaPaymentRequest, solanaSlotBreakerOpen, withSolanaAccept } from "./solana-rail";
-import { baseRail, runOnPaidRail } from "./paid-rail";
+import { baseRail, baseRailFor, runOnPaidRail, runOnPaidRailFor } from "./paid-rail";
+import { eurcEnabled, eurcNetworkOk, eurcRequirement, eurcRouteAccept, usdPriceToAtomic } from "./eurc-config";
 import { getXrplRailConfig } from "./xrpl-config";
 import { handleXrplPayment, isXrplPaymentRequest, withXrplAccept, withXrplAcceptIfWarm } from "./xrpl-rail";
 import { getPolygonRailConfig } from "./polygon-config";
@@ -1233,6 +1234,41 @@ export function paymentRequiredResponse(opts: {
 }
 
 /**
+ * EURC on Base (flag on only): a copy of `routes` where every route's accepts
+ * gains ONE EURC entry after the existing ones. Never mutates the input (GET and
+ * HEAD share config objects). The USD amount comes from the route's own first
+ * USD price ("$0.01"), else the handler's maxAmountRequired. Callers check
+ * eurcEnabled() first; this function itself does not read the flag.
+ */
+export function withEurcRoutes(routes: RoutesConfig, fallbackUsdAtomic: string): RoutesConfig {
+  const out: RoutesConfig = {};
+  for (const [key, config] of Object.entries(routes)) {
+    const list = Array.isArray(config.accepts) ? config.accepts : [config.accepts];
+    const usdAtomic = usdPriceToAtomic(list[0]?.price) ?? fallbackUsdAtomic;
+    out[key] = { ...config, accepts: [...list, eurcRouteAccept(usdAtomic) as (typeof list)[number]] };
+  }
+  return out;
+}
+
+/** Local (no CDP) 402 with the EURC entry appended after Base USDC. Flag on only. */
+function eurcLocalPaymentRequiredResponse(opts: {
+  maxAmountRequired: string;
+  resource: string;
+  description: string;
+}): NextResponse {
+  const base = buildPaymentRequirements(opts);
+  const paymentRequired = { ...base, accepts: [...base.accepts, eurcRequirement(opts.maxAmountRequired)] };
+  return NextResponse.json(paymentRequired, {
+    status: 402,
+    headers: {
+      ...CORS_HEADERS,
+      "Cache-Control": "no-store",
+      "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired as Parameters<typeof encodePaymentRequiredHeader>[0]),
+    },
+  });
+}
+
+/**
  * HTTP 503 when the CDP facilitator sync still fails after the retries above.
  * Replaces the library's generic 500: nothing was verified or settled, no
  * challenge is served, and the client is told to retry shortly.
@@ -1335,6 +1371,10 @@ export function createX402GetHandler(
   },
 ): AppRouteHandler {
   let paidHandler: AppRouteHandler | null = null;
+  // EURC on Base (lib/eurc-config.ts): a SEPARATE cached handler built from a
+  // copy of `routes` with one EURC accept appended. Flag off -> never built,
+  // `paidHandler` above is the only one, exactly as on main.
+  let paidHandlerEurc: AppRouteHandler | null = null;
   warmFacilitator();
 
   /** Shared facilitator sync first; on failure a 503 instead of withX402's 500. */
@@ -1350,6 +1390,19 @@ export function createX402GetHandler(
   }
 
   function getPaidHandler(): AppRouteHandler {
+    if (eurcEnabled() && eurcNetworkOk()) {
+      // Same CDP server; the rail (and `priced` block) follows the asset the
+      // payer chose: EURC payload -> EURC rail, anything else -> Base USDC.
+      paidHandlerEurc ??= withX402(
+        runOnPaidRailFor(baseRailFor, routeHandler),
+        withEurcRoutes(routes, paymentOpts.maxAmountRequired),
+        getResourceServer(),
+        undefined,
+        undefined,
+        true,
+      );
+      return paidHandlerEurc;
+    }
     if (!paidHandler) {
       paidHandler = withX402(
         // The Base (CDP) server only verifies/settles Base USDC: the handler's
@@ -1369,6 +1422,8 @@ export function createX402GetHandler(
   async function baseChallenge(req: NextRequest, cdpReady: boolean): Promise<NextResponse> {
     return cdpReady
       ? await runPaidHandler(asJsonRequest(req))
+      : eurcEnabled() && eurcNetworkOk()
+      ? eurcLocalPaymentRequiredResponse(paymentOpts)
       : paymentRequiredResponse(paymentOpts);
   }
 
