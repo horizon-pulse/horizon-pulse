@@ -26,6 +26,8 @@ import {
   resetPremiumNoncesForTests, setPremiumRpcForTests, TRANSFER_WITH_AUTHORIZATION_TYPES, USDC_BASE_DOMAIN,
 } from "@/lib/premium/payment";
 import { setParallelForTests } from "@/lib/premium/parallel";
+import { EURC_BASE_DOMAIN } from "@/lib/premium/payment";
+import { EURC_BASE, eurcAtomicFromUsdAtomic } from "@/lib/eurc-config";
 import { BUYER_TERMS, WATCH_TERMS, TECHNICAL_NOTES, RECONCILE_RETENTION_S, PRIVACY_PREMIUM_ADDITION, PRIVACY_PREMIUM_REPLACEMENT, PRIVACY_PREMIUM_REPLACEMENT_WITH_FEEDBACK } from "@/lib/premium/copy";
 import { CAP_EXEMPT_OUTCOMES, recordReconcile, RECONCILE_WRITE_CAP_PER_DAY, reconcileWriteStats, flushReconcileForTests, setReconcileForTests, storedFingerprint, type ReconcileLine } from "@/lib/premium/reconcile";
 import { MemoryPremiumStore, premiumPrefix, setPremiumStoreForTests, UpstashPremiumStore, type PremiumStore } from "@/lib/premium/store";
@@ -1268,5 +1270,35 @@ describe("delta 7: Sentinel hardened-brief findings", () => {
     expect(((await r.json()) as any).message).toBe("Nothing was charged for this request.");
     expect(parallelCalls.length).toBe(0);
     expect(declines()).toBe(0);
+  });
+});
+
+describe("EURC brief redeem binding at handler level (Sentinel LOW-1 follow-up)", () => {
+  async function epay(amount: string, n: string) {
+    const auth = { from: FROM, to: PAYTO, value: amount, validAfter: "0", validBefore: String(Math.floor(now / 1000) + 1800), nonce: n };
+    const signature = await ACCOUNT.signTypedData({ domain: EURC_BASE_DOMAIN, types: TRANSFER_WITH_AUTHORIZATION_TYPES, primaryType: "TransferWithAuthorization", message: { from: FROM, to: PAYTO, value: BigInt(amount), validAfter: 0n, validBefore: BigInt(auth.validBefore), nonce: n as `0x${string}` } });
+    return encodePaymentSignatureHeader({ x402Version: 2, accepted: { scheme: "exact", network: "eip155:8453", amount, asset: EURC_BASE, payTo: PAYTO, maxTimeoutSeconds: 300, extra: { name: "EURC", version: "2" } }, payload: { signature, authorization: auth } } as never);
+  }
+  it("EURC paid, settle timeout, then flag OFF: redeem with proof -> 200 + paid EURC; tampered amount -> 402", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-10-24T14:00:00Z"));
+    on({ HP_EURC_ENABLED: "true" });
+    const amt = eurcAtomicFromUsdAtomic("1000000"); const n = nonce();
+    settleBehaviour = () => new Promise((_r, rej) => rej(Object.assign(new Error("timed out"), { name: "TimeoutError" })));
+    const h = await epay(amt, n);
+    const first = await call("brief", "q=eurc%20redeem", { "payment-signature": h });
+    const fj = (await first.json()) as any;
+    expect([502, 504]).toContain(first.status);
+    const claim = JSON.parse([...store.kv.entries()].find(([k]) => k.startsWith("claim:"))![1].v);
+    expect(claim.pa).toBe(EURC_BASE.toLowerCase()); expect(claim.pv).toBe(amt);
+    vi.stubEnv("HP_EURC_ENABLED", "false");
+    const proof = await ACCOUNT.signMessage({ message: fj.redeem_message });
+    rpcAnswer = "used"; logsAnswer = [{ topics: [AUTH_USED_TOPIC] }];
+    const bad = await call("brief", "q=eurc%20redeem", { "payment-signature": await epay("902351", n), [PAYER_PROOF_HEADER]: proof });
+    expect(bad.status).toBe(402);
+    const ok = await call("brief", "q=eurc%20redeem", { "payment-signature": h, [PAYER_PROOF_HEADER]: proof });
+    const oj = (await ok.json()) as any;
+    expect(ok.status).toBe(200);
+    expect(oj.paid).toMatchObject({ asset: EURC_BASE, amount: amt, currency: "EURC" });
+    vi.useRealTimers();
   });
 });

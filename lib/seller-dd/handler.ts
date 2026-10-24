@@ -108,7 +108,8 @@ function sellerDomainOf(resource: string): string | null {
 
 export async function sellerDdHandler(req: NextRequest): Promise<NextResponse> {
   if (!sellerDdEnabled()) return notFound();
-  if (req.method === "OPTIONS") return new NextResponse(null, { status: 204, headers: CORS });
+  // OPTIONS: 200 + the same PaymentRequired as the unpaid GET (USDC, plus EURC while premium EURC is on), like the 29 standard routes
+  if (req.method === "OPTIONS") return challenge(undefined, 200);
   if (req.method === "GET") return challenge(); // unpaid probe / discovery: 402 only, nothing runs
   if (req.method !== "POST") return NextResponse.json({ error: "method_not_allowed", notice: DD_NOTICE }, { status: 405, headers: { ...CORS, Allow: "POST, GET, OPTIONS" } });
 
