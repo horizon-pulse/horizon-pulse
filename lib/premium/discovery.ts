@@ -18,7 +18,7 @@ export function premiumWellKnownBlock(env: Record<string, string | undefined> = 
   const tiers = listedTiers(env);
   if (tiers.length === 0) return null;
   return {
-    note: "Premium tiers are an exception to 'same price on every network': Base USDC only (exact, eip155:8453), one URL and one price per tier, not available over MCP.",
+    note: "Premium tiers are an exception to 'same price on every network': Base only (exact, eip155:8453), in USDC, or USDC or EURC for the $1 verified brief and the seller due-diligence check; eURC prices are converted from our USD list prices. One URL and one price per tier, not available over MCP.",
     networks: [BASE_CAIP2],
     asset: USDC_BASE,
     payTo: DEFAULT_PAY_TO,
@@ -40,9 +40,9 @@ export function premiumSkillSection(env: Record<string, string | undefined> = pr
   if (sellerDdEnabled(env)) lines.push(`- \`POST ${DD_PATH}\` with JSON \`{"resource": "<https x402 URL>", "expected_payTo": "<optional EVM address>"}\` — $${DD_PRICE_USD} (sync). ${DD_DESCRIPTION}`);
   return [
     "",
-    "## Premium tiers (Base USDC only)",
+    "## Premium tiers (Base only)",
     "",
-    "Each tier has its own URL and one price. Pay only on Base (eip155:8453, USDC, payTo " + DEFAULT_PAY_TO + "); other networks are refused with `rail_unavailable` before payment. The tier is part of the path only; a bare path or a tier query parameter returns 400. Not available over MCP.",
+    "Each tier has its own URL and one price. Pay only on Base (eip155:8453, USDC, or USDC or EURC for the $1 verified brief and the seller due-diligence check; EURC prices are converted from our USD list prices. payTo " + DEFAULT_PAY_TO + "); other networks are refused with `rail_unavailable` before payment. The tier is part of the path only; a bare path or a tier query parameter returns 400. Not available over MCP.",
     "",
     ...lines,
     "",

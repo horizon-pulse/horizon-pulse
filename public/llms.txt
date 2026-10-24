@@ -20,7 +20,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 ## Live paid routes
 
-30 paid routes: the 29 in this table (same price on Base, Solana, Polygon and the XRP Ledger), plus the $1 verified brief (Base USDC only; see "Verified brief" below).
+30 paid routes: the 29 in this table (same price on Base, Solana, Polygon and the XRP Ledger), plus the $1 verified brief (USDC or EURC on Base only; see "Verified brief" below).
 
 | Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |
 | --- | --- | --- | --- | --- |
@@ -54,13 +54,13 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 | GET | /api/name/resolve?name=…\|address=0x… | $0.002 | 2000 | ENS and Basenames, on-chain: name to address (resolver and registry shown), or address to ENS and Basename primary names, each checked forward (`verified`). Off-chain/wildcard (CCIP-Read) names are not followed |
 | GET/POST | /api/batch | $0.01 | 10000 | Up to 10 chain checks for one payment: POST JSON `{items:[{route, params}]}` (or GET `items=` the same JSON array); route one of balance, gas, tx-status, token/meta, chain/head, name/resolve, with the same query params the single route takes. Returns `results` [{index, route, status, ok, body}] in request order, `count`, `okCount`. One charge when at least one item succeeds |
 
-## Verified brief ($1, Base USDC only)
+## Verified brief ($1, USDC or EURC on Base only)
 
 | Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |
 | --- | --- | --- | --- | --- |
 | GET | /api/research/report/brief?q=… | $1 | 1000000 | Verified brief, three question types only: Base or Ethereum gas (on-chain read), USDC supply on Ethereum and Base (on-chain totalSupply), or an x402 spec fact. Charged only if at least 2 claims are confirmed in two sources as defined by the contract (two independent nodes, or two separate specification documents); otherwise a 422, unpaid. |
 
-- Paid only in USDC on Base (`exact`, `eip155:8453`, payTo `0x5b32c973596078a967562ca652761404f19be0e9`); other networks are refused before payment. The research runs first and the payment settles only if the brief passes; otherwise 422 and nothing is charged. Out-of-scope questions get 422 before any payment.
+- Paid only in USDC or EURC on Base (`exact`, `eip155:8453`, payTo `0x5b32c973596078a967562ca652761404f19be0e9`); other networks are refused before payment. EURC prices are converted from our USD list prices. The research runs first and the payment settles only if the brief passes; otherwise 422 and nothing is charged. Out-of-scope questions get 422 before any payment.
 - Contract: https://horizonpulse.dev/contracts/brief-verified. Terms: https://horizonpulse.dev/premium-terms. Unpaid sample: `/api/demo/brief-verified`.
 - Optional `type=base_gas|eth_gas|usdc_supply|x402_spec` skips phrase matching (out-of-scope refusals still apply). Claims per type: gas 2, USDC supply 2, x402 spec facts 2-8.
 - Not payable over MCP: the hosted MCP tool `verified_brief_quote` returns only the unpaid 402 (payment instructions); it never runs the brief or pays. Pay it over HTTP.

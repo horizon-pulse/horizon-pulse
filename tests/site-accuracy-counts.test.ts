@@ -64,7 +64,7 @@ describe("site counts derive from the catalog (Seller DD live)", () => {
     expect(t).toContain("29 of 31 paid routes have a free demo twin (none for /api/batch or /api/seller-dd/single)");
     expect(t).toContain("URLs in /.well-known/x402 · 6 accept POST");
     expect(t).toContain("USDC, exact amount in the 402 · premium $1 and $5");
-    expect(t).toContain("Premium (Base USDC only)");
+    expect(t).toContain("Premium (USDC or EURC on Base only)");
     expect(t).toContain(DD_DESCRIPTION);
     expect(t).toContain("/api/money-market-rates");
     expect(t).not.toMatch(/\b30 paid|\b30 routes|Thirty routes|29 of 30|5 also accept/);
@@ -93,7 +93,7 @@ describe("site counts derive from the catalog (Seller DD live)", () => {
     const { premiumSkillSection } = await import("@/lib/premium/discovery");
     const md = buildSkillMarkdown() + premiumSkillSection();
     expect(md).toContain("31 paid routes. 29 of them cost $0.002 to $0.04");
-    expect(md).toContain("the $5 seller due-diligence check (`POST /api/seller-dd/single`, Base USDC only");
+    expect(md).toContain("the $5 seller due-diligence check (`POST /api/seller-dd/single`, USDC or EURC on Base only");
     expect(md).toContain("- `POST /api/seller-dd/single`");
     expect(md).toContain("/api/money-market-rates`: FREE route");
     for (const x of [a, d, md]) expect(x).not.toMatch(/\bxai\b|grok/i);

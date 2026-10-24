@@ -44,8 +44,8 @@ export function sellerDdOpenApiPath() {
     post: {
       operationId: "postSellerDdSingle",
       tags: ["Seller due-diligence"],
-      summary: `Seller due-diligence for one x402 endpoint (${PRICE}, Base USDC only)`,
-      description: `${DD_DESCRIPTION}\n\nPrice: ${PRICE} USDC (${DD_AMOUNT} atomic), Base USDC only: x402 v2 \`exact\` on Base (${BASE_CAIP2}). ${DD_PASS_NOTE} ${DD_NOTICE} Terms: ${TERMS_URL}. ${DD_DISPUTE_TERM} ${DD_RETENTION_TERM}`,
+      summary: `Seller due-diligence for one x402 endpoint (${PRICE}, USDC or EURC on Base only)`,
+      description: `${DD_DESCRIPTION}\n\nPrice: ${PRICE} USDC (${DD_AMOUNT} atomic), USDC or EURC on Base only: x402 v2 \`exact\` on Base (${BASE_CAIP2}). EURC prices are converted from our USD list prices. ${DD_PASS_NOTE} ${DD_NOTICE} Terms: ${TERMS_URL}. ${DD_DISPUTE_TERM} ${DD_RETENTION_TERM}`,
       "x-premium-payment-info": {
         protocol: "x402",
         x402Version: 2,
@@ -100,14 +100,14 @@ export function openApiWithSellerDd<T extends OpenApiDoc>(doc: T, env: Env = pro
 
 export function llmsSellerDdSection(): string {
   return [
-    `## Seller due-diligence (${PRICE}, Base USDC only)`,
+    `## Seller due-diligence (${PRICE}, USDC or EURC on Base only)`,
     "",
     "| Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |",
     "| --- | --- | --- | --- | --- |",
     `| POST | ${DD_PATH} | ${PRICE} | ${DD_AMOUNT} | ${DD_DESCRIPTION} |`,
     "",
     `- Body: JSON \`{"resource": "<https x402 URL>", "expected_payTo": "<optional EVM address>"}\`. GET returns the unpaid 402 only.`,
-    `- Paid only in USDC on Base (\`exact\`, \`${BASE_CAIP2}\`, payTo \`${DEFAULT_PAY_TO}\`).`,
+    `- Paid only in USDC or EURC on Base (\`exact\`, \`${BASE_CAIP2}\`, payTo \`${DEFAULT_PAY_TO}\`). EURC prices are converted from our USD list prices.`,
     `- ${DD_PASS_NOTE}`,
     `- ${DD_NOTICE}`,
     `- Terms: ${TERMS_URL}. ${DD_DISPUTE_TERM} ${DD_RETENTION_TERM}`,
@@ -128,7 +128,7 @@ const STATIC_COUNT_LINE_RE = /^\d+ paid routes: the \d+ in this table[^\n]*$/m;
 /** llms.txt with the count line replaced and the seller-dd section inserted before "## Input bounds" (flag on); flag off -> unchanged. */
 export function llmsWithSellerDd(original: string, env: Env = process.env): string {
   if (!sellerDdEnabled(env)) return original;
-  original = original.replace(STATIC_COUNT_LINE_RE, `${sellerDdCountLine()} (the ${LIVE_PAID_ROUTES.length} in this table have the same price on Base, Solana, Polygon and the XRP Ledger; the brief and the seller due-diligence check are Base USDC only).`);
+  original = original.replace(STATIC_COUNT_LINE_RE, `${sellerDdCountLine()} (the ${LIVE_PAID_ROUTES.length} in this table have the same price on Base, Solana, Polygon and the XRP Ledger; the brief and the seller due-diligence check are USDC or EURC on Base only).`);
   const section = llmsSellerDdSection();
   const marker = "## Input bounds";
   const i = original.indexOf(marker);
