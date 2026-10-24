@@ -55,7 +55,7 @@ export default function HomePage() {
             </h1>
             <p className="hp-sub">
               {s.paidRoutes} paid services for market data, onchain checks, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
-              {s.minPrice}–{s.maxPrice} per call in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, and gets JSON back.
+              {s.minPrice}–{s.maxPrice} per call in USDC on Base, Solana or Polygon, {pay.eurc ? "EURC on Base, " : ""}or RLUSD on the XRP Ledger, and gets JSON back.
               {s.premium.length === 1 ? <> Plus a {s.premium[0].priceUsd} <a href={s.premium[0].contract ?? "#catalog"}>{s.premium[0].label}</a> ({s.premium[0].rail}). EURC is offered only when it is listed in the 402 response.</> : null}
               {s.premium.length > 1 ? (
                 <>
@@ -141,7 +141,7 @@ export default function HomePage() {
                 {WORDS[s.paidRoutes] ?? s.paidRoutes} routes. <span>One protocol.</span>
               </h2>
               <p className="hp-lead">
-                Every route works the same way: request, get a 402, pay in USDC, get JSON. {s.freeSamples} of {s.paidRoutes} have a free twin at{" "}
+                Every route works the same way: request, get a 402, pay per call, get JSON. {s.freeSamples} of {s.paidRoutes} have a free twin at{" "}
                 <code>/api/demo/&lt;route&gt;</code> that runs the route on a fixed input (discourse/split: a stored recording, not re-run).
               </p>
             </div>
@@ -243,7 +243,7 @@ export default function HomePage() {
                 <Ico d={ICONS[402]} />
                 <h3>Read the 402</h3>
                 <p>
-                  The <code>PAYMENT-REQUIRED</code> header lists one option per network (Base, Solana, Polygon, XRP Ledger), each with the exact amount (USDC, or RLUSD on the XRP Ledger) and payTo.
+                  The <code>PAYMENT-REQUIRED</code> header lists one option per network (Base, Solana, Polygon, XRP Ledger), each with the exact amount ({pay.eurc ? "USDC, EURC on Base, or RLUSD on the XRP Ledger" : "USDC, or RLUSD on the XRP Ledger"}) and payTo.
                 </p>
               </div>
               <div className="hp-tile" data-reveal>
