@@ -18,6 +18,7 @@ import * as injRoute from "@/app/api/injection/scan/route.inj";
 import * as optOutRoute from "@/app/web-checks/opt-out/route.audit";
 import * as tgRoute from "@/app/api/trade-gate/route.tg";
 import * as aaveRoute from "@/app/api/aave-equities/collateral-data/route.aave";
+import * as rpRoute from "@/app/api/repo-pressure/route.rp";
 
 const ROOT = path.resolve(__dirname, "..");
 const ROUTES = [
@@ -27,6 +28,7 @@ const ROUTES = [
   { name: "/api/injection/scan", mod: injRoute as Record<string, unknown>, url: "https://horizonpulse.dev/api/injection/scan?text=hi" },
   { name: "/api/trade-gate", mod: tgRoute as Record<string, unknown>, url: "https://horizonpulse.dev/api/trade-gate" },
   { name: "/api/aave-equities/collateral-data", mod: aaveRoute as Record<string, unknown>, url: "https://horizonpulse.dev/api/aave-equities/collateral-data?token=NVDAc" },
+  { name: "/api/repo-pressure", mod: rpRoute as Record<string, unknown>, url: "https://horizonpulse.dev/api/repo-pressure" },
   { name: "/web-checks/opt-out", mod: optOutRoute as Record<string, unknown>, url: "https://horizonpulse.dev/web-checks/opt-out?domain=example.com" },
 ];
 const LEAKY = ["allow", "access-control-allow-methods", "payment-required", "x-hp-receipt-id", "link"];
@@ -40,7 +42,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("line 1: dark route files are not routes at all unless their flag is 'true' at build (pageExtensions)", () => {
   it("flags unset: pageExtensions are exactly Next's defaults, so no dark file is a route", () => {
     expect(darkPageExtensions({})).toEqual([...BASE_PAGE_EXTENSIONS]);
-    expect(DARK_PATHS.map((d) => d.path).sort()).toEqual(["/api/aave-equities/collateral-data", "/api/audit/security", "/api/injection/scan", "/api/package/check", "/api/trade-gate", "/web-checks", "/web-checks/opt-out"]);
+    expect(DARK_PATHS.map((d) => d.path).sort()).toEqual(["/api/aave-equities/collateral-data", "/api/audit/security", "/api/injection/scan", "/api/package/check", "/api/trade-gate", "/web-checks", "/web-checks/opt-out", "/api/repo-pressure"].sort());
   });
   it("every dark file exists with its flag extension, and no plain route.ts / page.tsx is left beside it", () => {
     for (const d of DARK_PATHS) {
@@ -61,13 +63,13 @@ describe("line 1: dark route files are not routes at all unless their flag is 't
   it("a flag exactly 'true' adds only its own extensions; anything else keeps them dark", () => {
     expect(darkPageExtensions({ HP_PACKAGE_CHECK_ENABLED: "true" })).toEqual([...BASE_PAGE_EXTENSIONS, "pkg.tsx", "pkg.ts"]);
     expect(darkPageExtensions({ HP_AUDIT_SECURITY_ENABLED: "true" })).toEqual([...BASE_PAGE_EXTENSIONS, "audit.tsx", "audit.ts"]);
-    for (const v of ["1", "TRUE", "yes", " true", ""]) expect(darkPageExtensions({ HP_PACKAGE_CHECK_ENABLED: v, HP_AUDIT_SECURITY_ENABLED: v, HP_INJECTION_SCAN_ENABLED: v, HP_TRADE_GATE_ENABLED: v, HP_AAVE_EQUITIES_ENABLED: v })).toEqual([...BASE_PAGE_EXTENSIONS]);
+    for (const v of ["1", "TRUE", "yes", " true", ""]) expect(darkPageExtensions({ HP_PACKAGE_CHECK_ENABLED: v, HP_AUDIT_SECURITY_ENABLED: v, HP_INJECTION_SCAN_ENABLED: v, HP_TRADE_GATE_ENABLED: v, HP_AAVE_EQUITIES_ENABLED: v, HP_REPO_PRESSURE_ENABLED: v })).toEqual([...BASE_PAGE_EXTENSIONS]);
     expect(darkPageExtensions({ HP_PACKAGE_CHECK_ENABLED: "true", HP_AUDIT_SECURITY_ENABLED: "true", HP_INJECTION_SCAN_ENABLED: "true" })).toHaveLength(10);
   });
   it("no other file in app/ uses a dark extension (so nothing else turns on with a flag)", () => {
     const { execSync } = require("node:child_process") as typeof import("node:child_process");
     const files = execSync("git ls-files app", { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
-    const dark = files.filter((f) => /\.(audit|pkg|inj|tg|aave)\.tsx?$/.test(f)).sort();
+    const dark = files.filter((f) => /\.(audit|pkg|inj|tg|aave|rp)\.tsx?$/.test(f)).sort();
     expect(dark).toEqual(DARK_PATHS.map((d) => d.file).sort());
   });
   it("next.config.ts uses darkPageExtensions() and has no dark rewrite (no x-nextjs-rewritten-path under RSC)", async () => {
@@ -117,6 +119,7 @@ describe("line 2: route handlers, flags off - every method exported, a bare 404,
     vi.stubEnv("HP_INJECTION_SCAN_ENABLED", "true");
     vi.stubEnv("HP_TRADE_GATE_ENABLED", "true");
     vi.stubEnv("HP_AAVE_EQUITIES_ENABLED", "true");
+    vi.stubEnv("HP_REPO_PRESSURE_ENABLED", "true");
     for (const r of ROUTES.filter((x) => !x.name.includes("deep"))) {
       for (const m of ["PUT", "PATCH", "DELETE"]) {
         const res = await call(r.mod, m, r.url);
