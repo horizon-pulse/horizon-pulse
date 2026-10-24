@@ -7,6 +7,9 @@
  * 2026-10-24 (branch feat/eurc-premium-dd, on c0442b1): UPDATE_GOLDEN=1 after copy-only edits (Odin 9:51 AM ET):
  *   'Base USDC only' -> 'USDC or EURC on Base only' + Counsel's line in the premium/Seller DD/brief discovery text
  *   (well-known premium note, skill.md, openapi.json brief + Seller DD, llms.txt, MCP brief-quote description).
+ * 2026-10-24 (branch docs/eurc-llms, on main c0442b1): UPDATE_GOLDEN=1; ONLY the discovery sha256 of public/llms.txt
+ *   changed (EURC on Base rail line for the 29 standard routes + two scope phrases). Every 402 / accepts byte unchanged.
+ * 2026-10-24 (merge origin/main 374506e into feat/eurc-premium-dd): UPDATE_GOLDEN=1; llms.txt sha only (Counsel conflict line + E3 402 line).
  * 2026-10-21 (branch feat/feedback-listing, on main 6292d39): UPDATE_GOLDEN=1; ONLY discovery sha256 of public/openapi.json
  *   and public/llms.txt changed (free POST /api/feedback listed). golden.cdp and golden.local byte-identical (checked).
  * 2026-10-21 (branch fix/site-accuracy, on main 73162cf): regenerated with UPDATE_GOLDEN=1. Only

@@ -59,7 +59,7 @@ describe("site counts derive from the catalog (Seller DD live)", () => {
     const s = catalogStats();
     const t = text(await render("@/app/page"));
     expect(t).toContain(`${s.paidRoutes} paid services for market data`);
-    expect(t).toContain("Plus two premium checks in Base USDC: a $1 verified brief and a $5 seller due-diligence check.");
+    expect(t).toContain("Plus two premium checks on Base, in USDC or EURC: a $1 verified brief and a $5 seller due-diligence check. EURC is offered only when it is listed in the 402 response.");
     expect(t).toContain("web and everyday 10 · premium 2");
     expect(t).toContain("29 of 31 paid routes have a free demo twin (none for /api/batch or /api/seller-dd/single)");
     expect(t).toContain("URLs in /.well-known/x402 · 6 accept POST");
@@ -85,7 +85,7 @@ describe("site counts derive from the catalog (Seller DD live)", () => {
     await on();
     const a = text(await render("@/app/agents/page"));
     expect(a).toContain("31 paid routes.");
-    expect(a).toContain("the $1 verified brief and the $5 seller due-diligence check: Base USDC only");
+    expect(a).toContain("the $1 verified brief and the $5 seller due-diligence check: USDC or EURC on Base only). EURC is offered only when it is listed in the 402 response.");
     const d = text(await render("@/app/docs/page"));
     expect(d).toContain("31 paid routes and 36 operations");
     expect(d).toContain("POST /api/seller-dd/single");
