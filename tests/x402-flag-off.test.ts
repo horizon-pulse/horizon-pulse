@@ -4,6 +4,8 @@
  * the pinned payout address), every 402 / OPTIONS / discovery surface must be
  * byte-identical to origin/main.
  *
+ * 2026-10-24 (branch docs/eurc-llms, on main c0442b1): UPDATE_GOLDEN=1; ONLY the discovery sha256 of public/llms.txt
+ *   changed (EURC on Base rail line for the 29 standard routes + two scope phrases). Every 402 / accepts byte unchanged.
  * 2026-10-21 (branch feat/feedback-listing, on main 6292d39): UPDATE_GOLDEN=1; ONLY discovery sha256 of public/openapi.json
  *   and public/llms.txt changed (free POST /api/feedback listed). golden.cdp and golden.local byte-identical (checked).
  * 2026-10-21 (branch fix/site-accuracy, on main 73162cf): regenerated with UPDATE_GOLDEN=1. Only

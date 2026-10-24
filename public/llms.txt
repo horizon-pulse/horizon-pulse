@@ -1,6 +1,6 @@
 # Horizon Pulse
 
-> Pay-per-call APIs for AI agents, paid in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, with x402 v2: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, an x402 marketplace search and pre-pay quote, and crypto market data. No signup or API key.
+> Pay-per-call APIs for AI agents, paid in USDC on Base, Solana or Polygon, EURC on Base, or RLUSD on the XRP Ledger, with x402 v2: web search, page fetch and extract, screenshots, PDF to text, an HTTP proxy, an x402 marketplace search and pre-pay quote, and crypto market data. No signup or API key.
 
 Contact: horizonpulse.co@proton.me
 
@@ -9,8 +9,9 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 ## Payment (x402 v2)
 
 - Unpaid request → HTTP 402; the payment challenge is in the `PAYMENT-REQUIRED` response header (base64 JSON, x402 v2); the 402 body is empty JSON `{}`
-- Scheme: `exact` (one payment per call). Up to four networks, same USD price on each (USDC with 6 decimals on Base, Solana and Polygon; RLUSD on the XRP Ledger); the challenge's `accepts` lists one entry per network, and you pay exactly one:
+- Scheme: `exact` (one payment per call). Up to four networks, same USD price on each (USDC with 6 decimals on Base, Solana and Polygon; RLUSD on the XRP Ledger); the challenge's `accepts` lists one entry per network (plus, on the 29 standard routes, a second Base entry for EURC), and you pay exactly one:
   - Base: network Base mainnet CAIP-2 `eip155:8453`; asset Base USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`; payTo `0x5b32c973596078a967562ca652761404f19be0e9` (Basename `horizonpulsebase.base.eth`, which resolves to this address; the challenge carries the hex address, so compare that); facilitator Coinbase CDP `https://api.cdp.coinbase.com/platform/v2/x402`
+  - Base EURC (the 29 standard routes in the table below only; not the verified brief): network `eip155:8453`; asset Base EURC `0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42` (6 decimals); payTo `0x5b32c973596078a967562ca652761404f19be0e9` (the same address as Base USDC); `extra: { name: "EURC", version: "2" }` plus the conversion rate and its date; facilitator Coinbase CDP. EURC prices are converted from our USD list prices: the entry's `amount` is the EURC atomic amount (6 decimals) to pay, so read it from the challenge rather than reusing the USDC atomic value. The EURC entry is not always offered; when a challenge has no EURC entry, pay with one of the listed rails.
   - Solana: network Solana mainnet CAIP-2 `solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp`; asset USDC mint `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`; payTo `BjY98A6dS3GGLZdz2zHy8wK7XAwnQgNhCc66mfmBTRPz`; facilitator PayAI `https://facilitator.payai.network` (its fee payer is in the entry's `extra.feePayer`)
   - XRP Ledger: network XRP Ledger mainnet CAIP-2 `xrpl:0`; asset RLUSD (currency `524C555344000000000000000000000000000000`, issuer `rMxCKbEDwqr76QuheSUMdEGf4B9xJ8m5De` in `extra.issuer`); amount is the same USD price as an RLUSD decimal value (for example `0.005`); payTo `r3FbirL83RAB2CwnUdxE5pCohMkuo6LQcf`; payment verified on the validated XRP Ledger
   - Polygon: network Polygon PoS mainnet CAIP-2 `eip155:137`; asset native USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` (not bridged USDC.e `0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174`; never pay USDC.e); payTo `0x5b32c973596078a967562ca652761404f19be0e9` (the same address as Base); `extra: { name: "USD Coin", version: "2" }`; facilitator: Coinbase CDP
@@ -20,7 +21,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 ## Live paid routes
 
-30 paid routes: the 29 in this table (same price on Base, Solana, Polygon and the XRP Ledger), plus the $1 verified brief (Base USDC only; see "Verified brief" below).
+30 paid routes: the 29 in this table (same price on Base, Solana, Polygon and the XRP Ledger; EURC on Base at a price converted from the USD list price), plus the $1 verified brief (Base USDC only; see "Verified brief" below).
 
 | Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |
 | --- | --- | --- | --- | --- |
