@@ -21,7 +21,7 @@ Base URL: https://horizonpulse.dev (the canonical host; pay only here, not any o
 
 ## Live paid routes
 
-30 paid routes: the 29 in this table (same price on Base, Solana, Polygon and the XRP Ledger; EURC on Base at a price converted from the USD list price), plus the $1 verified brief (USDC or EURC on Base only; see "Verified brief" below).
+31 paid routes: the 29 in this table (same price on Base, Solana, Polygon and the XRP Ledger; EURC on Base at a price converted from the USD list price), plus the $1 verified brief (see "Verified brief" below) and the $5 seller due-diligence check, each USDC or EURC on Base only.
 
 | Method | Path | Price (USDC) | Atomic (6 decimals) | Summary |
 | --- | --- | --- | --- | --- |

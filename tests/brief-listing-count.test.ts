@@ -29,8 +29,9 @@ describe("paid-route count includes the live $1 verified brief everywhere", () =
     expect(JSON.stringify(oa)).not.toMatch(/research\/report\/(standard|extended)|xai|grok/i);
     expect(loadSkillRoutes().length).toBe(LIVE_PAID_ROUTES.length); // multi-network table stays 29
   });
-  it("llms.txt: stated 30, lists the brief, says unpaid samples", () => {
-    expect(llms).toContain(`${LIVE_PAID_ROUTES.length + 1} paid routes: the ${LIVE_PAID_ROUTES.length} in this table`);
+  it("llms.txt: stated 31 (29 + brief + $5 Seller DD, matching /.well-known/x402 with both flags on), lists the brief, says unpaid samples", () => {
+    expect(llms).toContain(`${LIVE_PAID_ROUTES.length + 2} paid routes: the ${LIVE_PAID_ROUTES.length} in this table`);
+    expect(llms).toContain("and the $5 seller due-diligence check, each USDC or EURC on Base only.");
     expect(llms).toContain("| GET | /api/research/report/brief?q=… | $1 | 1000000 |");
     expect(llms).toContain("/contracts/brief-verified");
     expect(llms).toContain("/premium-terms");
