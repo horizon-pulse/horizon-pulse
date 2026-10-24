@@ -250,6 +250,10 @@ describe("flag on", () => {
     expect(cfg2.eurcRateFresh(t0 + 14 * day + 1)).toBe(false);
     expect(cfg2.eurcRateFresh(t0 + 30 * day)).toBe(false);
     expect(cfg2.eurcRateFresh(t0, "not-a-date")).toBe(false);
+    // NOTE-A1: a rate date in the future is invalid
+    expect(cfg2.eurcRateFresh(t0 - 1)).toBe(false);
+    expect(cfg2.eurcRateFresh(t0 - day)).toBe(false);
+    expect(cfg2.eurcRateFresh(t0, "2099-01-01")).toBe(false);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toMatch(/older than 14 days/);
     // end to end: flag on but clock past the limit -> GET 402 and OPTIONS are USDC only

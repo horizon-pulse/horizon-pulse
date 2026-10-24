@@ -104,10 +104,10 @@ let staleWarned = false;
 export function eurcRateFresh(now: number = Date.now(), rateDate: string = EURUSD_RATE_DATE): boolean {
   const t = Date.parse(`${rateDate}T00:00:00Z`);
   const ageDays = (now - t) / 86_400_000;
-  const fresh = Number.isFinite(t) && ageDays <= EURC_RATE_MAX_AGE_DAYS;
+  const fresh = Number.isFinite(t) && ageDays >= 0 && ageDays <= EURC_RATE_MAX_AGE_DAYS; // a future rate date is invalid (NOTE-A1)
   if (!fresh && !staleWarned) {
     staleWarned = true;
-    console.warn(`[eurc] rate ${rateDate} is older than ${EURC_RATE_MAX_AGE_DAYS} days; EURC entry dropped (USDC only) until the rate is refreshed`);
+    console.warn(`[eurc] rate ${rateDate} is older than ${EURC_RATE_MAX_AGE_DAYS} days or in the future; EURC entry dropped (USDC only) until the rate is refreshed`);
   }
   return fresh;
 }
