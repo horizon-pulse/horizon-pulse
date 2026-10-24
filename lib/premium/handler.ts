@@ -20,7 +20,8 @@ import { persistAlert } from "@/lib/alert-persist";
 import { CLAIM_TTL_MS } from "./claim";
 import { asyncBreakerOpen, settleAtAccept, currentBlock, newJobId, releaseOpen, reserveOpen, settleBlocked, SETTLE_BLOCK_REASON, SETTLE_BLOCK_S } from "./jobs";
 import { after, NextRequest, NextResponse } from "next/server";
-import { hasCdpCredentials } from "@/lib/config";
+import { BASE_CAIP2, DEFAULT_PAY_TO, hasCdpCredentials } from "@/lib/config";
+import { EURC_BASE } from "@/lib/eurc-config";
 import { requestFingerprint } from "@/lib/request-fingerprint";
 import { claimKey, parseClaim, tryClaim, moveClaim, newOwner, releaseClaim, type Claim, type Held } from "./claim";
 import { legalBlock, BRIEF_DESCRIPTION, R1_DESCRIPTION, R2_DESCRIPTION } from "./copy";
@@ -157,11 +158,27 @@ async function redeemableWithProof(req: NextRequest, x: Tier, d: Decoded): Promi
   const c = parseClaim(await store.get(claimKey(d.from, d.nonce)).catch(() => null));
   return c?.s === "unconfirmed" && typeof c.rc === "string" && c.rc.length > 0;
 }
+/** Sentinel LOW-1: stored pay-time binding of an unconfirmed sync claim (null = not a redeem, or a pre-LOW-1 claim). */
+export async function storedRedeemBinding(x: Tier, d: Decoded): Promise<{ pa: string; pv: string } | null> {
+  if (x.mode !== "sync" || !d.from || !d.nonce || !/^0x[0-9a-fA-F]{40}$/.test(d.from) || !/^0x[0-9a-fA-F]{64}$/.test(d.nonce)) return null;
+  const store = premiumStore();
+  if (!store) return null;
+  const c = parseClaim(await store.get(claimKey(d.from, d.nonce)).catch(() => null));
+  if (!c || c.s !== "unconfirmed" || !c.rc || c.tier !== x.id || typeof c.pa !== "string" || typeof c.pv !== "string") return null;
+  return { pa: c.pa, pv: c.pv };
+}
+export function storedBindingError(d: Decoded, b: { pa: string; pv: string }): string | null {
+  if (d.scheme !== "exact" || d.network !== BASE_CAIP2 || !d.asset || d.asset.toLowerCase() !== b.pa) return "rail_unavailable";
+  if (d.amount !== b.pv || d.value !== b.pv) return "amount_mismatch";
+  if (!d.payTo || !d.to || d.payTo.toLowerCase() !== DEFAULT_PAY_TO.toLowerCase() || d.to.toLowerCase() !== DEFAULT_PAY_TO.toLowerCase()) return "payto_mismatch";
+  return null;
+}
 const inProgress = () => jsonError(503, { error: "payment_in_progress", charged: false, message: "This payment authorization is already being processed." }, { "Retry-After": "5" });
 
-function okResponse(x: Tier, result: unknown, tx: string | null, header: string | null, d?: Decoded) {
-  // paid block reports the PAID requirement (USDC: unchanged shape; EURC: EURC atomic amount + asset)
-  const pr = d ? requirementForPaid(d, x) : null;
+function okResponse(x: Tier, result: unknown, tx: string | null, header: string | null, d?: Decoded, paid?: { pa?: string; pv?: string }) {
+  // paid block reports the PAID requirement (USDC: unchanged shape; EURC: EURC atomic amount + asset); a redeem reports the
+  // asset + amount stored in its claim (Sentinel LOW-1)
+  const pr = paid?.pa && paid.pv ? { asset: paid.pa.toLowerCase() === requirementFor(x).asset.toLowerCase() ? requirementFor(x).asset : EURC_BASE, amount: paid.pv } : d ? requirementForPaid(d, x) : null;
   const paidAsset = pr && pr.asset !== requirementFor(x).asset ? { amount: pr.amount, asset: pr.asset, currency: "EURC" } : { amount: x.amount };
   return NextResponse.json(
     { ...(result as object), paid: { tier: x.id, ...paidAsset, network: "eip155:8453", tx }, ...legalBlock() },
@@ -192,7 +209,7 @@ async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded
     if (x.id === "brief") {
       const cached = await loadPassedBrief(store, held.key, rq, d.from!);
       if (!cached) throw new Error("no_cached_brief");
-      return okResponse(x, { ...cached, redeemed: { reconcile_id: c.rc } }, null, null, d);
+      return okResponse(x, { ...cached, redeemed: { reconcile_id: c.rc } }, null, null, d, c);
     }
     const result = await runResearch(x, input, t0 + SYNC_HARD_LIMIT_S * 1000, undefined, held.key);
     return okResponse(x, { ...(result as object), redeemed: { reconcile_id: c.rc } }, null, null);
@@ -247,9 +264,17 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
 
   const d = decodePayment(header);
   if (!d) return challenge(x, description(x), "invalid_payment");
-  if (!paidRail(d, x)) return challenge(x, description(x), "rail_unavailable");
-  const bind = priceBindingError(d, x);
-  if (bind) return challenge(x, description(x), bind);
+  // Sentinel LOW-1 (10/24): a redeem of a stored unconfirmed sync claim is bound to the asset + amount recorded in the
+  // claim at pay time (as Seller DD binds to its verdict cache), not to today's EURC flag / rate.
+  const stored = await storedRedeemBinding(x, d);
+  if (stored) {
+    const bind = storedBindingError(d, stored);
+    if (bind) return challenge(x, description(x), bind);
+  } else {
+    if (!paidRail(d, x)) return challenge(x, description(x), "rail_unavailable");
+    const bind = priceBindingError(d, x);
+    if (bind) return challenge(x, description(x), bind);
+  }
   const win = windowError(d, Math.floor(clock() / 1000), x.mode === "async" ? ASYNC_MIN_REMAINING_S : SYNC_MIN_REMAINING_S);
   // Odin 10/19: a redeem of an unconfirmed / charged_not_delivered claim happens after the original authorization's window
   // has (nearly) run out. With a payer proof and a redeemable stored claim, skip the window check: redeem() itself checks
@@ -277,7 +302,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
         return jsonError(429, { error: "too_many_open_jobs", charged: false }, { "Retry-After": "300" });
       }
     }
-    const claim: Claim = { s: x.mode === "async" ? "job" : "inflight", o: newOwner(), rq, at: clock(), tier: x.id };
+    const claim: Claim = { s: x.mode === "async" ? "job" : "inflight", o: newOwner(), rq, at: clock(), tier: x.id, pa: (stored?.pa ?? assetContractFor(d)).toLowerCase(), pv: stored?.pv ?? d.value! };
     const got = await tryClaim(store, d.from!, d.nonce!, claim);
     if (!got.ok) {
       const c = got.existing;

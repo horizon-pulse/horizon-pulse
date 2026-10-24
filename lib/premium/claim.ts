@@ -15,7 +15,9 @@ import { randomBytes } from "node:crypto";
 import type { PremiumStore } from "./store";
 
 export type ClaimState = "inflight" | "job" | "settled" | "unconfirmed" | "conflict" | "redeemed" | "declined";
-export type Claim = { s: ClaimState; o: string; rq: string; at: number; rc?: string; job?: string; tier?: string; blk?: number | null };
+export type Claim = { s: ClaimState; o: string; rq: string; at: number; rc?: string; job?: string; tier?: string; blk?: number | null; pa?: string; pv?: string };
+// pa / pv (Sentinel LOW-1, 10/24): the PAID asset contract and atomic value, recorded at claim time after the rail and
+// price checks passed. A redeem is bound to these, never to today's EURC flag or rate.
 
 export const CLAIM_TTL_MS: Record<ClaimState, number> = {
   inflight: 120_000,
