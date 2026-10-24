@@ -73,7 +73,7 @@ import { GROCERY_INGREDIENT_OUTPUT_EXAMPLE, GROCERY_INGREDIENT_POST_OUTPUT_EXAMP
 import { getSolanaRailConfig } from "./solana-config";
 import { handleSolanaPayment, isSolanaPaymentRequest, solanaSlotBreakerOpen, withSolanaAccept } from "./solana-rail";
 import { baseRail, baseRailFor, runOnPaidRail, runOnPaidRailFor } from "./paid-rail";
-import { eurcEnabled, eurcNetworkOk, eurcRequirement, eurcRouteAccept, usdPriceToAtomic } from "./eurc-config";
+import { eurcActive, eurcEnabled, eurcNetworkOk, eurcRequirement, eurcRouteAccept, usdPriceToAtomic } from "./eurc-config";
 import { getXrplRailConfig } from "./xrpl-config";
 import { handleXrplPayment, isXrplPaymentRequest, withXrplAccept, withXrplAcceptIfWarm } from "./xrpl-rail";
 import { getPolygonRailConfig } from "./polygon-config";
@@ -1316,7 +1316,7 @@ export async function discoveryOptionsResponse(opts: {
   // EURC on Base (HP_EURC_ENABLED only): the same EURC entry the GET 402 appends,
   // right after Base USDC. Dark routes opt out (eurc: false). Off -> `base`, unchanged.
   const paymentRequired =
-    opts.eurc !== false && eurcEnabled() && eurcNetworkOk()
+    opts.eurc !== false && eurcActive()
       ? { ...base, accepts: [...base.accepts, eurcRequirement(opts.maxAmountRequired)] }
       : base;
   const res = NextResponse.json(paymentRequired, {
@@ -1376,9 +1376,12 @@ export function createX402GetHandler(
     maxAmountRequired: string;
     resource: string;
     description: string;
+    /** false = never offer EURC (dark routes). */
+    eurc?: boolean;
   },
 ): AppRouteHandler {
   let paidHandler: AppRouteHandler | null = null;
+  const eurcOn = () => paymentOpts.eurc !== false && eurcActive();
   // EURC on Base (lib/eurc-config.ts): a SEPARATE cached handler built from a
   // copy of `routes` with one EURC accept appended. Flag off -> never built,
   // `paidHandler` above is the only one, exactly as on main.
@@ -1398,7 +1401,7 @@ export function createX402GetHandler(
   }
 
   function getPaidHandler(): AppRouteHandler {
-    if (eurcEnabled() && eurcNetworkOk()) {
+    if (eurcOn()) {
       // Same CDP server; the rail (and `priced` block) follows the asset the
       // payer chose: EURC payload -> EURC rail, anything else -> Base USDC.
       paidHandlerEurc ??= withX402(
@@ -1430,7 +1433,7 @@ export function createX402GetHandler(
   async function baseChallenge(req: NextRequest, cdpReady: boolean): Promise<NextResponse> {
     return cdpReady
       ? await runPaidHandler(asJsonRequest(req))
-      : eurcEnabled() && eurcNetworkOk()
+      : eurcOn()
       ? eurcLocalPaymentRequiredResponse(paymentOpts)
       : paymentRequiredResponse(paymentOpts);
   }

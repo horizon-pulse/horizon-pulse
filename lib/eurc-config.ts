@@ -96,9 +96,30 @@ export function eurcExtra() {
   };
 }
 
+/** Max age of EURUSD_RATE_DATE before EURC is dropped (fail closed; USDC still offered). */
+export const EURC_RATE_MAX_AGE_DAYS = 14 as const;
+
+let staleWarned = false;
+/** True while the fixed rate is at most EURC_RATE_MAX_AGE_DAYS old. Logs one warning when stale. */
+export function eurcRateFresh(now: number = Date.now(), rateDate: string = EURUSD_RATE_DATE): boolean {
+  const t = Date.parse(`${rateDate}T00:00:00Z`);
+  const ageDays = (now - t) / 86_400_000;
+  const fresh = Number.isFinite(t) && ageDays <= EURC_RATE_MAX_AGE_DAYS;
+  if (!fresh && !staleWarned) {
+    staleWarned = true;
+    console.warn(`[eurc] rate ${rateDate} is older than ${EURC_RATE_MAX_AGE_DAYS} days; EURC entry dropped (USDC only) until the rate is refreshed`);
+  }
+  return fresh;
+}
+
 /** True when the route config runs on Base mainnet (EURC exists only there). */
 export function eurcNetworkOk(): boolean {
   return getNetworkCaip2() === BASE_CAIP2;
+}
+
+/** Flag exactly "true", Base mainnet, and a fresh rate. Otherwise no EURC anywhere. */
+export function eurcActive(): boolean {
+  return eurcEnabled() && eurcNetworkOk() && eurcRateFresh();
 }
 
 /** Route-config accept (x402 AssetAmount price) for a USD atomic amount. */

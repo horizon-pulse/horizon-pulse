@@ -209,6 +209,74 @@ describe("flag on", () => {
     expect(b.accepts.filter((a: { asset: string }) => a.asset === CIRCLE_EURC_BASE)).toHaveLength(1);
   });
 
+  it("LOW-1: dark routes (Aave equities, Trade Gate, audit) never list EURC, GET or OPTIONS, CDP or local", async () => {
+    vi.stubEnv("HP_EURC_ENABLED", "true");
+    for (const f of ["HP_AAVE_EQUITIES_ENABLED", "HP_TRADE_GATE_ENABLED", "HP_AUDIT_SECURITY_ENABLED"]) vi.stubEnv(f, "true");
+    vi.resetModules();
+    const aave = await import("@/app/api/aave-equities/collateral-data/route.aave");
+    const tg = await import("@/app/api/trade-gate/route.tg");
+    const audit = await import("@/app/api/audit/security/route.audit");
+    const aaveUrl = "https://horizonpulse.dev/api/aave-equities/collateral-data?token=NVDAc";
+    const auditUrl = "https://horizonpulse.dev/api/audit/security?target=example.com";
+    const noEurc = (pr: { accepts: { asset: string }[] }) => {
+      expect(pr.accepts.length).toBeGreaterThan(0);
+      expect(pr.accepts.some((a) => a.asset.toLowerCase() === CIRCLE_EURC_BASE)).toBe(false);
+    };
+    for (const cdp of [true, false]) {
+      vi.stubEnv("CDP_API_KEY_ID", cdp ? CDP_ENV.CDP_API_KEY_ID : "");
+      vi.stubEnv("CDP_API_KEY_SECRET", cdp ? CDP_ENV.CDP_API_KEY_SECRET : "");
+      for (const [mod, url] of [[aave, aaveUrl], [audit, auditUrl]] as const) {
+        const g = await mod.GET(new NextRequest(url, { headers: { accept: "application/json" } }));
+        expect(g.status).toBe(402);
+        noEurc(decodePaymentRequiredHeader(g.headers.get("payment-required")!));
+        const o = await mod.OPTIONS(new NextRequest(url));
+        noEurc(await o.json());
+      }
+      const o = await tg.OPTIONS(new NextRequest("https://horizonpulse.dev/api/trade-gate"));
+      noEurc(await o.json());
+    }
+  });
+
+  it("NOTE-1: stale rate fails closed (no EURC, USDC still offered) and warns once", async () => {
+    const cfg = await import("@/lib/eurc-config");
+    const day = 86_400_000;
+    const t0 = Date.parse(`${cfg.EURUSD_RATE_DATE}T00:00:00Z`);
+    expect(cfg.EURC_RATE_MAX_AGE_DAYS).toBe(14);
+    expect(cfg.eurcRateFresh(t0)).toBe(true);
+    expect(cfg.eurcRateFresh(t0 + 14 * day)).toBe(true);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.resetModules();
+    const cfg2 = await import("@/lib/eurc-config");
+    expect(cfg2.eurcRateFresh(t0 + 14 * day + 1)).toBe(false);
+    expect(cfg2.eurcRateFresh(t0 + 30 * day)).toBe(false);
+    expect(cfg2.eurcRateFresh(t0, "not-a-date")).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0][0])).toMatch(/older than 14 days/);
+    // end to end: flag on but clock past the limit -> GET 402 and OPTIONS are USDC only
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(t0 + 15 * day);
+    try {
+      vi.stubEnv("HP_EURC_ENABLED", "true");
+      vi.resetModules();
+      const mod = await import("@/app/api/gas/route");
+      for (const cdp of [true, false]) {
+        vi.stubEnv("CDP_API_KEY_ID", cdp ? CDP_ENV.CDP_API_KEY_ID : "");
+        vi.stubEnv("CDP_API_KEY_SECRET", cdp ? CDP_ENV.CDP_API_KEY_SECRET : "");
+        const g = await mod.GET(new NextRequest("https://horizonpulse.dev/api/gas", { headers: { accept: "application/json" } }));
+        expect(g.status).toBe(402);
+        const pr = decodePaymentRequiredHeader(g.headers.get("payment-required")!);
+        expect(pr.accepts.some((a) => a.asset.toLowerCase() === CIRCLE_EURC_BASE)).toBe(false);
+        expect(pr.accepts.filter((a) => a.asset === USDC_BASE)).toHaveLength(1);
+      }
+      const o = await (await mod.OPTIONS()).json();
+      expect(o.accepts.some((a: { asset: string }) => a.asset.toLowerCase() === CIRCLE_EURC_BASE)).toBe(false);
+      expect(o.accepts.filter((a: { asset: string }) => a.asset === USDC_BASE)).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+      warn.mockRestore();
+    }
+  });
+
   it("premium ($1 brief, $5 Seller DD) stays USDC-only", async () => {
     vi.stubEnv("HP_EURC_ENABLED", "true");
     const { PREMIUM_TIERS } = await import("@/lib/premium/tiers");

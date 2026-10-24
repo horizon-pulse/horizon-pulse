@@ -68,7 +68,7 @@ export function makeDarkRoute(opts: {
           return res;
         },
         darkRouteConfig(opts.path, t),
-        darkPaymentOpts(opts.path, t),
+        { ...darkPaymentOpts(opts.path, t), eurc: false },
       ) as (req: NextRequest) => Promise<NextResponse>;
       paid.set(key, h);
     }
