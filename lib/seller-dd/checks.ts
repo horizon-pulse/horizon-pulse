@@ -230,14 +230,15 @@ async function rpcAt(deps: RpcDeps, url: string, method: string, params: unknown
 }
 
 /** C4: our own two-node read of authorizationState(tester, nonce). Both distinct operators must say used. */
-export async function testPayLanded(tester: string, nonce: string, deadline: number, deps: RpcDeps = defaultRpcDeps()): Promise<{ state: "used" | "unused" | "unknown"; nodes: string[] }> {
+/** `token`: contract to read (default Base USDC = our tester's own test pay; EURC only for a buyer's EURC payment). */
+export async function testPayLanded(tester: string, nonce: string, deadline: number, deps: RpcDeps = defaultRpcDeps(), token: string = USDC_BASE): Promise<{ state: "used" | "unused" | "unknown"; nodes: string[] }> {
   const urls = distinctOperators(rpcs("base")).slice(0, 3);
   const data = AUTHORIZATION_STATE_SELECTOR + tester.toLowerCase().replace(/^0x/, "").padStart(64, "0") + nonce.toLowerCase().replace(/^0x/, "");
   const answers: { url: string; v: string }[] = [];
   for (const url of urls) {
     if (answers.length >= 2) break;
     try {
-      const r = await rpcAt(deps, url, "eth_call", [{ to: USDC_BASE, data }, "latest"], deadline);
+      const r = await rpcAt(deps, url, "eth_call", [{ to: token, data }, "latest"], deadline);
       if (typeof r === "string") answers.push({ url, v: /^0x0*1$/.test(r) ? "used" : /^0x0*$/.test(r) ? "unused" : "unknown" });
     } catch { /* next */ }
   }

@@ -29,7 +29,10 @@ import {
   ASYNC_MIN_REMAINING_S,
   challenge,
   decodePayment,
-  isBaseUsdcExact,
+  paidRail,
+  requirementFor,
+  requirementForPaid,
+  assetContractFor,
   jsonError,
   markNonceSettled,
   nonceUsed,
@@ -156,9 +159,12 @@ async function redeemableWithProof(req: NextRequest, x: Tier, d: Decoded): Promi
 }
 const inProgress = () => jsonError(503, { error: "payment_in_progress", charged: false, message: "This payment authorization is already being processed." }, { "Retry-After": "5" });
 
-function okResponse(x: Tier, result: unknown, tx: string | null, header: string | null) {
+function okResponse(x: Tier, result: unknown, tx: string | null, header: string | null, d?: Decoded) {
+  // paid block reports the PAID requirement (USDC: unchanged shape; EURC: EURC atomic amount + asset)
+  const pr = d ? requirementForPaid(d, x) : null;
+  const paidAsset = pr && pr.asset !== requirementFor(x).asset ? { amount: pr.amount, asset: pr.asset, currency: "EURC" } : { amount: x.amount };
   return NextResponse.json(
-    { ...(result as object), paid: { tier: x.id, amount: x.amount, network: "eip155:8453", tx }, ...legalBlock() },
+    { ...(result as object), paid: { tier: x.id, ...paidAsset, network: "eip155:8453", tx }, ...legalBlock() },
     { status: 200, headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Expose-Headers": "PAYMENT-RESPONSE", "Cache-Control": "no-store", ...(header ? { "PAYMENT-RESPONSE": header } : {}) } },
   );
 }
@@ -176,7 +182,7 @@ async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded
   const proof = req.headers.get(PAYER_PROOF_HEADER);
   if (!(await payerProofValid(d.from!, proof, redeemMessage(c.rc, rq, d.to!, d.value!)))) return mismatch(proof ? "bad_proof" : "no_proof", "payer_proof_required");
   const held: Held = { key: claimKey(d.from!, d.nonce!), raw, claim: c };
-  const landed = c.job === "settled" ? "landed" : await settleLanded({ payer: d.from!, nonce: d.nonce!, block_at_accept: c.blk ?? null } as never);
+  const landed = c.job === "settled" ? "landed" : await settleLanded({ payer: d.from!, nonce: d.nonce!, block_at_accept: c.blk ?? null } as never, assetContractFor(d));
   if (landed !== "landed") return jsonError(503, { error: "settle_not_confirmed_yet", reconcile_id: c.rc, charged: "unknown" }, { "Retry-After": "30" });
   const mine = await moveClaim(store, held, { s: "redeemed" });
   if (!mine) return inProgress();
@@ -186,7 +192,7 @@ async function redeem(store: PremiumStore, req: NextRequest, x: Tier, d: Decoded
     if (x.id === "brief") {
       const cached = await loadPassedBrief(store, held.key, rq, d.from!);
       if (!cached) throw new Error("no_cached_brief");
-      return okResponse(x, { ...cached, redeemed: { reconcile_id: c.rc } }, null, null);
+      return okResponse(x, { ...cached, redeemed: { reconcile_id: c.rc } }, null, null, d);
     }
     const result = await runResearch(x, input, t0 + SYNC_HARD_LIMIT_S * 1000, undefined, held.key);
     return okResponse(x, { ...(result as object), redeemed: { reconcile_id: c.rc } }, null, null);
@@ -241,7 +247,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
 
   const d = decodePayment(header);
   if (!d) return challenge(x, description(x), "invalid_payment");
-  if (!isBaseUsdcExact(d)) return challenge(x, description(x), "rail_unavailable");
+  if (!paidRail(d, x)) return challenge(x, description(x), "rail_unavailable");
   const bind = priceBindingError(d, x);
   if (bind) return challenge(x, description(x), bind);
   const win = windowError(d, Math.floor(clock() / 1000), x.mode === "async" ? ASYNC_MIN_REMAINING_S : SYNC_MIN_REMAINING_S);
@@ -283,7 +289,7 @@ export async function premiumHandler(req: NextRequest, route: PremiumRoute, seg:
     }
     let held = got.held;
 
-    const used = await nonceUsed(d.from!, d.nonce!);
+    const used = await nonceUsed(d.from!, d.nonce!, assetContractFor(d));
     if (used === "used") {
       const line = reconcile("authorization_already_used", x, d, rq, null);
       await moveClaim(store, held, { s: "conflict", rc: line.reconcile_id }).catch(() => null);
@@ -505,7 +511,7 @@ async function chargeOnPass(store: PremiumStore, req: NextRequest, x: Tier, d: D
   await store.spendAdjust(dk, -1, BRIEF_DECLINE_TTL_S).catch(() => undefined);
   await store.spendAdjust(uk, -BRIEF_RUN_COST_USD, UNSETTLED_TTL_S).catch(() => undefined);
   await moveClaim(store, held, { s: "settled" }).catch(() => null);
-  return okResponse(x, delivered, s.tx, s.header);
+  return okResponse(x, delivered, s.tx, s.header, d);
 }
 
 export function premiumOptions(route: PremiumRoute, seg: string | undefined): NextResponse {

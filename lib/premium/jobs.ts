@@ -241,8 +241,9 @@ const AUTHORIZATION_USED_TOPIC = "0x98de503528ee59b575ef0c0a2576a82497bfc029a568
 export const AUTH_USED_TOPIC = AUTHORIZATION_USED_TOPIC;
 
 /** Q4: settle confirmed on-chain = AuthorizationUsed(from, nonce) log on Base USDC AND authorizationState used. */
-export async function settleLanded(job: Job): Promise<"landed" | "not_landed" | "unknown"> {
-  const state = await nonceUsed(job.payer, job.nonce);
+/** `token`: contract of the PAID asset (default Base USDC; EURC only for the sync brief, never an async job). */
+export async function settleLanded(job: Job, token: string = USDC_BASE): Promise<"landed" | "not_landed" | "unknown"> {
+  const state = await nonceUsed(job.payer, job.nonce, token);
   if (state === "unknown") return "unknown";
   if (state === "unused") return "not_landed";
   try {
@@ -250,7 +251,7 @@ export async function settleLanded(job: Job): Promise<"landed" | "not_landed" | 
     // Odin P1: never a full-chain scan; without a recorded block the answer is "unknown" (refund via reconcile_id)
     if (job.block_at_accept === null || job.block_at_accept === undefined) return "unknown";
     const from = `0x${Math.max(0, job.block_at_accept - 10).toString(16)}`;
-    const logs = await rpcCall(deps, "base", "eth_getLogs", [{ address: USDC_BASE, fromBlock: from, toBlock: "latest", topics: [AUTHORIZATION_USED_TOPIC, `0x${job.payer.toLowerCase().replace(/^0x/, "").padStart(64, "0")}`, job.nonce.toLowerCase()] }], deps.now() + 5_000);
+    const logs = await rpcCall(deps, "base", "eth_getLogs", [{ address: token, fromBlock: from, toBlock: "latest", topics: [AUTHORIZATION_USED_TOPIC, `0x${job.payer.toLowerCase().replace(/^0x/, "").padStart(64, "0")}`, job.nonce.toLowerCase()] }], deps.now() + 5_000);
     if (!Array.isArray(logs)) return "unknown";
     // used but no AuthorizationUsed log = cancelAuthorization (never charged)
     return logs.length > 0 ? "landed" : "not_landed";

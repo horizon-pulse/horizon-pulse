@@ -28,6 +28,7 @@ import { tierPath, type Tier } from "./tiers";
 import { logPaidSettle } from "@/lib/route-log";
 import { BRIEF_SERVICE_META, briefBazaarExtension } from "./bazaar";
 import { sellerDdBazaarExtension } from "@/lib/seller-dd/bazaar";
+import { EURC_BASE, EURC_EIP712, eurcActive, eurcAtomicFromUsdAtomic, eurcExtra, isEurcAsset } from "@/lib/eurc-config";
 
 export const PREMIUM_CORS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -58,6 +59,31 @@ export function requirementFor(x: Tier) {
   };
 }
 
+/**
+ * EURC on Base for premium (feat/eurc-premium-dd): ONLY the $1 brief and Seller DD, ONLY while eurcActive()
+ * (HP_EURC_ENABLED exactly "true" + Base mainnet + rate at most 14 days old and not in the future). Every other premium
+ * tier, and every tier while the flag is off, is USDC-only exactly as before.
+ */
+export const PREMIUM_EURC_TIERS: ReadonlySet<string> = new Set(["brief", "seller-dd"]);
+export function premiumEurcOn(x: Tier): boolean {
+  return PREMIUM_EURC_TIERS.has(x.id as string) && eurcActive();
+}
+export function eurcRequirementFor(x: Tier) {
+  return {
+    scheme: "exact",
+    network: BASE_CAIP2,
+    amount: eurcAtomicFromUsdAtomic(x.amount),
+    asset: EURC_BASE,
+    payTo: DEFAULT_PAY_TO,
+    maxTimeoutSeconds: x.mode === "async" ? ASYNC_MAX_TIMEOUT_S : 300,
+    extra: eurcExtra(),
+  };
+}
+/** USDC first (unchanged), then EURC when on. */
+export function acceptsFor(x: Tier) {
+  return premiumEurcOn(x) ? [requirementFor(x), eurcRequirementFor(x)] : [requirementFor(x)];
+}
+
 export function paymentRequired(x: Tier, description: string, error?: string, message?: string, charged?: false) {
   return {
     x402Version: 2 as const,
@@ -65,7 +91,7 @@ export function paymentRequired(x: Tier, description: string, error?: string, me
     ...(error ? { error } : {}),
     ...(message ? { message } : {}),
     resource: { url: `${PUBLIC_BASE_URL}${tierPath(x)}`, description, mimeType: "application/json", terms: BUYER_TERMS_URL, ...(x.id === "brief" ? BRIEF_SERVICE_META : {}) },
-    accepts: [requirementFor(x)],
+    accepts: acceptsFor(x),
     // Bazaar discovery: the brief only (the one live premium tier). Other tiers stay unlisted.
     ...(x.id === "brief" ? { extensions: briefBazaarExtension() } : {}),
   };
@@ -136,9 +162,30 @@ export function isBaseUsdcExact(d: Decoded): boolean {
   return d.scheme === "exact" && d.network === BASE_CAIP2 && eqHex(d.asset, USDC_BASE);
 }
 
+/** EURC exact on Base for a tier where premium EURC is on (same parsed-payload classification rule as USDC). */
+export function isBaseEurcExact(d: Decoded, x: Tier): boolean {
+  return premiumEurcOn(x) && d.scheme === "exact" && d.network === BASE_CAIP2 && isEurcAsset(d.asset) && eqHex(d.asset, EURC_BASE);
+}
+/** Accepted rail for this tier, or null (-> 402 rail_unavailable, zero store / facilitator / RPC calls). */
+export function paidRail(d: Decoded, x: Tier): "usdc" | "eurc" | null {
+  if (isBaseUsdcExact(d)) return "usdc";
+  if (isBaseEurcExact(d, x)) return "eurc";
+  return null;
+}
+/** The requirement the payment is verified / settled / price-bound against: chosen by the PARSED asset. */
+export function requirementForPaid(d: Decoded, x: Tier) {
+  return paidRail(d, x) === "eurc" ? eurcRequirementFor(x) : requirementFor(x);
+}
+/** Token contract for the paid asset (authorizationState / AuthorizationUsed live on the token itself). */
+export function assetContractFor(d: Pick<Decoded, "asset">): string {
+  return isEurcAsset(d.asset) ? EURC_BASE : USDC_BASE;
+}
+
 /** Spec §3a: amount bound to the request's own path tier; payTo pinned to the full line-8 string. */
 export function priceBindingError(d: Decoded, x: Tier): string | null {
-  if (d.amount !== x.amount || d.value !== x.amount) return "amount_mismatch";
+  // Bound to the amount of the requirement for the PAID asset (USDC: tier amount; EURC: fixed-rate EURC amount).
+  const amount = requirementForPaid(d, x).amount;
+  if (d.amount !== amount || d.value !== amount) return "amount_mismatch";
   if (!eqHex(d.payTo, DEFAULT_PAY_TO) || !eqHex(d.to, DEFAULT_PAY_TO)) return "payto_mismatch";
   if (!d.from || !/^0x[0-9a-fA-F]{40}$/.test(d.from) || !d.nonce || !/^0x[0-9a-fA-F]{64}$/.test(d.nonce)) return "malformed_authorization";
   return null;
@@ -163,12 +210,13 @@ export function setPremiumRpcForTests(d: RpcDeps | null) {
 /** USDC (FiatTokenV2) authorizationState(address authorizer, bytes32 nonce) selector. */
 export const AUTHORIZATION_STATE_SELECTOR = "0xe94a0102";
 
-export async function nonceUsed(from: string, nonce: string): Promise<"used" | "unused" | "unknown"> {
+export async function nonceUsed(from: string, nonce: string, token: string = USDC_BASE): Promise<"used" | "unused" | "unknown"> {
   if (settledNonces.has(`${from.toLowerCase()}:${nonce.toLowerCase()}`)) return "used";
+  if (!eqHex(token, USDC_BASE) && !eqHex(token, EURC_BASE)) return "unknown";
   const deps = rpcDepsOverride ?? defaultRpcDeps();
   const data = AUTHORIZATION_STATE_SELECTOR + from.toLowerCase().replace(/^0x/, "").padStart(64, "0") + nonce.toLowerCase().replace(/^0x/, "");
   try {
-    const r = await ethCall(deps, "base", USDC_BASE, data, deps.now() + NONCE_RPC_TIMEOUT_MS);
+    const r = await ethCall(deps, "base", token, data, deps.now() + NONCE_RPC_TIMEOUT_MS);
     if (r === null) return "unknown";
     return /^0x0*1$/.test(r) ? "used" : /^0x0*$/.test(r) ? "unused" : "unknown";
   } catch {
@@ -219,7 +267,7 @@ export function isVerifyRejection(e: unknown): e is { invalidReason: string } {
 export type VerifyResult = { ok: true; payer: string | null } | { ok: false; kind: "invalid"; reason: string } | { ok: false; kind: "error" };
 export async function verifyPayment(d: Decoded, x: Tier): Promise<VerifyResult> {
   try {
-    const r: any = await premiumVerifyClient().verify(d.raw, requirementFor(x) as never);
+    const r: any = await premiumVerifyClient().verify(d.raw, requirementForPaid(d, x) as never);
     if (r?.isValid === true) return { ok: true, payer: typeof r.payer === "string" ? r.payer : d.from };
     return { ok: false, kind: "invalid", reason: reasonCode(r?.invalidReason) };
   } catch (e) {
@@ -255,12 +303,13 @@ export function withServerBazaarExtension(raw: any, x: Tier): any {
 
 export async function settlePayment(d: Decoded, x: Tier, routePath: string = tierPath(x)): Promise<SettleResult> {
   try {
-    const r: any = await client().settle(withServerBazaarExtension(d.raw, x), requirementFor(x) as never);
+    const req = requirementForPaid(d, x);
+    const r: any = await client().settle(withServerBazaarExtension(d.raw, x), req as never);
     const tx = typeof r?.transaction === "string" && r.transaction ? r.transaction : null;
     if (r?.success === true && tx) {
       const payer = typeof r.payer === "string" ? r.payer : d.from;
       // Route tag at payment: record which route was paid (fire-and-forget, after the settle succeeded).
-      logPaidSettle({ route: routePath, method: "POST", rail: typeof r.network === "string" ? r.network : BASE_CAIP2, amountAtomic: x.amount, tx, payer });
+      logPaidSettle({ route: routePath, method: "POST", rail: typeof r.network === "string" ? r.network : BASE_CAIP2, amountAtomic: req.amount, tx, payer, ...(req.asset === EURC_BASE ? { asset: EURC_BASE } : {}) });
       return { ok: true, tx, payer, header: encodePaymentResponseHeader(r) };
     }
     return { ok: false, kind: "ambiguous", tx };
@@ -300,6 +349,7 @@ export const TRANSFER_WITH_AUTHORIZATION_TYPES = {
   ],
 } as const;
 export const USDC_BASE_DOMAIN = { name: "USD Coin", version: "2", chainId: 8453, verifyingContract: USDC_BASE } as const;
+export const EURC_BASE_DOMAIN = { name: EURC_EIP712.name, version: EURC_EIP712.version, chainId: 8453, verifyingContract: EURC_BASE as `0x${string}` } as const;
 
 /**
  * True only when the signature recovers to authorization.from under the Base USDC EIP-712 domain.
@@ -317,7 +367,7 @@ export async function signatureValid(d: Decoded): Promise<boolean> {
   try {
     const { recoverTypedDataAddress } = await import("viem");
     const who = await recoverTypedDataAddress({
-      domain: USDC_BASE_DOMAIN,
+      domain: isEurcAsset(d.asset) ? EURC_BASE_DOMAIN : USDC_BASE_DOMAIN, // EIP-712 domain of the PAID token
       types: TRANSFER_WITH_AUTHORIZATION_TYPES,
       primaryType: "TransferWithAuthorization",
       message: { from: d.from as `0x${string}`, to: d.to as `0x${string}`, value: BigInt(d.value), validAfter: BigInt(d.validAfter), validBefore: BigInt(d.validBefore), nonce: d.nonce as `0x${string}` },

@@ -16,7 +16,7 @@ import { CLAIM_TTL_MS, claimKey, moveClaim, newOwner, parseClaim, releaseClaim, 
 import { newReconcileId } from "@/lib/premium/reconcile";
 import { BUYER_TERMS_URL } from "@/lib/premium/copy";
 import {
-  decodePayment, isBaseUsdcExact, isSmartWalletSignature, markNonceSettled, nonceUsed, paymentHeader, priceBindingError,
+  decodePayment, paidRail, assetContractFor, acceptsFor, isSmartWalletSignature, markNonceSettled, nonceUsed, paymentHeader, priceBindingError,
   PAYER_PROOF_HEADER, payerProofValid, redeemMessage, settlePayment, signatureValid, SYNC_MIN_REMAINING_S, verifyPayment, windowError,
 } from "@/lib/premium/payment";
 import { premiumStore, type PremiumStore } from "@/lib/premium/store";
@@ -55,7 +55,8 @@ export function ddPaymentRequired(error?: string) {
     x402Version: 2 as const,
     ...(error ? { error } : {}),
     resource: { url: `${PUBLIC_BASE_URL}${DD_PATH}`, description: DD_DESCRIPTION, mimeType: "application/json", terms: BUYER_TERMS_URL },
-    accepts: [ddRequirement()],
+    // USDC (ddRequirement, unchanged) first; EURC appended only while premium EURC is on for seller-dd
+    accepts: acceptsFor(DD_TIER),
     // Bazaar discovery (site accuracy finding 5): lets the next CDP-facilitated settle index this route.
     extensions: sellerDdBazaarExtension(),
     notice: DD_NOTICE,
@@ -148,7 +149,7 @@ export async function sellerDdHandler(req: NextRequest): Promise<NextResponse> {
 
   const d = decodePayment(header);
   if (!d) return challenge("invalid_payment");
-  if (!isBaseUsdcExact(d)) return challenge("rail_unavailable");
+  if (!paidRail(d, DD_TIER)) return challenge("rail_unavailable");
   const bind = priceBindingError(d, DD_TIER);
   if (bind) return challenge(bind);
   const win = windowError(d, Math.floor(clockFn() / 1000), SYNC_MIN_REMAINING_S);
@@ -176,7 +177,7 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
   if (!got.ok) return noCharge(409, "authorization_already_used_or_in_progress");
   const held = got.held;
 
-  const used = await nonceUsed(d.from!, d.nonce!);
+  const used = await nonceUsed(d.from!, d.nonce!, assetContractFor(d));
   if (used !== "unused") { await releaseClaim(store, held).catch(() => undefined); return noCharge(used === "used" ? 409 : 503, used === "used" ? "authorization_already_used" : "nonce_check_unavailable"); }
 
   // (1) buyer verify
@@ -218,7 +219,7 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
   // (4) settle buyer on PASS only. Cache the signed verdict BEFORE settle, keyed by buyer+nonce (claim key), so a
   // settle_unconfirmed can be redeemed with exactly this verdict. Cache write fails -> no settle (fail closed).
   const signedVerdict = { ...out.verdict, sig };
-  const cached = await store.set(ddKeys.verdict(held.key), JSON.stringify({ rq, from: d.from!.toLowerCase(), verdict: signedVerdict, reservation: out.reservation, validBefore: Number(d.validBefore) }), Math.ceil(CLAIM_TTL_MS.unconfirmed / 1000)).then(() => true, () => false);
+  const cached = await store.set(ddKeys.verdict(held.key), JSON.stringify({ rq, from: d.from!.toLowerCase(), verdict: signedVerdict, reservation: out.reservation, validBefore: Number(d.validBefore), asset: assetContractFor(d) }), Math.ceil(CLAIM_TTL_MS.unconfirmed / 1000)).then(() => true, () => false);
   if (!cached) {
     await moveClaim(store, held, { s: "declined" }).catch(() => null);
     if (out.reservation) await recordLoss(store, out.reservation, "verdict_cache_unavailable", clockFn()).catch(() => undefined);
@@ -260,11 +261,12 @@ async function paidFlow(req: NextRequest, store: PremiumStore, d: NonNullable<Re
   return NextResponse.json({ status: "delivered", charged: true, tx: s.tx, ...signedVerdict }, { status: 200, headers: { ...CORS, "PAYMENT-RESPONSE": s.header } });
 }
 
-let buyerNonceOverride: ((from: string, nonce: string) => Promise<NonceState>) | null = null;
+let buyerNonceOverride: ((from: string, nonce: string, token?: string) => Promise<NonceState>) | null = null;
 export function setSellerDdBuyerNonceForTests(f: typeof buyerNonceOverride) { buyerNonceOverride = f; }
-export async function buyerNonceState(from: string, nonce: string): Promise<NonceState> {
-  if (buyerNonceOverride) return buyerNonceOverride(from, nonce);
-  return (await testPayLanded(from, nonce, Date.now() + 10_000)).state;
+/** `token`: the buyer's PAID asset contract, taken from the verdict cache written at pay time (absent = USDC). */
+export async function buyerNonceState(from: string, nonce: string, token?: string): Promise<NonceState> {
+  if (buyerNonceOverride) return buyerNonceOverride(from, nonce, token);
+  return (await testPayLanded(from, nonce, Date.now() + 10_000, undefined, token ?? USDC_BASE)).state;
 }
 
 /** Close an unconfirmed claim as not charged (nonce unused after validBefore): loss written exactly once (setNx). */
@@ -281,11 +283,12 @@ async function redeemFlow(req: NextRequest, store: PremiumStore, d: NonNullable<
   const c = parseClaim(raw);
   if (!c || c.s !== "unconfirmed" || !c.rc) return noCharge(409, "nothing_to_redeem");
     const vraw = await store.get(ddKeys.verdict(ck)).catch(() => null);
-  const v = vraw ? (JSON.parse(vraw) as { rq: string; from: string; verdict: Record<string, unknown>; reservation: Reservation | null; validBefore: number }) : null;
+  const v = vraw ? (JSON.parse(vraw) as { rq: string; from: string; verdict: Record<string, unknown>; reservation: Reservation | null; validBefore: number; asset?: string }) : null;
   if (!v || v.from !== d.from!.toLowerCase()) return noCharge(409, "nothing_to_redeem");
   if (rq !== c.rq || rq !== v.rq) return noCharge(409, "redeem_request_mismatch");
   if (!(await payerProofValid(d.from!, req.headers.get(PAYER_PROOF_HEADER), redeemMessage(c.rc, rq, d.to!, d.value!)))) return noCharge(401, "invalid_payer_proof");
-  const state = await buyerNonceState(d.from!, d.nonce!);
+  // asset from OUR cache (set after rail + price checks), never from the redeem header
+  const state = await buyerNonceState(d.from!, d.nonce!, v.asset);
   if (state === "used") {
     // landed: deliver the cached signed verdict; never settle again
     markNonceSettled(d.from!, d.nonce!);
@@ -309,8 +312,10 @@ export async function reconcileUnconfirmed(store: PremiumStore, nowMs: number, l
   for (const ck of keys) {
     const m = /^claim:(0x[0-9a-f]{40}):(0x[0-9a-f]{64})$/.exec(ck);
     if (!m) { await store.zrem(ddKeys.unconfirmed(), ck).catch(() => undefined); continue; }
-    const st = await buyerNonceState(m[1]!, m[2]!);
     const vraw = await store.get(ddKeys.verdict(ck)).catch(() => null);
+    let token: string | undefined;
+    try { token = vraw ? (JSON.parse(vraw) as { asset?: string }).asset : undefined; } catch { token = undefined; }
+    const st = await buyerNonceState(m[1]!, m[2]!, token);
     if (st === "unused") { await closeNotCharged(store, ck, vraw ? JSON.parse(vraw) : null); closed++; }
     else if (st === "used") { await store.zrem(ddKeys.unconfirmed(), ck).catch(() => undefined); landed++; }
     else unknown++;

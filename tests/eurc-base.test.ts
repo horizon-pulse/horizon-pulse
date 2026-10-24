@@ -1,7 +1,7 @@
 /**
  * EURC on Base (lib/eurc-config.ts), HP_EURC_ENABLED, off by default.
  *  - flag off (and look-alike values): every 402 / OPTIONS / discovery byte equals the UNCHANGED golden
- *  - flag on: exactly one EURC entry appended on each of the 29 standard routes' 402 (CDP + local), none on premium
+ *  - flag on: exactly one EURC entry appended on each of the 29 standard routes' 402 (CDP + local); premium: brief + Seller DD only
  *  - amount math + rounding, payTo exact (pinned config string), asset + decimals + EIP-712 domain
  *  - `priced` block on the EURC rail
  */
@@ -281,29 +281,18 @@ describe("flag on", () => {
     }
   });
 
-  it("premium ($1 brief, $5 Seller DD) stays USDC-only", async () => {
+  it("premium: only the $1 brief and Seller DD gain EURC (full coverage: tests/eurc-premium-dd.test.ts)", async () => {
     vi.stubEnv("HP_EURC_ENABLED", "true");
     const { PREMIUM_TIERS } = await import("@/lib/premium/tiers");
     const { paymentRequired } = await import("@/lib/premium/payment");
     const { ddPaymentRequired } = await import("@/lib/seller-dd/handler");
-    const bodies = [...PREMIUM_TIERS.map((t) => paymentRequired(t, "x")), ddPaymentRequired()];
-    for (const b of bodies) {
-      expect(b.accepts).toHaveLength(1);
+    for (const t of PREMIUM_TIERS) {
+      const b = paymentRequired(t, "x");
       expect(b.accepts[0].asset).toBe(USDC_BASE);
+      expect(b.accepts.length, t.id).toBe(t.id === "brief" ? 2 : 1);
     }
-    // and no premium / seller-dd source references EURC
-    const walk = (d: string): string[] =>
-      readdirSync(d).flatMap((f) => (statSync(path.join(d, f)).isDirectory() ? walk(path.join(d, f)) : [path.join(d, f)]));
-    for (const dir of ["lib/premium", "lib/seller-dd", "app/api/premium", "app/api/seller-dd", "app/api/research"]) {
-      const abs = path.join(ROOT, dir);
-      let files: string[] = [];
-      try { files = walk(abs); } catch { continue; }
-      for (const f of files) {
-        const src = readFileSync(f, "utf8").toLowerCase();
-        expect(src.includes("eurc"), f).toBe(false);
-        expect(src.includes(CIRCLE_EURC_BASE), f).toBe(false);
-      }
-    }
+    const dd = ddPaymentRequired();
+    expect(dd.accepts.map((a: { asset: string }) => a.asset)).toEqual([USDC_BASE, EURC_BASE]);
   });
 });
 

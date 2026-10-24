@@ -42,6 +42,8 @@ export type RouteLogRecord = {
   amount: string | null;
   tx: string | null;
   payer: string | null;
+  /** Paid token contract when NOT Base USDC (EURC). Absent = USDC, so USDC records are unchanged. */
+  asset?: string;
 };
 
 /** Daily per-route counters (no payer): 90 days. */
@@ -236,6 +238,7 @@ export function buildPaidSettleRecord(opts: {
   amountAtomic: string;
   tx: string | null | undefined;
   payer: string | null | undefined;
+  asset?: string | null;
   now?: Date;
 }): RouteLogRecord {
   const str = (v: unknown) => (typeof v === "string" && v.length > 0 && v.length <= 256 ? v : null);
@@ -248,6 +251,7 @@ export function buildPaidSettleRecord(opts: {
     amount: opts.amountAtomic,
     tx: str(opts.tx),
     payer: str(opts.payer),
+    ...(str(opts.asset) ? { asset: str(opts.asset)!.toLowerCase() } : {}),
   };
 }
 
