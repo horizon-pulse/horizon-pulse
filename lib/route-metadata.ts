@@ -196,6 +196,11 @@ export const ROUTE_METADATA = {
     description: darkDescription("/api/aave-equities/collateral-data"),
     tags: ["aave-v4", "collateral-data", "borrowing-levels", "tokenized-stocks", "base-onchain"],
   },
+  // DARK (HP_CASH_BENCHMARK_ENABLED, default off). Lookup entry only (no-CDP 402), like Trade Gate.
+  "/api/cash-benchmark": {
+    description: darkDescription("/api/cash-benchmark"),
+    tags: ["cash-benchmark", "money-markets", "derived-spreads", "yield-comparison", "deterministic"],
+  },
 } as const satisfies Record<string, RouteMetadata>;
 
 export type MeteredPath = keyof typeof ROUTE_METADATA;

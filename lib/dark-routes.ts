@@ -17,6 +17,7 @@ import { getNetworkCaip2, getPayTo } from "./config";
 import { callerIp } from "./caller-ip";
 import { TRADE_GATE_DESCRIPTION } from "./trade-gate";
 import { AAVE_EQUITIES_DESCRIPTION } from "./aave-equities";
+import { CASH_BENCHMARK_DESCRIPTION } from "./cash-benchmark";
 
 // ---------------------------------------------------------------------------
 // Flags
@@ -29,6 +30,8 @@ export const DARK_FLAGS = {
   tradegate: "HP_TRADE_GATE_ENABLED",
   /** Aave V4 Equities collateral data (Michael via Odin 11:37 AM ET 10/23): defaults OFF; going live needs Counsel PASS, Sentinel, Odin written OK and Michael's yes. */
   aaveequities: "HP_AAVE_EQUITIES_ENABLED",
+  /** DARK: /api/cash-benchmark, default off. base $0.005. */
+  cashbenchmark: "HP_CASH_BENCHMARK_ENABLED",
 } as const;
 export type DarkRoute = keyof typeof DARK_FLAGS;
 
@@ -103,6 +106,9 @@ export const TRADE_GATE_TIERS: readonly Tier[] = [tier("base", 10_000, "Mechanic
 /** Aave V4 Equities collateral data: base $0.01 (Michael via Odin 11:37 AM ET 10/23). */
 export const AAVE_EQUITIES_TIERS: readonly Tier[] = [tier("base", 10_000, "Live collateral data and borrowing levels for the Aave V4 Equities Hub on Base")] as const;
 
+/** DARK: /api/cash-benchmark, default off. base $0.005. */
+export const CASH_BENCHMARK_TIERS: readonly Tier[] = [tier("base", 5_000, "Derived comparison of a supplied yield against published overnight benchmarks")] as const;
+
 export function findTier(tiers: readonly Tier[], id: string | null | undefined, fallback: string): Tier | null {
   const want = (id ?? "").trim().toLowerCase() || fallback;
   return tiers.find((t) => t.id === want) ?? null;
@@ -151,10 +157,11 @@ export const DARK_DESCRIPTIONS = {
  */
 /** The description actually served for a dark route (audit copy follows HP_AUDIT_HIGH_TIERS_ENABLED). */
 /** Every dark path with a paid config: DARK_DESCRIPTIONS keys plus Trade Gate (own Counsel E4 copy, kept separate). */
-export type DarkPaidPath = keyof typeof DARK_DESCRIPTIONS | "/api/trade-gate" | "/api/aave-equities/collateral-data";
+export type DarkPaidPath = keyof typeof DARK_DESCRIPTIONS | "/api/trade-gate" | "/api/aave-equities/collateral-data" | "/api/cash-benchmark";
 export function darkDescription(path: DarkPaidPath, env: Record<string, string | undefined> = process.env): string {
   if (path === "/api/trade-gate") return TRADE_GATE_DESCRIPTION;
   if (path === "/api/aave-equities/collateral-data") return AAVE_EQUITIES_DESCRIPTION;
+  if (path === "/api/cash-benchmark") return CASH_BENCHMARK_DESCRIPTION;
   if (path === "/api/audit/security") return auditHighTiersEnabled(env) ? AUDIT_DESCRIPTION_HIGH_TIERS : AUDIT_DESCRIPTION_BASE;
   if (path === "/api/package/check") return packageDeepEnabled(env) ? PACKAGE_DESCRIPTION_DEEP : PACKAGE_DESCRIPTION_BASE;
   return DARK_DESCRIPTIONS[path];
@@ -193,6 +200,7 @@ export const DARK_RATE_LIMITS: Record<DarkRoute, { perMinute: number }> = {
   injection: { perMinute: 60 },
   tradegate: { perMinute: 60 },
   aaveequities: { perMinute: 30 },
+  cashbenchmark: { perMinute: 30 },
 };
 /** Per target host: at most this many checks per minute across ALL instances (shared Upstash counter). */
 export const AUDIT_TARGET_PER_MINUTE = 3;
