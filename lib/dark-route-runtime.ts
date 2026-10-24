@@ -90,7 +90,7 @@ export function makeDarkRoute(opts: {
     if (!darkEnabled(opts.route)) return notFound();
     const t = findTier(opts.tiers, req.nextUrl.searchParams.get("tier"), opts.defaultTier) ?? findTier(opts.tiers, opts.defaultTier, opts.defaultTier)!;
     if (!enabled(t)) return notFound();
-    const res = await discoveryOptionsResponse(darkPaymentOpts(opts.path, t));
+    const res = await discoveryOptionsResponse({ ...darkPaymentOpts(opts.path, t), eurc: false });
     res.headers.set("Allow", "GET, POST, OPTIONS");
     res.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
     return res;

@@ -1309,14 +1309,22 @@ export async function discoveryOptionsResponse(opts: {
   maxAmountRequired: string;
   resource: string;
   description: string;
+  /** false = never list EURC (dark routes, which have no EURC accept on GET). */
+  eurc?: boolean;
 }): Promise<NextResponse> {
-  const paymentRequired = buildPaymentRequirements(opts);
+  const base = buildPaymentRequirements(opts);
+  // EURC on Base (HP_EURC_ENABLED only): the same EURC entry the GET 402 appends,
+  // right after Base USDC. Dark routes opt out (eurc: false). Off -> `base`, unchanged.
+  const paymentRequired =
+    opts.eurc !== false && eurcEnabled() && eurcNetworkOk()
+      ? { ...base, accepts: [...base.accepts, eurcRequirement(opts.maxAmountRequired)] }
+      : base;
   const res = NextResponse.json(paymentRequired, {
     status: 200,
     headers: {
       Allow: "GET, OPTIONS",
       ...CORS_HEADERS,
-      "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired),
+      "PAYMENT-REQUIRED": encodePaymentRequiredHeader(paymentRequired as Parameters<typeof encodePaymentRequiredHeader>[0]),
     },
   });
   // Solana USDC rail (lib/solana-config.ts): off unless HP_SOLANA_ENABLED=true

@@ -120,11 +120,27 @@ describe("flag on", () => {
     const off = JSON.parse(GOLDEN);
     const on = await captureWith({ HP_EURC_ENABLED: "true" });
     let checked = 0;
+    let options = 0;
     for (const mode of ["cdp", "local"] as const) {
       for (const [key, cap] of Object.entries(on[mode])) {
         const before = off[mode][key];
         if (key.startsWith("OPTIONS")) {
-          expect(JSON.stringify(cap)).toBe(JSON.stringify(before)); // OPTIONS unchanged (not in scope)
+          // OPTIONS lists the same EURC entry (body and header agree)
+          const ob = JSON.parse(before.body);
+          const oa = JSON.parse(cap.body);
+          expect(cap.status).toBe(before.status);
+          expect(oa.accepts.length).toBe(ob.accepts.length + 1);
+          expect(JSON.stringify(oa.accepts.slice(0, ob.accepts.length))).toBe(JSON.stringify(ob.accepts));
+          const oe = oa.accepts.filter((a: { asset: string }) => a.asset === CIRCLE_EURC_BASE);
+          expect(oe).toHaveLength(1);
+          const ousdc = ob.accepts.find((a: { asset: string }) => a.asset === USDC_BASE);
+          expect(oe[0]).toMatchObject({ scheme: "exact", network: "eip155:8453", payTo: MAIN, amount: eurcAtomicFromUsdAtomic(ousdc.amount) });
+          expect(oe[0].extra).toMatchObject({ name: "EURC", version: "2", eurUsdRate: "1.1193", rateDate: "2026-10-23" });
+          expect(decodePaymentRequiredHeader(header(cap)!)).toEqual(oa);
+          const { accepts: _x, ...ra } = oa;
+          const { accepts: _y, ...rb } = ob;
+          expect(ra).toEqual(rb);
+          options++;
           continue;
         }
         const h = header(cap);
@@ -156,6 +172,7 @@ describe("flag on", () => {
     }
     // 28 captured routes x GET json + GET browser (+ 4 POST) x 2 modes
     expect(checked).toBe((PAID_ROUTES.length * 2 + 4) * 2);
+    expect(options).toBe(PAID_ROUTES.length * 2);
     // discovery and public copy untouched
     expect(JSON.stringify(on.discovery)).toBe(JSON.stringify(off.discovery));
   });
@@ -175,6 +192,21 @@ describe("flag on", () => {
       expect(pr.accepts.filter((a) => a.asset.toLowerCase() === CIRCLE_EURC_BASE)).toHaveLength(1);
       expect(pr.accepts.filter((a) => a.asset === USDC_BASE)).toHaveLength(1);
     }
+  });
+
+  it("OPTIONS with eurc:false (dark routes) never lists EURC; batch OPTIONS does", async () => {
+    vi.stubEnv("HP_EURC_ENABLED", "true");
+    const { discoveryOptionsResponse } = await import("@/lib/x402-server");
+    const opts = { maxAmountRequired: "10000", resource: "/api/pulse", description: "x" };
+    const dark = await (await discoveryOptionsResponse({ ...opts, eurc: false })).json();
+    expect(dark.accepts.some((a: { asset: string }) => a.asset === CIRCLE_EURC_BASE)).toBe(false);
+    const std = await (await discoveryOptionsResponse(opts)).json();
+    expect(std.accepts.filter((a: { asset: string }) => a.asset === CIRCLE_EURC_BASE)).toHaveLength(1);
+    vi.stubEnv("HP_BATCH_ENABLED", "true");
+    vi.resetModules();
+    const mod = await import("@/app/api/batch/route");
+    const b = await (await mod.OPTIONS()).json();
+    expect(b.accepts.filter((a: { asset: string }) => a.asset === CIRCLE_EURC_BASE)).toHaveLength(1);
   });
 
   it("premium ($1 brief, $5 Seller DD) stays USDC-only", async () => {
