@@ -229,7 +229,7 @@ export default function HomePage() {
               <h2>
                 Plain HTTP. <span>Standard x402 v2.</span>
               </h2>
-              <p className="hp-lead">No accounts and nothing to sign up for. Any x402 v2 client can pay in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, at the same price: the Coinbase CDP facilitator settles on Base, PayAI on Solana, and XRP Ledger payments are verified on the validated ledger.</p>
+              <p className="hp-lead">No accounts and nothing to sign up for. Any x402 v2 client can pay with any option listed in the 402 response, which gives the exact amount for each: the Coinbase CDP facilitator settles on Base, PayAI on Solana, and XRP Ledger payments are verified on the validated ledger.</p>
             </div>
             <div className="hp-grid four">
               <div className="hp-tile" data-reveal>
