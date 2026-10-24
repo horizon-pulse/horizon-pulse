@@ -35,6 +35,9 @@ const ICONS: Record<string, string> = {
   agent: "M9 3h6M12 3v3M5 8h14v10H5zM9 12h.01M15 12h.01M9 15h6",
 };
 
+/** ISR: rebuild hourly so EURC/rail gating follows the live 402 (e.g. after the EURC rate expires). */
+export const revalidate = 3600;
+
 export default function HomePage() {
   const s = catalogStats();
   const pay = paymentRails();
@@ -304,18 +307,30 @@ export default function HomePage() {
                       <span>EURC <code>{EURC_BASE}</code></span>
                     </>
                   ) : null}
-                  <span className="k">Solana: pay to</span>
-                  <code>{SOLANA_PAYTO}</code>
-                  <span className="k">Solana asset</span>
-                  <span>USDC <code>{USDC_SOLANA_MINT}</code></span>
-                  <span className="k">Polygon: pay to</span>
-                  <code>{payTo}</code>
-                  <span className="k">Polygon asset</span>
-                  <span>native USDC <code>{USDC_POLYGON}</code> (same address as Base)</span>
-                  <span className="k">XRP Ledger: pay to</span>
-                  <code>{XRPL_PAYTO}</code>
-                  <span className="k">XRP Ledger asset</span>
-                  <span>RLUSD, issuer <code>{RLUSD_MAINNET_ISSUER}</code></span>
+                  {pay.solana ? (
+                    <>
+                      <span className="k">Solana: pay to</span>
+                      <code>{SOLANA_PAYTO}</code>
+                      <span className="k">Solana asset</span>
+                      <span>USDC <code>{USDC_SOLANA_MINT}</code></span>
+                    </>
+                  ) : null}
+                  {pay.polygon ? (
+                    <>
+                      <span className="k">Polygon: pay to</span>
+                      <code>{payTo}</code>
+                      <span className="k">Polygon asset</span>
+                      <span>native USDC <code>{USDC_POLYGON}</code> (same address as Base)</span>
+                    </>
+                  ) : null}
+                  {pay.xrpl ? (
+                    <>
+                      <span className="k">XRP Ledger: pay to</span>
+                      <code>{XRPL_PAYTO}</code>
+                      <span className="k">XRP Ledger asset</span>
+                      <span>RLUSD, issuer <code>{RLUSD_MAINNET_ISSUER}</code></span>
+                    </>
+                  ) : null}
                   <span className="k">Settlement</span>
                   <span>x402 <code>exact</code>, same price on all four. Coinbase CDP facilitator on Base and Polygon, PayAI on Solana; XRP Ledger payments are verified by us on the validated ledger</span>
                   <span className="k">Balance</span>

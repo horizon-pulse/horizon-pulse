@@ -3,7 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { LIVE_PAID_ROUTES, SITE_GROUPS, catalogStats, routePath } from "@/lib/live-catalog";
 import { DEFAULT_PAY_TO } from "@/lib/config";
 import { SOLANA_PAYTO } from "@/lib/solana-config";
@@ -37,8 +37,15 @@ describe("site round 6", () => {
     expect(doc.resources.length).toBe(catalogStats().routes);
   });
 
-  it("payment block lists all 4 rails with payTo from config", async () => {
+  it("payment block lists all 4 rails with payTo from config (when all 4 rails are enabled)", async () => {
+    // NOTE-S2: non-Base cards are gated on get*RailConfig().enabled; force all on for this check.
+    const on = (network: string) => () => ({ enabled: true, config: { network } });
+    vi.doMock("@/lib/solana-config", async (o) => ({ ...(await o<object>()), getSolanaRailConfig: on("solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp") }));
+    vi.doMock("@/lib/polygon-config", async (o) => ({ ...(await o<object>()), getPolygonRailConfig: on("eip155:137") }));
+    vi.doMock("@/lib/xrpl-config", async (o) => ({ ...(await o<object>()), getXrplRailConfig: on("xrpl:0") }));
+    vi.resetModules();
     const h = await html();
+    vi.doUnmock("@/lib/solana-config"); vi.doUnmock("@/lib/polygon-config"); vi.doUnmock("@/lib/xrpl-config"); vi.resetModules();
     for (const v of [DEFAULT_PAY_TO, SOLANA_PAYTO, XRPL_PAYTO, USDC_POLYGON, RLUSD_MAINNET_ISSUER, "Polygon: pay to", "XRP Ledger: pay to", "same price on all four"]) expect(h).toContain(v);
     expect(h).not.toContain("same price on both");
   });
