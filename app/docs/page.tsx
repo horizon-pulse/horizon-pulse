@@ -29,7 +29,7 @@ for (const [p, item] of Object.entries<Json>(spec.paths))
   for (const [m, op] of Object.entries<Json>(item)) if (op["x-payment-info"]) ops.push({ id: op.operationId, method: m.toUpperCase(), path: p, op }); // paid only; free routes below
 /** FREE routes (no x402) documented in /openapi.json without x-payment-info. */
 const freeOps = Object.entries<Json>(spec.paths).flatMap(([p, item]) => Object.entries<Json>(item).filter(([, op]) => op["x-free"]).map(([m, op]) => ({ id: op.operationId as string, method: m.toUpperCase(), path: p, op })));
-/** Live premium tiers (Base USDC only), documented with x-premium-payment-info so the multi-network tables skip them. */
+/** Live premium tiers (USDC or EURC on Base only), documented with x-premium-payment-info so the multi-network tables skip them. */
 const premiumOps = Object.entries<Json>(spec.paths).flatMap(([p, item]) => Object.entries<Json>(item).filter(([, op]) => op["x-premium-payment-info"]).map(([m, op]) => ({ id: op.operationId as string, method: m.toUpperCase(), path: p, op })));
 const groups = (spec.tags as { name: string; description: string }[]).map((t) => ({ ...t, ops: ops.filter((o) => o.op.tags[0] === t.name) }));
 
@@ -233,8 +233,8 @@ export default function DocsPage() {
             <div className="hp-wrap">
               <div>
                 <div className="hp-label">Premium</div>
-                <h2>{premiumOps.length > 1 ? "Premium checks" : "Verified brief"} (Base USDC only)</h2>
-                <p className="hp-lead">Same 402 flow, but paid in USDC on Base only; other networks are refused before payment.</p>
+                <h2>{premiumOps.length > 1 ? "Premium checks" : "Verified brief"} (USDC or EURC on Base only)</h2>
+                <p className="hp-lead">Same 402 flow, but paid on Base only, in USDC or EURC; other networks are refused before payment. EURC is offered only when it is listed in the 402 response.</p>
               </div>
               {premiumOps.map((o) => (
                 <div className="hp-tile" key={o.id} id={o.id}>

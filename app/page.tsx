@@ -52,16 +52,16 @@ export default function HomePage() {
             <p className="hp-sub">
               {s.paidRoutes} paid services for market data, onchain checks, the web and documents. <strong>No API keys, no signup.</strong> Your agent pays{" "}
               {s.minPrice}–{s.maxPrice} per call in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, and gets JSON back.
-              {s.premium.length === 1 ? <> Plus a {s.premium[0].priceUsd} <a href={s.premium[0].contract ?? "#catalog"}>{s.premium[0].label}</a> ({s.premium[0].rail}).</> : null}
+              {s.premium.length === 1 ? <> Plus a {s.premium[0].priceUsd} <a href={s.premium[0].contract ?? "#catalog"}>{s.premium[0].label}</a> ({s.premium[0].rail}). EURC is offered only when it is listed in the 402 response.</> : null}
               {s.premium.length > 1 ? (
                 <>
-                  {" "}Plus {s.premium.length === 2 ? "two" : s.premium.length} premium checks in Base USDC:{" "}
+                  {" "}Plus {s.premium.length === 2 ? "two" : s.premium.length} premium checks on Base, in USDC or EURC:{" "}
                   {s.premium.map((x, i) => (
                     <span key={x.id}>
                       {i ? (i === s.premium.length - 1 ? " and " : ", ") : ""}a <strong>{x.priceUsd} {x.label}</strong>
                     </span>
                   ))}
-                  .
+                  . EURC is offered only when it is listed in the 402 response.
                 </>
               ) : null}
             </p>

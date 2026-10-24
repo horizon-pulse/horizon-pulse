@@ -434,7 +434,7 @@ export function catalogStats() {
   const premiumNoDemo = premium.filter((x) => !x.demo).map((x) => x.path);
   return {
     routes: LIVE_PAID_ROUTES.length,
-    /** Live premium products (Base USDC only), listed apart from the multi-network catalog. */
+    /** Live premium products (Base only: USDC, or EURC for the brief + Seller DD), listed apart from the multi-network catalog. */
     premium,
     /** Every live paid route: the multi-network catalog plus live premium products. Use this for any public count. */
     paidRoutes: LIVE_PAID_ROUTES.length + premium.length,

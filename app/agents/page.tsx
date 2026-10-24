@@ -46,7 +46,7 @@ export default function AgentsPage() {
               <span>call it.</span>
             </h1>
             <p className="hp-sub">
-              {routes.length + premium.length} paid routes. No signup or API key: each call is paid on its own in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, at the same price{premium.length === 1 ? <> (except the {premium[0].priceUsd} <a href={premium[0].contract ?? "/docs"}>{premium[0].label}</a>: {premium[0].rail})</> : null}{premium.length > 1 ? <> (except {andList(premium.map((x) => `the ${x.priceUsd} ${x.label}`))}: Base USDC only)</> : null}. Give your agent the skill file, or plug in the MCP
+              {routes.length + premium.length} paid routes. No signup or API key: each call is paid on its own in USDC on Base, Solana or Polygon, or RLUSD on the XRP Ledger, at the same price{premium.length === 1 ? <> (except the {premium[0].priceUsd} <a href={premium[0].contract ?? "/docs"}>{premium[0].label}</a>: {premium[0].rail})</> : null}{premium.length > 1 ? <> (except {andList(premium.map((x) => `the ${x.priceUsd} ${x.label}`))}: USDC or EURC on Base only)</> : null}.{premium.length ? " EURC is offered only when it is listed in the 402 response." : ""} Give your agent the skill file, or plug in the MCP
               server and set a spend cap.
             </p>
             <div className="hp-raw">

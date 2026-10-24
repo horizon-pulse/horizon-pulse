@@ -45,7 +45,7 @@ export function sellerDdOpenApiPath() {
       operationId: "postSellerDdSingle",
       tags: ["Seller due-diligence"],
       summary: `Seller due-diligence for one x402 endpoint (${PRICE}, USDC or EURC on Base only)`,
-      description: `${DD_DESCRIPTION}\n\nPrice: ${PRICE} USDC (${DD_AMOUNT} atomic), USDC or EURC on Base only: x402 v2 \`exact\` on Base (${BASE_CAIP2}). EURC prices are converted from our USD list prices. ${DD_PASS_NOTE} ${DD_NOTICE} Terms: ${TERMS_URL}. ${DD_DISPUTE_TERM} ${DD_RETENTION_TERM}`,
+      description: `${DD_DESCRIPTION}\n\nPrice: ${PRICE} USDC (${DD_AMOUNT} atomic), USDC or EURC on Base only: x402 v2 \`exact\` on Base (${BASE_CAIP2}). EURC prices are converted from our USD list prices. EURC is offered only when it is listed in the 402 response. ${DD_PASS_NOTE} ${DD_NOTICE} Terms: ${TERMS_URL}. ${DD_DISPUTE_TERM} ${DD_RETENTION_TERM}`,
       "x-premium-payment-info": {
         protocol: "x402",
         x402Version: 2,
@@ -79,7 +79,7 @@ export function sellerDdOpenApiPath() {
       responses: {
         "200": { description: "Signed JSON verdict. Charged.", content: err },
         "400": { description: "Invalid body. status no_charge, charged false.", content: err },
-        "402": { description: `Payment required: PAYMENT-REQUIRED header, ${PRICE} USDC on Base only.`, content: err },
+        "402": { description: `Payment required: PAYMENT-REQUIRED header, ${PRICE} on Base only (USDC; EURC only when listed there).`, content: err },
         "422": { description: "Charge criteria not met. status no_charge, charged false.", content: err },
         "503": { description: "Temporarily unavailable. status no_charge, charged false.", content: err },
       },
@@ -107,7 +107,7 @@ export function llmsSellerDdSection(): string {
     `| POST | ${DD_PATH} | ${PRICE} | ${DD_AMOUNT} | ${DD_DESCRIPTION} |`,
     "",
     `- Body: JSON \`{"resource": "<https x402 URL>", "expected_payTo": "<optional EVM address>"}\`. GET returns the unpaid 402 only.`,
-    `- Paid only in USDC or EURC on Base (\`exact\`, \`${BASE_CAIP2}\`, payTo \`${DEFAULT_PAY_TO}\`). EURC prices are converted from our USD list prices.`,
+    `- Paid only in USDC or EURC on Base (\`exact\`, \`${BASE_CAIP2}\`, payTo \`${DEFAULT_PAY_TO}\`). EURC prices are converted from our USD list prices. EURC is offered only when it is listed in the 402 response.`,
     `- ${DD_PASS_NOTE}`,
     `- ${DD_NOTICE}`,
     `- Terms: ${TERMS_URL}. ${DD_DISPUTE_TERM} ${DD_RETENTION_TERM}`,

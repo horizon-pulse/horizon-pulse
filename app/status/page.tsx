@@ -6,6 +6,7 @@ import { andList, catalogStats, routeName, routePath, LIVE_PAID_ROUTES } from "@
 import { DEMO_ROUTES } from "@/lib/demo-catalog";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
+import { premiumRailLive } from "@/lib/premium/rail-copy";
 import { xrplReplayEvalStatus } from "@/lib/xrpl-rail";
 import { solanaReplayEvalStatus } from "@/lib/solana-rail";
 import { cachedAlertSummary } from "@/lib/alert-persist";
@@ -106,7 +107,7 @@ export default async function StatusPage() {
               <div className="hp-stat">
                 <div className="k">Price per call</div>
                 <div className="v">{s.minPrice}–{s.maxPrice}</div>
-                <div className="d">USDC, exact amount in the 402{s.premium.length ? ` · premium ${andList(s.premiumPrices)} (Base USDC only)` : ""}</div>
+                <div className="d">USDC, exact amount in the 402{s.premium.length ? ` · premium ${andList(s.premiumPrices)} (${premiumRailLive()})` : ""}</div>
               </div>
               <div className="hp-stat">
                 <div className="k">Networks</div>
@@ -125,7 +126,7 @@ export default async function StatusPage() {
                 One address per network. <span>One host.</span>
               </h2>
               <p className="hp-lead">
-                Agents should only pay through {PUBLIC_BASE_URL.replace("https://", "")}, to the payTo below for the network they pay on. Same price on all four rails{s.premium.length ? " (premium checks: Base USDC only)" : ""}.
+                Agents should only pay through {PUBLIC_BASE_URL.replace("https://", "")}, to the payTo below for the network they pay on. Same price on all four rails{s.premium.length ? ` (premium checks: ${premiumRailLive()})` : ""}.
               </p>
             </div>
             <div className="hp-grid two">
@@ -217,7 +218,7 @@ export default async function StatusPage() {
                 ])}
                 {s.premium.length ? (
                   <tr className="grp" key="premium">
-                    <td colSpan={5}>{s.premium.length > 1 ? "Premium" : "Verified brief"} ({s.premium[0].rail})</td>
+                    <td colSpan={5}>{s.premium.length > 1 ? "Premium" : "Verified brief"} ({premiumRailLive()})</td>
                   </tr>
                 ) : null}
                 {s.premium.map((x) => (

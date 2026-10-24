@@ -13,6 +13,7 @@
  *   settled (wrapper cancels settlement on isError).
  * - No Bazaar discovery extension on MCP tools (REST discovery unchanged).
  */
+import { premiumRailLive } from "@/lib/premium/rail-copy";
 import {
   FEEDBACK_MCP_DESCRIPTION, FEEDBACK_MCP_DESCRIPTION_V2, FEEDBACK_WANTS, FEEDBACK_USE_CASES, FEEDBACK_CHAINS, FEEDBACK_WOULD_PAY,
   FEEDBACK_WOULD_PAY_TERM, feedbackEnabled, feedbackRequestV2Enabled, handleFeedback,
@@ -581,7 +582,8 @@ export const FEEDBACK_TOOL_V2 = {
 export const VERIFIED_BRIEF_TOOL = {
   name: "verified_brief_quote",
   // Round 7 (Claude Q3): first sentence says this only quotes; it never runs the brief or pays.
-  description: `Returns the payment instructions (the unpaid HTTP 402) for the ${BRIEF_LISTING.priceUsd} verified brief; this tool never runs the brief or pays. To get the brief, pay the 402 over HTTP with x402 v2 (${BRIEF_LISTING.rail}) at GET ${PUBLIC_BASE_URL}${BRIEF_LISTING.path}?q=... ${BRIEF_LISTING.summary} Contract: ${PUBLIC_BASE_URL}${BRIEF_LISTING.contract}. Terms: ${PUBLIC_BASE_URL}${BRIEF_LISTING.terms}.`,
+  // Counsel E3: per-request getter on the force-dynamic MCP route, same eurcActive() check as the 402.
+  get description() { return `Returns the payment instructions (the unpaid HTTP 402) for the ${BRIEF_LISTING.priceUsd} verified brief; this tool never runs the brief or pays. To get the brief, pay the 402 over HTTP with x402 v2 (${premiumRailLive()}) at GET ${PUBLIC_BASE_URL}${BRIEF_LISTING.path}?q=... ${BRIEF_LISTING.summary} Contract: ${PUBLIC_BASE_URL}${BRIEF_LISTING.contract}. Terms: ${PUBLIC_BASE_URL}${BRIEF_LISTING.terms}.`; },
   schema: {
     q: z.string().describe("Question about Base or Ethereum gas, USDC supply on Ethereum and Base, or an x402 spec fact. No personal data."),
     type: z.enum(["base_gas", "eth_gas", "usdc_supply", "x402_spec"]).optional().describe("Optional: skip phrase matching and use this question type."),

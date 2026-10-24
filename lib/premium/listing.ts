@@ -1,7 +1,7 @@
 /**
  * Public listing of live premium tiers (today: the $1 verified brief only) for every surface that shows
  * the paid-route count or list: homepage, /status, /agents, skill.md, openapi.json, llms.txt, hosted MCP.
- * Kept separate from LIVE_PAID_ROUTES because premium tiers are Base USDC only (the multi-network
+ * Kept separate from LIVE_PAID_ROUTES because premium tiers are Base only, USDC or EURC (the multi-network
  * catalog copy does not apply). Gated by the same switch as the route (tierAllowed), so a tier that
  * 404s is never listed. $5/$10 tiers are not listed.
  *
